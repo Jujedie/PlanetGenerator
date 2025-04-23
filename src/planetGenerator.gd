@@ -2,6 +2,8 @@ extends RefCounted
 
 class_name PlanetGenerator
 
+TO DO REMOVE INSTANCE PARAMETERS FROM INSTANCE METHODS
+
 var nom: String
 
 # Dimensions de l'image
@@ -9,18 +11,20 @@ var width : int
 var height: int
 
 # Paramètres de génération
-var avg_temperature: float
-var water_elevation: float    # entre 0 et 1
+var avg_temperature  : float
+var water_elevation  : int    # l'élévation de l'eau par rapport à la terre [-oo,+oo]
 var avg_precipitation: float  # entre 0 et 1
 
 # Images générées
-var elevation_map: Image
+var elevation_map    : Image
+var precipitation_map: Image
+var temperature_map  : Image
 var biome_map  : Image
 var terrain_map: Image
 var glacier_map: Image
-var geo_map    : Image
+var geopo_map  : Image
 
-func _init(nom: String, width_param: int = 512, height_param: int = 256, avg_temperature_param: float = 15.0, water_elevation_param: float = 0.3, avg_precipitation_param: float = 0.5):
+func _init(nom: String, width_param: int = 512, height_param: int = 256, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5):
 	self.nom = nom
 	
 	self.width  = width_param
@@ -35,17 +39,17 @@ func _init(nom: String, width_param: int = 512, height_param: int = 256, avg_tem
 # Génère la planète
 func generate_planet():
 	self.elevation_map = generate_elevation_map()
-	self.biome_map   = generate_biome_map(self.elevation_map)
+	self.biome_map   = generate_biome_map(self.elevation_map,)
 	self.terrain_map = generate_terrain_map(self.elevation_map)
 	self.glacier_map = generate_glacier_map(self.elevation_map, self.avg_temperature)
-	self.geo_map     = generate_geopolitical_map()
+	self.geopo_map     = generate_geopolitical_map()
 
 	# Sauvegarde les images
 	save_image(self.elevation_map, "elevation_map.png")
 	save_image(self.biome_map, "biome_map.png")
 	save_image(terrain_map, "terrain_map.png")
 	save_image(self.glacier_map, "glacier_map.png")
-	save_image(self.geo_map, "geo_map.png")
+	save_image(self.geopo_map, "geopo_map.png")
 
 # Génére la carte d'élévation (bruit de Perlin + eau)
 func generate_elevation_map() -> Image:
