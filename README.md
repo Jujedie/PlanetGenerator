@@ -1,6 +1,6 @@
 # Planet Genrator | A world building tool
 
-this software goad, is to allow the user an easy way to 
+this software goal, is to allow the user an easy way to 
 generate the surface of planets based upon multiple parameters
 such as :
  -1 : the average temperature
