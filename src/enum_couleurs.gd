@@ -1,25 +1,115 @@
 extends Node
 
-# Définition des couleurs pour chaque biome avec des valeurs hexadécimales
+# Définition des couleurs pour chaque biome avec des informations supplémentaires
 var COULEURS_BIOMES = {
-    "NAPPE_GLACIAIRE": Color.hex(0xE0E0E0),
-    "TUNDRA": Color.hex(0x5AC9EC),
-    "FORET_BOREAL": Color.hex(0x275D6E),
-    "TUNDRA_ALPINE": Color.hex(0x78ABC1),
-    "PRAIRIE": Color.hex(0x6CA868),
-    "FORET_TEMPEREE": Color.hex(0x47AD40),
-    "FORET_TROPICALE": Color.hex(0x2F572C),
-    "FORET_SUBTROPICAL_TROPICAL": Color.hex(0x427D3E),
-    "MEDITERRANEEN": Color.hex(0x634167),
-    "SAVANNE": Color.hex(0xCFAD5F),
-    "SAVANNE_ARBUSTIVE": Color.hex(0xBC9741),
-    "DESERT_ARIDE": Color.hex(0x7D3F25),
-    "DESERT_SEMI_ARIDE": Color.hex(0xCDB274),
-    "TERRES_BRULEES": Color.hex(0x1B1B1B),
-    "FORET_MONTAGNEUSES": Color.hex(0x5AABD3),
-    "STEPPES_SECHE": Color.hex(0x9F8F6C),
-    "STEPPES_TEMPEREE": Color.hex(0xFFCB58),
-    "DESERT": Color.hex(0xAA5F3D)
+    "NAPPE_GLACIAIRE": {
+        "couleur": Color.hex(0xE0E0E0),
+        "interval_temp": [-50, -20],
+        "interval_precipitation": [0.0, 0.1],
+        "elevation_minimal": 0
+    },
+    "TUNDRA": {
+        "couleur": Color.hex(0x5AC9EC),
+        "interval_temp": [-20, 0],
+        "interval_precipitation": [0.1, 0.2],
+        "elevation_minimal": 0
+    },
+    "FORET_BOREAL": {
+        "couleur": Color.hex(0x275D6E),
+        "interval_temp": [0, 10],
+        "interval_precipitation": [0.2, 0.4],
+        "elevation_minimal": 0
+    },
+    "TUNDRA_ALPINE": {
+        "couleur": Color.hex(0x78ABC1),
+        "interval_temp": [-10, 5],
+        "interval_precipitation": [0.1, 0.3],
+        "elevation_minimal": 500
+    },
+    "PRAIRIE": {
+        "couleur": Color.hex(0x6CA868),
+        "interval_temp": [10, 20],
+        "interval_precipitation": [0.1, 0.3],
+        "elevation_minimal": 0
+    },
+    "FORET_TEMPEREE": {
+        "couleur": Color.hex(0x47AD40),
+        "interval_temp": [10, 25],
+        "interval_precipitation": [0.3, 0.6],
+        "elevation_minimal": 0
+    },
+    "FORET_TROPICALE": {
+        "couleur": Color.hex(0x2F572C),
+        "interval_temp": [20, 35],
+        "interval_precipitation": [0.6, 1.0],
+        "elevation_minimal": 0
+    },
+    "FORET_SUBTROPICAL_TROPICAL": {
+        "couleur": Color.hex(0x427D3E),
+        "interval_temp": [15, 30],
+        "interval_precipitation": [0.4, 0.8],
+        "elevation_minimal": 0
+    },
+    "MEDITERRANEEN": {
+        "couleur": Color.hex(0x634167),
+        "interval_temp": [15, 25],
+        "interval_precipitation": [0.1, 0.3],
+        "elevation_minimal": 0
+    },
+    "SAVANNE": {
+        "couleur": Color.hex(0xCFAD5F),
+        "interval_temp": [20, 30],
+        "interval_precipitation": [0.1, 0.2],
+        "elevation_minimal": 0
+    },
+    "SAVANNE_ARBUSTIVE": {
+        "couleur": Color.hex(0xBC9741),
+        "interval_temp": [20, 35],
+        "interval_precipitation": [0.05, 0.15],
+        "elevation_minimal": 0
+    },
+    "DESERT_ARIDE": {
+        "couleur": Color.hex(0x7D3F25),
+        "interval_temp": [30, 50],
+        "interval_precipitation": [0.0, 0.05],
+        "elevation_minimal": 0
+    },
+    "DESERT_SEMI_ARIDE": {
+        "couleur": Color.hex(0xCDB274),
+        "interval_temp": [25, 40],
+        "interval_precipitation": [0.05, 0.1],
+        "elevation_minimal": 0
+    },
+    "TERRES_BRULEES": {
+        "couleur": Color.hex(0x1B1B1B),
+        "interval_temp": [40, 60],
+        "interval_precipitation": [0.0, 0.02],
+        "elevation_minimal": 0
+    },
+    "FORET_MONTAGNEUSES": {
+        "couleur": Color.hex(0x5AABD3),
+        "interval_temp": [5, 15],
+        "interval_precipitation": [0.2, 0.6],
+        "elevation_minimal": 1000
+    },
+    "STEPPES_SECHE": {
+        "couleur": Color.hex(0x9F8F6C),
+        "interval_temp": [15, 25],
+        "interval_precipitation": [0.05, 0.15],
+        "elevation_minimal": 0
+    },
+    "STEPPES_TEMPEREE": {
+        "couleur": Color.hex(0xFFCB58),
+        "interval_temp": [10, 20],
+        "interval_precipitation": [0.1, 0.2],
+        "elevation_minimal": 0
+    },
+    "DESERT": {
+        "couleur": Color.hex(0xAA5F3D),
+        "interval_temp": [30, 50],
+        "interval_precipitation": [0.0, 0.05],
+        "elevation_minimal": 0
+    }
 }
 
 # Définition des couleurs pour les élévations
