@@ -15,6 +15,7 @@ and many other.
 The resulting output will be pixel art image of the planet
 with a mercator like layout, featuring the various information 
 of the planet for example :
+
  -1 : the elevation map
  
  -2 : the biome map
