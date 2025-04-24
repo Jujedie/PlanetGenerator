@@ -21,11 +21,10 @@ var terrain_map: Image
 var glacier_map: Image
 var geopo_map  : Image
 
-func _init(nom_param: String, width_param: int = 512, height_param: int = 256, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5):
+func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5):
     self.nom = nom_param
     
-    self.width  = width_param
-    self.height = height_param
+    self.rayon_planetaire  = rayon
 
     self.avg_temperature = avg_temperature_param
     self.water_elevation = water_elevation_param
