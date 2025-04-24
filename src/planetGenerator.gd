@@ -54,13 +54,14 @@ func generate_planet():
 
 # Génère la carte d'élévation (bruit de Perlin + eau)
 func generate_elevation_map() -> Image:
-    var img = Image.create(self.width, self.height, false, Image.FORMAT_RGB8)
+    var circonference = self.rayon_planetaire*2*PI
+    var img = Image.create(circonference, circonference/2, false, Image.FORMAT_RGB8)
     var noise = FastNoiseLite.new()
     noise.seed = randi()
     noise.frequency = 4.0 / float(self.width)  # fréquence ajustée à la taille
     for x in self.width:
         for y in self.height:
-            var value = noise.get_noise_2d(float(x), float(y)) * 0.5 + 0.5
+            var value = noise.get_noise_2d(float(x), float(y))
             var color = Color(value, value, value)
             if value <= self.water_elevation:
                 color = Color(0, 0, 1)
@@ -69,19 +70,21 @@ func generate_elevation_map() -> Image:
 
 # Génère la carte de précipitations
 func generate_precipitation_map() -> Image:
-    var img = Image.create(self.width, self.height, false, Image.FORMAT_RGB8)
+    var circonference = self.rayon_planetaire*2*PI
+    var img = Image.create(circonference, circonference/2, false, Image.FORMAT_RGB8)
     var noise = FastNoiseLite.new()
     noise.seed = randi()
     noise.frequency = 2.0 / float(self.width)  # fréquence ajustée
     for x in self.width:
         for y in self.height:
-            var value = noise.get_noise_2d(float(x), float(y)) * 0.5 + 0.5
+            var value = noise.get_noise_2d(float(x), float(y))
             img.set_pixel(x, y, Color(value, value, value))
     return img
 
 # Génère la carte de température
 func generate_temperature_map() -> Image:
-    var img = Image.create(self.width, self.height, false, Image.FORMAT_RGB8)
+    var circonference = self.rayon_planetaire*2*PI
+    var img = Image.create(circonference, circonference/2, false, Image.FORMAT_RGB8)
     for x in self.width:
         for y in self.height:
             var lat = float(y) / self.height
@@ -92,7 +95,8 @@ func generate_temperature_map() -> Image:
 
 # Génère la carte des biomes en fonction de l'élévation, température et précipitations
 func generate_biome_map(elevation: Image, precipitation: Image, temperature: Image) -> Image:
-    var img = Image.create(self.width, self.height, false, Image.FORMAT_RGB8)
+    var circonference = self.rayon_planetaire*2*PI
+    var img = Image.create(circonference, circonference/2, false, Image.FORMAT_RGB8)
     for x in self.width:
         for y in self.height:
             var elevation_val = elevation.get_pixel(x, y).r
@@ -120,7 +124,8 @@ func generate_terrain_map(elevation: Image) -> Image:
 
 # Génère les glaciers selon température et élévation
 func generate_glacier_map(elevation: Image, temperature: float) -> Image:
-    var img = Image.create(width, height, false, Image.FORMAT_RGB8)
+    var circonference = self.rayon_planetaire*2*PI
+    var img = Image.create(circonference, circonference/2, false, Image.FORMAT_RGB8)
     for x in width:
         for y in height:
             var lat = float(y) / height
@@ -133,7 +138,8 @@ func generate_glacier_map(elevation: Image, temperature: float) -> Image:
 
 # Génère une carte géopolitique simple basée sur zones colorées aléatoirement
 func generate_geopolitical_map() -> Image:
-    var img = Image.create(width, height, false, Image.FORMAT_RGB8)
+    var circonference = self.rayon_planetaire*2*PI
+    var img = Image.create(circonference, circonference/2, false, Image.FORMAT_RGB8)
     var rng = RandomNumberGenerator.new()
     rng.randomize()
     var colors = [Color.RED, Color.BLUE, Color.GREEN, Color.YELLOW, Color.ORANGE]
