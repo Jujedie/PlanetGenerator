@@ -5,10 +5,7 @@ class_name PlanetGenerator
 # TO DO REMOVE INSTANCE PARAMETERS FROM INSTANCE METHODS
 
 var nom: String
-
-# Dimensions de l'image
-var width : int
-var height: int
+var rayon_planetaire : int
 
 # Paramètres de génération
 var avg_temperature  : float
