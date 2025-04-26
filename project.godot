@@ -13,7 +13,7 @@ config_version=5
 config/name="PlanetGenerator"
 run/main_scene="res://data/scn/master.tscn"
 config/features=PackedStringArray("4.4", "Forward Plus")
-config/icon="res://icon.svg"
+config/icon="res://data/img/icon.png"
 
 [autoload]
 
