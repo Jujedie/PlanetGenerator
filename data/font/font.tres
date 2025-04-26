@@ -1,0 +1,7 @@
+[gd_resource type="Theme" load_steps=2 format=3 uid="uid://bdbapd43uy2gd"]
+
+[ext_resource type="FontFile" uid="uid://bkpe48sacfdbi" path="res://data/font/orange kid.ttf" id="1_msech"]
+
+[resource]
+default_font = ExtResource("1_msech")
+default_font_size = 1000

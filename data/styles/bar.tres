@@ -1,0 +1,8 @@
+[gd_resource type="StyleBoxTexture" load_steps=2 format=3 uid="uid://bl57t6r8bvde8"]
+
+[ext_resource type="Texture2D" uid="uid://dmwp4mifrqr4b" path="res://data/img/barColoré.png" id="1_lqfar"]
+
+[resource]
+texture = ExtResource("1_lqfar")
+texture_margin_top = 10.0
+expand_margin_left = 2.0
