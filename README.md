@@ -1,20 +1,22 @@
 # Planet Genrator | A world building tool
 
-this software goad, is to allow the user an easy way to 
+this software goal, is to allow the user an easy way to 
 generate the surface of planets based upon multiple parameters
 such as :
- -1 : the average temperature
- -2 : the elevation of the water
- -3 : the average precipitation
+ - 1 : average temperature
+ - 2 : elevation of the water
+ - 3 : average precipitation
+ - 4 : average elevation 
 and many other.
 
 The resulting output will be pixel art image of the planet
 with a mercator like layout, featuring the various information 
 of the planet for example :
- -1 : the elevation map
- -2 : the biome map
- -3 : the terrain map
- -4 : the glaciers map
+ - 1 : elevation map
+ - 2 : biome map
+ - 3 : terrain map
+ - 4 : glaciers map
+ - 5 : temperature map
 
 The user can also make a geopolitical map with tool allowing 
 him to give certain border to the planet, actually only colors 
