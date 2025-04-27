@@ -25,13 +25,10 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
     
     self.rayon_planetaire  = rayon
 
-    self.avg_temperature = avg_temperature_param
-    self.water_elevation = water_elevation_param
+    self.avg_temperature   = avg_temperature_param
+    self.water_elevation   = water_elevation_param
     self.avg_precipitation = avg_precipitation_param
 
-    generate_planet()
-
-# Génère la planète
 func generate_planet():
     self.elevation_map = generate_elevation_map()
     self.precipitation_map = generate_precipitation_map()
@@ -40,14 +37,13 @@ func generate_planet():
     self.biome_map = generate_biome_map()
     self.geopo_map = generate_geopolitical_map()
 
-    # Sauvegarde les images
+func save_maps():
     save_image(self.elevation_map, "elevation_map.png")
     save_image(self.precipitation_map, "precipitation_map.png")
     save_image(self.temperature_map, "temperature_map.png")
     save_image(self.biome_map, "biome_map.png")
     save_image(self.geopo_map, "geopo_map.png")
 
-# Génère la carte d'élévation (bruit fractal pour des montagnes réalistes)
 func generate_elevation_map() -> Image:
     var circonference = int(self.rayon_planetaire * 2 * PI)
     var img = Image.create(circonference, circonference / 2, false, Image.FORMAT_RGB8)
@@ -70,7 +66,6 @@ func generate_elevation_map() -> Image:
 
     return img
 
-# Génère la carte de précipitations (bruit de turbulence pour des variations météorologiques)
 func generate_precipitation_map() -> Image:
     var circonference = self.rayon_planetaire * 2 * PI
     var img = Image.create(circonference, circonference / 2, false, Image.FORMAT_RGB8)
@@ -114,7 +109,6 @@ func generate_temperature_map() -> Image:
 
     return img
 
-# Carte de terrain stylisée
 func generate_water_map() -> Image:
     var circonference = self.rayon_planetaire*2*PI
     var img = Image.create(circonference, circonference/2, false, Image.FORMAT_RGB8)
@@ -140,7 +134,6 @@ func generate_water_map() -> Image:
 
     return img
 
-# Génère la carte des biomes en fonction de l'élévation, température et précipitations
 func generate_biome_map() -> Image:
     var circonference = self.rayon_planetaire*2*PI
     var img = Image.create(circonference, circonference/2, false, Image.FORMAT_RGB8)
@@ -174,7 +167,16 @@ func generate_geopolitical_map() -> Image:
 
     return img
 
-# Sauvegarde une image en PNG
+func getMaps() -> Array:
+    return [
+        self.elevation_map,
+        self.precipitation_map,
+        self.temperature_map,
+        self.water_map,
+        self.biome_map,
+        self.geopo_map
+    ]
+
 static func save_image(image: Image, file_name: String):
     var img_path = "user://" + file_name
     image.save_png(img_path)
