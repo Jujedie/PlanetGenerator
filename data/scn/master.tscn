@@ -65,8 +65,10 @@ theme_override_icons/tick = ExtResource("2_w6tpy")
 theme_override_styles/slider = ExtResource("3_7ybw1")
 theme_override_styles/grabber_area = ExtResource("4_w6tpy")
 theme_override_styles/grabber_area_highlight = ExtResource("4_w6tpy")
-max_value = 1.0
-step = 0.01
+min_value = 2000.0
+max_value = 24000.0
+step = 100.0
+value = 2000.0
 metadata/_edit_lock_ = true
 
 [node name="Node2D" type="Node2D" parent="Node2D/Control/sldRayonPlanetaire"]
@@ -78,7 +80,7 @@ offset_right = 5603.0
 offset_bottom = 1200.0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
-text = "Rayon Planétaire : {Val} | 0 <-> 1"
+text = "Rayon Planétaire : {Val}"
 metadata/_edit_lock_ = true
 
 [node name="sldTempMoy" type="HSlider" parent="Node2D/Control"]
@@ -289,3 +291,7 @@ metadata/_edit_lock_ = true
 [connection signal="value_changed" from="Node2D/Control/sldTempMoy" to="." method="_on_sld_temp_moy_value_changed"]
 [connection signal="value_changed" from="Node2D/Control/sldHautEau" to="." method="_on_sld_haut_eau_value_changed"]
 [connection signal="value_changed" from="Node2D/Control/sldPrecipitationMoy" to="." method="_on_sld_precipitation_moy_value_changed"]
+[connection signal="pressed" from="Node2D/Control/btnComfirmer/btnComfirme" to="." method="_on_btn_comfirme_pressed"]
+[connection signal="pressed" from="Node2D/Control/btnSauvegarder/btnSauvegarder" to="." method="_on_btn_sauvegarder_pressed"]
+[connection signal="pressed" from="Node2D/Control/btnSuivant/btnSuivant" to="." method="_on_btn_suivant_pressed"]
+[connection signal="pressed" from="Node2D/Control/btnPrecedant/btnPrecedant" to="." method="_on_btn_precedant_pressed"]
