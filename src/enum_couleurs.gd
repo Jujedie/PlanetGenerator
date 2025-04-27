@@ -163,7 +163,7 @@ var COULEURS_ELEVATIONS = {
 }
 
 var COULEURS_TEMPERATURE = {
-    -273: Color.hex(0x4B0082), # Violet très froid
+    -100: Color.hex(0x4B0082), # Violet très froid
     -50:  Color.hex(0x483D8B), # Indigo froid
     -20:  Color.hex(0x0000FF), # Bleu froid
     0:  Color.hex(0x00FFFF),  # Cyan (froid modéré)
@@ -186,3 +186,33 @@ func getElevationViaColor(color: Color) -> int:
         if COULEURS_ELEVATIONS[key] == color:
             return key
     return 0
+
+func getTemperatureColor(temperature: float) -> Color:
+    for key in COULEURS_TEMPERATURE.keys():
+        if temperature <= key:
+            return COULEURS_TEMPERATURE[key]
+    return COULEURS_TEMPERATURE[100]
+
+func getTemperatureViaColor(color: Color) -> float:
+    for key in COULEURS_TEMPERATURE.keys():
+        if COULEURS_TEMPERATURE[key] == color:
+            return key
+    return 0.0
+
+func getBiomeColor(elevation_val : int, precipitation_val : float, temperature_val : int, is_water : bool) -> Color:
+    var corresponding_biome : Array[String] = []
+    for biome in COULEURS_BIOMES.keys():
+        var biome_data = COULEURS_BIOMES[biome]
+        if (elevation_val >= biome_data["elevation_minimal"] and
+            temperature_val >= biome_data["interval_temp"][0] and
+            temperature_val <= biome_data["interval_temp"][1] and
+            precipitation_val >= biome_data["interval_precipitation"][0] and
+            precipitation_val <= biome_data["interval_precipitation"][1] and
+            biome_data["water_need"] == is_water):
+            corresponding_biome.append(biome)
+    
+    for biome in corresponding_biome:
+        if randf() < 0.5:
+            return COULEURS_BIOMES[biome]["couleur"]
+    
+    return Color.hex(0xFFFFFF)
