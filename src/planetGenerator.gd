@@ -37,7 +37,7 @@ func generate_planet():
     self.precipitation_map = generate_precipitation_map()
     self.temperature_map = generate_temperature_map()
     self.water_map = generate_water_map()
-    self.biome_map = generate_biome_map(self.elevation_map, self.precipitation_map, self.temperature_map)
+    self.biome_map = generate_biome_map()
     self.geopo_map = generate_geopolitical_map()
 
     # Sauvegarde les images
@@ -85,7 +85,7 @@ func generate_precipitation_map() -> Image:
 
     for x in circonference:
         for y in circonference / 2:
-            
+
             var value = noise.get_noise_2d(float(x), float(y))
             value = clamp(value, 0.0, 1.0)
             img.set_pixel(x, y, Color(value, value, value))
@@ -107,32 +107,10 @@ func generate_temperature_map() -> Image:
     for x in circonference:
         for y in circonference/2:
 
-            var lat = float(y) / circonference/2
+            var lat  = float(y) / circonference/2
             var temp = self.avg_temperature + (noise.get_noise_2d(float(x), float(y)) * 20.0) - (lat * 20.0)
-            var color = Couleurs.getColorByTemperature(temp)
+            var color= Couleurs.getColorByTemperature(temp)
             img.set_pixel(x, y, color)
-
-    return img
-
-# Génère la carte des biomes en fonction de l'élévation, température et précipitations
-func generate_biome_map(elevation: Image, precipitation: Image, temperature: Image) -> Image:
-    var circonference = self.rayon_planetaire*2*PI
-    var img = Image.create(circonference, circonference/2, false, Image.FORMAT_RGB8)
-    
-    for x in circonference:
-        for y in circonference/2:
-
-            var elevation_val = elevation.get_pixel(x, y).r
-            var precipitation_val = precipitation.get_pixel(x, y).r
-            var temperature_val = temperature.get_pixel(x, y).r
-
-            var biome_color: Color = Color(0, 0, 0)  # Par défaut
-            for biome_name in Couleurs.COULEURS_BIOMES.keys():
-                var biome = Couleurs.COULEURS_BIOMES[biome_name]
-                if elevation_val >= biome["elevation_minimal"] / 1000.0 and biome["interval_temp"][0] / 50.0 <= temperature_val <= biome["interval_temp"][1] / 50.0 and biome["interval_precipitation"][0] <= precipitation_val <= biome["interval_precipitation"][1]:
-                    biome_color = biome["couleur"]
-                    break
-            img.set_pixel(x, y, biome_color)
 
     return img
 
@@ -141,14 +119,42 @@ func generate_water_map() -> Image:
     var circonference = self.rayon_planetaire*2*PI
     var img = Image.create(circonference, circonference/2, false, Image.FORMAT_RGB8)
     
+    var noise = FastNoiseLite.new()
+    noise.seed = randi()
+    noise.frequency = 1.0 / float(circonference)
+    noise.fractal_octaves = 4
+    noise.fractal_gain = 0.5
+    noise.fractal_lacunarity = 0.5
+
     for x in circonference:
         for y in circonference/2:
 
-            var elevation_val = self.elevation_map.get_pixel(x, y).r
-            if elevation_val < self.water_elevation / 1000.0:
-                img.set_pixel(x, y, Color(0.0, 0.0, 1.0))  # Couleur de l'eau
+            var value = noise.get_noise_2d(float(x), float(y))
+            value = clamp(value, 0.0, 1.0)
+
+            var elevation_val = Couleurs.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+            if elevation_val <= self.water_elevation and value < 0.5:
+                img.set_pixel(x, y, Color.hex(0xFFFFFF))
             else:
-                img.set_pixel(x, y, Color(0.5, 0.5, 0.5))  # Couleur de la terre
+                img.set_pixel(x, y, Color.hex(0x000000))
+
+    return img
+
+# Génère la carte des biomes en fonction de l'élévation, température et précipitations
+func generate_biome_map() -> Image:
+    var circonference = self.rayon_planetaire*2*PI
+    var img = Image.create(circonference, circonference/2, false, Image.FORMAT_RGB8)
+    
+    for x in circonference:
+        for y in circonference/2:
+
+            var elevation_val = Couleurs.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+            var precipitation_val = self.precipitation_map.get_pixel(x, y).r
+            var temperature_val = Couleurs.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
+            var is_water = self.water_map.get_pixel(x, y).r == 1.0
+
+            var biome_color = Couleurs.getBiomeColor(elevation_val, precipitation_val, temperature_val, is_water)
+            img.set_pixel(x, y, biome_color)
 
     return img
 
