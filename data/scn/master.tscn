@@ -1,6 +1,7 @@
-[gd_scene load_steps=14 format=3 uid="uid://c7gj7wdupqeeb"]
+[gd_scene load_steps=15 format=3 uid="uid://c7gj7wdupqeeb"]
 
 [ext_resource type="Texture2D" uid="uid://bm5bxcrxtppve" path="res://data/img/fond_machine.png" id="1_7ybw1"]
+[ext_resource type="Script" uid="uid://d12q01wdkxsvn" path="res://src/master.gd" id="1_qfml0"]
 [ext_resource type="Texture2D" uid="uid://dlhf54h1d84kv" path="res://data/img/encadré.png" id="1_xqn6k"]
 [ext_resource type="Texture2D" uid="uid://cn6ewiifk7yht" path="res://data/img/grabber.png" id="2_w6tpy"]
 [ext_resource type="Texture2D" uid="uid://yqpwvx3al8jd" path="res://data/img/fond.png" id="2_w33hw"]
@@ -24,10 +25,15 @@ default_font_size = 1500
 texture = ExtResource("7_qfml0")
 
 [node name="Master" type="Node2D"]
+script = ExtResource("1_qfml0")
 metadata/_edit_lock_ = true
 
 [node name="Camera2D" type="Camera2D" parent="."]
 anchor_mode = 0
+limit_left = 0
+limit_top = 0
+limit_right = 1152
+limit_bottom = 648
 metadata/_edit_lock_ = true
 
 [node name="Frame" type="Sprite2D" parent="."]
@@ -76,6 +82,7 @@ text = "Rayon Planétaire : {Val} | 0 <-> 1"
 metadata/_edit_lock_ = true
 
 [node name="sldTempMoy" type="HSlider" parent="Node2D/Control"]
+layout_mode = 0
 offset_left = 912.0
 offset_top = 174.587
 offset_right = 1121.0
@@ -105,6 +112,7 @@ text = "Température Moyenne : {Val}"
 metadata/_edit_lock_ = true
 
 [node name="sldHautEau" type="HSlider" parent="Node2D/Control"]
+layout_mode = 0
 offset_left = 912.0
 offset_top = 238.587
 offset_right = 1121.0
@@ -134,6 +142,7 @@ text = "Elevation des mers : {Val}"
 metadata/_edit_lock_ = true
 
 [node name="sldPrecipitationMoy" type="HSlider" parent="Node2D/Control"]
+layout_mode = 0
 offset_left = 912.0
 offset_top = 302.587
 offset_right = 1121.0
@@ -184,19 +193,36 @@ theme_override_styles/normal = SubResource("StyleBoxTexture_okhqb")
 max_length = 18
 
 [node name="btnComfirmer" type="Node2D" parent="Node2D/Control"]
-position = Vector2(915, 4.39252)
+position = Vector2(947, 393)
 scale = Vector2(0.02, 0.02)
 metadata/_edit_lock_ = true
 
 [node name="btnComfirme" type="Button" parent="Node2D/Control/btnComfirmer"]
-offset_left = 1557.61
-offset_top = 19420.4
-offset_right = 9170.61
-offset_bottom = 21220.4
+offset_left = -0.00109863
+offset_top = 0.00195313
+offset_right = 7613.0
+offset_bottom = 1800.0
 theme = SubResource("Theme_qfml0")
 theme_override_colors/font_color = Color(0.670588, 0.670588, 0.670588, 1)
 theme_override_styles/normal = SubResource("StyleBoxTexture_3fsd5")
 text = "Générer"
+metadata/_edit_use_anchors_ = true
+
+[node name="btnSauvegarder" type="Node2D" parent="Node2D/Control"]
+position = Vector2(947, 441)
+scale = Vector2(0.02, 0.02)
+metadata/_edit_lock_ = true
+
+[node name="btnSauvegarder" type="Button" parent="Node2D/Control/btnSauvegarder"]
+offset_left = -0.00109863
+offset_top = -0.000854492
+offset_right = 7613.0
+offset_bottom = 1800.0
+theme = SubResource("Theme_qfml0")
+theme_override_colors/font_color = Color(0.670588, 0.670588, 0.670588, 1)
+theme_override_styles/normal = SubResource("StyleBoxTexture_3fsd5")
+text = "Sauvegarder"
+metadata/_edit_lock_ = true
 
 [node name="btnSuivant" type="Node2D" parent="Node2D/Control"]
 position = Vector2(553, 502)
@@ -204,10 +230,10 @@ scale = Vector2(0.02, 0.02)
 metadata/_edit_lock_ = true
 
 [node name="btnSuivant" type="Button" parent="Node2D/Control/btnSuivant"]
-offset_left = 526.637
-offset_top = 509.422
-offset_right = 4930.64
-offset_bottom = 1717.42
+offset_left = -1100.0
+offset_top = 509.0
+offset_right = 6500.0
+offset_bottom = 1717.0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.670588, 0.670588, 0.670588, 1)
 text = "Vue Suivante
@@ -220,10 +246,10 @@ scale = Vector2(0.02, 0.02)
 metadata/_edit_lock_ = true
 
 [node name="btnPrecedant" type="Button" parent="Node2D/Control/btnPrecedant"]
-offset_left = 357.818
-offset_top = 509.422
-offset_right = 513.818
-offset_bottom = 540.422
+offset_left = -1200.0
+offset_top = 509.0
+offset_right = 6800.0
+offset_bottom = 1717.0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.670588, 0.670588, 0.670588, 1)
 text = "Vue Précédante"
@@ -231,6 +257,7 @@ flat = true
 
 [node name="SubViewportContainer" type="SubViewportContainer" parent="Node2D/Control"]
 custom_minimum_size = Vector2(752, 513)
+layout_mode = 0
 offset_left = 99.0
 offset_top = -31.0
 offset_right = 851.0
@@ -252,7 +279,7 @@ position = Vector2(69, 68)
 texture = ExtResource("6_w6tpy")
 metadata/_edit_lock_ = true
 
-[node name="Cadre" type="Sprite2D" parent="Node2D/Control"]
+[node name="Cadre" type="Sprite2D" parent="Node2D"]
 position = Vector2(83, -47)
 texture = ExtResource("1_xqn6k")
 centered = false
