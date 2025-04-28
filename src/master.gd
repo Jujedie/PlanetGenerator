@@ -63,9 +63,8 @@ func _on_btn_comfirme_pressed() -> void:
 	print("Génération de la planète : "+nom.text)
 	planetGenerator.generate_planet()
 	maps = planetGenerator.getMaps()
-	var itex = ImageTexture.new()
-	itex = ImageTexture.create_from_image(maps[map_index])
-	$Node2D/Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = itex
+
+	$Node2D/Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = ImageTexture.create_from_image(maps[map_index])
 
 func _on_btn_sauvegarder_pressed() -> void:
 	planetGenerator.save_planet()
@@ -75,14 +74,12 @@ func _on_btn_suivant_pressed() -> void:
 	map_index += 1
 	if map_index >= maps.size():
 		map_index = 0
-	var itex = ImageTexture.new()
-	itex = ImageTexture.create_from_image(maps[map_index])
-	$Node2D/Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = itex
+	
+	$Node2D/Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = ImageTexture.create_from_image(maps[map_index])
 
 func _on_btn_precedant_pressed() -> void:
 	map_index -= 1
 	if map_index < 0:
 		map_index = maps.size() - 1
-	var itex = ImageTexture.new()
-	itex = ImageTexture.create_from_image(maps[map_index])
-	$Node2D/Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = itex
+	
+	$Node2D/Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = ImageTexture.create_from_image(maps[map_index])
