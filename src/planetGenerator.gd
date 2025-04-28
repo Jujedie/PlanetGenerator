@@ -82,8 +82,8 @@ func generate_elevation_map() -> Image:
 	noise.fractal_lacunarity = 2.0
 
 	print("Génération de la carte")
-	for x in range(0,self.circonference,1):
-		for y in range(0,self.circonference / 2,1):
+	for x in range(self.circonference):
+		for y in range(self.circonference / 2):
 
 			var value = noise.get_noise_2d(float(x), float(y))
 			var elevation = ceil(value * 2500.0)
@@ -108,8 +108,8 @@ func generate_precipitation_map() -> Image:
 	noise.fractal_lacunarity = 0.5
 
 	print("Génération de la carte")
-	for x in range(0,self.circonference,1):
-		for y in range(0,self.circonference / 2,1):
+	for x in range(self.circonference):
+		for y in range(self.circonference / 2):
 
 			var value = noise.get_noise_2d(float(x), float(y))
 			value = clamp(value, 0.0, 1.0)
@@ -132,8 +132,8 @@ func generate_temperature_map() -> Image:
 	noise.fractal_lacunarity = 0.5
 
 	print("Génération de la carte")
-	for x in range(0,self.circonference,1):
-		for y in range(0,self.circonference / 2,1):
+	for x in range(self.circonference):
+		for y in range(self.circonference / 2):
 
 			var lat  = float(y) / self.circonference/2
 			var temp = self.avg_temperature + (noise.get_noise_2d(float(x), float(y)) * 20.0) - (lat * 20.0)
@@ -156,8 +156,8 @@ func generate_water_map() -> Image:
 	noise.fractal_lacunarity = 0.5
 
 	print("Génération de la carte")
-	for x in range(0,self.circonference,1):
-		for y in range(0,self.circonference / 2,1):
+	for x in range(self.circonference):
+		for y in range(self.circonference / 2):
 
 			var value = noise.get_noise_2d(float(x), float(y))
 			value = clamp(value, 0.0, 1.0)
@@ -176,8 +176,8 @@ func generate_biome_map() -> Image:
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
 	
 	print("Génération de la carte")
-	for x in range(0,self.circonference,1):
-		for y in range(0,self.circonference / 2,1):
+	for x in range(self.circonference):
+		for y in range(self.circonference / 2):
 
 			var elevation_val = Couleurs.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 			var precipitation_val = self.precipitation_map.get_pixel(x, y).r
@@ -201,8 +201,8 @@ func generate_geopolitical_map() -> Image:
 	var colors = [Color.RED, Color.BLUE, Color.GREEN, Color.YELLOW, Color.ORANGE]
 
 	print("Génération de la carte")
-	for x in range(0,self.circonference,1):
-		for y in range(0,self.circonference / 2,1):
+	for x in range(self.circonference):
+		for y in range(self.circonference / 2):
 
 			var id = int(floor(float(x) / 100)) % colors.size()
 			img.set_pixel(x, y, colors[id])
@@ -210,13 +210,15 @@ func generate_geopolitical_map() -> Image:
 
 func getMaps() -> Array[Image]:
 	return [
-		self.elevation_map,
-		self.precipitation_map,
-		self.temperature_map,
-		self.water_map,
-		self.biome_map,
-		self.geopo_map
+        self.elevation_map
 	]
+	#	self.elevation_map,
+	#	self.precipitation_map,
+	#	self.temperature_map,
+	#	self.water_map,
+	#	self.biome_map,
+	#	self.geopo_map
+	#]
 
 static func save_image(image: Image, file_name: String):
 	var img_path = "user://" + file_name
