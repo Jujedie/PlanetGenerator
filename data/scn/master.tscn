@@ -65,10 +65,8 @@ theme_override_icons/tick = ExtResource("2_w6tpy")
 theme_override_styles/slider = ExtResource("3_7ybw1")
 theme_override_styles/grabber_area = ExtResource("4_w6tpy")
 theme_override_styles/grabber_area_highlight = ExtResource("4_w6tpy")
-min_value = 2000.0
 max_value = 24000.0
 step = 100.0
-value = 2000.0
 metadata/_edit_lock_ = true
 
 [node name="Node2D" type="Node2D" parent="Node2D/Control/sldRayonPlanetaire"]
@@ -98,7 +96,7 @@ theme_override_styles/grabber_area = ExtResource("4_w6tpy")
 theme_override_styles/grabber_area_highlight = ExtResource("4_w6tpy")
 min_value = -273.0
 max_value = 500.0
-value = -273.0
+value = 18.0
 metadata/_edit_lock_ = true
 
 [node name="Node2D" type="Node2D" parent="Node2D/Control/sldTempMoy"]
@@ -128,7 +126,6 @@ theme_override_styles/grabber_area = ExtResource("4_w6tpy")
 theme_override_styles/grabber_area_highlight = ExtResource("4_w6tpy")
 min_value = -100.0
 max_value = 2500.0
-value = -100.0
 metadata/_edit_lock_ = true
 
 [node name="Node2D" type="Node2D" parent="Node2D/Control/sldHautEau"]
@@ -158,6 +155,7 @@ theme_override_styles/grabber_area = ExtResource("4_w6tpy")
 theme_override_styles/grabber_area_highlight = ExtResource("4_w6tpy")
 max_value = 1.0
 step = 0.01
+value = 0.5
 metadata/_edit_lock_ = true
 
 [node name="Node2D" type="Node2D" parent="Node2D/Control/sldPrecipitationMoy"]

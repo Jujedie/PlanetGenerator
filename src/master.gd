@@ -7,13 +7,16 @@ var map_index       : int = 0
 
 func _ready() -> void:
 	var label = $Node2D/Control/sldRayonPlanetaire/Node2D/Label
-	label.text = "Rayon Planétaire : 2000"
+	label.text = "Rayon Planétaire : 100"
+
 	label = $Node2D/Control/sldTempMoy/Node2D/Label
-	label.text = "Température Moyenne : -273"
+	label.text = "Température Moyenne : 18"
+
 	label = $Node2D/Control/sldHautEau/Node2D/Label
-	label.text = "Elevation des mers : -100"
+	label.text = "Elevation des mers : 0"
+
 	label = $Node2D/Control/sldPrecipitationMoy/Node2D/Label
-	label.text = "Précipitation Moyenne : 0.00 | 0 <-> 1"
+	label.text = "Précipitation Moyenne : 0.50 | 0 <-> 1"
 	pass
 
 func _on_sld_rayon_planetaire_value_changed(value: float) -> void:
@@ -59,7 +62,10 @@ func _on_btn_comfirme_pressed() -> void:
 	
 	print("Génération de la planète : "+nom.text)
 	planetGenerator.generate_planet()
-	maps = planetGenerator.get_maps()
+	maps = planetGenerator.getMaps()
+	var itex = ImageTexture.new()
+	itex = ImageTexture.create_from_image(maps[map_index])
+	$Node2D/Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = itex
 
 func _on_btn_sauvegarder_pressed() -> void:
 	planetGenerator.save_planet()
@@ -69,10 +75,14 @@ func _on_btn_suivant_pressed() -> void:
 	map_index += 1
 	if map_index >= maps.size():
 		map_index = 0
-	$Node2D/Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = maps[map_index]
+	var itex = ImageTexture.new()
+	itex = ImageTexture.create_from_image(maps[map_index])
+	$Node2D/Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = itex
 
 func _on_btn_precedant_pressed() -> void:
 	map_index -= 1
 	if map_index < 0:
 		map_index = maps.size() - 1
-	$Node2D/Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = maps[map_index]
+	var itex = ImageTexture.new()
+	itex = ImageTexture.create_from_image(maps[map_index])
+	$Node2D/Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = itex
