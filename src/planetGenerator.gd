@@ -210,7 +210,7 @@ func generate_geopolitical_map() -> Image:
 
 func getMaps() -> Array[Image]:
 	return [
-        self.elevation_map
+		self.elevation_map
 	]
 	#	self.elevation_map,
 	#	self.precipitation_map,
