@@ -238,7 +238,7 @@ static func save_image(image: Image, file_name: String) -> String:
 		dir.make_dir("temp")
 		dir = DirAccess.open("res://data/img/temp")
 
-	var img_path = "res://data/img/temp" + file_name
+	var img_path = "res://data/img/temp/" + file_name
 	image.save_png(img_path)
 	print("Saved: ", img_path)
 	return img_path
