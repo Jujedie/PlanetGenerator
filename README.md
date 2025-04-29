@@ -6,7 +6,7 @@ such as :
  - 1 : average temperature
  - 2 : elevation of the water
  - 3 : average precipitation
- - 4 : average elevation 
+ - 4 : raduis of the planet
 and many other.
 
 The resulting output will be pixel art image of the planet
@@ -14,9 +14,9 @@ with a mercator like layout, featuring the various information
 of the planet for example :
  - 1 : elevation map
  - 2 : biome map
- - 3 : terrain map
- - 4 : glaciers map
- - 5 : temperature map
+ - 3 : temperature map
+ - 4 : water map
+ - 5 : geopolitical map
 
 The user can also make a geopolitical map with tool allowing 
 him to give certain border to the planet, actually only colors 
