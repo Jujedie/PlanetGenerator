@@ -34,19 +34,19 @@ func generate_planet():
 	self.elevation_map = generate_elevation_map()
 
 	print("Génération de la carte des précipitations")
-	#self.precipitation_map = generate_precipitation_map()
+	self.precipitation_map = generate_precipitation_map()
 
 	print("Génération de la carte des températures moyennes")
-	#self.temperature_map = generate_temperature_map()
+	self.temperature_map = generate_temperature_map()
 
 	print("Génération de la carte des mers")
-	#self.water_map = generate_water_map()
+	self.water_map = generate_water_map()
 
 	print("Génération de la carte des biomes")
-	#self.biome_map = generate_biome_map()
+	self.biome_map = generate_biome_map()
 
 	print("Génération de la carte géopolitique")
-	#self.geopo_map = generate_geopolitical_map()
+	self.geopo_map = generate_geopolitical_map()
 
 func save_maps():
 	print("Sauvegarde de la carte topographique")
@@ -221,15 +221,13 @@ func getMaps() -> Array[String]:
 
 	print("Génération image map élévation.")
 	return [
-		save_image(self.elevation_map,"elevation_map.png")
+		save_image(self.elevation_map,"elevation_map.png"),
+		save_image(self.precipitation_map,"precipitation_map.png"),
+		save_image(self.temperature_map,"temperature_map.png"),
+		save_image(self.water_map,"water_map.png"),
+		save_image(self.biome_map,"biome_map.png"),
+		save_image(self.geopo_map,"geopo_map.png")
 	]
-	#	self.elevation_map,
-	#	self.precipitation_map,
-	#	self.temperature_map,
-	#	self.water_map,
-	#	self.biome_map,
-	#	self.geopo_map
-	#]
 
 static func save_image(image: Image, file_name: String) -> String:
 	var dir = DirAccess.open("res://data/img/temp")
