@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dq8mub6m16v4q"
-path="res://.godot/imported/tempelevation_map.png-4b3bd03220f41484ac66f2f1e63fbfb6.ctex"
+uid="uid://cfv67q85dtvj4"
+path="res://.godot/imported/geopo_map.png-80e3d516e26051b4b72d2789e0620eb7.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://data/img/tempelevation_map.png"
-dest_files=["res://.godot/imported/tempelevation_map.png-4b3bd03220f41484ac66f2f1e63fbfb6.ctex"]
+source_file="res://data/img/temp/geopo_map.png"
+dest_files=["res://.godot/imported/geopo_map.png-80e3d516e26051b4b72d2789e0620eb7.ctex"]
 
 [params]
 
