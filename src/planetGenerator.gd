@@ -68,6 +68,8 @@ func save_maps():
 	save_image(self.geopo_map, "geopo_map.png")
 
 func generate_elevation_map() -> Image:
+	randomize()
+
 	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
 
@@ -95,6 +97,8 @@ func generate_elevation_map() -> Image:
 	return img
 
 func generate_precipitation_map() -> Image:
+	randomize()
+
 	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
 
@@ -119,6 +123,8 @@ func generate_precipitation_map() -> Image:
 	return img
 
 func generate_temperature_map() -> Image:
+	randomize()
+
 	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
 
@@ -144,6 +150,8 @@ func generate_temperature_map() -> Image:
 	return img
 
 func generate_water_map() -> Image:
+	randomize()
+
 	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
 	
@@ -208,9 +216,12 @@ func generate_geopolitical_map() -> Image:
 			img.set_pixel(x, y, colors[id])
 	return img
 
-func getMaps() -> Array[Image]:
+func getMaps() -> Array[String]:
+	deleteImagesTemps()
+
+	print("Génération image map élévation.")
 	return [
-		self.elevation_map
+		save_image(self.elevation_map,"elevation_map.png")
 	]
 	#	self.elevation_map,
 	#	self.precipitation_map,
@@ -220,7 +231,24 @@ func getMaps() -> Array[Image]:
 	#	self.geopo_map
 	#]
 
-static func save_image(image: Image, file_name: String):
-	var img_path = "user://" + file_name
+static func save_image(image: Image, file_name: String) -> String:
+	var dir = DirAccess.open("res://data/img/temp")
+	if dir == null:
+		dir.make_dir_recursive("res://data/img/temp")
+
+	var img_path = "res://data/img/temp" + file_name
 	image.save_png(img_path)
 	print("Saved: ", img_path)
+	return img_path
+
+static func deleteImagesTemps():
+	var dir = DirAccess.open("res://data/img/temp")
+	if dir == null:
+		dir.make_dir_recursive("res://data/img/temp")
+
+	dir.list_dir_begin()
+	var file_name = dir.get_next()
+	while file_name != "":
+		dir.remove(file_name)
+		file_name = dir.get_next()
+	dir.list_dir_end()
