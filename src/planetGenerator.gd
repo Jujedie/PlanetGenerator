@@ -144,9 +144,9 @@ func generate_temperature_map() -> Image:
 		for y in range(self.circonference / 2):
 
 			var lat = abs((float(y) / (self.circonference / 2)) - 0.5) * 2.0  # Normalized latitude, 0 at center, 1 at poles
-			var temp_variation = noise.get_noise_2d(float(x), float(y)) * 15.0  # Reduced noise impact for smoother variation
-			var lat_effect = (1.0 - pow(lat, 2)) * 30.0  # Quadratic effect for more gradual temperature change
-			var temp = self.avg_temperature + temp_variation - lat_effect
+			var altitude_effect = noise.get_noise_2d(float(x), float(y)) * 20.0  # Increased altitude randomness effect
+			var lat_effect = (1.0 - pow(lat, 2)) * 25.0  # Latitude effect for temperature variation
+			var temp = self.avg_temperature + altitude_effect - lat_effect
 			var color = Couleurs.getTemperatureColor(temp)
 			img.set_pixel(x, y, color)
 			print("x:", x, " y:", y, " temperature_val:", temp)
