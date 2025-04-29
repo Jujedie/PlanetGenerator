@@ -146,20 +146,31 @@ var COULEURS_BIOMES = {
 
 # Définition des couleurs pour les élévations
 var COULEURS_ELEVATIONS = {
-    0: Color.hex(0x232323FF)   , # 0m et moins - Noir
-    100: Color.hex(0x282828FF) , # 100m - Gris très foncé
-    200: Color.hex(0x2E2E2EFF) , # 200m - Gris foncé
-    300: Color.hex(0x353535FF) , # 300m - Gris
-    400: Color.hex(0x3C3C3CFF) , # 400m - Gris moyen
-    500: Color.hex(0x434343FF) , # 500m - Gris clair
-    600: Color.hex(0x4A4A4AFF) , # 600m - Gris plus clair
-    700: Color.hex(0x525252FF) , # 700m - Gris encore plus clair
-    800: Color.hex(0x5C5C5CFF) , # 800m - Gris très clair
-    900: Color.hex(0x666666FF) , # 900m - Presque blanc
-    1000: Color.hex(0x717171FF), # 1000m - Blanc
-    1500: Color.hex(0x7D7D7DFF), # 1500m - Glaciers
-    2000: Color.hex(0x888888FF), # 2000m - Glaciers plus foncés
-    2500: Color.hex(0xA5A5A5FF)  # 2500m et plus - Glaciers encore plus foncés
+    -2250: Color.hex(0x010101FF), # 2250m et moins 
+    -2000: Color.hex(0x050505FF), # 2000m 
+    -1500: Color.hex(0x0A0A0AFF), # 1500m 
+    -1000: Color.hex(0x0F0F0FFF), # 1000m 
+    -500: Color.hex(0x141414FF),  # 500m 
+    -400: Color.hex(0x181818FF),  # 400m 
+    -300: Color.hex(0x1C1C1CFF),  # 300m 
+    -200: Color.hex(0x202020FF),  # 200m 
+    -100: Color.hex(0x202020FF),  # 100m 
+
+    0: Color.hex(0x232323FF)   , # 0m et moins
+    
+    100: Color.hex(0x282828FF) , # 100m 
+    200: Color.hex(0x2E2E2EFF) , # 200m 
+    300: Color.hex(0x353535FF) , # 300m 
+    400: Color.hex(0x3C3C3CFF) , # 400m 
+    500: Color.hex(0x434343FF) , # 500m 
+    600: Color.hex(0x4A4A4AFF) , # 600m 
+    700: Color.hex(0x525252FF) , # 700m 
+    800: Color.hex(0x5C5C5CFF) , # 800m
+    900: Color.hex(0x666666FF) , # 900m
+    1000: Color.hex(0x717171FF), # 1000m
+    1500: Color.hex(0x7D7D7DFF), # 1500m
+    2000: Color.hex(0x888888FF), # 2000m 
+    2500: Color.hex(0xA5A5A5FF)  # 2500m et plus
 }
 
 var COULEURS_TEMPERATURE = {
