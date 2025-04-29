@@ -172,9 +172,9 @@ func generate_water_map() -> Image:
 
 			var elevation_val = Couleurs.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 			if elevation_val <= self.water_elevation and value < 0.5:
-				img.set_pixel(x, y, Color.hex(0xFFFFFF))
+				img.set_pixel(x, y, Color.hex(0xFFFFFFFF))
 			else:
-				img.set_pixel(x, y, Color.hex(0x000000))
+				img.set_pixel(x, y, Color.hex(0x000000FF))
 			print("x:", x, " y:", y, " water_val:", value)
 
 	return img
@@ -190,7 +190,7 @@ func generate_biome_map() -> Image:
 			var elevation_val = Couleurs.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 			var precipitation_val = self.precipitation_map.get_pixel(x, y).r
 			var temperature_val = Couleurs.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
-			var is_water = self.water_map.get_pixel(x, y).r == 1.0
+			var is_water = self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
 
 			var biome_color = Couleurs.getBiomeColor(elevation_val, precipitation_val, temperature_val, is_water)
 			img.set_pixel(x, y, biome_color)
