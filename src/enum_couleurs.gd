@@ -40,7 +40,7 @@ var COULEURS_BIOMES = {
 	"FORET_TEMPEREE": {
 		"couleur": Color.hex(0x47AD40FF),
 		"interval_temp": [10, 25],
-		"interval_precipitation": [0.3, 0.8],
+		"interval_precipitation": [0.2, 0.8],
 		"elevation_minimal": -2500,
 		"water_need": false
 	},
@@ -89,13 +89,13 @@ var COULEURS_BIOMES = {
 	"DESERT_SEMI_ARIDE": {
 		"couleur": Color.hex(0xCDB274FF),
 		"interval_temp": [25, 40],
-		"interval_precipitation": [0.05, 0.1],
+		"interval_precipitation": [0.05, 0.15],
 		"elevation_minimal": -2500,
 		"water_need": false
 	},
 	"TERRES_BRULEES": {
 		"couleur": Color.hex(0x1B1B1BFF),
-		"interval_temp": [40, 60],
+		"interval_temp": [100, 600],
 		"interval_precipitation": [0.0, 0.02],
 		"elevation_minimal": -2500,
 		"water_need": false
@@ -103,27 +103,27 @@ var COULEURS_BIOMES = {
 	"FORET_MONTAGNEUSES": {
 		"couleur": Color.hex(0x5AABD3FF),
 		"interval_temp": [5, 15],
-		"interval_precipitation": [0.2, 0.6],
-		"elevation_minimal": 500,
+		"interval_precipitation": [0.2, 0.8],
+		"elevation_minimal": 250,
 		"water_need": false
 	},
 	"STEPPES_SECHE": {
 		"couleur": Color.hex(0x9F8F6CFF),
-		"interval_temp": [15, 25],
-		"interval_precipitation": [0.05, 0.15],
+		"interval_temp": [15, 50],
+		"interval_precipitation": [0.05, 0.3],
 		"elevation_minimal": -2500,
 		"water_need": false
 	},
 	"STEPPES_TEMPEREE": {
 		"couleur": Color.hex(0xFFCB58FF),
-		"interval_temp": [10, 20],
-		"interval_precipitation": [0.1, 0.3],
+		"interval_temp": [10, 30],
+		"interval_precipitation": [0.3, 0.6],
 		"elevation_minimal": -2500,
 		"water_need": false
 	},
 	"DESERT": {
 		"couleur": Color.hex(0xAA5F3DFF),
-		"interval_temp": [30, 50],
+		"interval_temp": [30, 250],
 		"interval_precipitation": [0.0, 0.05],
 		"elevation_minimal": -2500,
 		"water_need": false
