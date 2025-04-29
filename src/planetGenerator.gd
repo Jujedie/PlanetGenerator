@@ -246,7 +246,9 @@ static func save_image(image: Image, file_name: String) -> String:
 static func deleteImagesTemps():
 	var dir = DirAccess.open("res://data/img/temp")
 	if dir == null:
-		dir.make_dir_recursive("res://data/img/temp")
+		dir = DirAccess.open("res://data/img")
+		dir.make_dir("temp")
+		dir = DirAccess.open("res://data/img/temp")
 
 	dir.list_dir_begin()
 	var file_name = dir.get_next()
