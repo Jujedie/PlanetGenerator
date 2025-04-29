@@ -234,7 +234,9 @@ func getMaps() -> Array[String]:
 static func save_image(image: Image, file_name: String) -> String:
 	var dir = DirAccess.open("res://data/img/temp")
 	if dir == null:
-		dir.make_dir_recursive("res://data/img/temp")
+		dir = DirAccess.open("res://data/img")
+		dir.make_dir("temp")
+		dir = DirAccess.open("res://data/img/temp")
 
 	var img_path = "res://data/img/temp" + file_name
 	image.save_png(img_path)
