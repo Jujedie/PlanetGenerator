@@ -11,7 +11,7 @@ func _ready() -> void:
 	label.text = "Rayon Planétaire : "+str(sldRayonPlanetaire.value)
 	
 	var sldTempMoy = $Node2D/Control/sldTempMoy
-	label = $Node2D/Control/sldHautEau/Node2D/Label
+	label = $Node2D/Control/sldTempMoy/Node2D/Label
 	label.text = "Température Moyenne : "+str(sldTempMoy.value)
 	
 	var sldHautEau = $Node2D/Control/sldHautEau

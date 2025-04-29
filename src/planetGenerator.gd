@@ -21,7 +21,7 @@ var water_map   : Image
 var biome_map   : Image
 var geopo_map   : Image
 
-func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, percent_eau_monde: float = 0.5):
+func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, percent_eau_monde_param: float = 0.7):
 	self.nom = nom_param
 	
 	self.circonference     =  int(rayon * 2 * PI)
@@ -29,6 +29,7 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 	self.avg_temperature   = avg_temperature_param
 	self.water_elevation   = water_elevation_param
 	self.avg_precipitation = avg_precipitation_param
+	self.percent_eau_monde = percent_eau_monde_param
 
 func generate_planet():
 	print("Génération de la carte topographique")
@@ -108,10 +109,10 @@ func generate_precipitation_map() -> Image:
 	noise.seed = randi()
 	noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.frequency = 6.0 / float(self.circonference)
+	noise.frequency = 2.0 / float(self.circonference)
 	noise.fractal_octaves = 9
 	noise.fractal_gain = 0.75
-	noise.fractal_lacunarity = 0.85
+	noise.fractal_lacunarity = 4.0
 
 	print("Génération de la carte")
 	for x in range(self.circonference):
@@ -143,28 +144,26 @@ func generate_temperature_map() -> Image:
 	print("Génération de la carte")
 	for x in range(self.circonference):
 		for y in range(self.circonference / 2):
+
 			# Latitude-based temperature adjustment
 			var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
-			var latitude_temp = -40.0 * latitude + 30.0  # Approximation: 30°C at equator, -40°C at poles
+			var latitude_temp = -30.0 * latitude + 30 * (1-latitude) + self.avg_temperature 
 
 			# Altitude-based temperature adjustment
 			var elevation_val = Couleurs.getElevationViaColor(self.elevation_map.get_pixel(x, y))
-			var altitude_temp = -0.0065 * elevation_val  # Temperature decreases by 6.5°C per 1000m
+			var altitude_temp = -0.065 * elevation_val  # Temperature decreases by 6.5°C per 100m
 
 			# Noise-based randomness
 			var noise_value = noise.get_noise_2d(float(x), float(y))
-			var noise_temp_factor = noise_value * 2.0  # Small random variation
+			var noise_temp_factor = noise_value * 2.5  # Small random variation
 
 			# Calculate final temperature
 			var temp = latitude_temp + altitude_temp + noise_temp_factor
 
-			# Clamp temperature to a reasonable range
-			temp = clamp(temp, -50.0, 50.0)  # Example: -50°C to 50°C
-
 			# Get color based on temperature
 			var color = Couleurs.getTemperatureColor(temp)
 			img.set_pixel(x, y, color)
-			print("x:", x, " y:", y, " temperature_val:", temp)
+			#print("x:", x, " y:", y, " temperature_val:", temp)
 
 	return img
 
@@ -173,7 +172,7 @@ func generate_water_map() -> Image:
 
 	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
-	
+
 	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
 	noise.seed = randi()
@@ -183,6 +182,7 @@ func generate_water_map() -> Image:
 	noise.fractal_lacunarity = 0.5
 
 	print("Génération de la carte")
+	var cptCase = 0
 	for x in range(self.circonference):
 		for y in range(self.circonference / 2):
 			randomize()
@@ -191,11 +191,15 @@ func generate_water_map() -> Image:
 			value = clamp(value, 0.0, 1.0)
 
 			var elevation_val = Couleurs.getElevationViaColor(self.elevation_map.get_pixel(x, y))
-			if elevation_val <= self.water_elevation and value < self.percent_eau_monde:
+			var minCasesEau = int(self.circonference * (self.circonference / 2.0)) * self.percent_eau_monde
+			
+			if elevation_val <= self.water_elevation and ( cptCase < minCasesEau  or value < self.percent_eau_monde ):
 				img.set_pixel(x, y, Color.hex(0xFFFFFFFF))
 			else:
 				img.set_pixel(x, y, Color.hex(0x000000FF))
+	
 			#print("x:", x, " y:", y, " water_val:", value)
+			cptCase += 1
 
 	return img
 
