@@ -32,14 +32,14 @@ var COULEURS_BIOMES = {
 	},
 	"PRAIRIE": {
 		"couleur": Color.hex(0x6CA868FF),
-		"interval_temp": [10, 20],
+		"interval_temp": [10, 33],
 		"interval_precipitation": [0.1, 0.8],
 		"elevation_minimal": -2500,
 		"water_need": false
 	},
 	"FORET_TEMPEREE": {
 		"couleur": Color.hex(0x47AD40FF),
-		"interval_temp": [10, 25],
+		"interval_temp": [10, 33],
 		"interval_precipitation": [0.2, 0.8],
 		"elevation_minimal": -2500,
 		"water_need": false
@@ -53,36 +53,36 @@ var COULEURS_BIOMES = {
 	},
 	"FORET_SUBTROPICAL_TROPICAL": {
 		"couleur": Color.hex(0x427D3EFF),
-		"interval_temp": [15, 30],
+		"interval_temp": [20, 35],
 		"interval_precipitation": [0.4, 1.0],
 		"elevation_minimal": -2500,
 		"water_need": false
 	},
 	"MEDITERRANEEN": {
 		"couleur": Color.hex(0x634167FF),
-		"interval_temp": [15, 25],
+		"interval_temp": [25, 35],
 		"interval_precipitation": [0.3, 0.8],
 		"elevation_minimal": -2500,
 		"water_need": false
 	},
 	"SAVANNE": {
 		"couleur": Color.hex(0xCFAD5FFF),
-		"interval_temp": [20, 30],
-		"interval_precipitation": [0.3, 0.5],
+		"interval_temp": [23, 35],
+		"interval_precipitation": [0.15, 0.5],
 		"elevation_minimal": -2500,
 		"water_need": false
 	},
 	"SAVANNE_ARBUSTIVE": {
 		"couleur": Color.hex(0xBC9741FF),
-		"interval_temp": [20, 35],
-		"interval_precipitation": [0.15, 0.3],
+		"interval_temp": [23, 35],
+		"interval_precipitation": [0.3, 0.8],
 		"elevation_minimal": -2500,
 		"water_need": false
 	},
 	"DESERT_ARIDE": {
 		"couleur": Color.hex(0x7D3F25FF),
 		"interval_temp": [30, 50],
-		"interval_precipitation": [0.0, 0.05],
+		"interval_precipitation": [0.0, 0.08],
 		"elevation_minimal": -2500,
 		"water_need": false
 	},

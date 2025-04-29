@@ -93,7 +93,7 @@ func generate_elevation_map() -> Image:
 			var color = Couleurs.getElevationColor(elevation)
 
 			img.set_pixel(x, y, color)
-			print("x:", x, " y:", y, " elevation_val:", elevation)
+			#print("x:", x, " y:", y, " elevation_val:", elevation)
 
 	return img
 
@@ -108,10 +108,10 @@ func generate_precipitation_map() -> Image:
 	noise.seed = randi()
 	noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.frequency = 1.0 / float(self.circonference)
-	noise.fractal_octaves = 4
-	noise.fractal_gain = 0.5
-	noise.fractal_lacunarity = 0.5
+	noise.frequency = 6.0 / float(self.circonference)
+	noise.fractal_octaves = 9
+	noise.fractal_gain = 0.75
+	noise.fractal_lacunarity = 0.85
 
 	print("Génération de la carte")
 	for x in range(self.circonference):
@@ -120,7 +120,7 @@ func generate_precipitation_map() -> Image:
 			var value = noise.get_noise_2d(float(x), float(y))
 			value = clamp(value, 0.0, 1.0)
 			img.set_pixel(x, y, Color(value, value, value))
-			print("x:", x, " y:", y, " precipitation_val:", value)
+			#print("x:", x, " y:", y, " precipitation_val:", value)
 
 	return img
 
@@ -135,10 +135,10 @@ func generate_temperature_map() -> Image:
 	noise.seed = randi()
 	noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.frequency = 1.0 / float(self.circonference)
-	noise.fractal_octaves = 4
-	noise.fractal_gain = 0.5
-	noise.fractal_lacunarity = 0.5
+	noise.frequency = 10.0 / float(self.circonference)
+	noise.fractal_octaves = 14
+	noise.fractal_gain = 0.85
+	noise.fractal_lacunarity = 0.95
 
 	print("Génération de la carte")
 	for x in range(self.circonference):
@@ -195,7 +195,7 @@ func generate_water_map() -> Image:
 				img.set_pixel(x, y, Color.hex(0xFFFFFFFF))
 			else:
 				img.set_pixel(x, y, Color.hex(0x000000FF))
-			print("x:", x, " y:", y, " water_val:", value)
+			#print("x:", x, " y:", y, " water_val:", value)
 
 	return img
 
@@ -230,6 +230,7 @@ func generate_biome_map() -> Image:
 
 # Génère une carte géopolitique simple basée sur zones colorées aléatoirement
 func generate_geopolitical_map() -> Image:
+	pass
 	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
 
