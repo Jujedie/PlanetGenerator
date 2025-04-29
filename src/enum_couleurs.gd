@@ -11,23 +11,23 @@ var COULEURS_BIOMES = {
 	},
 	"TUNDRA": {
 		"couleur": Color.hex(0x5AC9ECFF),
-		"interval_temp": [-75, 0],
+		"interval_temp": [-75, -10],
 		"interval_precipitation": [0.0, 1.0],
 		"elevation_minimal": -2500,
 		"water_need": false
 	},
 	"FORET_BOREAL": {
 		"couleur": Color.hex(0x275D6EFF),
-		"interval_temp": [0, 10],
+		"interval_temp": [-5, 10],
 		"interval_precipitation": [0.2, 0.9],
 		"elevation_minimal": -2500,
 		"water_need": false
 	},
 	"TUNDRA_ALPINE": {
 		"couleur": Color.hex(0x78ABC1FF),
-		"interval_temp": [-50, 5],
+		"interval_temp": [-50, -5],
 		"interval_precipitation": [0.0, 1.0],
-		"elevation_minimal": 500,
+		"elevation_minimal": 250,
 		"water_need": false
 	},
 	"PRAIRIE": {
