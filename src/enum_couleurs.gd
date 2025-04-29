@@ -225,10 +225,10 @@ func getBiomeColor(elevation_val : int, precipitation_val : float, temperature_v
     var chance = 0.5
     var step = 0.5 / corresponding_biome.size()
 
-    var liste_biomes = corresponding_biome.shuffle()
+    corresponding_biome.shuffle()
 
-    for biome in liste_biomes:
-        if randf() < chance or biome == liste_biomes[len(liste_biomes) - 1]:
+    for biome in corresponding_biome:
+        if randf() < chance or biome == corresponding_biome[len(corresponding_biome) - 1]:
             return COULEURS_BIOMES[biome]["couleur"]
         chance += step
     
