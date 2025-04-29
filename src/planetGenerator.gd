@@ -106,6 +106,7 @@ func generate_precipitation_map() -> Image:
 	var noise = FastNoiseLite.new()
 	noise.seed = randi()
 	noise.noise_type = FastNoiseLite.TYPE_PERLIN
+	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
 	noise.frequency = 1.0 / float(self.circonference)
 	noise.fractal_octaves = 4
 	noise.fractal_gain = 0.5
@@ -141,9 +142,9 @@ func generate_temperature_map() -> Image:
 	for x in range(self.circonference):
 		for y in range(self.circonference / 2):
 
-			var lat  = float(y) / self.circonference/2
-			var temp = self.avg_temperature + (noise.get_noise_2d(float(x), float(y)) * 20.0) - (lat * 20.0)
-			var color= Couleurs.getTemperatureColor(temp)
+			var lat = abs((float(y) / (self.circonference / 2)) - 0.5) * 2.0  # Normalized latitude, 0 at center, 1 at poles
+			var temp = self.avg_temperature + (noise.get_noise_2d(float(x), float(y)) * 20.0) - (lat * 40.0)  # Stronger effect near poles
+			var color = Couleurs.getTemperatureColor(temp)
 			img.set_pixel(x, y, color)
 			print("x:", x, " y:", y, " temperature_val:", temp)
 
