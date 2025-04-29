@@ -5,8 +5,6 @@ var map_actuelle    : Image
 var maps            : Array[String]
 var map_index       : int = 0
 
-# TO DO : SAUVEGARDER AUTOMATIQUEMENT LES IMAGES DANS UN DOSSIER PREDEFINI TEMPORAIRE PUIS LES RECHARGER VIA LOAD
-
 func _ready() -> void:
 	var sldRayonPlanetaire = $Node2D/Control/sldRayonPlanetaire
 	var label = $Node2D/Control/sldRayonPlanetaire/Node2D/Label
