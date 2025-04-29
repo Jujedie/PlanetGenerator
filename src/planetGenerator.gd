@@ -11,6 +11,7 @@ var circonference    : int
 var avg_temperature  : float
 var water_elevation  : int    # l'élévation de l'eau par rapport à la terre [-oo,+oo]
 var avg_precipitation: float  # entre 0 et 1
+var percent_eau_monde: float
 
 # Images générées
 var elevation_map    : Image
@@ -20,7 +21,7 @@ var water_map   : Image
 var biome_map   : Image
 var geopo_map   : Image
 
-func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5):
+func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, percent_eau_monde: float = 0.5):
 	self.nom = nom_param
 	
 	self.circonference     =  int(rayon * 2 * PI)
@@ -142,11 +143,25 @@ func generate_temperature_map() -> Image:
 	print("Génération de la carte")
 	for x in range(self.circonference):
 		for y in range(self.circonference / 2):
+			# Latitude-based temperature adjustment
+			var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
+			var latitude_temp_factor = 1.0 - latitude  # Higher temperature near the equator
 
-			var lat = abs((float(y) / (self.circonference / 2)) - 0.5) * 2.0  # Normalized latitude, 0 at center, 1 at poles
-			var altitude_effect = noise.get_noise_2d(float(x), float(y)) * 20.0  # Increased altitude randomness effect
-			var lat_effect = (1.0 - pow(lat, 2)) * 25.0  # Latitude effect for temperature variation
-			var temp = self.avg_temperature + altitude_effect - lat_effect
+			# Altitude-based temperature adjustment
+			var elevation_val = Couleurs.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+			var altitude_temp_factor = max(0.0, 1.0 - (elevation_val / 5000.0))  # Assume 5000m as max elevation
+
+			# Noise-based randomness
+			var noise_value = noise.get_noise_2d(float(x), float(y))
+			var noise_temp_factor = noise_value * 5.0  # Small random variation
+
+			# Calculate final temperature
+			var temp = self.avg_temperature * latitude_temp_factor * altitude_temp_factor + noise_temp_factor
+
+			# Clamp temperature to a reasonable range
+			temp = clamp(temp, -50.0, 50.0)  # Example: -50°C to 50°C
+
+			# Get color based on temperature
 			var color = Couleurs.getTemperatureColor(temp)
 			img.set_pixel(x, y, color)
 			print("x:", x, " y:", y, " temperature_val:", temp)
@@ -170,6 +185,7 @@ func generate_water_map() -> Image:
 	print("Génération de la carte")
 	for x in range(self.circonference):
 		for y in range(self.circonference / 2):
+			randomize()
 
 			var value = noise.get_noise_2d(float(x), float(y))
 			value = clamp(value, 0.0, 1.0)
@@ -186,6 +202,16 @@ func generate_water_map() -> Image:
 func generate_biome_map() -> Image:
 	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
+	
+	print("Initialisation du bruit")
+	var noise = FastNoiseLite.new()
+	noise.seed = randi()
+	noise.noise_type = FastNoiseLite.TYPE_PERLIN
+	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise.frequency = 1.0 / float(self.circonference)
+	noise.fractal_octaves = 4
+	noise.fractal_gain = 0.5
+	noise.fractal_lacunarity = 0.5
 	
 	print("Génération de la carte")
 	for x in range(self.circonference):
