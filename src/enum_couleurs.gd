@@ -222,8 +222,14 @@ func getBiomeColor(elevation_val : int, precipitation_val : float, temperature_v
             biome_data["water_need"] == is_water):
             corresponding_biome.append(biome)
     
-    for biome in corresponding_biome:
-        if randf() < 0.5:
+    var chance = 0.5
+    var step = 0.5 / corresponding_biome.size()
+
+    var liste_biomes = corresponding_biome.shuffle()
+
+    for biome in liste_biomes:
+        if randf() < chance or biome == liste_biomes[len(liste_biomes) - 1]:
             return COULEURS_BIOMES[biome]["couleur"]
+        chance += step
     
-    return Color.hex(0xFFFFFF)
+    return Color.hex(0xFFFFFFF)
