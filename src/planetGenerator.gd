@@ -145,18 +145,18 @@ func generate_temperature_map() -> Image:
 		for y in range(self.circonference / 2):
 			# Latitude-based temperature adjustment
 			var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
-			var latitude_temp_factor = 1.0 - latitude  # Higher temperature near the equator
+			var latitude_temp = -40.0 * latitude + 30.0  # Approximation: 30°C at equator, -40°C at poles
 
 			# Altitude-based temperature adjustment
 			var elevation_val = Couleurs.getElevationViaColor(self.elevation_map.get_pixel(x, y))
-			var altitude_temp_factor = max(0.0, 1.0 - (elevation_val / 5000.0))  # Assume 5000m as max elevation
+			var altitude_temp = -0.0065 * elevation_val  # Temperature decreases by 6.5°C per 1000m
 
 			# Noise-based randomness
 			var noise_value = noise.get_noise_2d(float(x), float(y))
-			var noise_temp_factor = noise_value * 5.0  # Small random variation
+			var noise_temp_factor = noise_value * 2.0  # Small random variation
 
 			# Calculate final temperature
-			var temp = self.avg_temperature * latitude_temp_factor * altitude_temp_factor + noise_temp_factor
+			var temp = latitude_temp + altitude_temp + noise_temp_factor
 
 			# Clamp temperature to a reasonable range
 			temp = clamp(temp, -50.0, 50.0)  # Example: -50°C to 50°C
@@ -191,7 +191,7 @@ func generate_water_map() -> Image:
 			value = clamp(value, 0.0, 1.0)
 
 			var elevation_val = Couleurs.getElevationViaColor(self.elevation_map.get_pixel(x, y))
-			if elevation_val <= self.water_elevation and value < 0.5:
+			if elevation_val <= self.water_elevation and value < self.percent_eau_monde:
 				img.set_pixel(x, y, Color.hex(0xFFFFFFFF))
 			else:
 				img.set_pixel(x, y, Color.hex(0x000000FF))
@@ -224,7 +224,7 @@ func generate_biome_map() -> Image:
 
 			var biome_color = Couleurs.getBiomeColor(elevation_val, precipitation_val, temperature_val, is_water)
 			img.set_pixel(x, y, biome_color)
-			print("x:", x, " y:", y, " biome_val:", biome_color)
+			#print("x:", x, " y:", y, " biome_val:", biome_color)
 
 	return img
 
