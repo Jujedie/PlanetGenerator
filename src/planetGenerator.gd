@@ -105,7 +105,7 @@ func generate_precipitation_map() -> Image:
 	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
 	noise.seed = randi()
-	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	noise.frequency = 1.0 / float(self.circonference)
 	noise.fractal_octaves = 4
 	noise.fractal_gain = 0.5

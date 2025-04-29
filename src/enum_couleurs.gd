@@ -153,11 +153,11 @@ var COULEURS_ELEVATIONS = {
     -500: Color.hex(0x141414FF),  # 500m 
     -400: Color.hex(0x181818FF),  # 400m 
     -300: Color.hex(0x1C1C1CFF),  # 300m 
-    -200: Color.hex(0x202020FF),  # 200m 
+    -200: Color.hex(0x1E1E1EFF),  # 200m 
     -100: Color.hex(0x202020FF),  # 100m 
 
     0: Color.hex(0x232323FF)   , # 0m et moins
-    
+
     100: Color.hex(0x282828FF) , # 100m 
     200: Color.hex(0x2E2E2EFF) , # 200m 
     300: Color.hex(0x353535FF) , # 300m 
