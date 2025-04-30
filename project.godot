@@ -17,7 +17,7 @@ config/icon="res://data/img/icon.png"
 
 [autoload]
 
-Couleurs="*res://src/enum_couleurs.gd"
+Enum="*res://src/enum.gd"
 
 [rendering]
 
