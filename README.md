@@ -16,7 +16,7 @@ of the planet for example :
  - 2 : biome map
  - 3 : temperature map
  - 4 : water map
- - 5 : geopolitical map
+ - 5 : geopolitical map ( blank to be manualy modified )
 
 The user can also make a geopolitical map with tool allowing 
 him to give certain border to the planet, actually only colors 
