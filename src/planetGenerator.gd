@@ -92,8 +92,8 @@ func generate_elevation_map() -> Image:
 		for y in range(self.circonference / 2):
 
 			var value = noise.get_noise_2d(float(x), float(y))
-			var elevation = ceil(value * (2500.0 + elevation_modifier))
-			var color = Couleurs.getElevationColor(elevation)
+			var elevation = ceil(value * (Enum.ALTITUDE_MAX + elevation_modifier))
+			var color = Enum.getElevationColor(elevation)
 
 			img.set_pixel(x, y, color)
 			#print("x:", x, " y:", y, " elevation_val:", elevation)
@@ -136,7 +136,7 @@ func generate_temperature_map() -> Image:
 	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
 	noise.seed = randi()
-	noise.noise_type = FastNoiseLite.TYPE_PERLIN
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
 	noise.frequency = 10.0 / float(self.circonference)
 	noise.fractal_octaves = 14
@@ -152,7 +152,7 @@ func generate_temperature_map() -> Image:
 			var latitude_temp = -40.0 * latitude + self.avg_temperature 
 
 			# Altitude-based temperature adjustment
-			var elevation_val = Couleurs.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+			var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 			var altitude_temp = -0.065 * (elevation_val - self.water_elevation)  # Temperature decreases by 6.5°C per 100m
 
 			# Noise-based randomness
@@ -163,7 +163,7 @@ func generate_temperature_map() -> Image:
 			var temp = latitude_temp + altitude_temp + noise_temp_factor
 
 			# Get color based on temperature
-			var color = Couleurs.getTemperatureColor(temp)
+			var color = Enum.getTemperatureColor(temp)
 			img.set_pixel(x, y, color)
 			#print("x:", x, " y:", y, " temperature_val:", temp)
 
@@ -192,7 +192,7 @@ func generate_water_map() -> Image:
 			var value = noise.get_noise_2d(float(x), float(y))
 			value = clamp(value, 0.0, 1.0)
 
-			var elevation_val = Couleurs.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+			var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 			var minCasesEau = int(self.circonference * (self.circonference / 2.0)) * self.percent_eau_monde
 			
 			if elevation_val <= self.water_elevation and ( cptCase < minCasesEau  or value < self.percent_eau_monde ):
@@ -223,12 +223,12 @@ func generate_biome_map() -> Image:
 	for x in range(self.circonference):
 		for y in range(self.circonference / 2):
 
-			var elevation_val = Couleurs.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+			var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 			var precipitation_val = self.precipitation_map.get_pixel(x, y).r
-			var temperature_val = Couleurs.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
+			var temperature_val = Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
 			var is_water = self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
 
-			var biome_color = Couleurs.getBiomeColor(elevation_val, precipitation_val, temperature_val, is_water)
+			var biome_color = Enum.getBiomeColor(elevation_val, precipitation_val, temperature_val, is_water)
 			img.set_pixel(x, y, biome_color)
 			#print("x:", x, " y:", y, " biome_val:", biome_color)
 
