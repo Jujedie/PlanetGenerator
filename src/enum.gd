@@ -1,12 +1,12 @@
 extends Node
 
-const ALTITUDE_MAX = 10000
+const ALTITUDE_MAX = 2500
 
 # Définition des couleurs pour chaque biome avec des informations supplémentaires
 var BIOMES = [
 	Biome.new("Banquise", Color.hex(0xE0FFFFFF), [-273, 0], [0.0, 1.0], [-ALTITUDE_MAX, 0], true),
 	Biome.new("Cheminée hydrothermale", Color.hex(0xFF4500FF), [2, 500], [0.0,1.0],[-ALTITUDE_MAX, -1000], true),
-	Biome.new("Lagune salée", Color.hex(0xFFD700FF), [10, 60], [0.0, 0.5], [-10, 500], true),
+	Biome.new("Lagune salée", Color.hex(0xFFD700FF), [10, 60], [0.0, 1.0], [-10, 500], true),
 	Biome.new("Océan ouvert", Color.hex(0x1e90FFFF), [-2, 30], [0.0, 1.0], [-ALTITUDE_MAX, 0], true),
 	Biome.new("Zone côtière (littorale)", Color.hex(0x20B2AAFF), [0, 30], [0.0, 1.0], [-1000, 0], true),
 	Biome.new("Désert cryogénique mort", Color.hex(0x111111FF), [-273, -150], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
@@ -36,7 +36,7 @@ var BIOMES = [
 
 # Définition des couleurs pour les élévations
 var COULEURS_ELEVATIONS = {
-	-2250: Color.hex(0x010101FF), # 2250m et moins 
+	-ALTITUDE_MAX: Color.hex(0x010101FF), # 2250m et moins 
 	-2000: Color.hex(0x050505FF), # 2000m 
 	-1500: Color.hex(0x0A0A0AFF), # 1500m 
 	-1000: Color.hex(0x0F0F0FFF), # 1000m 
@@ -60,7 +60,7 @@ var COULEURS_ELEVATIONS = {
 	1000: Color.hex(0x717171FF), # 1000m
 	1500: Color.hex(0x7D7D7DFF), # 1500m
 	2000: Color.hex(0x888888FF), # 2000m 
-	2500: Color.hex(0xA5A5A5FF)  # 2500m et plus
+	ALTITUDE_MAX: Color.hex(0xA5A5A5FF)  # 2500m et plus
 }
 
 var COULEURS_TEMPERATURE = {
@@ -80,7 +80,7 @@ func getElevationColor(elevation: int) -> Color:
 	for key in COULEURS_ELEVATIONS.keys():
 		if elevation <= key:
 			return COULEURS_ELEVATIONS[key]
-	return COULEURS_ELEVATIONS[2500]
+	return COULEURS_ELEVATIONS[ALTITUDE_MAX]
 
 func getElevationViaColor(color: Color) -> int:
 	for key in COULEURS_ELEVATIONS.keys():
@@ -112,14 +112,16 @@ func getBiomeColor(elevation_val : int, precipitation_val : float, temperature_v
 			is_water == biome.get_water_need()):
 			corresponding_biome.append(biome)
 	
-	var chance = 0.5
-	var step = 0.5 / corresponding_biome.size()
+	randomize()
+	var chance = randf()
+	var step = (1 - chance) / corresponding_biome.size()
 
 	corresponding_biome.shuffle()
 
 	for biome in corresponding_biome:
+		randomize()
 		if randf() < chance or biome == corresponding_biome[len(corresponding_biome) - 1]:
 			return biome.get_couleur()
 		chance += step
 	
-	return Color.hex(0x000000FF)
+	return Color.hex(0xFF0000FF)

@@ -35,22 +35,22 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 
 func generate_planet():
 	print("Génération de la carte topographique")
-	self.elevation_map = generate_elevation_map()
+	generate_elevation_map()
 
 	print("Génération de la carte des précipitations")
-	self.precipitation_map = generate_precipitation_map()
+	generate_precipitation_map()
 
 	print("Génération de la carte des températures moyennes")
-	self.temperature_map = generate_temperature_map()
+	generate_temperature_map()
 
 	print("Génération de la carte des mers")
-	self.water_map = generate_water_map()
+	generate_water_map()
 
 	print("Génération de la carte des biomes")
-	self.biome_map = generate_biome_map()
+	generate_biome_map()
 
 	print("Génération de la carte géopolitique")
-	self.geopo_map = generate_geopolitical_map()
+	generate_geopolitical_map()
 
 func save_maps():
 	print("Sauvegarde de la carte topographique")
@@ -71,7 +71,7 @@ func save_maps():
 	print("Sauvegarde de la carte géopolitique")
 	save_image(self.geopo_map, "geopo_map.png")
 
-func generate_elevation_map() -> Image:
+func generate_elevation_map() -> void:
 	randomize()
 
 	print("Création de l'image")
@@ -98,9 +98,9 @@ func generate_elevation_map() -> Image:
 			img.set_pixel(x, y, color)
 			#print("x:", x, " y:", y, " elevation_val:", elevation)
 
-	return img
+	self.elevation_map = img
 
-func generate_precipitation_map() -> Image:
+func generate_precipitation_map() -> void:
 	randomize()
 
 	print("Création de l'image")
@@ -109,7 +109,7 @@ func generate_precipitation_map() -> Image:
 	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
 	noise.seed = randi()
-	noise.noise_type = FastNoiseLite.TYPE_PERLIN
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
 	noise.frequency = 2.0 / float(self.circonference)
 	noise.fractal_octaves = 9
@@ -125,9 +125,9 @@ func generate_precipitation_map() -> Image:
 			img.set_pixel(x, y, Color(value, value, value))
 			#print("x:", x, " y:", y, " precipitation_val:", value)
 
-	return img
+	self.precipitation_map = img
 
-func generate_temperature_map() -> Image:
+func generate_temperature_map() -> void:
 	randomize()
 
 	print("Création de l'image")
@@ -138,10 +138,10 @@ func generate_temperature_map() -> Image:
 	noise.seed = randi()
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.frequency = 10.0 / float(self.circonference)
+	noise.frequency = 4.0 / float(self.circonference)
 	noise.fractal_octaves = 14
 	noise.fractal_gain = 0.85
-	noise.fractal_lacunarity = 0.95
+	noise.fractal_lacunarity = 0.2
 
 	print("Génération de la carte")
 	for x in range(self.circonference):
@@ -167,9 +167,9 @@ func generate_temperature_map() -> Image:
 			img.set_pixel(x, y, color)
 			#print("x:", x, " y:", y, " temperature_val:", temp)
 
-	return img
+	self.temperature_map = img
 
-func generate_water_map() -> Image:
+func generate_water_map() -> void:
 	randomize()
 
 	print("Création de l'image")
@@ -203,9 +203,9 @@ func generate_water_map() -> Image:
 			#print("x:", x, " y:", y, " water_val:", value)
 			cptCase += 1
 
-	return img
+	self.water_map = img
 
-func generate_biome_map() -> Image:
+func generate_biome_map() -> void:
 	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
 	
@@ -232,10 +232,10 @@ func generate_biome_map() -> Image:
 			img.set_pixel(x, y, biome_color)
 			#print("x:", x, " y:", y, " biome_val:", biome_color)
 
-	return img
+	self.biome_map = img
 
 # Génère une carte géopolitique simple basée sur zones colorées aléatoirement
-func generate_geopolitical_map() -> Image:
+func generate_geopolitical_map() -> void:
 	pass
 	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
@@ -251,7 +251,7 @@ func generate_geopolitical_map() -> Image:
 
 			var id = int(floor(float(x) / 100)) % colors.size()
 			img.set_pixel(x, y, colors[id])
-	return img
+	self.geopo_map = img
 
 func getMaps() -> Array[String]:
 	deleteImagesTemps()
