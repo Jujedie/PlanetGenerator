@@ -1,7 +1,7 @@
 {
 	"godotTools.editorPath.godot4": "g:\\SteamLibrary\\steamapps\\common\\Godot Engine\\godot.windows.opt.tools.64.exe",
 	"github.copilot.enable": {
-		"*": false,
+		"*": true,
 		"plaintext": true,
 		"markdown": false,
 		"scminput": false

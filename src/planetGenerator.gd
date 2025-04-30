@@ -8,10 +8,11 @@ var nom: String
 var circonference    : int
 
 # Paramètres de génération
-var avg_temperature  : float
-var water_elevation  : int    # l'élévation de l'eau par rapport à la terre [-oo,+oo]
-var avg_precipitation: float  # entre 0 et 1
-var percent_eau_monde: float
+var avg_temperature   : float
+var water_elevation   : int    # l'élévation de l'eau par rapport à la terre [-oo,+oo]
+var avg_precipitation : float  # entre 0 et 1
+var percent_eau_monde : float
+var elevation_modifier: int
 
 # Images générées
 var elevation_map    : Image
@@ -21,7 +22,7 @@ var water_map   : Image
 var biome_map   : Image
 var geopo_map   : Image
 
-func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, percent_eau_monde_param: float = 0.7):
+func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, percent_eau_monde_param: float = 0.7, elevation_modifier_param: int = 0):
 	self.nom = nom_param
 	
 	self.circonference     =  int(rayon * 2 * PI)
@@ -30,6 +31,7 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 	self.water_elevation   = water_elevation_param
 	self.avg_precipitation = avg_precipitation_param
 	self.percent_eau_monde = percent_eau_monde_param
+	self.elevation_modifier= elevation_modifier_param
 
 func generate_planet():
 	print("Génération de la carte topographique")
@@ -90,7 +92,7 @@ func generate_elevation_map() -> Image:
 		for y in range(self.circonference / 2):
 
 			var value = noise.get_noise_2d(float(x), float(y))
-			var elevation = ceil(value * 2500.0)
+			var elevation = ceil(value * (2500.0 + elevation_modifier))
 			var color = Couleurs.getElevationColor(elevation)
 
 			img.set_pixel(x, y, color)
@@ -147,15 +149,15 @@ func generate_temperature_map() -> Image:
 
 			# Latitude-based temperature adjustment
 			var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
-			var latitude_temp = -30.0 * latitude + 30 * (1-latitude) + self.avg_temperature 
+			var latitude_temp = -40.0 * latitude + self.avg_temperature 
 
 			# Altitude-based temperature adjustment
 			var elevation_val = Couleurs.getElevationViaColor(self.elevation_map.get_pixel(x, y))
-			var altitude_temp = -0.065 * elevation_val  # Temperature decreases by 6.5°C per 100m
+			var altitude_temp = -0.065 * (elevation_val - self.water_elevation)  # Temperature decreases by 6.5°C per 100m
 
 			# Noise-based randomness
 			var noise_value = noise.get_noise_2d(float(x), float(y))
-			var noise_temp_factor = noise_value * 2.5  # Small random variation
+			var noise_temp_factor = noise_value * 2.0  # Small random variation
 
 			# Calculate final temperature
 			var temp = latitude_temp + altitude_temp + noise_temp_factor
