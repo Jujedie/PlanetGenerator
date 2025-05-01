@@ -214,7 +214,7 @@ func generate_temperature_map() -> void:
 
 			# Noise-based randomness
 			var noise_value = noise.get_noise_2d(float(x), float(y))
-			var noise_temp_factor = noise_value * self.avg_temperature  # Small random variation
+			var noise_temp_factor = noise_value * self.avg_temperature / 1.5 
 
 			# Calculate final temperature
 			var temp = latitude_temp + altitude_temp + noise_temp_factor
