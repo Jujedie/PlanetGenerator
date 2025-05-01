@@ -206,7 +206,7 @@ func generate_temperature_map() -> void:
 
 			# Latitude-based temperature adjustment
 			var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
-			var latitude_temp = -5.0 * latitude + 5.0 * (1-latitude) + self.avg_temperature
+			var latitude_temp = -7.5 * latitude + 7.5 * (1-latitude) + self.avg_temperature
 
 			# Altitude-based temperature adjustment
 			var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
