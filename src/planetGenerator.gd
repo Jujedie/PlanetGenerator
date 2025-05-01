@@ -52,6 +52,9 @@ func generate_planet():
 	print("Génération de la carte géopolitique")
 	generate_geopolitical_map()
 
+	print("===================")
+	print("Génération Terminée")
+
 func save_maps():
 	print("Sauvegarde de la carte topographique")
 	save_image(self.elevation_map, "elevation_map.png")
@@ -226,7 +229,7 @@ func generate_biome_map() -> void:
 			var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 			var precipitation_val = self.precipitation_map.get_pixel(x, y).r
 			var temperature_val = Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
-			var is_water = self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
+			var is_water        = self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
 
 			var biome_color = Enum.getBiomeColor(elevation_val, precipitation_val, temperature_val, is_water)
 			img.set_pixel(x, y, biome_color)

@@ -20,10 +20,8 @@ func _init(nom_param: String, couleur_param: Color, interval_temp_param: Array[i
 	self.interval_elevation     = interval_elevation_param
 	self.water_need             = water_need_param
 
-func get_elevation_minimal() -> int:
-	return self.interval_elevation[0]
-func get_elevation_maximal() -> int:
-	return self.interval_elevation[1]
+func get_interval_elevation() ->  Array[int]:
+	return self.interval_elevation
 func get_interval_temp() -> Array[int]:
 	return self.interval_temp
 func get_interval_precipitation() -> Array[float]:
@@ -35,10 +33,8 @@ func get_nom() -> String:
 func get_couleur() -> Color:
 	return self.couleur
 
-func set_elevation_minimal(elevation_min: int):
-	self.interval_elevation[0] = elevation_min
-func set_elevation_maximal(elevation_max: int):
-	self.interval_elevation[1] = elevation_max
+func set_elevation_minimal(elevation:  Array[int]):
+	self.interval_elevation = elevation
 func set_interval_temp(interval_temp: Array[int]):
 	self.interval_temp = interval_temp
 func set_interval_precipitation(interval_precipitation: Array[float]):
