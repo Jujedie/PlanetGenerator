@@ -2,8 +2,6 @@ extends RefCounted
 
 class_name PlanetGenerator
 
-# TO DO REMOVE INSTANCE PARAMETERS FROM INSTANCE METHODS
-
 var nom: String
 var circonference    : int
 
@@ -37,20 +35,21 @@ func generate_planet():
 	print("Génération de la carte topographique")
 	generate_elevation_map()
 
+	print("Génération de la carte des mers")
+	generate_water_map()
+
 	print("Génération de la carte des précipitations")
 	generate_precipitation_map()
 
 	print("Génération de la carte des températures moyennes")
 	generate_temperature_map()
 
-	print("Génération de la carte des mers")
-	generate_water_map()
-
 	print("Génération de la carte des biomes")
 	generate_biome_map()
 
 	print("Génération de la carte géopolitique")
-	generate_geopolitical_map()
+	#generate_geopolitical_map()
+	self.geopo_map = self.biome_map
 
 	print("===================")
 	print("Génération Terminée")
@@ -90,12 +89,31 @@ func generate_elevation_map() -> void:
 	noise.fractal_gain = 0.75
 	noise.fractal_lacunarity = 2.0
 
+	var noise2 = FastNoiseLite.new()
+	noise2.seed = randi()
+	noise2.noise_type = FastNoiseLite.TYPE_PERLIN
+	noise2.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise2.frequency = 2.0 / float(self.circonference)
+	noise2.fractal_octaves = 8
+	noise2.fractal_gain = 0.75
+	noise2.fractal_lacunarity = 2.0
+
 	print("Génération de la carte")
 	for x in range(self.circonference):
 		for y in range(self.circonference / 2):
 
 			var value = noise.get_noise_2d(float(x), float(y))
-			var elevation = ceil(value * (Enum.ALTITUDE_MAX + elevation_modifier))
+			var elevation = ceil(value * (1000 + self.water_elevation + elevation_modifier))
+
+			if elevation >=  (1000 + self.water_elevation + elevation_modifier) - 100:
+				value = noise2.get_noise_2d(float(x), float(y))
+				value = clamp(value, 0.0, 1.0)
+				elevation = elevation + ceil(value * Enum.ALTITUDE_MAX)
+			elif elevation <= -(1000 + self.water_elevation + elevation_modifier) + 100:
+				value = noise2.get_noise_2d(float(x), float(y))
+				value = clamp(value, -1.0, 0.0)
+				elevation = elevation + ceil(value * Enum.ALTITUDE_MAX)
+
 			var color = Enum.getElevationColor(elevation)
 
 			img.set_pixel(x, y, color)
@@ -114,9 +132,9 @@ func generate_precipitation_map() -> void:
 	noise.seed = randi()
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.frequency = 2.0 / float(self.circonference)
+	noise.frequency = 3.0 / float(self.circonference)
 	noise.fractal_octaves = 9
-	noise.fractal_gain = 0.75
+	noise.fractal_gain = 0.85
 	noise.fractal_lacunarity = 4.0
 
 	print("Génération de la carte")
@@ -124,53 +142,12 @@ func generate_precipitation_map() -> void:
 		for y in range(self.circonference / 2):
 
 			var value = noise.get_noise_2d(float(x), float(y))
-			value = clamp(value, 0.0, 1.0)
+			value = clamp(value, 0.0, 1.0) + self.avg_precipitation * value / 2.0
+
 			img.set_pixel(x, y, Color(value, value, value))
 			#print("x:", x, " y:", y, " precipitation_val:", value)
 
 	self.precipitation_map = img
-
-func generate_temperature_map() -> void:
-	randomize()
-
-	print("Création de l'image")
-	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
-
-	print("Initialisation du bruit")
-	var noise = FastNoiseLite.new()
-	noise.seed = randi()
-	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.frequency = 4.0 / float(self.circonference)
-	noise.fractal_octaves = 14
-	noise.fractal_gain = 0.85
-	noise.fractal_lacunarity = 0.2
-
-	print("Génération de la carte")
-	for x in range(self.circonference):
-		for y in range(self.circonference / 2):
-
-			# Latitude-based temperature adjustment
-			var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
-			var latitude_temp = -40.0 * latitude + self.avg_temperature 
-
-			# Altitude-based temperature adjustment
-			var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
-			var altitude_temp = -0.065 * (elevation_val - self.water_elevation)  # Temperature decreases by 6.5°C per 100m
-
-			# Noise-based randomness
-			var noise_value = noise.get_noise_2d(float(x), float(y))
-			var noise_temp_factor = noise_value * 2.0  # Small random variation
-
-			# Calculate final temperature
-			var temp = latitude_temp + altitude_temp + noise_temp_factor
-
-			# Get color based on temperature
-			var color = Enum.getTemperatureColor(temp)
-			img.set_pixel(x, y, color)
-			#print("x:", x, " y:", y, " temperature_val:", temp)
-
-	self.temperature_map = img
 
 func generate_water_map() -> void:
 	randomize()
@@ -202,11 +179,55 @@ func generate_water_map() -> void:
 				img.set_pixel(x, y, Color.hex(0xFFFFFFFF))
 			else:
 				img.set_pixel(x, y, Color.hex(0x000000FF))
-	
-			#print("x:", x, " y:", y, " water_val:", value)
+			
 			cptCase += 1
 
 	self.water_map = img
+
+func generate_temperature_map() -> void:
+	randomize()
+
+	print("Création de l'image")
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
+
+	print("Initialisation du bruit")
+	var noise = FastNoiseLite.new()
+	noise.seed = randi()
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise.frequency = 4.0 / float(self.circonference)
+	noise.fractal_octaves = 14
+	noise.fractal_gain = 0.25
+	noise.fractal_lacunarity = 0.2
+
+	print("Génération de la carte")
+	for x in range(self.circonference):
+		for y in range(self.circonference / 2):
+
+			# Latitude-based temperature adjustment
+			var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
+			var latitude_temp = -5.0 * latitude + 5.0 * (1-latitude) + self.avg_temperature
+
+			# Altitude-based temperature adjustment
+			var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+			var altitude_temp = -0.065 * (elevation_val - self.water_elevation)  # Temperature decreases by 6.5°C per 100m
+
+			# Noise-based randomness
+			var noise_value = noise.get_noise_2d(float(x), float(y))
+			var noise_temp_factor = noise_value * self.avg_temperature  # Small random variation
+
+			# Calculate final temperature
+			var temp = latitude_temp + altitude_temp + noise_temp_factor
+
+			if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
+				temp = temp - 5.6
+
+			# Get color based on temperature
+			var color = Enum.getTemperatureColor(temp)
+			img.set_pixel(x, y, color)
+			#print("x:", x, " y:", y, " temperature_val:", temp)
+
+	self.temperature_map = img
 
 func generate_biome_map() -> void:
 	print("Création de l'image")
