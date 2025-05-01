@@ -98,7 +98,7 @@ theme_override_styles/grabber_area = ExtResource("4_w6tpy")
 theme_override_styles/grabber_area_highlight = ExtResource("4_w6tpy")
 min_value = -273.0
 max_value = 500.0
-value = 18.0
+value = 15.0
 metadata/_edit_lock_ = true
 
 [node name="Node2D" type="Node2D" parent="Node2D/Control/sldTempMoy"]
