@@ -2,7 +2,7 @@ extends Node
 
 const ALTITUDE_MAX = 2500
 
-# Définition des couleurs pour chaque biome avec des informations supplémentaires
+# Définir des couleurs réaliste pour le rendu final et des couleurs distinctes
 var BIOMES = [
 	Biome.new("Banquise", Color.hex(0xf0f0f0FF), [-273, 0], [0.0, 1.0], [-ALTITUDE_MAX, 0], true),
 	Biome.new("Rivière/Cours d’eau", Color.hex(0x4a688aFF), [0, 25], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true),
