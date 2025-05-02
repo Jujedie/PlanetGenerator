@@ -18,7 +18,7 @@ var precipitation_map: Image
 var temperature_map  : Image
 var water_map   : Image
 var biome_map   : Image
-var geopo_map   : Image
+var final_map   : Image
 
 func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, percent_eau_monde_param: float = 0.7, elevation_modifier_param: int = 0):
 	self.nom = nom_param
@@ -32,29 +32,31 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 	self.elevation_modifier= elevation_modifier_param
 
 func generate_planet():
-	print("Génération de la carte topographique")
+	print("\nGénération de la carte finale\n")
+	generate_final_map()
+
+	print("\nGénération de la carte topographique\n")
 	generate_elevation_map()
 
-	print("Génération de la carte des mers")
+	print("\nGénération de la carte des mers\n")
 	generate_water_map()
 
-	print("Génération de la carte des précipitations")
+	print("\nGénération de la carte des précipitations\n")
 	generate_precipitation_map()
 
-	print("Génération de la carte des températures moyennes")
+	print("\nGénération de la carte des températures moyennes\n")
 	generate_temperature_map()
 
-	print("Génération de la carte des biomes")
-	generate_biome_map()
+	print("\nGénération de la carte des biomes\n")
+	generate_biome_map()	
 
-	print("Génération de la carte géopolitique")
-	#generate_geopolitical_map()
-	self.geopo_map = self.biome_map
-
-	print("===================")
-	print("Génération Terminée")
+	print("\n===================")
+	print("Génération Terminée\n")
 
 func save_maps():
+	print("Sauvegarde de la carte finale")
+	save_image(self.final_map, "final_map.png")
+
 	print("Sauvegarde de la carte topographique")
 	save_image(self.elevation_map, "elevation_map.png")
 
@@ -70,8 +72,7 @@ func save_maps():
 	print("Sauvegarde de la carte des biomes")
 	save_image(self.biome_map, "biome_map.png")
 
-	print("Sauvegarde de la carte géopolitique")
-	save_image(self.geopo_map, "geopo_map.png")
+	
 
 func generate_elevation_map() -> void:
 	randomize()
@@ -252,42 +253,30 @@ func generate_biome_map() -> void:
 			var temperature_val = Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
 			var is_water        = self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
 
-			var biome_color = Enum.getBiomeColor(elevation_val, precipitation_val, temperature_val, is_water)
+			var biome_color = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water).get_couleur()
+			var biomeVegetation = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water).get_couleur_vegetation()
 			img.set_pixel(x, y, biome_color)
-			#print("x:", x, " y:", y, " biome_val:", biome_color)
+			self.final_map.set_pixel(x, y, biomeVegetation)
 
 	self.biome_map = img
 
-# Génère une carte géopolitique simple basée sur zones colorées aléatoirement
-func generate_geopolitical_map() -> void:
+func generate_final_map() -> void:
 	pass
 	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
 
-	print("Initialisation des couleurs")
-	var rng = RandomNumberGenerator.new()
-	rng.randomize()
-	var colors = [Color.RED, Color.BLUE, Color.GREEN, Color.YELLOW, Color.ORANGE]
-
-	print("Génération de la carte")
-	for x in range(self.circonference):
-		for y in range(self.circonference / 2):
-
-			var id = int(floor(float(x) / 100)) % colors.size()
-			img.set_pixel(x, y, colors[id])
-	self.geopo_map = img
+	self.final_map = img
 
 func getMaps() -> Array[String]:
 	deleteImagesTemps()
 
-	print("Génération image map élévation.")
 	return [
 		save_image(self.elevation_map,"elevation_map.png"),
 		save_image(self.precipitation_map,"precipitation_map.png"),
 		save_image(self.temperature_map,"temperature_map.png"),
 		save_image(self.water_map,"water_map.png"),
 		save_image(self.biome_map,"biome_map.png"),
-		save_image(self.geopo_map,"geopo_map.png")
+		save_image(self.final_map,"final_map.png")
 	]
 
 static func save_image(image: Image, file_name: String) -> String:
