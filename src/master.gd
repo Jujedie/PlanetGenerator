@@ -68,7 +68,7 @@ func _on_btn_comfirme_pressed() -> void:
 	planetGenerator.generate_planet()
 	maps = planetGenerator.getMaps()
 
-	print(maps[map_index])
+	print()
 	
 	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = load(maps[map_index])
 
