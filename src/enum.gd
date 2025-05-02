@@ -13,7 +13,7 @@ var BIOMES = [
 	Biome.new("Zone humide (marais/marécage)", Color.hex(0xFF), Color.hex(0x568472FF), [5, 30], [0.75, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true),
 	Biome.new("Récif corallien", Color.hex(0xFF), Color.hex(0x3f5875FF), [20, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true),
 	Biome.new("Lagune salée", Color.hex(0xFF), Color.hex(0x517b6bFF), [10, 60], [0.0, 1.0], [-10, 500], true),
-	Biome.new("Cheminée hydrothermale", Color.hex(0xFF), Color.hex(0x364b63FF), [2, 500], [0.0,1.0],[-ALTITUDE_MAX, -1000], true),
+	Biome.new("Cheminée hydrothermale", Color.hex(0xFF), Color.hex(0x364b63FF), [2, 500], [0.0,1.0],[-ALTITUDE_MAX, ALTITUDE_MAX], true),
 
 
 	Biome.new("Désert cryogénique mort", Color.hex(0xFF), Color.hex(0x111111FF), [-273, -150], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
