@@ -4,16 +4,17 @@ class_name Biome
 
 var nom: String
 var couleur: Color
+var couleur_vegetation: Color
 
 var interval_temp		  : Array[int]
 var interval_precipitation: Array[float]
 var interval_elevation    : Array[int]
 var water_need			  : bool
 
-# L'altitude minimale et maximale du biome dépend de l'élévation de la mer
-func _init(nom_param: String, couleur_param: Color, interval_temp_param: Array[int], interval_precipitation_param: Array[float], interval_elevation_param: Array[int], water_need_param: bool):
+func _init(nom_param: String, couleur_param: Color, couleur_vegetation_param: Color, interval_temp_param: Array[int], interval_precipitation_param: Array[float], interval_elevation_param: Array[int], water_need_param: bool):
 	self.nom     = nom_param
 	self.couleur = couleur_param
+	self.couleur_vegetation = couleur_vegetation_param
 
 	self.interval_temp          = interval_temp_param
 	self.interval_precipitation = interval_precipitation_param
@@ -32,9 +33,11 @@ func get_nom() -> String:
 	return self.nom
 func get_couleur() -> Color:
 	return self.couleur
+func get_couleur_vegetation() -> Color:
+	return self.couleur_vegetation
 
-func set_elevation_minimal(elevation:  Array[int]):
-	self.interval_elevation = elevation
+func set_interval_elevation(interval_elevation: Array[int]):
+	self.interval_elevation = interval_elevation
 func set_interval_temp(interval_temp: Array[int]):
 	self.interval_temp = interval_temp
 func set_interval_precipitation(interval_precipitation: Array[float]):
@@ -45,5 +48,5 @@ func set_nom(nom: String):
 	self.nom = nom
 func set_couleur(couleur: Color):
 	self.couleur = couleur
-func set_interval_elevation(interval_elevation: Array[int]):
-	self.interval_elevation = interval_elevation
+func set_couleur_vegetation(couleur_vegetation: Color):
+	self.couleur_vegetation = couleur_vegetation
