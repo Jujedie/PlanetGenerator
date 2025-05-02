@@ -6,14 +6,14 @@ const ALTITUDE_MAX = 2500
 var BIOMES = [
 	Biome.new("Banquise", Color.hex(0xFF), Color.hex(0xf0f0f0FF), [-273, 0], [0.0, 1.0], [-ALTITUDE_MAX, 0], true),
 	Biome.new("Rivière/Cours d’eau", Color.hex(0xFF), Color.hex(0x4a688aFF), [0, 25], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true),
-	Biome.new("Océan ouvert", Color.hex(0xFF), Color.hex(0x486385FF), [-2, 30], [0.0, 1.0], [-ALTITUDE_MAX, 0], true),
+	Biome.new("Océan", Color.hex(0xFF), Color.hex(0x486385FF), [-21, 90], [0.0, 1.0], [-ALTITUDE_MAX, 0], true),
 	Biome.new("Lac/Étang", Color.hex(0xFF), Color.hex(0x455f80FF), [0, 30], [0.4, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true),
 	Biome.new("Zone côtière (littorale)", Color.hex(0xFF), Color.hex(0x425b7aFF), [0, 30], [0.0, 1.0], [-1000, 0], true),
 
 	Biome.new("Zone humide (marais/marécage)", Color.hex(0xFF), Color.hex(0x568472FF), [5, 30], [0.75, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true),
 	Biome.new("Récif corallien", Color.hex(0xFF), Color.hex(0x3f5875FF), [20, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true),
 	Biome.new("Lagune salée", Color.hex(0xFF), Color.hex(0x517b6bFF), [10, 60], [0.0, 1.0], [-10, 500], true),
-	Biome.new("Cheminée hydrothermale", Color.hex(0xFF), Color.hex(0x364b63FF), [2, 500], [0.0,1.0],[-ALTITUDE_MAX, ALTITUDE_MAX], true),
+	Biome.new("Cheminée hydrothermale", Color.hex(0xFF), Color.hex(0x364b63FF), [2, 500], [0.0,1.0],[-ALTITUDE_MAX, -1000], true),
 
 
 	Biome.new("Désert cryogénique mort", Color.hex(0xFF), Color.hex(0x111111FF), [-273, -150], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
