@@ -135,6 +135,7 @@ func generate_elevation_map() -> void:
 		for thread in threadArray:
 			thread.wait_to_finish()
 			
+	print("Fin de la génération de la carte")
 	self.elevation_map = img
 
 func elevation_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
@@ -187,6 +188,7 @@ func generate_precipitation_map() -> void:
 		for thread in threadArray:
 			thread.wait_to_finish()
 
+	print("Fin de la génération de la carte")
 	self.precipitation_map = img
 
 func precipitation_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
@@ -213,10 +215,10 @@ func generate_water_map() -> void:
 	print("Génération de la carte")
 	var range = circonference / 4
 	var threadArray = []
-	for i in range(1,5,1):
+	for i in range(0,4,1):
 		var x1 = i * range
 		var x2
-		if i == 4:
+		if i == 3:
 			x2 = self.circonference
 		else:
 			x2 = (i + 1) * range
@@ -226,6 +228,7 @@ func generate_water_map() -> void:
 		for thread in threadArray:
 			thread.wait_to_finish()
 
+	print("Fin de la génération de la carte")
 	self.water_map = img
 
 func water_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
@@ -278,6 +281,7 @@ func generate_temperature_map() -> void:
 		for thread in threadArray:
 			thread.wait_to_finish()
 
+	print("Fin de la génération de la carte")
 	self.temperature_map = img
 
 func temperature_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
@@ -320,12 +324,12 @@ func generate_biome_map() -> void:
 	noise.fractal_lacunarity = 0.5
 	
 	print("Génération de la carte")
-	var range = circonference / 4
+	var range = circonference / 8
 	var threadArray = []
-	for i in range(0,4,1):
+	for i in range(0,8,1):
 		var x1 = i * range
 		var x2
-		if i == 3:
+		if i == 7:
 			x2 = self.circonference
 		else:
 			x2 = (i + 1) * range
@@ -335,6 +339,7 @@ func generate_biome_map() -> void:
 		for thread in threadArray:
 			thread.wait_to_finish()
 
+	print("Fin de la génération de la carte")
 	self.biome_map = img
 
 func biome_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
@@ -343,8 +348,8 @@ func biome_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 	var temperature_val = Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
 	var is_water        = self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
 
-	var biome_color = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water).get_couleur()
-	var biomeVegetation = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water).get_couleur_vegetation()
+	var biome_color = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water, img, x, y).get_couleur()
+	var biomeVegetation = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water, img, x, y).get_couleur_vegetation()
 
 	img.set_pixel(x, y, biome_color)
 	self.final_map.set_pixel(x, y, biomeVegetation)
@@ -361,6 +366,7 @@ func generate_final_map() -> void:
 	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
 
+	print("Fin de la génération de la carte")
 	self.final_map = img
 
 func getMaps() -> Array[String]:
