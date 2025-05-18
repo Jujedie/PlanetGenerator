@@ -118,7 +118,6 @@ func generate_elevation_map() -> void:
 			var color = Enum.getElevationColor(elevation)
 
 			img.set_pixel(x, y, color)
-			#print("x:", x, " y:", y, " elevation_val:", elevation)
 
 	self.elevation_map = img
 
@@ -143,10 +142,9 @@ func generate_precipitation_map() -> void:
 		for y in range(self.circonference / 2):
 
 			var value = noise.get_noise_2d(float(x), float(y))
-			value = clamp(value, 0.0, 1.0) + self.avg_precipitation * value / 2.0
+			value = clamp((value + self.avg_precipitation * value / 2.0), 0.0, 1.0) 
 
 			img.set_pixel(x, y, Color(value, value, value))
-			#print("x:", x, " y:", y, " precipitation_val:", value)
 
 	self.precipitation_map = img
 
@@ -226,7 +224,6 @@ func generate_temperature_map() -> void:
 			# Get color based on temperature
 			var color = Enum.getTemperatureColor(temp)
 			img.set_pixel(x, y, color)
-			#print("x:", x, " y:", y, " temperature_val:", temp)
 
 	self.temperature_map = img
 
