@@ -44,7 +44,7 @@ func generate_planet():
 	var thread_precipitation = Thread.new()
 	thread_precipitation.start(generate_precipitation_map)
 
-	while thread_elevation.is_active():
+	while thread_elevation.is_alive():
 		var timer = Timer.new()
 		timer.wait_time = 0.5
 		timer.start()
@@ -54,7 +54,7 @@ func generate_planet():
 	var thread_water = Thread.new()
 	thread_water.start(generate_water_map)
 
-	while thread_precipitation.is_active():
+	while thread_precipitation.is_alive():
 		var timer = Timer.new()
 		timer.wait_time = 0.5
 		timer.start()
@@ -64,7 +64,7 @@ func generate_planet():
 	var thread_temperature = Thread.new()
 	thread_temperature.start(generate_temperature_map)
 
-	while thread_temperature.is_active():
+	while thread_temperature.is_alive():
 		var timer = Timer.new()
 		timer.wait_time = 0.5
 		timer.start()
@@ -74,7 +74,7 @@ func generate_planet():
 	var thread_biome = Thread.new()
 	thread_biome.start(generate_biome_map)
 
-	while thread_biome.is_active():
+	while thread_biome.is_alive():
 		var timer = Timer.new()
 		timer.wait_time = 0.5
 		timer.start()
