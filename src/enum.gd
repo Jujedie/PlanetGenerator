@@ -127,7 +127,7 @@ func getTemperatureViaColor(color: Color) -> float:
 			return key
 	return 0.0
 
-func getBiome(elevation_val : int, precipitation_val : float, temperature_val : int, is_water : bool) -> Biome:
+func getBiome(elevation_val : int, precipitation_val : float, temperature_val : int, is_water : bool, img_biome: Image, x:int, y:int) -> Biome:
 	var corresponding_biome : Array[Biome] = []
 
 	for biome in BIOMES:
@@ -140,6 +140,8 @@ func getBiome(elevation_val : int, precipitation_val : float, temperature_val : 
 			is_water == biome.get_water_need()):
 			corresponding_biome.append(biome)
 	
+	var most_common_biome = getMostCommonSurroundingBiome(getSuroundingBiomes(img_biome, x, y))
+
 	randomize()
 	var chance = randf()
 	var step = (1 - chance) / corresponding_biome.size()
@@ -148,8 +150,47 @@ func getBiome(elevation_val : int, precipitation_val : float, temperature_val : 
 
 	for biome in corresponding_biome:
 		randomize()
-		if randf() < chance or biome == corresponding_biome[len(corresponding_biome) - 1]:
+		if randf() < chance or biome == corresponding_biome[len(corresponding_biome) - 1] or biome == most_common_biome:
 			return biome
 		chance += step
 	
 	return Biome.new("Aucun", Color.hex(0xFF0000FF), Color.hex(0xFF0000FF), [0, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false)
+
+func getSuroundingBiomes(img_biome: Image, x:int, y:int) -> Array:
+	var surrounding_biomes = []
+	
+	for i in range(-1, 2):
+		for j in range(-1, 2):
+			if i == 0 and j == 0:
+				continue
+			var new_x = x + i
+			var new_y = y + j
+			if new_x >= 0 and new_x < img_biome.get_width() and new_y >= 0 and new_y < img_biome.get_height():
+				var color = img_biome.get_pixel(new_x, new_y)
+				for biome in BIOMES:
+					if biome.get_couleur() == color:
+						surrounding_biomes.append(biome)
+						break
+	
+	return surrounding_biomes
+
+func getMostCommonSurroundingBiome(biomes : Array) -> Biome:
+	var biome_count = {}
+	for biome in biomes:
+		if biome.get_nom() in biome_count:
+			biome_count[biome.get_nom()] += 1
+		else:
+			biome_count[biome.get_nom()] = 1
+	
+	var most_common_biome = ""
+	var max_count = 0
+	for biome_name in biome_count.keys():
+		if biome_count[biome_name] > max_count:
+			max_count = biome_count[biome_name]
+			most_common_biome = biome_name
+	
+	for biome in BIOMES:
+		if biome.get_nom() == most_common_biome:
+			return biome
+	
+	return Biome.NULL
