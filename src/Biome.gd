@@ -2,6 +2,8 @@ extends RefCounted
 
 class_name Biome
 
+const NULL = null
+
 var nom: String
 var couleur: Color
 var couleur_vegetation: Color
