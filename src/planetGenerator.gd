@@ -33,22 +33,52 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 
 func generate_planet():
 	print("\nGénération de la carte finale\n")
-	generate_final_map()
+	var thread_final = Thread.new()
+	thread_final.start(generate_final_map)
 
 	print("\nGénération de la carte topographique\n")
-	generate_elevation_map()
-
-	print("\nGénération de la carte des mers\n")
-	generate_water_map()
+	var thread_elevation = Thread.new()
+	thread_elevation.start(generate_elevation_map)
 
 	print("\nGénération de la carte des précipitations\n")
-	generate_precipitation_map()
+	var thread_precipitation = Thread.new()
+	thread_precipitation.start(generate_precipitation_map)
+
+	while thread_elevation.is_active():
+		var timer = Timer.new()
+		timer.wait_time = 0.5
+		timer.start()
+		await timer.timeout
+
+	print("\nGénération de la carte des mers\n")
+	var thread_water = Thread.new()
+	thread_water.start(generate_water_map)
+
+	while thread_precipitation.is_active():
+		var timer = Timer.new()
+		timer.wait_time = 0.5
+		timer.start()
+		await timer.timeout
 
 	print("\nGénération de la carte des températures moyennes\n")
-	generate_temperature_map()
+	var thread_temperature = Thread.new()
+	thread_temperature.start(generate_temperature_map)
+
+	while thread_temperature.is_active():
+		var timer = Timer.new()
+		timer.wait_time = 0.5
+		timer.start()
+		await timer.timeout
 
 	print("\nGénération de la carte des biomes\n")
-	generate_biome_map()	
+	var thread_biome = Thread.new()
+	thread_biome.start(generate_biome_map)
+
+	while thread_biome.is_active():
+		var timer = Timer.new()
+		timer.wait_time = 0.5
+		timer.start()
+		await timer.timeout
 
 	print("\n===================")
 	print("Génération Terminée\n")
@@ -72,7 +102,6 @@ func save_maps():
 	print("Sauvegarde de la carte des biomes")
 	save_image(self.biome_map, "biome_map.png")
 
-	
 
 func generate_elevation_map() -> void:
 	randomize()
@@ -100,26 +129,37 @@ func generate_elevation_map() -> void:
 	noise2.fractal_lacunarity = 2.0
 
 	print("Génération de la carte")
-	for x in range(self.circonference):
-		for y in range(self.circonference / 2):
+	var range = circonference / 4
+	for i in range(1,5,1):
+		var x1 = i * range
+		var x2
+		if i == 4:
+			x2 = self.circonference
+		else:
+			x2 = (i + 1) * range
 
-			var value = noise.get_noise_2d(float(x), float(y))
-			var elevation = ceil(value * (1000 + self.water_elevation + elevation_modifier))
-
-			if elevation >=  (1000 + self.water_elevation + elevation_modifier) - 100:
-				value = noise2.get_noise_2d(float(x), float(y))
-				value = clamp(value, 0.0, 1.0)
-				elevation = elevation + ceil(value * Enum.ALTITUDE_MAX)
-			elif elevation <= -(1000 + self.water_elevation + elevation_modifier) + 100:
-				value = noise2.get_noise_2d(float(x), float(y))
-				value = clamp(value, -1.0, 0.0)
-				elevation = elevation + ceil(value * Enum.ALTITUDE_MAX)
-
-			var color = Enum.getElevationColor(elevation)
-
-			img.set_pixel(x, y, color)
-
+		var thread = Thread.new()
+		thread.start(thread_calcul.bind(img,noise,noise2,x1,x2,elevation_calcul))
+			
 	self.elevation_map = img
+
+func elevation_calcul(img,noise, noise2, x : int,y : int) -> void:
+	var value = noise.get_noise_2d(float(x), float(y))
+	var elevation = ceil(value * (1000 + self.water_elevation + elevation_modifier))
+
+	if elevation >=  (1000 + self.water_elevation + elevation_modifier) - 100:
+		value = noise2.get_noise_2d(float(x), float(y))
+		value = clamp(value, 0.0, 1.0)
+		elevation = elevation + ceil(value * Enum.ALTITUDE_MAX)
+	elif elevation <= -(1000 + self.water_elevation + elevation_modifier) + 100:
+		value = noise2.get_noise_2d(float(x), float(y))
+		value = clamp(value, -1.0, 0.0)
+		elevation = elevation + ceil(value * Enum.ALTITUDE_MAX)
+
+	var color = Enum.getElevationColor(elevation)
+
+	img.set_pixel(x, y, color)
+
 
 func generate_precipitation_map() -> void:
 	randomize()
@@ -138,15 +178,26 @@ func generate_precipitation_map() -> void:
 	noise.fractal_lacunarity = 4.0
 
 	print("Génération de la carte")
-	for x in range(self.circonference):
-		for y in range(self.circonference / 2):
+	var range = circonference / 4
+	for i in range(1,5,1):
+		var x1 = i * range
+		var x2
+		if i == 4:
+			x2 = self.circonference
+		else:
+			x2 = (i + 1) * range
 
-			var value = noise.get_noise_2d(float(x), float(y))
-			value = clamp((value + self.avg_precipitation * value / 2.0), 0.0, 1.0) 
-
-			img.set_pixel(x, y, Color(value, value, value))
+		var thread = Thread.new()
+		thread.start(thread_calcul.bind(img,noise,noise,x1,x2,precipitation_calcul))
 
 	self.precipitation_map = img
+
+func precipitation_calcul(img,noise, noise2, x : int,y : int) -> void:
+	var value = noise.get_noise_2d(float(x), float(y))
+	value = clamp((value + self.avg_precipitation * value / 2.0), 0.0, 1.0) 
+
+	img.set_pixel(x, y, Color(value, value, value))
+
 
 func generate_water_map() -> void:
 	randomize()
@@ -163,25 +214,37 @@ func generate_water_map() -> void:
 	noise.fractal_lacunarity = 0.5
 
 	print("Génération de la carte")
-	var cptCase = 0
-	for x in range(self.circonference):
-		for y in range(self.circonference / 2):
-			randomize()
+	var range = circonference / 4
+	for i in range(1,5,1):
+		var x1 = i * range
+		var x2
+		if i == 4:
+			x2 = self.circonference
+		else:
+			x2 = (i + 1) * range
 
-			var value = noise.get_noise_2d(float(x), float(y))
-			value = clamp(value, 0.0, 1.0)
-
-			var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
-			var minCasesEau = int(self.circonference * (self.circonference / 2.0)) * self.percent_eau_monde
-			
-			if elevation_val <= self.water_elevation and ( cptCase < minCasesEau  or value < self.percent_eau_monde ):
-				img.set_pixel(x, y, Color.hex(0xFFFFFFFF))
-			else:
-				img.set_pixel(x, y, Color.hex(0x000000FF))
-			
-			cptCase += 1
+		var thread = Thread.new()
+		thread.start(thread_calcul.bind(img,noise,noise,x1,x2,water_calcul))
 
 	self.water_map = img
+
+func water_calcul(img,noise, noise2, x : int,y : int) -> void:
+		var cptCase = 0
+		randomize()
+
+		var value = noise.get_noise_2d(float(x), float(y))
+		value = clamp(value, 0.0, 1.0)
+
+		var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+		var minCasesEau = int(self.circonference * (self.circonference / 2.0)) * self.percent_eau_monde
+			
+		if elevation_val <= self.water_elevation and ( cptCase < minCasesEau  or value < self.percent_eau_monde ):
+			img.set_pixel(x, y, Color.hex(0xFFFFFFFF))
+		else:
+			img.set_pixel(x, y, Color.hex(0x000000FF))
+			
+		cptCase += 1
+
 
 func generate_temperature_map() -> void:
 	randomize()
@@ -200,32 +263,43 @@ func generate_temperature_map() -> void:
 	noise.fractal_lacunarity = 0.2
 
 	print("Génération de la carte")
-	for x in range(self.circonference):
-		for y in range(self.circonference / 2):
+	var range = circonference / 4
+	for i in range(1,5,1):
+		var x1 = i * range
+		var x2
+		if i == 4:
+			x2 = self.circonference
+		else:
+			x2 = (i + 1) * range
 
-			# Latitude-based temperature adjustment
-			var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
-			var latitude_temp = -7.5 * latitude + 7.5 * (1-latitude) + self.avg_temperature
-
-			# Altitude-based temperature adjustment
-			var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
-			var altitude_temp = -0.065 * (elevation_val - self.water_elevation)  # Temperature decreases by 6.5°C per 100m
-
-			# Noise-based randomness
-			var noise_value = noise.get_noise_2d(float(x), float(y))
-			var noise_temp_factor = noise_value * self.avg_temperature / 1.5 
-
-			# Calculate final temperature
-			var temp = latitude_temp + altitude_temp + noise_temp_factor
-
-			if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
-				temp = temp - 5.6
-
-			# Get color based on temperature
-			var color = Enum.getTemperatureColor(temp)
-			img.set_pixel(x, y, color)
+		var thread = Thread.new()
+		thread.start(thread_calcul.bind(img,noise,noise,x1,x2,temperature_calcul))
 
 	self.temperature_map = img
+
+func temperature_calcul(img,noise, noise2, x : int,y : int) -> void:
+	# Latitude-based temperature adjustment
+	var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
+	var latitude_temp = -7.5 * latitude + 7.5 * (1-latitude) + self.avg_temperature
+
+	# Altitude-based temperature adjustment
+	var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+	var altitude_temp = -0.065 * (elevation_val - self.water_elevation)  # Temperature decreases by 6.5°C per 100m
+
+	# Noise-based randomness
+	var noise_value = noise.get_noise_2d(float(x), float(y))
+	var noise_temp_factor = noise_value * self.avg_temperature / 1.5 
+
+	# Calculate final temperature
+	var temp = latitude_temp + altitude_temp + noise_temp_factor
+
+	if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
+		temp = temp - 5.6
+
+	# Get color based on temperature
+	var color = Enum.getTemperatureColor(temp)
+	img.set_pixel(x, y, color)
+
 
 func generate_biome_map() -> void:
 	print("Création de l'image")
@@ -242,20 +316,37 @@ func generate_biome_map() -> void:
 	noise.fractal_lacunarity = 0.5
 	
 	print("Génération de la carte")
-	for x in range(self.circonference):
-		for y in range(self.circonference / 2):
+	var range = circonference / 4
+	for i in range(1,5,1):
+		var x1 = i * range
+		var x2
+		if i == 4:
+			x2 = self.circonference
+		else:
+			x2 = (i + 1) * range
 
-			var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
-			var precipitation_val = self.precipitation_map.get_pixel(x, y).r
-			var temperature_val = Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
-			var is_water        = self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
-
-			var biome_color = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water).get_couleur()
-			var biomeVegetation = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water).get_couleur_vegetation()
-			img.set_pixel(x, y, biome_color)
-			self.final_map.set_pixel(x, y, biomeVegetation)
+		var thread = Thread.new()
+		thread.start(thread_calcul.bind(img,noise,noise,x1,x2,biome_calcul))
 
 	self.biome_map = img
+
+func biome_calcul(img,noise, noise2, x : int,y : int) -> void:
+	var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+	var precipitation_val = self.precipitation_map.get_pixel(x, y).r
+	var temperature_val = Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
+	var is_water        = self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
+
+	var biome_color = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water).get_couleur()
+	var biomeVegetation = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water).get_couleur_vegetation()
+	img.set_pixel(x, y, biome_color)
+	self.final_map.set_pixel(x, y, biomeVegetation)
+
+
+func thread_calcul(img: Image, noise: FastNoiseLite, noise2: FastNoiseLite, x1: int, x2: int, function : Callable) -> void:
+	for x in range(x1, x2):
+		for y in range(self.circonference / 2):
+			function.call(img, noise, noise2, x, y)
+
 
 func generate_final_map() -> void:
 	pass
