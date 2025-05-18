@@ -44,62 +44,53 @@ func generate_planet():
 	var thread_precipitation = Thread.new()
 	thread_precipitation.start(generate_precipitation_map)
 
-	while thread_elevation.is_alive():
-		var timer = Timer.new()
-		timer.wait_time = 0.5
-		timer.start()
-		await timer.timeout
+	thread_elevation.wait_to_finish()
 
 	print("\nGénération de la carte des mers\n")
 	var thread_water = Thread.new()
 	thread_water.start(generate_water_map)
 
-	while thread_precipitation.is_alive():
-		var timer = Timer.new()
-		timer.wait_time = 0.5
-		timer.start()
-		await timer.timeout
+	thread_precipitation.wait_to_finish()
+	thread_water.wait_to_finish()
 
 	print("\nGénération de la carte des températures moyennes\n")
 	var thread_temperature = Thread.new()
 	thread_temperature.start(generate_temperature_map)
 
-	while thread_temperature.is_alive():
-		var timer = Timer.new()
-		timer.wait_time = 0.5
-		timer.start()
-		await timer.timeout
+	thread_temperature.wait_to_finish()
 
 	print("\nGénération de la carte des biomes\n")
 	var thread_biome = Thread.new()
 	thread_biome.start(generate_biome_map)
 
-	while thread_biome.is_alive():
-		var timer = Timer.new()
-		timer.wait_time = 0.5
-		timer.start()
-		await timer.timeout
+	thread_biome.wait_to_finish()
 
 	print("\n===================")
 	print("Génération Terminée\n")
 
 func save_maps():
 	print("Sauvegarde de la carte finale")
+	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.final_map, "final_map.png")
 
 	print("Sauvegarde de la carte topographique")
+	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.elevation_map, "elevation_map.png")
 
 	print("Sauvegarde de la carte des précipitations")
+	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.precipitation_map, "precipitation_map.png")
 
 	print("Sauvegarde de la carte des températures moyennes")
+	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.temperature_map, "temperature_map.png")
 
 	print("Sauvegarde de la carte des mers")
+	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.water_map, "water_map.png")
 
 	print("Sauvegarde de la carte des biomes")
+	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.biome_map, "biome_map.png")
 
 
@@ -130,20 +121,23 @@ func generate_elevation_map() -> void:
 
 	print("Génération de la carte")
 	var range = circonference / 4
-	for i in range(1,5,1):
+	var threadArray = []
+	for i in range(0,4,1):
 		var x1 = i * range
 		var x2
-		if i == 4:
+		if i == 3:
 			x2 = self.circonference
 		else:
 			x2 = (i + 1) * range
 
-		var thread = Thread.new()
-		thread.start(thread_calcul.bind(img,noise,noise2,x1,x2,elevation_calcul))
+		threadArray.append(Thread.new())
+		threadArray[i-1].start(thread_calcul.bind(img,noise,noise2,x1,x2,elevation_calcul))
+		for thread in threadArray:
+			thread.wait_to_finish()
 			
 	self.elevation_map = img
 
-func elevation_calcul(img,noise, noise2, x : int,y : int) -> void:
+func elevation_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 	var value = noise.get_noise_2d(float(x), float(y))
 	var elevation = ceil(value * (1000 + self.water_elevation + elevation_modifier))
 
@@ -179,22 +173,25 @@ func generate_precipitation_map() -> void:
 
 	print("Génération de la carte")
 	var range = circonference / 4
-	for i in range(1,5,1):
+	var threadArray = []
+	for i in range(0,4,1):
 		var x1 = i * range
 		var x2
-		if i == 4:
+		if i == 3:
 			x2 = self.circonference
 		else:
 			x2 = (i + 1) * range
 
-		var thread = Thread.new()
-		thread.start(thread_calcul.bind(img,noise,noise,x1,x2,precipitation_calcul))
+		threadArray.append(Thread.new())
+		threadArray[i-1].start(thread_calcul.bind(img,noise,noise,x1,x2,precipitation_calcul))
+		for thread in threadArray:
+			thread.wait_to_finish()
 
 	self.precipitation_map = img
 
-func precipitation_calcul(img,noise, noise2, x : int,y : int) -> void:
+func precipitation_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 	var value = noise.get_noise_2d(float(x), float(y))
-	value = clamp((value + self.avg_precipitation * value / 2.0), 0.0, 1.0) 
+	value = clamp((value + self.avg_precipitation * value / 2.0), 0.0, 1.0)
 
 	img.set_pixel(x, y, Color(value, value, value))
 
@@ -215,6 +212,7 @@ func generate_water_map() -> void:
 
 	print("Génération de la carte")
 	var range = circonference / 4
+	var threadArray = []
 	for i in range(1,5,1):
 		var x1 = i * range
 		var x2
@@ -223,12 +221,14 @@ func generate_water_map() -> void:
 		else:
 			x2 = (i + 1) * range
 
-		var thread = Thread.new()
-		thread.start(thread_calcul.bind(img,noise,noise,x1,x2,water_calcul))
+		threadArray.append(Thread.new())
+		threadArray[i-1].start(thread_calcul.bind(img,noise,noise,x1,x2,water_calcul))
+		for thread in threadArray:
+			thread.wait_to_finish()
 
 	self.water_map = img
 
-func water_calcul(img,noise, noise2, x : int,y : int) -> void:
+func water_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 		var cptCase = 0
 		randomize()
 
@@ -264,20 +264,23 @@ func generate_temperature_map() -> void:
 
 	print("Génération de la carte")
 	var range = circonference / 4
-	for i in range(1,5,1):
+	var threadArray = []
+	for i in range(0,4,1):
 		var x1 = i * range
 		var x2
-		if i == 4:
+		if i == 3:
 			x2 = self.circonference
 		else:
 			x2 = (i + 1) * range
 
-		var thread = Thread.new()
-		thread.start(thread_calcul.bind(img,noise,noise,x1,x2,temperature_calcul))
+		threadArray.append(Thread.new())
+		threadArray[i-1].start(thread_calcul.bind(img,noise,noise,x1,x2,temperature_calcul))
+		for thread in threadArray:
+			thread.wait_to_finish()
 
 	self.temperature_map = img
 
-func temperature_calcul(img,noise, noise2, x : int,y : int) -> void:
+func temperature_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 	# Latitude-based temperature adjustment
 	var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
 	var latitude_temp = -7.5 * latitude + 7.5 * (1-latitude) + self.avg_temperature
@@ -298,6 +301,7 @@ func temperature_calcul(img,noise, noise2, x : int,y : int) -> void:
 
 	# Get color based on temperature
 	var color = Enum.getTemperatureColor(temp)
+
 	img.set_pixel(x, y, color)
 
 
@@ -317,20 +321,23 @@ func generate_biome_map() -> void:
 	
 	print("Génération de la carte")
 	var range = circonference / 4
-	for i in range(1,5,1):
+	var threadArray = []
+	for i in range(0,4,1):
 		var x1 = i * range
 		var x2
-		if i == 4:
+		if i == 3:
 			x2 = self.circonference
 		else:
 			x2 = (i + 1) * range
 
-		var thread = Thread.new()
-		thread.start(thread_calcul.bind(img,noise,noise,x1,x2,biome_calcul))
+		threadArray.append(Thread.new())
+		threadArray[i-1].start(thread_calcul.bind(img,noise,noise,x1,x2,biome_calcul))
+		for thread in threadArray:
+			thread.wait_to_finish()
 
 	self.biome_map = img
 
-func biome_calcul(img,noise, noise2, x : int,y : int) -> void:
+func biome_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 	var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 	var precipitation_val = self.precipitation_map.get_pixel(x, y).r
 	var temperature_val = Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
@@ -338,6 +345,7 @@ func biome_calcul(img,noise, noise2, x : int,y : int) -> void:
 
 	var biome_color = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water).get_couleur()
 	var biomeVegetation = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water).get_couleur_vegetation()
+
 	img.set_pixel(x, y, biome_color)
 	self.final_map.set_pixel(x, y, biomeVegetation)
 
@@ -366,6 +374,9 @@ func getMaps() -> Array[String]:
 		save_image(self.biome_map,"biome_map.png"),
 		save_image(self.final_map,"final_map.png")
 	]
+
+func is_ready() -> bool:
+	return self.elevation_map != null and self.precipitation_map != null and self.temperature_map != null and self.water_map != null and self.biome_map != null and self.final_map != null
 
 static func save_image(image: Image, file_name: String) -> String:
 	var dir = DirAccess.open("res://data/img/temp")
