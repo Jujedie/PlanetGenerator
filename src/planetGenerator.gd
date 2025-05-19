@@ -120,20 +120,17 @@ func generate_elevation_map() -> void:
 	noise2.fractal_lacunarity = 2.0
 
 	print("Génération de la carte")
-	var range = circonference / 4
+	var range = circonference / 14
 	var threadArray = []
-	for i in range(0,4,1):
+	for i in range(0, 14, 1):
 		var x1 = i * range
-		var x2
-		if i == 3:
-			x2 = self.circonference
-		else:
-			x2 = (i + 1) * range
-
-		threadArray.append(Thread.new())
-		threadArray[i-1].start(thread_calcul.bind(img,noise,noise2,x1,x2,elevation_calcul))
-		for thread in threadArray:
-			thread.wait_to_finish()
+		var x2 = self.circonference if i == 13 else (i + 1) * range
+		var thread = Thread.new()
+		threadArray.append(thread)
+		thread.start(thread_calcul.bind(img, noise, noise2, x1, x2, elevation_calcul))
+	# Wait for all threads to finish after starting them all
+	for thread in threadArray:
+		thread.wait_to_finish()
 			
 	print("Fin de la génération de la carte")
 	self.elevation_map = img
@@ -173,25 +170,22 @@ func generate_precipitation_map() -> void:
 	noise.fractal_lacunarity = 4.0
 
 	print("Génération de la carte")
-	var range = circonference / 4
+	var range = circonference / 14
 	var threadArray = []
-	for i in range(0,4,1):
+	for i in range(0, 14, 1):
 		var x1 = i * range
-		var x2
-		if i == 3:
-			x2 = self.circonference
-		else:
-			x2 = (i + 1) * range
-
-		threadArray.append(Thread.new())
-		threadArray[i-1].start(thread_calcul.bind(img,noise,noise,x1,x2,precipitation_calcul))
-		for thread in threadArray:
-			thread.wait_to_finish()
+		var x2 = self.circonference if i == 13 else (i + 1) * range
+		var thread = Thread.new()
+		threadArray.append(thread)
+		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, precipitation_calcul))
+	# Wait for all threads to finish after starting them all
+	for thread in threadArray:
+		thread.wait_to_finish()
 
 	print("Fin de la génération de la carte")
 	self.precipitation_map = img
 
-func precipitation_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
+func precipitation_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
 	var value = noise.get_noise_2d(float(x), float(y))
 	value = clamp((value + self.avg_precipitation * value / 2.0), 0.0, 1.0)
 
@@ -213,25 +207,22 @@ func generate_water_map() -> void:
 	noise.fractal_lacunarity = 0.5
 
 	print("Génération de la carte")
-	var range = circonference / 4
+	var range = circonference / 14
 	var threadArray = []
-	for i in range(0,4,1):
+	for i in range(0, 14, 1):
 		var x1 = i * range
-		var x2
-		if i == 3:
-			x2 = self.circonference
-		else:
-			x2 = (i + 1) * range
-
-		threadArray.append(Thread.new())
-		threadArray[i-1].start(thread_calcul.bind(img,noise,noise,x1,x2,water_calcul))
-		for thread in threadArray:
-			thread.wait_to_finish()
+		var x2 = self.circonference if i == 13 else (i + 1) * range
+		var thread = Thread.new()
+		threadArray.append(thread)
+		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, water_calcul))
+	# Wait for all threads to finish after starting them all
+	for thread in threadArray:
+		thread.wait_to_finish()
 
 	print("Fin de la génération de la carte")
 	self.water_map = img
 
-func water_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
+func water_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
 		var cptCase = 0
 		randomize()
 
@@ -266,25 +257,22 @@ func generate_temperature_map() -> void:
 	noise.fractal_lacunarity = 0.2
 
 	print("Génération de la carte")
-	var range = circonference / 4
+	var range = circonference / 14
 	var threadArray = []
-	for i in range(0,4,1):
+	for i in range(0, 14, 1):
 		var x1 = i * range
-		var x2
-		if i == 3:
-			x2 = self.circonference
-		else:
-			x2 = (i + 1) * range
-
-		threadArray.append(Thread.new())
-		threadArray[i-1].start(thread_calcul.bind(img,noise,noise,x1,x2,temperature_calcul))
-		for thread in threadArray:
-			thread.wait_to_finish()
+		var x2 = self.circonference if i == 13 else (i + 1) * range
+		var thread = Thread.new()
+		threadArray.append(thread)
+		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, temperature_calcul))
+	# Wait for all threads to finish after starting them all
+	for thread in threadArray:
+		thread.wait_to_finish()
 
 	print("Fin de la génération de la carte")
 	self.temperature_map = img
 
-func temperature_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
+func temperature_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
 	# Latitude-based temperature adjustment
 	var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
 	var latitude_temp = -7.5 * latitude + 7.5 * (1-latitude) + self.avg_temperature
@@ -324,35 +312,31 @@ func generate_biome_map() -> void:
 	noise.fractal_lacunarity = 0.5
 	
 	print("Génération de la carte")
-	var range = circonference / 8
+	var range = circonference / 18
 	var threadArray = []
-	for i in range(0,8,1):
+	for i in range(0, 18, 1):
 		var x1 = i * range
-		var x2
-		if i == 7:
-			x2 = self.circonference
-		else:
-			x2 = (i + 1) * range
-
-		threadArray.append(Thread.new())
-		threadArray[i-1].start(thread_calcul.bind(img,noise,noise,x1,x2,biome_calcul))
-		for thread in threadArray:
-			thread.wait_to_finish()
+		var x2 = self.circonference if i == 17 else (i + 1) * range
+		var thread = Thread.new()
+		threadArray.append(thread)
+		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, biome_calcul))
+	# Wait for all threads to finish after starting them all
+	for thread in threadArray:
+		thread.wait_to_finish()
 
 	print("Fin de la génération de la carte")
 	self.biome_map = img
 
-func biome_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
+func biome_calcul(img: Image,_noise, _noise2, x : int,y : int) -> void:
 	var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 	var precipitation_val = self.precipitation_map.get_pixel(x, y).r
 	var temperature_val = Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
-	var is_water        = self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
+	var is_water = self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
 
-	var biome_color = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water, img, x, y).get_couleur()
-	var biomeVegetation = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water, img, x, y).get_couleur_vegetation()
+	var biome = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water, img, x, y)
 
-	img.set_pixel(x, y, biome_color)
-	self.final_map.set_pixel(x, y, biomeVegetation)
+	img.set_pixel(x, y, biome.get_couleur())
+	self.final_map.set_pixel(x, y, biome.get_couleur_vegetation())
 
 
 func thread_calcul(img: Image, noise: FastNoiseLite, noise2: FastNoiseLite, x1: int, x2: int, function : Callable) -> void:
