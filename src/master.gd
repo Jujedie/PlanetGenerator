@@ -20,11 +20,11 @@ func _ready() -> void:
 	
 	var sldPrecipitationMoy = $Node2D/Control/sldPrecipitationMoy
 	label = $Node2D/Control/sldPrecipitationMoy/Node2D/Label
-	label.text = "Précipitation Moyenne : "+str(sldPrecipitationMoy.value)+"\n"
+	label.text = "Précipitation Moyenne : "+str(sldPrecipitationMoy.value)+" | 0 <-> 1\n"
 
 	var sldPercentEau = $Node2D/Control/sldPercentEau
 	label = $Node2D/Control/sldPercentEau/Node2D/Label
-	label.text = "Pourcentage d'eau : "+str(sldPercentEau.value)
+	label.text = "Pourcentage d'eau : "+str(sldPercentEau.value)+" | 0 <-> 1\n"
 
 	var sldElevation = $Node2D/Control/sldElevation
 	label = $Node2D/Control/sldElevation/Node2D/Label
@@ -61,7 +61,10 @@ func _on_sld_precipitation_moy_value_changed(value: float) -> void:
 func _on_sld_percent_eau_value_changed(value: float) -> void:
 	var sld = $Node2D/Control/sldPercentEau
 	var label = $Node2D/Control/sldPercentEau/Node2D/Label
-	label.text = "Pourcentage d'eau : "+str(sld.value)
+	var value_str = str(sld.value)
+	if len(value_str) != 4:
+		value_str = value_str + "0"
+	label.text = "Pourcentage d'eau : "+value_str+" | 0 <-> 1"
 
 
 func _on_sld_elevation_value_changed(value: float) -> void:
