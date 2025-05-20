@@ -144,15 +144,12 @@ func getBiome(elevation_val : int, precipitation_val : float, temperature_val : 
 
 	randomize()
 	var chance = randf()
-	var step = (1 - chance) / corresponding_biome.size()
-
-	corresponding_biome.shuffle()
-
-	for biome in corresponding_biome:
-		randomize()
-		if randf() < chance or biome == corresponding_biome[len(corresponding_biome) - 1] or biome == most_common_biome:
-			return biome
-		chance += step
+	
+	if most_common_biome in corresponding_biome:
+		if chance <= 0.5:
+			return most_common_biome
+		else:
+			return corresponding_biome[randi() % corresponding_biome.size()]
 	
 	return Biome.new("Aucun", Color.hex(0xFF0000FF), Color.hex(0xFF0000FF), [0, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false)
 
