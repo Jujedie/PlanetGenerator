@@ -22,6 +22,14 @@ func _ready() -> void:
 	label = $Node2D/Control/sldPrecipitationMoy/Node2D/Label
 	label.text = "Précipitation Moyenne : "+str(sldPrecipitationMoy.value)+"\n"
 
+	var sldPercentEau = $Node2D/Control/sldPercentEau
+	label = $Node2D/Control/sldPercentEau/Node2D/Label
+	label.text = "Pourcentage d'eau : "+str(sldPercentEau.value)
+
+	var sldElevation = $Node2D/Control/sldElevation
+	label = $Node2D/Control/sldElevation/Node2D/Label
+	label.text = "Elevation bonus : "+str(sldElevation.value)
+
 
 func _on_sld_rayon_planetaire_value_changed(value: float) -> void:
 	var sld = $Node2D/Control/sldRayonPlanetaire
@@ -50,6 +58,18 @@ func _on_sld_precipitation_moy_value_changed(value: float) -> void:
 	label.text = "Précipitation Moyenne : "+value_str+" | 0 <-> 1"
 
 
+func _on_sld_percent_eau_value_changed(value: float) -> void:
+	var sld = $Node2D/Control/sldPercentEau
+	var label = $Node2D/Control/sldPercentEau/Node2D/Label
+	label.text = "Pourcentage d'eau : "+str(sld.value)
+
+
+func _on_sld_elevation_value_changed(value: float) -> void:
+	var sld = $Node2D/Control/sldElevation
+	var label = $Node2D/Control/sldElevation/Node2D/Label
+	label.text = "Elevation bonus : "+str(sld.value)
+
+
 func _on_btn_comfirme_pressed() -> void:
 	var nom = $Node2D/Control/planeteName/LineEdit
 	print("Nom de la planète : "+nom.text)
@@ -61,8 +81,12 @@ func _on_btn_comfirme_pressed() -> void:
 	print("Elevation des mers : "+str(sldHautEau.value))
 	var sldPrecipitationMoy = $Node2D/Control/sldPrecipitationMoy
 	print("Précipitation Moyenne : "+str(sldPrecipitationMoy.value)+"\n")
+	var sldPercentEau = $Node2D/Control/sldPercentEau
+	print("Pourcentage d'eau : "+str(sldPercentEau.value))
+	var sldElevation = $Node2D/Control/sldElevation
+	print("Elevation bonus : "+str(sldElevation.value))
 
-	planetGenerator = PlanetGenerator.new(nom.text, sldRayonPlanetaire.value, sldTempMoy.value, sldHautEau.value, sldPrecipitationMoy.value )
+	planetGenerator = PlanetGenerator.new(nom.text, sldRayonPlanetaire.value, sldTempMoy.value, sldHautEau.value, sldPrecipitationMoy.value, sldPercentEau.value, sldElevation.value , $Node2D/Control/renderProgress )
 	
 	print("Génération de la planète : "+nom.text)
 	planetGenerator.generate_planet()
