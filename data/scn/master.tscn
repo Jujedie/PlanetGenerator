@@ -172,8 +172,67 @@ theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
 text = "Précipitation Moyenne : {Val} | 0 <-> 1"
 metadata/_edit_lock_ = true
 
+[node name="sldPercentEau" type="HSlider" parent="Node2D/Control"]
+offset_left = 912.0
+offset_top = 56.0
+offset_right = 1121.0
+offset_bottom = 83.0
+theme_override_icons/grabber = ExtResource("2_w6tpy")
+theme_override_icons/grabber_highlight = ExtResource("2_w6tpy")
+theme_override_icons/grabber_disabled = ExtResource("2_w6tpy")
+theme_override_icons/tick = ExtResource("2_w6tpy")
+theme_override_styles/slider = ExtResource("3_7ybw1")
+theme_override_styles/grabber_area = ExtResource("4_w6tpy")
+theme_override_styles/grabber_area_highlight = ExtResource("4_w6tpy")
+max_value = 1.0
+step = 0.01
+value = 0.7
+metadata/_edit_lock_ = true
+
+[node name="Node2D" type="Node2D" parent="Node2D/Control/sldPercentEau"]
+position = Vector2(3.05176e-05, -28.6075)
+scale = Vector2(0.02, 0.02)
+
+[node name="Label" type="Label" parent="Node2D/Control/sldPercentEau/Node2D"]
+offset_right = 5603.0
+offset_bottom = 1200.0
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
+text = "Couverture des mers  : {Val} | 0 <-> 1"
+metadata/_edit_lock_ = true
+
+[node name="sldElevation" type="HSlider" parent="Node2D/Control"]
+offset_left = 912.0
+offset_top = 357.0
+offset_right = 1121.0
+offset_bottom = 384.0
+theme_override_icons/grabber = ExtResource("2_w6tpy")
+theme_override_icons/grabber_highlight = ExtResource("2_w6tpy")
+theme_override_icons/grabber_disabled = ExtResource("2_w6tpy")
+theme_override_icons/tick = ExtResource("2_w6tpy")
+theme_override_styles/slider = ExtResource("3_7ybw1")
+theme_override_styles/grabber_area = ExtResource("4_w6tpy")
+theme_override_styles/grabber_area_highlight = ExtResource("4_w6tpy")
+min_value = -12500.0
+max_value = 12500.0
+step = 250.0
+page = 300.0
+metadata/_edit_lock_ = true
+
+[node name="Node2D" type="Node2D" parent="Node2D/Control/sldElevation"]
+position = Vector2(3.05176e-05, -28.6075)
+scale = Vector2(0.02, 0.02)
+
+[node name="Label" type="Label" parent="Node2D/Control/sldElevation/Node2D"]
+offset_right = 5603.0
+offset_bottom = 1200.0
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
+text = "Elevation bonus : {Val}"
+metadata/_edit_lock_ = true
+
 [node name="planeteName" type="Node2D" parent="Node2D/Control"]
-position = Vector2(915, 4.39252)
+position = Vector2(914, -28)
 scale = Vector2(0.02, 0.02)
 metadata/_edit_lock_ = true
 
@@ -282,6 +341,13 @@ texture = ExtResource("6_w6tpy")
 centered = false
 metadata/_edit_lock_ = true
 
+[node name="renderProgress" type="ProgressBar" parent="Node2D/Control"]
+layout_mode = 0
+offset_left = 143.0
+offset_top = -12.0
+offset_right = 788.0
+offset_bottom = 21.0
+
 [node name="Cadre" type="Sprite2D" parent="Node2D"]
 position = Vector2(83, -47)
 texture = ExtResource("1_xqn6k")
@@ -292,6 +358,8 @@ metadata/_edit_lock_ = true
 [connection signal="value_changed" from="Node2D/Control/sldTempMoy" to="." method="_on_sld_temp_moy_value_changed"]
 [connection signal="value_changed" from="Node2D/Control/sldHautEau" to="." method="_on_sld_haut_eau_value_changed"]
 [connection signal="value_changed" from="Node2D/Control/sldPrecipitationMoy" to="." method="_on_sld_precipitation_moy_value_changed"]
+[connection signal="value_changed" from="Node2D/Control/sldPercentEau" to="." method="_on_sld_percent_eau_value_changed"]
+[connection signal="value_changed" from="Node2D/Control/sldElevation" to="." method="_on_sld_elevation_value_changed"]
 [connection signal="pressed" from="Node2D/Control/btnComfirmer/btnComfirme" to="." method="_on_btn_comfirme_pressed"]
 [connection signal="pressed" from="Node2D/Control/btnSauvegarder/btnSauvegarder" to="." method="_on_btn_sauvegarder_pressed"]
 [connection signal="pressed" from="Node2D/Control/btnSuivant/btnSuivant" to="." method="_on_btn_suivant_pressed"]

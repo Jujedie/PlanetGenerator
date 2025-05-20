@@ -139,6 +139,8 @@ func getBiome(elevation_val : int, precipitation_val : float, temperature_val : 
 			precipitation_val <= biome.get_interval_precipitation()[1] and
 			is_water == biome.get_water_need()):
 			corresponding_biome.append(biome)
+		
+	var taille = corresponding_biome.size()
 	
 	var most_common_biome = getMostCommonSurroundingBiome(getSuroundingBiomes(img_biome, x, y))
 
@@ -148,8 +150,8 @@ func getBiome(elevation_val : int, precipitation_val : float, temperature_val : 
 	if most_common_biome in corresponding_biome:
 		if chance <= 0.5:
 			return most_common_biome
-		else:
-			return corresponding_biome[randi() % corresponding_biome.size()]
+	if taille > 0 :
+		return corresponding_biome[randi() % taille]
 	
 	return Biome.new("Aucun", Color.hex(0xFF0000FF), Color.hex(0xFF0000FF), [0, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false)
 
