@@ -31,7 +31,9 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 	self.avg_precipitation = avg_precipitation_param
 	self.percent_eau_monde = percent_eau_monde_param
 	self.elevation_modifier= elevation_modifier_param
-	self.renderProgress    = renderProgress
+
+	self.renderProgress       = renderProgress
+	self.renderProgress.value = 0.0
 
 func generate_planet():
 	print("\nGénération de la carte finale\n")
