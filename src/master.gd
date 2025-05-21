@@ -72,6 +72,11 @@ func _on_sld_elevation_value_changed(value: float) -> void:
 	var label = $Node2D/Control/sldElevation/Node2D/Label
 	label.text = "Elevation bonus : "+str(sld.value)
 
+func _on_sld_thread_value_changed(value: float) -> void:	
+	var sld = $Node2D/Control/sldThread
+	var label = $Node2D/Control/sldThread/Node2D/Label
+	label.text = "Nombre de thread : "+str(sld.value)
+
 
 func _on_btn_comfirme_pressed() -> void:
 	var nom = $Node2D/Control/planeteName/LineEdit
