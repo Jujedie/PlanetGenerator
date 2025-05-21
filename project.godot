@@ -11,5 +11,14 @@ config_version=5
 [application]
 
 config/name="PlanetGenerator"
+run/main_scene="res://data/scn/master.tscn"
 config/features=PackedStringArray("4.4", "Forward Plus")
-config/icon="res://icon.svg"
+config/icon="res://data/img/icon.png"
+
+[autoload]
+
+Enum="*res://src/enum.gd"
+
+[rendering]
+
+textures/canvas_textures/default_texture_filter=0
