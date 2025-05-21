@@ -30,6 +30,10 @@ func _ready() -> void:
 	label = $Node2D/Control/sldElevation/Node2D/Label
 	label.text = "Elevation bonus : "+str(sldElevation.value)
 
+	var sldThread = $Node2D/Control/sldThread
+	label = $Node2D/Control/sldThread/Node2D/Label
+	label.text = "Nombre de thread : "+str(sldThread.value)
+
 
 func _on_sld_rayon_planetaire_value_changed(value: float) -> void:
 	var sld = $Node2D/Control/sldRayonPlanetaire
