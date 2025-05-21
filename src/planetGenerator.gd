@@ -12,6 +12,7 @@ var water_elevation   : int    # l'élévation de l'eau par rapport à la terre 
 var avg_precipitation : float  # entre 0 et 1
 var percent_eau_monde : float
 var elevation_modifier: int
+var nbThread          : int
 
 # Images générées
 var elevation_map    : Image
@@ -21,7 +22,7 @@ var water_map   : Image
 var biome_map   : Image
 var final_map   : Image
 
-func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, percent_eau_monde_param: float = 0.7, elevation_modifier_param: int = 0, renderProgress: ProgressBar = null) -> void:
+func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, percent_eau_monde_param: float = 0.7, elevation_modifier_param: int = 0, nbThread_param : int = 8, renderProgress: ProgressBar = null) -> void:
 	self.nom = nom_param
 	
 	self.circonference     =  int(rayon * 2 * PI)
@@ -31,6 +32,7 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 	self.avg_precipitation = avg_precipitation_param
 	self.percent_eau_monde = percent_eau_monde_param
 	self.elevation_modifier= elevation_modifier_param
+	self.nb_thread          = nb_thread_param
 
 	self.renderProgress       = renderProgress
 	self.renderProgress.value = 0.0
@@ -124,11 +126,11 @@ func generate_elevation_map() -> void:
 	noise2.fractal_lacunarity = 2.0
 
 	print("Génération de la carte")
-	var range = circonference / 4
+	var range = circonference / (nb_thread / 2)
 	var threadArray = []
-	for i in range(0, 4, 1):
+	for i in range(0, (nb_thread / 2), 1):
 		var x1 = i * range
-		var x2 = self.circonference if i == 3 else (i + 1) * range
+		var x2 = self.circonference if i == ((nb_thread / 2) - 1) else (i + 1) * range
 		var thread = Thread.new()
 		threadArray.append(thread)
 		thread.start(thread_calcul.bind(img, noise, noise2, x1, x2, elevation_calcul))
@@ -175,11 +177,11 @@ func generate_precipitation_map() -> void:
 	noise.fractal_lacunarity = 4.0
 
 	print("Génération de la carte")
-	var range = circonference / 4
+	var range = circonference / (nb_thread / 2)
 	var threadArray = []
-	for i in range(0, 4, 1):
+	for i in range(0, (nb_thread / 2), 1):
 		var x1 = i * range
-		var x2 = self.circonference if i == 3 else (i + 1) * range
+		var x2 = self.circonference if i == ((nb_thread / 2) - 1) else (i + 1) * range
 		var thread = Thread.new()
 		threadArray.append(thread)
 		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, precipitation_calcul))
@@ -213,11 +215,11 @@ func generate_water_map() -> void:
 	noise.fractal_lacunarity = 0.5
 
 	print("Génération de la carte")
-	var range = circonference / 4
+	var range = circonference / (nb_thread / 2)
 	var threadArray = []
-	for i in range(0, 4, 1):
+	for i in range(0, (nb_thread / 2), 1):
 		var x1 = i * range
-		var x2 = self.circonference if i == 3 else (i + 1) * range
+		var x2 = self.circonference if i == ((nb_thread / 2) - 1) else (i + 1) * range
 		var thread = Thread.new()
 		threadArray.append(thread)
 		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, water_calcul))
@@ -264,11 +266,11 @@ func generate_temperature_map() -> void:
 	noise.fractal_lacunarity = 0.2
 
 	print("Génération de la carte")
-	var range = circonference / 4
+	var range = circonference / (nb_thread / 2)
 	var threadArray = []
-	for i in range(0, 4, 1):
+	for i in range(0, (nb_thread / 2), 1):
 		var x1 = i * range
-		var x2 = self.circonference if i == 3 else (i + 1) * range
+		var x2 = self.circonference if i == ((nb_thread / 2) - 1) else (i + 1) * range
 		var thread = Thread.new()
 		threadArray.append(thread)
 		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, temperature_calcul))
@@ -321,11 +323,11 @@ func generate_biome_map() -> void:
 	
 	print("Génération de la carte")
 	var valeur_unite = 1.0 / (self.circonference * self.circonference / 2)
-	var range = circonference / 8
+	var range = circonference / nb_thread
 	var threadArray = []
-	for i in range(0, 8, 1):
+	for i in range(0, nb_thread / 2, 1):
 		var x1 = i * range
-		var x2 = self.circonference if i == 7 else (i + 1) * range
+		var x2 = self.circonference if i == (nb_thread - 1) else (i + 1) * range
 		var thread = Thread.new()
 		threadArray.append(thread)
 		thread.start(thread_calcul.bind(img, noise, valeur_unite, x1, x2, biome_calcul))
