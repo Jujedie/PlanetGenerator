@@ -88,11 +88,13 @@ func _on_btn_comfirme_pressed() -> void:
 	print("Pourcentage d'eau : "+str(sldPercentEau.value))
 	var sldElevation = $Node2D/Control/sldElevation
 	print("Elevation bonus : "+str(sldElevation.value))
+	var sldThread = $Node2D/Control/sldThread
+	print("Nombre de thread : "+str(sldThread.value))
 
 	var renderProgress = $Node2D/Control/renderProgress
 	print("Render Progress : ")
 	print(renderProgress)
-	planetGenerator = PlanetGenerator.new(nom.text, sldRayonPlanetaire.value, sldTempMoy.value, sldHautEau.value, sldPrecipitationMoy.value, sldPercentEau.value, sldElevation.value , renderProgress )
+	planetGenerator = PlanetGenerator.new(nom.text, sldRayonPlanetaire.value, sldTempMoy.value, sldHautEau.value, sldPrecipitationMoy.value, sldPercentEau.value, sldElevation.value , sldThread.value, renderProgress )
 	
 	print("Génération de la planète : "+nom.text)
 	planetGenerator.generate_planet()
