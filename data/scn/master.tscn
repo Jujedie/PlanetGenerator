@@ -234,6 +234,7 @@ text = "Elevation bonus : {Val}"
 metadata/_edit_lock_ = true
 
 [node name="sldThread" type="HSlider" parent="Node2D/Control"]
+layout_mode = 0
 offset_left = 912.0
 offset_top = 360.0
 offset_right = 1121.0

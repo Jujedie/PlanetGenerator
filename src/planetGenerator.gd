@@ -12,7 +12,7 @@ var water_elevation   : int    # l'élévation de l'eau par rapport à la terre 
 var avg_precipitation : float  # entre 0 et 1
 var percent_eau_monde : float
 var elevation_modifier: int
-var nbThread          : int
+var nb_thread         : int
 
 # Images générées
 var elevation_map    : Image
@@ -325,7 +325,7 @@ func generate_biome_map() -> void:
 	var valeur_unite = 1.0 / (self.circonference * self.circonference / 2)
 	var range = circonference / self.nb_thread
 	var threadArray = []
-	for i in range(0, self.nb_thread / 2, 1):
+	for i in range(0, self.nb_thread, 1):
 		var x1 = i * range
 		var x2 = self.circonference if i == (self.nb_thread - 1) else (i + 1) * range
 		var thread = Thread.new()
