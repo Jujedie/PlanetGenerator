@@ -55,9 +55,9 @@ metadata/_edit_lock_ = true
 [node name="sldRayonPlanetaire" type="HSlider" parent="Node2D/Control"]
 layout_mode = 0
 offset_left = 912.0
-offset_top = 109.587
+offset_top = 105.0
 offset_right = 1121.0
-offset_bottom = 136.587
+offset_bottom = 132.0
 theme_override_icons/grabber = ExtResource("2_w6tpy")
 theme_override_icons/grabber_highlight = ExtResource("2_w6tpy")
 theme_override_icons/grabber_disabled = ExtResource("2_w6tpy")
@@ -86,9 +86,9 @@ metadata/_edit_lock_ = true
 [node name="sldTempMoy" type="HSlider" parent="Node2D/Control"]
 layout_mode = 0
 offset_left = 912.0
-offset_top = 174.587
+offset_top = 155.0
 offset_right = 1121.0
-offset_bottom = 201.587
+offset_bottom = 182.0
 theme_override_icons/grabber = ExtResource("2_w6tpy")
 theme_override_icons/grabber_highlight = ExtResource("2_w6tpy")
 theme_override_icons/grabber_disabled = ExtResource("2_w6tpy")
@@ -116,9 +116,9 @@ metadata/_edit_lock_ = true
 [node name="sldHautEau" type="HSlider" parent="Node2D/Control"]
 layout_mode = 0
 offset_left = 912.0
-offset_top = 238.587
+offset_top = 205.0
 offset_right = 1121.0
-offset_bottom = 265.587
+offset_bottom = 232.0
 theme_override_icons/grabber = ExtResource("2_w6tpy")
 theme_override_icons/grabber_highlight = ExtResource("2_w6tpy")
 theme_override_icons/grabber_disabled = ExtResource("2_w6tpy")
@@ -145,9 +145,9 @@ metadata/_edit_lock_ = true
 [node name="sldPrecipitationMoy" type="HSlider" parent="Node2D/Control"]
 layout_mode = 0
 offset_left = 912.0
-offset_top = 302.587
+offset_top = 260.0
 offset_right = 1121.0
-offset_bottom = 329.587
+offset_bottom = 287.0
 theme_override_icons/grabber = ExtResource("2_w6tpy")
 theme_override_icons/grabber_highlight = ExtResource("2_w6tpy")
 theme_override_icons/grabber_disabled = ExtResource("2_w6tpy")
@@ -173,6 +173,7 @@ text = "Précipitation Moyenne : {Val} | 0 <-> 1"
 metadata/_edit_lock_ = true
 
 [node name="sldPercentEau" type="HSlider" parent="Node2D/Control"]
+layout_mode = 0
 offset_left = 912.0
 offset_top = 56.0
 offset_right = 1121.0
@@ -202,10 +203,11 @@ text = "Couverture des mers  : {Val} | 0 <-> 1"
 metadata/_edit_lock_ = true
 
 [node name="sldElevation" type="HSlider" parent="Node2D/Control"]
+layout_mode = 0
 offset_left = 912.0
-offset_top = 357.0
+offset_top = 310.0
 offset_right = 1121.0
-offset_bottom = 384.0
+offset_bottom = 337.0
 theme_override_icons/grabber = ExtResource("2_w6tpy")
 theme_override_icons/grabber_highlight = ExtResource("2_w6tpy")
 theme_override_icons/grabber_disabled = ExtResource("2_w6tpy")
@@ -229,6 +231,36 @@ offset_bottom = 1200.0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
 text = "Elevation bonus : {Val}"
+metadata/_edit_lock_ = true
+
+[node name="sldThread" type="HSlider" parent="Node2D/Control"]
+offset_left = 912.0
+offset_top = 360.0
+offset_right = 1121.0
+offset_bottom = 387.0
+theme_override_icons/grabber = ExtResource("2_w6tpy")
+theme_override_icons/grabber_highlight = ExtResource("2_w6tpy")
+theme_override_icons/grabber_disabled = ExtResource("2_w6tpy")
+theme_override_icons/tick = ExtResource("2_w6tpy")
+theme_override_styles/slider = ExtResource("3_7ybw1")
+theme_override_styles/grabber_area = ExtResource("4_w6tpy")
+theme_override_styles/grabber_area_highlight = ExtResource("4_w6tpy")
+min_value = 4.0
+max_value = 20.0
+step = 2.0
+value = 4.0
+metadata/_edit_lock_ = true
+
+[node name="Node2D" type="Node2D" parent="Node2D/Control/sldThread"]
+position = Vector2(3.05176e-05, -28.6075)
+scale = Vector2(0.02, 0.02)
+
+[node name="Label" type="Label" parent="Node2D/Control/sldThread/Node2D"]
+offset_right = 5603.0
+offset_bottom = 1200.0
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
+text = "Nombre de Thread : {Val}"
 metadata/_edit_lock_ = true
 
 [node name="planeteName" type="Node2D" parent="Node2D/Control"]
@@ -362,6 +394,7 @@ metadata/_edit_lock_ = true
 [connection signal="value_changed" from="Node2D/Control/sldPrecipitationMoy" to="." method="_on_sld_precipitation_moy_value_changed"]
 [connection signal="value_changed" from="Node2D/Control/sldPercentEau" to="." method="_on_sld_percent_eau_value_changed"]
 [connection signal="value_changed" from="Node2D/Control/sldElevation" to="." method="_on_sld_elevation_value_changed"]
+[connection signal="value_changed" from="Node2D/Control/sldThread" to="." method="_on_sld_elevation_value_changed"]
 [connection signal="pressed" from="Node2D/Control/btnComfirmer/btnComfirme" to="." method="_on_btn_comfirme_pressed"]
 [connection signal="pressed" from="Node2D/Control/btnSauvegarder/btnSauvegarder" to="." method="_on_btn_sauvegarder_pressed"]
 [connection signal="pressed" from="Node2D/Control/btnSuivant/btnSuivant" to="." method="_on_btn_suivant_pressed"]
