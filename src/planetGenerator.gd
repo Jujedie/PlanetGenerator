@@ -325,7 +325,7 @@ func generate_biome_map() -> void:
 	
 	print("Génération de la carte")
 	var range = circonference / self.nb_thread
-	var pas = 38.0/(self.nb_thread)
+	var pas = 38/(self.nb_thread)
 	var rest = 38 - pas*self.nb_thread
 	var threadArray = []
 	for i in range(0, self.nb_thread, 1):
