@@ -127,6 +127,15 @@ func generate_elevation_map() -> void:
 	noise2.fractal_gain = 0.75
 	noise2.fractal_lacunarity = 2.0
 
+	var noise3 = FastNoiseLite.new()
+	noise3.seed = randi()
+	noise3.noise_type = FastNoiseLite.TYPE_PERLIN
+	noise3.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise3.frequency = 1.504 / float(self.circonference)
+	noise3.fractal_octaves = 6
+	noise3.fractal_gain = 0.85
+	noise3.fractal_lacunarity = 3.0
+
 	print("Génération de la carte")
 	var range = circonference / (self.nb_thread / 2)
 	var threadArray = []
@@ -135,7 +144,7 @@ func generate_elevation_map() -> void:
 		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
 		var thread = Thread.new()
 		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noise, noise2, x1, x2, elevation_calcul))
+		thread.start(thread_calcul.bind(img, noise, [noise2,noise3], x1, x2, elevation_calcul))
 	# Wait for all threads to finish after starting them all
 	for thread in threadArray:
 		thread.wait_to_finish()
@@ -146,14 +155,15 @@ func generate_elevation_map() -> void:
 
 func elevation_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 	var value = noise.get_noise_2d(float(x), float(y))
-	var elevation = ceil(value * (1000 + self.water_elevation + elevation_modifier))
+	var value2 = noise2[0].get_noise_2d(float(x), float(y))
+	var elevation = ceil(value * (1000 + self.water_elevation + value2 * elevation_modifier))
 
 	if elevation >=  (1000 + self.water_elevation + elevation_modifier) - 100:
-		value = noise2.get_noise_2d(float(x), float(y))
+		value = noise2[1].get_noise_2d(float(x), float(y))
 		value = clamp(value, 0.0, 1.0)
 		elevation = elevation + ceil(value * Enum.ALTITUDE_MAX)
 	elif elevation <= -(1000 + self.water_elevation + elevation_modifier) + 100:
-		value = noise2.get_noise_2d(float(x), float(y))
+		value = noise2[1].get_noise_2d(float(x), float(y))
 		value = clamp(value, -1.0, 0.0)
 		elevation = elevation + ceil(value * Enum.ALTITUDE_MAX)
 
@@ -267,6 +277,15 @@ func generate_temperature_map() -> void:
 	noise.fractal_gain = 0.25
 	noise.fractal_lacunarity = 0.2
 
+	var noise2 = FastNoiseLite.new()
+	noise2.seed = randi()
+	noise2.noise_type = FastNoiseLite.TYPE_PERLIN
+	noise2.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise2.frequency = 2.0 / float(self.circonference)
+	noise2.fractal_octaves = 8
+	noise2.fractal_gain = 0.75
+	noise2.fractal_lacunarity = 2.0
+
 	print("Génération de la carte")
 	var range = circonference / (self.nb_thread / 2)
 	var threadArray = []
@@ -275,7 +294,7 @@ func generate_temperature_map() -> void:
 		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
 		var thread = Thread.new()
 		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, temperature_calcul))
+		thread.start(thread_calcul.bind(img, noise, noise2, x1, x2, temperature_calcul))
 	# Wait for all threads to finish after starting them all
 	for thread in threadArray:
 		thread.wait_to_finish()
@@ -284,18 +303,25 @@ func generate_temperature_map() -> void:
 	self.addProgress(15)
 	self.temperature_map = img
 
-func temperature_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
+func temperature_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 	# Latitude-based temperature adjustment
 	var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
 	var latitude_temp = -7.5 * latitude + 7.5 * (1-latitude) + self.avg_temperature
 
 	# Altitude-based temperature adjustment
 	var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
-	var altitude_temp = -0.065 * (elevation_val - self.water_elevation)  # Temperature decreases by 6.5°C per 100m
+	var altitude_temp = 0.0
 
+	if elevation_val > self.water_elevation:
+		altitude_temp = -0.065 * (elevation_val - self.water_elevation)  # Temperature decreases by 6.5°C per 100m
+	elif elevation_val < self.water_elevation and self.water_map.get_pixel(x, y) != Color.hex(0xFFFFFFFF):
+		altitude_temp = -0.02 * (self.water_elevation - elevation_val)  # Temperature increases by 6.5°C per 100m
+	
 	# Noise-based randomness
 	var noise_value = noise.get_noise_2d(float(x), float(y))
-	var noise_temp_factor = noise_value * self.avg_temperature / 1.5 
+	var noise_temp_factor = noise_value * (self.avg_temperature / 1.5) 
+	noise_value = noise2.get_noise_2d(float(x), float(y))
+	noise_temp_factor += noise_value * (self.avg_temperature / 3)
 
 	# Calculate final temperature
 	var temp = latitude_temp + altitude_temp + noise_temp_factor
