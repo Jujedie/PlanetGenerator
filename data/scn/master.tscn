@@ -395,7 +395,7 @@ metadata/_edit_lock_ = true
 [connection signal="value_changed" from="Node2D/Control/sldPrecipitationMoy" to="." method="_on_sld_precipitation_moy_value_changed"]
 [connection signal="value_changed" from="Node2D/Control/sldPercentEau" to="." method="_on_sld_percent_eau_value_changed"]
 [connection signal="value_changed" from="Node2D/Control/sldElevation" to="." method="_on_sld_elevation_value_changed"]
-[connection signal="value_changed" from="Node2D/Control/sldThread" to="." method="_on_sld_elevation_value_changed"]
+[connection signal="value_changed" from="Node2D/Control/sldThread" to="." method="_on_sld_thread_value_changed"]
 [connection signal="pressed" from="Node2D/Control/btnComfirmer/btnComfirme" to="." method="_on_btn_comfirme_pressed"]
 [connection signal="pressed" from="Node2D/Control/btnSauvegarder/btnSauvegarder" to="." method="_on_btn_sauvegarder_pressed"]
 [connection signal="pressed" from="Node2D/Control/btnSuivant/btnSuivant" to="." method="_on_btn_suivant_pressed"]
