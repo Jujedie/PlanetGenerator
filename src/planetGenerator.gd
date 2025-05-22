@@ -3,6 +3,7 @@ extends RefCounted
 class_name PlanetGenerator
 
 var nom: String
+signal finished
 var circonference  : int
 var renderProgress : ProgressBar
 
@@ -13,6 +14,7 @@ var avg_precipitation : float  # entre 0 et 1
 var percent_eau_monde : float
 var elevation_modifier: int
 var nb_thread         : int
+var nb_thread          : int
 
 # Images générées
 var elevation_map    : Image
@@ -73,6 +75,7 @@ func generate_planet():
 
 	print("\n===================")
 	print("Génération Terminée\n")
+	emit_signal("finished")
 
 func save_maps():
 	print("Sauvegarde de la carte finale")

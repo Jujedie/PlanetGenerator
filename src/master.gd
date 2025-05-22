@@ -104,12 +104,16 @@ func _on_btn_comfirme_pressed() -> void:
 	print("Render Progress : ")
 	print(renderProgress)
 	planetGenerator = PlanetGenerator.new(nom.text, sldRayonPlanetaire.value, sldTempMoy.value, sldHautEau.value, sldPrecipitationMoy.value, sldPercentEau.value, sldElevation.value , sldThread.value, renderProgress )
-	
-	print("Génération de la planète : "+nom.text)
-	planetGenerator.generate_planet()
-	maps = planetGenerator.getMaps()
+	planetGenerator.finished.connect(_on_planetGenerator_finished)
 
-	print()
+	print("Génération de la planète : "+nom.text)
+
+	var thread = Thread.new()
+	thread.start(planetGenerator.generate_planet)
+	
+
+func _on_planetGenerator_finished() -> void:
+	maps = planetGenerator.getMaps()
 	
 	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = load(maps[map_index])
 
