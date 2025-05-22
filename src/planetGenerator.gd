@@ -324,24 +324,26 @@ func generate_biome_map() -> void:
 	noise.fractal_lacunarity = 0.5
 	
 	print("Génération de la carte")
-	var valeur_unite = 1.0 / (self.circonference * self.circonference / 2)
 	var range = circonference / self.nb_thread
+	var pas = 38.0/(self.nb_thread)
+	var rest = 38 - pas*self.nb_thread
 	var threadArray = []
 	for i in range(0, self.nb_thread, 1):
 		var x1 = i * range
 		var x2 = self.circonference if i == (self.nb_thread - 1) else (i + 1) * range
 		var thread = Thread.new()
 		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noise, valeur_unite, x1, x2, biome_calcul))
+		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, biome_calcul))
 	# Wait for all threads to finish after starting them all
 	for thread in threadArray:
 		thread.wait_to_finish()
-		self.addProgress(38.0/(self.nb_thread))
+		self.addProgress(pas)
 
 	print("Fin de la génération de la carte")
+	self.addProgress(rest)
 	self.biome_map = img
 
-func biome_calcul(img: Image,_noise, valeur_unite, x : int,y : int) -> void:
+func biome_calcul(img: Image,_noise, _noise2, x : int,y : int) -> void:
 	var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 	var precipitation_val = self.precipitation_map.get_pixel(x, y).r
 	var temperature_val = Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
