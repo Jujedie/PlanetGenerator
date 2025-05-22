@@ -325,8 +325,6 @@ func generate_biome_map() -> void:
 	
 	print("Génération de la carte")
 	var range = circonference / self.nb_thread
-	var pas = 38/(self.nb_thread)
-	var rest = 38 - pas*self.nb_thread
 	var threadArray = []
 	for i in range(0, self.nb_thread, 1):
 		var x1 = i * range
@@ -337,10 +335,9 @@ func generate_biome_map() -> void:
 	# Wait for all threads to finish after starting them all
 	for thread in threadArray:
 		thread.wait_to_finish()
-		self.addProgress(pas)
 
 	print("Fin de la génération de la carte")
-	self.addProgress(rest)
+	self.addProgress(38)
 	self.biome_map = img
 
 func biome_calcul(img: Image,_noise, _noise2, x : int,y : int) -> void:
