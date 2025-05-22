@@ -336,6 +336,7 @@ func generate_biome_map() -> void:
 	# Wait for all threads to finish after starting them all
 	for thread in threadArray:
 		thread.wait_to_finish()
+		self.addProgress(38.0/(self.nb_thread))
 
 	print("Fin de la génération de la carte")
 	self.biome_map = img
@@ -350,7 +351,6 @@ func biome_calcul(img: Image,_noise, valeur_unite, x : int,y : int) -> void:
 
 	img.set_pixel(x, y, biome.get_couleur())
 	self.final_map.set_pixel(x, y, biome.get_couleur_vegetation())
-	self.addProgress(38*(valeur_unite))
 
 
 func thread_calcul(img: Image, noise: FastNoiseLite, misc_value , x1: int, x2: int, function : Callable) -> void:
