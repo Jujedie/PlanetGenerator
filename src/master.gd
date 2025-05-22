@@ -1,7 +1,6 @@
 extends Node2D
 
 var planetGenerator : PlanetGenerator
-var map_actuelle    : Image
 var maps            : Array[String]
 var map_index       : int = 0
 
@@ -110,12 +109,27 @@ func _on_btn_comfirme_pressed() -> void:
 
 	var thread = Thread.new()
 	thread.start(planetGenerator.generate_planet)
+
+	$Node2D/Control/btnComfirmer/btnComfirme.disabled = true
+	$Node2D/Control/btnSauvegarder/btnSauvegarder.disabled = true
+	$Node2D/Control/btnSuivant/btnSuivant.disabled = true
+	$Node2D/Control/btnPrecedant/btnPrecedant.disabled = true
 	
 
 func _on_planetGenerator_finished() -> void:
+	call_deferred("_on_planetGenerator_finished_main")
+
+func _on_planetGenerator_finished_main() -> void:
 	maps = planetGenerator.getMaps()
+	map_index = 0
+
+	$Node2D/Control/btnComfirmer/btnComfirme.disabled = false
+	$Node2D/Control/btnSauvegarder/btnSauvegarder.disabled = false
+	$Node2D/Control/btnSuivant/btnSuivant.disabled = false
+	$Node2D/Control/btnPrecedant/btnPrecedant.disabled = false
 	
 	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = load(maps[map_index])
+	print(maps)
 
 func _on_btn_sauvegarder_pressed() -> void:
 	planetGenerator.save_planet()
