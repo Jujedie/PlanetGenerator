@@ -14,7 +14,6 @@ var avg_precipitation : float  # entre 0 et 1
 var percent_eau_monde : float
 var elevation_modifier: int
 var nb_thread         : int
-var nb_thread          : int
 
 # Images générées
 var elevation_map    : Image
@@ -384,9 +383,9 @@ func getMaps() -> Array[String]:
 func is_ready() -> bool:
 	return self.elevation_map != null and self.precipitation_map != null and self.temperature_map != null and self.water_map != null and self.biome_map != null and self.final_map != null
 
-func addProgress( value ) -> void:
+func addProgress(value) -> void:
 	if self.renderProgress != null:
-		self.renderProgress.value += value
+		self.renderProgress.call_deferred("set_value", self.renderProgress.value + value)
 
 static func save_image(image: Image, file_name: String) -> String:
 	var dir = DirAccess.open("res://data/img/temp")
