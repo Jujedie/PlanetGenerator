@@ -135,7 +135,6 @@ func _on_planetGenerator_finished_main() -> void:
 		$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = tex
 	else:
 		print("Erreur lors du chargement de l'image: ", maps[map_index])
-	print(maps)
 
 func _on_btn_sauvegarder_pressed() -> void:
 	planetGenerator.save_planet()
