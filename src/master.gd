@@ -144,11 +144,23 @@ func _on_btn_suivant_pressed() -> void:
 	if map_index >= maps.size():
 		map_index = 0
 	
-	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = load(maps[map_index])
+	var img = Image.new()
+	var err = img.load(maps[map_index])
+	if err == OK:
+		var tex = ImageTexture.create_from_image(img)
+		$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = tex
+	else:
+		print("Erreur lors du chargement de l'image: ", maps[map_index])
 
 func _on_btn_precedant_pressed() -> void:
 	map_index -= 1
 	if map_index < 0:
 		map_index = maps.size() - 1
 	
-	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = load(maps[map_index])
+	var img = Image.new()
+	var err = img.load(maps[map_index])
+	if err == OK:
+		var tex = ImageTexture.create_from_image(img)
+		$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = tex
+	else:
+		print("Erreur lors du chargement de l'image: ", maps[map_index])
