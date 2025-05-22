@@ -1,6 +1,6 @@
 extends Node
 
-const ALTITUDE_MAX = 2500
+const ALTITUDE_MAX = 25000
 
 # Définir des couleurs réaliste pour le rendu final et des couleurs distinctes
 var BIOMES = [
@@ -43,7 +43,10 @@ var BIOMES = [
 
 # Définition des couleurs pour les élévations
 var COULEURS_ELEVATIONS = {
-	-ALTITUDE_MAX: Color.hex(0x010101FF), # 2250m et moins 
+	-ALTITUDE_MAX: Color.hex(0x010101FF),
+	-20000: Color.hex(0x020202FF), # 20000m
+	-8000: Color.hex(0x030303FF), # 8000m
+	-4000: Color.hex(0x040404FF), # 4000m
 	-2000: Color.hex(0x050505FF), # 2000m 
 	-1500: Color.hex(0x0A0A0AFF), # 1500m 
 	-1000: Color.hex(0x0F0F0FFF), # 1000m 
@@ -52,9 +55,13 @@ var COULEURS_ELEVATIONS = {
 	-300: Color.hex(0x1C1C1CFF),  # 300m 
 	-200: Color.hex(0x1E1E1EFF),  # 200m 
 	-100: Color.hex(0x202020FF),  # 100m 
+	-50: Color.hex(0x212121FF),  # 50m
+	-20: Color.hex(0x222222FF),  # 20m
 
 	0: Color.hex(0x232323FF)   , # 0m et moins
 
+	20: Color.hex(0x242424FF) , # 20m
+	50: Color.hex(0x252525FF) , # 50m
 	100: Color.hex(0x282828FF) , # 100m 
 	200: Color.hex(0x2E2E2EFF) , # 200m 
 	300: Color.hex(0x353535FF) , # 300m 
@@ -67,7 +74,13 @@ var COULEURS_ELEVATIONS = {
 	1000: Color.hex(0x717171FF), # 1000m
 	1500: Color.hex(0x7D7D7DFF), # 1500m
 	2000: Color.hex(0x888888FF), # 2000m 
-	ALTITUDE_MAX: Color.hex(0xA5A5A5FF)  # 2500m et plus
+	4000: Color.hex(0x949494FF), # 4000m
+	8000: Color.hex(0xA0A0A0FF), # 8000m
+	12000: Color.hex(0xA5A5A5FF), # 12000m
+	16000: Color.hex(0xA8A8A8FF), # 16000m
+	20000: Color.hex(0xABABABFF), # 20000m
+	24000: Color.hex(0xAEAEAEFF), # 24000m
+	ALTITUDE_MAX: Color.hex(0xA5A5A5FF) 
 }
 
 var COULEURS_TEMPERATURE = {
