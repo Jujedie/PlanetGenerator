@@ -28,21 +28,15 @@ texture = ExtResource("7_qfml0")
 script = ExtResource("1_qfml0")
 metadata/_edit_lock_ = true
 
-[node name="Camera2D" type="Camera2D" parent="."]
-anchor_mode = 0
-limit_left = 0
-limit_top = 0
-limit_right = 1152
-limit_bottom = 648
-metadata/_edit_lock_ = true
-
 [node name="Frame" type="Sprite2D" parent="."]
+scale = Vector2(1.389, 1.389)
 texture = ExtResource("1_7ybw1")
 centered = false
 metadata/_edit_lock_ = true
 
 [node name="Node2D" type="Node2D" parent="."]
-position = Vector2(-27, 87)
+position = Vector2(-38.1609, 121.191)
+scale = Vector2(1.389, 1.389)
 metadata/_edit_lock_ = true
 
 [node name="Control" type="Control" parent="Node2D"]
@@ -52,12 +46,70 @@ offset_right = 40.0
 offset_bottom = 40.0
 metadata/_edit_lock_ = true
 
+[node name="planeteName" type="Node2D" parent="Node2D/Control"]
+position = Vector2(912, -37.3844)
+scale = Vector2(0.02, 0.02)
+metadata/_edit_lock_ = true
+
+[node name="Label" type="Label" parent="Node2D/Control/planeteName"]
+offset_top = 145.979
+offset_right = 5750.0
+offset_bottom = 1345.98
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
+text = "Nom de la planète"
+metadata/_edit_use_anchors_ = true
+metadata/_edit_lock_ = true
+
+[node name="LineEdit" type="LineEdit" parent="Node2D/Control/planeteName"]
+offset_top = 1345.98
+offset_right = 11036.0
+offset_bottom = 2585.98
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.670588, 0.670588, 0.670588, 1)
+theme_override_styles/normal = SubResource("StyleBoxTexture_okhqb")
+max_length = 18
+metadata/_edit_use_anchors_ = true
+metadata/_edit_lock_ = true
+
+[node name="sldPercentEau" type="HSlider" parent="Node2D/Control"]
+layout_mode = 0
+offset_left = 912.0
+offset_top = 34.1229
+offset_right = 1121.0
+offset_bottom = 61.1229
+theme_override_icons/grabber = ExtResource("2_w6tpy")
+theme_override_icons/grabber_highlight = ExtResource("2_w6tpy")
+theme_override_icons/grabber_disabled = ExtResource("2_w6tpy")
+theme_override_icons/tick = ExtResource("2_w6tpy")
+theme_override_styles/slider = ExtResource("3_7ybw1")
+theme_override_styles/grabber_area = ExtResource("4_w6tpy")
+theme_override_styles/grabber_area_highlight = ExtResource("4_w6tpy")
+max_value = 1.0
+step = 0.01
+value = 0.7
+metadata/_edit_lock_ = true
+
+[node name="Node2D" type="Node2D" parent="Node2D/Control/sldPercentEau"]
+position = Vector2(3.05176e-05, -28.6075)
+scale = Vector2(0.02, 0.02)
+metadata/_edit_lock_ = true
+
+[node name="Label" type="Label" parent="Node2D/Control/sldPercentEau/Node2D"]
+offset_top = 250.745
+offset_right = 11732.0
+offset_bottom = 1450.75
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
+text = "Couverture des mers  : {Val} | 0 <-> 1"
+metadata/_edit_lock_ = true
+
 [node name="sldRayonPlanetaire" type="HSlider" parent="Node2D/Control"]
 layout_mode = 0
 offset_left = 912.0
-offset_top = 105.0
+offset_top = 85.0165
 offset_right = 1121.0
-offset_bottom = 132.0
+offset_bottom = 112.017
 theme_override_icons/grabber = ExtResource("2_w6tpy")
 theme_override_icons/grabber_highlight = ExtResource("2_w6tpy")
 theme_override_icons/grabber_disabled = ExtResource("2_w6tpy")
@@ -66,7 +118,7 @@ theme_override_styles/slider = ExtResource("3_7ybw1")
 theme_override_styles/grabber_area = ExtResource("4_w6tpy")
 theme_override_styles/grabber_area_highlight = ExtResource("4_w6tpy")
 min_value = 50.0
-max_value = 2400.0
+max_value = 500.0
 step = 50.0
 value = 50.0
 metadata/_edit_lock_ = true
@@ -76,7 +128,7 @@ position = Vector2(3.05176e-05, -28.6075)
 scale = Vector2(0.02, 0.02)
 
 [node name="Label" type="Label" parent="Node2D/Control/sldRayonPlanetaire/Node2D"]
-offset_right = 5603.0
+offset_right = 7879.0
 offset_bottom = 1200.0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
@@ -86,9 +138,9 @@ metadata/_edit_lock_ = true
 [node name="sldTempMoy" type="HSlider" parent="Node2D/Control"]
 layout_mode = 0
 offset_left = 912.0
-offset_top = 155.0
+offset_top = 136.327
 offset_right = 1121.0
-offset_bottom = 182.0
+offset_bottom = 163.327
 theme_override_icons/grabber = ExtResource("2_w6tpy")
 theme_override_icons/grabber_highlight = ExtResource("2_w6tpy")
 theme_override_icons/grabber_disabled = ExtResource("2_w6tpy")
@@ -106,7 +158,7 @@ position = Vector2(3.05176e-05, -28.6075)
 scale = Vector2(0.02, 0.02)
 
 [node name="Label" type="Label" parent="Node2D/Control/sldTempMoy/Node2D"]
-offset_right = 5603.0
+offset_right = 9559.0
 offset_bottom = 1200.0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
@@ -116,9 +168,9 @@ metadata/_edit_lock_ = true
 [node name="sldHautEau" type="HSlider" parent="Node2D/Control"]
 layout_mode = 0
 offset_left = 912.0
-offset_top = 205.0
+offset_top = 186.528
 offset_right = 1121.0
-offset_bottom = 232.0
+offset_bottom = 213.528
 theme_override_icons/grabber = ExtResource("2_w6tpy")
 theme_override_icons/grabber_highlight = ExtResource("2_w6tpy")
 theme_override_icons/grabber_disabled = ExtResource("2_w6tpy")
@@ -135,7 +187,7 @@ position = Vector2(3.05176e-05, -28.6075)
 scale = Vector2(0.02, 0.02)
 
 [node name="Label" type="Label" parent="Node2D/Control/sldHautEau/Node2D"]
-offset_right = 5603.0
+offset_right = 8422.0
 offset_bottom = 1200.0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
@@ -145,9 +197,9 @@ metadata/_edit_lock_ = true
 [node name="sldPrecipitationMoy" type="HSlider" parent="Node2D/Control"]
 layout_mode = 0
 offset_left = 912.0
-offset_top = 260.0
+offset_top = 239.056
 offset_right = 1121.0
-offset_bottom = 287.0
+offset_bottom = 266.056
 theme_override_icons/grabber = ExtResource("2_w6tpy")
 theme_override_icons/grabber_highlight = ExtResource("2_w6tpy")
 theme_override_icons/grabber_disabled = ExtResource("2_w6tpy")
@@ -165,49 +217,19 @@ position = Vector2(3.05176e-05, -28.6075)
 scale = Vector2(0.02, 0.02)
 
 [node name="Label" type="Label" parent="Node2D/Control/sldPrecipitationMoy/Node2D"]
-offset_right = 5603.0
+offset_right = 11969.0
 offset_bottom = 1200.0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
 text = "Précipitation Moyenne : {Val} | 0 <-> 1"
 metadata/_edit_lock_ = true
 
-[node name="sldPercentEau" type="HSlider" parent="Node2D/Control"]
-layout_mode = 0
-offset_left = 912.0
-offset_top = 56.0
-offset_right = 1121.0
-offset_bottom = 83.0
-theme_override_icons/grabber = ExtResource("2_w6tpy")
-theme_override_icons/grabber_highlight = ExtResource("2_w6tpy")
-theme_override_icons/grabber_disabled = ExtResource("2_w6tpy")
-theme_override_icons/tick = ExtResource("2_w6tpy")
-theme_override_styles/slider = ExtResource("3_7ybw1")
-theme_override_styles/grabber_area = ExtResource("4_w6tpy")
-theme_override_styles/grabber_area_highlight = ExtResource("4_w6tpy")
-max_value = 1.0
-step = 0.01
-value = 0.7
-metadata/_edit_lock_ = true
-
-[node name="Node2D" type="Node2D" parent="Node2D/Control/sldPercentEau"]
-position = Vector2(3.05176e-05, -28.6075)
-scale = Vector2(0.02, 0.02)
-
-[node name="Label" type="Label" parent="Node2D/Control/sldPercentEau/Node2D"]
-offset_right = 5603.0
-offset_bottom = 1200.0
-theme = ExtResource("5_e2i44")
-theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
-text = "Couverture des mers  : {Val} | 0 <-> 1"
-metadata/_edit_lock_ = true
-
 [node name="sldElevation" type="HSlider" parent="Node2D/Control"]
 layout_mode = 0
 offset_left = 912.0
-offset_top = 310.0
+offset_top = 290.397
 offset_right = 1121.0
-offset_bottom = 337.0
+offset_bottom = 317.397
 theme_override_icons/grabber = ExtResource("2_w6tpy")
 theme_override_icons/grabber_highlight = ExtResource("2_w6tpy")
 theme_override_icons/grabber_disabled = ExtResource("2_w6tpy")
@@ -226,7 +248,7 @@ position = Vector2(3.05176e-05, -28.6075)
 scale = Vector2(0.02, 0.02)
 
 [node name="Label" type="Label" parent="Node2D/Control/sldElevation/Node2D"]
-offset_right = 5603.0
+offset_right = 7339.0
 offset_bottom = 1200.0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
@@ -236,9 +258,9 @@ metadata/_edit_lock_ = true
 [node name="sldThread" type="HSlider" parent="Node2D/Control"]
 layout_mode = 0
 offset_left = 912.0
-offset_top = 360.0
+offset_top = 341.042
 offset_right = 1121.0
-offset_bottom = 387.0
+offset_bottom = 368.042
 theme_override_icons/grabber = ExtResource("2_w6tpy")
 theme_override_icons/grabber_highlight = ExtResource("2_w6tpy")
 theme_override_icons/grabber_disabled = ExtResource("2_w6tpy")
@@ -257,43 +279,20 @@ position = Vector2(3.05176e-05, -28.6075)
 scale = Vector2(0.02, 0.02)
 
 [node name="Label" type="Label" parent="Node2D/Control/sldThread/Node2D"]
-offset_right = 5603.0
+offset_right = 8170.0
 offset_bottom = 1200.0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
 text = "Nombre de Thread : {Val}"
 metadata/_edit_lock_ = true
 
-[node name="planeteName" type="Node2D" parent="Node2D/Control"]
-position = Vector2(914, -28)
-scale = Vector2(0.02, 0.02)
-metadata/_edit_lock_ = true
-
-[node name="Label" type="Label" parent="Node2D/Control/planeteName"]
-offset_right = 5603.0
-offset_bottom = 1200.0
-theme = ExtResource("5_e2i44")
-theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
-text = "Nom de la planète"
-metadata/_edit_lock_ = true
-
-[node name="LineEdit" type="LineEdit" parent="Node2D/Control/planeteName"]
-offset_top = 1780.37
-offset_right = 11036.0
-offset_bottom = 3020.37
-theme = ExtResource("5_e2i44")
-theme_override_colors/font_color = Color(0.670588, 0.670588, 0.670588, 1)
-theme_override_styles/normal = SubResource("StyleBoxTexture_okhqb")
-max_length = 18
-
 [node name="btnComfirmer" type="Node2D" parent="Node2D/Control"]
-position = Vector2(947, 393)
+position = Vector2(942.409, 457.816)
 scale = Vector2(0.02, 0.02)
-metadata/_edit_lock_ = true
 
 [node name="btnComfirme" type="Button" parent="Node2D/Control/btnComfirmer"]
 offset_left = -0.00109863
-offset_top = 0.00195313
+offset_top = 0.00415022
 offset_right = 7613.0
 offset_bottom = 1800.0
 theme = SubResource("Theme_qfml0")
@@ -301,11 +300,11 @@ theme_override_colors/font_color = Color(0.670588, 0.670588, 0.670588, 1)
 theme_override_styles/normal = SubResource("StyleBoxTexture_3fsd5")
 text = "Générer"
 metadata/_edit_use_anchors_ = true
+metadata/_edit_lock_ = true
 
 [node name="btnSauvegarder" type="Node2D" parent="Node2D/Control"]
-position = Vector2(947, 441)
+position = Vector2(942.409, 418.821)
 scale = Vector2(0.02, 0.02)
-metadata/_edit_lock_ = true
 
 [node name="btnSauvegarder" type="Button" parent="Node2D/Control/btnSauvegarder"]
 offset_left = -0.00109863
@@ -382,17 +381,46 @@ offset_right = 788.0
 offset_bottom = 21.0
 metadata/_edit_lock_ = true
 
+[node name="typeAtmosphere" type="Node2D" parent="Node2D/Control"]
+position = Vector2(912, 388.172)
+scale = Vector2(0.02, 0.02)
+metadata/_edit_lock_ = true
+
+[node name="ItemList" type="ItemList" parent="Node2D/Control/typeAtmosphere"]
+offset_right = 8205.0
+offset_bottom = 1257.0
+theme = ExtResource("5_e2i44")
+auto_width = true
+item_count = 4
+item_0/text = "NORMAL ATMOSPHERE"
+item_1/text = "TOXIC ATMOSPHERE"
+item_2/text = "ANOXIC ATMOSPHERE"
+item_3/text = "NO ATMOSPHERE"
+metadata/_edit_use_anchors_ = true
+metadata/_edit_lock_ = true
+
+[node name="Label" type="Label" parent="Node2D/Control/typeAtmosphere"]
+offset_left = 3.9987
+offset_top = -1280.5
+offset_right = 8174.0
+offset_bottom = -80.5012
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
+text = "Type d'Atmosphere :"
+metadata/_edit_use_anchors_ = true
+metadata/_edit_lock_ = true
+
 [node name="Cadre" type="Sprite2D" parent="Node2D"]
 position = Vector2(83, -47)
 texture = ExtResource("1_xqn6k")
 centered = false
 metadata/_edit_lock_ = true
 
+[connection signal="value_changed" from="Node2D/Control/sldPercentEau" to="." method="_on_sld_percent_eau_value_changed"]
 [connection signal="value_changed" from="Node2D/Control/sldRayonPlanetaire" to="." method="_on_sld_rayon_planetaire_value_changed"]
 [connection signal="value_changed" from="Node2D/Control/sldTempMoy" to="." method="_on_sld_temp_moy_value_changed"]
 [connection signal="value_changed" from="Node2D/Control/sldHautEau" to="." method="_on_sld_haut_eau_value_changed"]
 [connection signal="value_changed" from="Node2D/Control/sldPrecipitationMoy" to="." method="_on_sld_precipitation_moy_value_changed"]
-[connection signal="value_changed" from="Node2D/Control/sldPercentEau" to="." method="_on_sld_percent_eau_value_changed"]
 [connection signal="value_changed" from="Node2D/Control/sldElevation" to="." method="_on_sld_elevation_value_changed"]
 [connection signal="value_changed" from="Node2D/Control/sldThread" to="." method="_on_sld_thread_value_changed"]
 [connection signal="pressed" from="Node2D/Control/btnComfirmer/btnComfirme" to="." method="_on_btn_comfirme_pressed"]
