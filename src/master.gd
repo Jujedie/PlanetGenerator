@@ -83,21 +83,21 @@ func _on_sld_thread_value_changed(value: float) -> void:
 
 func _on_btn_comfirme_pressed() -> void:
 	var nom = $Node2D/Control/planeteName/LineEdit
-	print("Nom de la planète : "+nom.text)
+	print("\nNom de la planète : "+nom.text)
 	var sldRayonPlanetaire = $Node2D/Control/sldRayonPlanetaire
-	print("Rayon Planétaire : "+str(sldRayonPlanetaire.value))
+	print("\nRayon Planétaire : "+str(sldRayonPlanetaire.value))
 	var sldTempMoy = $Node2D/Control/sldTempMoy
-	print("Température Moyenne : "+str(sldTempMoy.value))
+	print("\nTempérature Moyenne : "+str(sldTempMoy.value))
 	var sldHautEau = $Node2D/Control/sldHautEau
-	print("Elevation des mers : "+str(sldHautEau.value))
+	print("\nElevation des mers : "+str(sldHautEau.value))
 	var sldPrecipitationMoy = $Node2D/Control/sldPrecipitationMoy
-	print("Précipitation Moyenne : "+str(sldPrecipitationMoy.value)+"\n")
+	print("\nPrécipitation Moyenne : "+str(sldPrecipitationMoy.value)+"\n")
 	var sldPercentEau = $Node2D/Control/sldPercentEau
-	print("Pourcentage d'eau : "+str(sldPercentEau.value))
+	print("\nPourcentage d'eau : "+str(sldPercentEau.value))
 	var sldElevation = $Node2D/Control/sldElevation
-	print("Elevation bonus : "+str(sldElevation.value))
+	print("\nElevation bonus : "+str(sldElevation.value))
 	var sldThread = $Node2D/Control/sldThread
-	print("Nombre de thread : "+str(sldThread.value))
+	print("\nNombre de thread : "+str(sldThread.value))
 
 	var renderProgress = $Node2D/Control/renderProgress
 	print("Render Progress : ")
