@@ -103,6 +103,8 @@ func _on_btn_comfirme_pressed() -> void:
 	print("Render Progress : ")
 	print(renderProgress)
 	planetGenerator = PlanetGenerator.new(nom.text, sldRayonPlanetaire.value, sldTempMoy.value, sldHautEau.value, sldPrecipitationMoy.value, sldPercentEau.value, sldElevation.value , sldThread.value, renderProgress )
+	var echelle = 100.0 / sldRayonPlanetaire.value
+	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.scale = Vector2(echelle, echelle)
 	planetGenerator.finished.connect(_on_planetGenerator_finished)
 
 	print("Génération de la planète : "+nom.text)
