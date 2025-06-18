@@ -78,27 +78,27 @@ func generate_planet():
 	emit_signal("finished")
 
 func save_maps():
-	print("Sauvegarde de la carte finale")
+	print("\nSauvegarde de la carte finale")
 	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.final_map, "final_map.png", self.cheminSauvegarde)
 
-	print("Sauvegarde de la carte topographique")
+	print("\nSauvegarde de la carte topographique")
 	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.elevation_map, "elevation_map.png", self.cheminSauvegarde)
 
-	print("Sauvegarde de la carte des précipitations")
+	print("\nSauvegarde de la carte des précipitations")
 	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.precipitation_map, "precipitation_map.png", self.cheminSauvegarde)
 
-	print("Sauvegarde de la carte des températures moyennes")
+	print("\nSauvegarde de la carte des températures moyennes")
 	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.temperature_map, "temperature_map.png", self.cheminSauvegarde)
 
-	print("Sauvegarde de la carte des mers")
+	print("\nSauvegarde de la carte des mers")
 	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.water_map, "water_map.png", self.cheminSauvegarde)
 
-	print("Sauvegarde de la carte des biomes")
+	print("\nSauvegarde de la carte des biomes")
 	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.biome_map, "biome_map.png", self.cheminSauvegarde)
 
