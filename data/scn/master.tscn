@@ -6,16 +6,12 @@
 [ext_resource type="Texture2D" uid="uid://cn6ewiifk7yht" path="res://data/img/grabber.png" id="2_w6tpy"]
 [ext_resource type="Texture2D" uid="uid://yqpwvx3al8jd" path="res://data/img/fond.png" id="2_w33hw"]
 [ext_resource type="StyleBox" uid="uid://bl57t6r8bvde8" path="res://data/styles/bar.tres" id="3_7ybw1"]
+[ext_resource type="StyleBox" uid="uid://drou36ra2vb7i" path="res://data/styles/lineEdit.tres" id="4_i0hn2"]
 [ext_resource type="StyleBox" uid="uid://cwfv1kgvqgscl" path="res://data/styles/barSelect.tres" id="4_w6tpy"]
 [ext_resource type="Theme" uid="uid://bdbapd43uy2gd" path="res://data/font/font.tres" id="5_e2i44"]
 [ext_resource type="Texture2D" uid="uid://1nqqy1krp4q5" path="res://data/img/icon.png" id="6_w6tpy"]
 [ext_resource type="FontFile" uid="uid://bkpe48sacfdbi" path="res://data/font/orange kid.ttf" id="7_ggrey"]
 [ext_resource type="Texture2D" uid="uid://bxafg08etx5tr" path="res://data/img/line.png" id="7_qfml0"]
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_okhqb"]
-texture = ExtResource("7_qfml0")
-texture_margin_top = 20.0
-texture_margin_bottom = 20.0
 
 [sub_resource type="Theme" id="Theme_qfml0"]
 default_font = ExtResource("7_ggrey")
@@ -67,7 +63,7 @@ offset_right = 11036.0
 offset_bottom = 2585.98
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.670588, 0.670588, 0.670588, 1)
-theme_override_styles/normal = SubResource("StyleBoxTexture_okhqb")
+theme_override_styles/normal = ExtResource("4_i0hn2")
 max_length = 18
 metadata/_edit_use_anchors_ = true
 metadata/_edit_lock_ = true
@@ -368,10 +364,10 @@ centered = false
 metadata/_edit_lock_ = true
 
 [node name="Map" type="Sprite2D" parent="Node2D/Control/SubViewportContainer/SubViewport/Fond"]
-position = Vector2(100, 100)
+position = Vector2(44, 111.409)
+scale = Vector2(2, 2)
 texture = ExtResource("6_w6tpy")
 centered = false
-metadata/_edit_lock_ = true
 
 [node name="renderProgress" type="ProgressBar" parent="Node2D/Control"]
 layout_mode = 0
