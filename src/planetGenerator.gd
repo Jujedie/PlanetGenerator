@@ -4,8 +4,9 @@ class_name PlanetGenerator
 
 var nom: String
 signal finished
-var circonference  : int
-var renderProgress : ProgressBar
+var circonference   : int
+var renderProgress  : ProgressBar
+var cheminSauvegarde: String = "res://data/img/temp/"
 
 # Paramètres de génération
 var avg_temperature   : float
@@ -79,27 +80,27 @@ func generate_planet():
 func save_maps():
 	print("Sauvegarde de la carte finale")
 	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
-	save_image(self.final_map, "final_map.png")
+	save_image(self.final_map, "final_map.png", self.cheminSauvegarde)
 
 	print("Sauvegarde de la carte topographique")
 	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
-	save_image(self.elevation_map, "elevation_map.png")
+	save_image(self.elevation_map, "elevation_map.png", self.cheminSauvegarde)
 
 	print("Sauvegarde de la carte des précipitations")
 	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
-	save_image(self.precipitation_map, "precipitation_map.png")
+	save_image(self.precipitation_map, "precipitation_map.png", self.cheminSauvegarde)
 
 	print("Sauvegarde de la carte des températures moyennes")
 	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
-	save_image(self.temperature_map, "temperature_map.png")
+	save_image(self.temperature_map, "temperature_map.png", self.cheminSauvegarde)
 
 	print("Sauvegarde de la carte des mers")
 	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
-	save_image(self.water_map, "water_map.png")
+	save_image(self.water_map, "water_map.png", self.cheminSauvegarde)
 
 	print("Sauvegarde de la carte des biomes")
 	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
-	save_image(self.biome_map, "biome_map.png")
+	save_image(self.biome_map, "biome_map.png", self.cheminSauvegarde)
 
 
 func generate_elevation_map() -> void:
@@ -412,14 +413,17 @@ func addProgress(value) -> void:
 	if self.renderProgress != null:
 		self.renderProgress.call_deferred("set_value", self.renderProgress.value + value)
 
-static func save_image(image: Image, file_name: String) -> String:
-	var dir = DirAccess.open("res://data/img/temp")
-	if dir == null:
+static func save_image(image: Image, file_name : String, file_path: String = "res://data/img/temp") -> String:
+	var dir = DirAccess.open(file_path)
+	if dir == null && file_path == "res://data/img/temp":
 		dir = DirAccess.open("res://data/img")
 		dir.make_dir("temp")
 		dir = DirAccess.open("res://data/img/temp")
+	else :
+		DirAccess.make_dir_absolute(file_path)
+		dir = DirAccess.open(file_path)
 
-	var img_path = "res://data/img/temp/" + file_name
+	var img_path = file_path + file_name
 	image.save_png(img_path)
 	print("Saved: ", img_path)
 	return img_path
