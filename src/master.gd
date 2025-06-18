@@ -137,7 +137,24 @@ func _on_planetGenerator_finished_main() -> void:
 		print("Erreur lors du chargement de l'image: ", maps[map_index])
 
 func _on_btn_sauvegarder_pressed() -> void:
-	planetGenerator.save_planet()
+	if planetGenerator != null :
+		var prompt_instance = load("res://data/scn/prompt.tscn").instantiate()
+		$Node2D/Control.add_child(prompt_instance)
+		prompt_instance.position = Vector2i(200, 125)
+		prompt_instance.get_child(-1).get_child(-1).pressed.connect(_on_prompt_confirmed)
+	
+func _on_prompt_confirmed() -> void:
+	var prompt = $Node2D/Control.get_child(-1)
+	var input = prompt.get_child(1).get_child(1).text
+	if input != "":
+		if not input.ends_with("/"):
+			input += "/"
+		planetGenerator.cheminSauvegarde = input
+		planetGenerator.save_maps()
+		print("Planète sauvegardée dans : ", planetGenerator.cheminSauvegarde)
+	else:
+		print("Aucun chemin de sauvegarde spécifié.")
+	prompt.queue_free()
 
 func _on_btn_suivant_pressed() -> void:
 	map_index += 1
