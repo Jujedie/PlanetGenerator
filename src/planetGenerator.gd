@@ -21,7 +21,9 @@ var elevation_map    : Image
 var precipitation_map: Image
 var temperature_map  : Image
 var water_map   : Image
+var banquise_map: Image
 var biome_map   : Image
+var oil_map     : Image
 var final_map   : Image
 
 func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, percent_eau_monde_param: float = 0.7, elevation_modifier_param: int = 0, nb_thread_param : int = 8, renderProgress: ProgressBar = null) -> void:
@@ -44,6 +46,10 @@ func generate_planet():
 	var thread_final = Thread.new()
 	thread_final.start(generate_final_map)
 
+	print("\nGénération de la carte du pétrole\n")
+	var thread_oil = Thread.new()
+	thread_oil.start(generate_oil_map)
+
 	print("\nGénération de la carte topographique\n")
 	var thread_elevation = Thread.new()
 	thread_elevation.start(generate_elevation_map)
@@ -61,6 +67,10 @@ func generate_planet():
 	thread_precipitation.wait_to_finish()
 	thread_water.wait_to_finish()
 
+	print("\nGénération de la carte de la banquise\n")
+	var thread_banquise = Thread.new()
+	thread_banquise.start(generate_banquise_map)
+
 	print("\nGénération de la carte des températures moyennes\n")
 	var thread_temperature = Thread.new()
 	thread_temperature.start(generate_temperature_map)
@@ -71,6 +81,8 @@ func generate_planet():
 	var thread_biome = Thread.new()
 	thread_biome.start(generate_biome_map)
 
+	thread_banquise.wait_to_finish()
+	thread_oil.wait_to_finish()
 	thread_biome.wait_to_finish()
 
 	print("\n===================")
@@ -79,28 +91,28 @@ func generate_planet():
 
 func save_maps():
 	print("\nSauvegarde de la carte finale")
-	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.final_map, "final_map.png", self.cheminSauvegarde)
 
 	print("\nSauvegarde de la carte topographique")
-	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.elevation_map, "elevation_map.png", self.cheminSauvegarde)
 
 	print("\nSauvegarde de la carte des précipitations")
-	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.precipitation_map, "precipitation_map.png", self.cheminSauvegarde)
 
 	print("\nSauvegarde de la carte des températures moyennes")
-	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.temperature_map, "temperature_map.png", self.cheminSauvegarde)
 
 	print("\nSauvegarde de la carte des mers")
-	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.water_map, "water_map.png", self.cheminSauvegarde)
 
+	print("\nSauvegarde de la carte de la banquise")
+	save_image(self.banquise_map, "banquise_map.png", self.cheminSauvegarde)
+
 	print("\nSauvegarde de la carte des biomes")
-	print(self.elevation_map, self.final_map, self.water_map, self.precipitation_map, self.temperature_map, self.biome_map)
 	save_image(self.biome_map, "biome_map.png", self.cheminSauvegarde)
+
+	print("\nSauvegarde de la carte du pétrole")
+	save_image(self.oil_map, "oil_map.png", self.cheminSauvegarde)
 
 
 func generate_elevation_map() -> void:
@@ -399,9 +411,11 @@ func getMaps() -> Array[String]:
 
 	return [
 		save_image(self.elevation_map,"elevation_map.png"),
+		save_image(self.oil_map,"oil_map.png"),
 		save_image(self.precipitation_map,"precipitation_map.png"),
 		save_image(self.temperature_map,"temperature_map.png"),
 		save_image(self.water_map,"water_map.png"),
+		save_image(self.banquise_map,"banquise_map.png"),
 		save_image(self.biome_map,"biome_map.png"),
 		save_image(self.final_map,"final_map.png")
 	]
