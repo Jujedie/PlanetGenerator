@@ -1,0 +1,71 @@
+[gd_scene load_steps=8 format=3 uid="uid://c2lveiakbyo3c"]
+
+[ext_resource type="Theme" uid="uid://bdbapd43uy2gd" path="res://data/font/font.tres" id="1_dykqr"]
+[ext_resource type="Texture2D" uid="uid://dttwbcryk75ow" path="res://data/img/lineBack.png" id="1_n8cy6"]
+[ext_resource type="Texture2D" uid="uid://bxafg08etx5tr" path="res://data/img/line.png" id="2_imjpk"]
+[ext_resource type="FontFile" uid="uid://bkpe48sacfdbi" path="res://data/font/orange kid.ttf" id="4_6sb3f"]
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_n8cy6"]
+texture = ExtResource("2_imjpk")
+texture_margin_top = 20.0
+texture_margin_bottom = 20.0
+
+[sub_resource type="Theme" id="Theme_lgl2j"]
+default_font = ExtResource("4_6sb3f")
+default_font_size = 1500
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_q7ub8"]
+texture = ExtResource("2_imjpk")
+
+[node name="Master" type="Node2D"]
+z_index = 50
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+position = Vector2(-0.656677, 0.230225)
+scale = Vector2(13.5667, 9.449)
+texture = ExtResource("1_n8cy6")
+centered = false
+
+[node name="Node2D" type="Node2D" parent="."]
+position = Vector2(3.85916, 0.230217)
+scale = Vector2(0.04, 0.04)
+metadata/_edit_lock_ = true
+
+[node name="Label" type="Label" parent="Node2D"]
+offset_top = 431.619
+offset_right = 13455.0
+offset_bottom = 1631.62
+theme = ExtResource("1_dykqr")
+theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
+text = "Veuillez entrer le chemin de sauvegarde : "
+metadata/_edit_use_anchors_ = true
+metadata/_edit_lock_ = true
+
+[node name="LineEdit" type="LineEdit" parent="Node2D"]
+offset_left = 271.261
+offset_top = 1723.01
+offset_right = 13043.3
+offset_bottom = 2963.0
+theme = ExtResource("1_dykqr")
+theme_override_colors/font_color = Color(0.670588, 0.670588, 0.670588, 1)
+theme_override_styles/normal = SubResource("StyleBoxTexture_n8cy6")
+placeholder_text = "X:/chemin/"
+metadata/_edit_use_anchors_ = true
+metadata/_edit_lock_ = true
+
+[node name="btnComfirmer" type="Node2D" parent="."]
+position = Vector2(180.996, 130.559)
+scale = Vector2(0.025, 0.025)
+metadata/_edit_lock_ = true
+
+[node name="btnComfirme" type="Button" parent="btnComfirmer"]
+offset_left = -1.21973
+offset_top = -2.61442
+offset_right = 7611.78
+offset_bottom = 1797.38
+theme = SubResource("Theme_lgl2j")
+theme_override_colors/font_color = Color(0.670588, 0.670588, 0.670588, 1)
+theme_override_styles/normal = SubResource("StyleBoxTexture_q7ub8")
+text = "Générer"
+metadata/_edit_use_anchors_ = true
+metadata/_edit_lock_ = true
