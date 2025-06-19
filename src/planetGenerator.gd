@@ -6,7 +6,7 @@ var nom: String
 signal finished
 var circonference   : int
 var renderProgress  : ProgressBar
-var cheminSauvegarde: String = "res://data/img/temp/"
+var cheminSauvegarde: String
 
 # Paramètres de génération
 var avg_temperature   : float
@@ -26,10 +26,13 @@ var biome_map   : Image
 var oil_map     : Image
 var final_map   : Image
 
-func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, percent_eau_monde_param: float = 0.7, elevation_modifier_param: int = 0, nb_thread_param : int = 8, renderProgress: ProgressBar = null) -> void:
+func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, percent_eau_monde_param: float = 0.7, elevation_modifier_param: int = 0, nb_thread_param : int = 8, renderProgress: ProgressBar = null, cheminSauvegarde_param: String = "res://data/img/temp/") -> void:
 	self.nom = nom_param
 	
-	self.circonference     =  int(rayon * 2 * PI)
+	self.circonference        =  int(rayon * 2 * PI)
+	self.renderProgress       = renderProgress
+	self.renderProgress.value = 0.0
+	self.cheminSauvegarde     = cheminSauvegarde_param
 
 	self.avg_temperature   = avg_temperature_param
 	self.water_elevation   = water_elevation_param
@@ -38,8 +41,7 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 	self.elevation_modifier= elevation_modifier_param
 	self.nb_thread         = nb_thread_param
 
-	self.renderProgress       = renderProgress
-	self.renderProgress.value = 0.0
+	
 
 func generate_planet():
 	print("\nGénération de la carte finale\n")
@@ -67,22 +69,20 @@ func generate_planet():
 	thread_precipitation.wait_to_finish()
 	thread_water.wait_to_finish()
 
-	print("\nGénération de la carte de la banquise\n")
-	var thread_banquise = Thread.new()
-	thread_banquise.start(generate_banquise_map)
-
 	print("\nGénération de la carte des températures moyennes\n")
 	var thread_temperature = Thread.new()
 	thread_temperature.start(generate_temperature_map)
 
 	thread_temperature.wait_to_finish()
 
+	print("\nGénération de la carte de la banquise\n")
+	var thread_banquise = Thread.new()
+	thread_banquise.start(generate_banquise_map)
+
 	print("\nGénération de la carte des biomes\n")
 	var thread_biome = Thread.new()
 	thread_biome.start(generate_biome_map)
 
-	thread_banquise.wait_to_finish()
-	thread_oil.wait_to_finish()
 	thread_biome.wait_to_finish()
 
 	print("\n===================")
@@ -158,13 +158,101 @@ func generate_elevation_map() -> void:
 		var thread = Thread.new()
 		threadArray.append(thread)
 		thread.start(thread_calcul.bind(img, noise, [noise2,noise3], x1, x2, elevation_calcul))
-	# Wait for all threads to finish after starting them all
+	
 	for thread in threadArray:
 		thread.wait_to_finish()
 			
 	print("Fin de la génération de la carte")
 	self.addProgress(15)
 	self.elevation_map = img
+
+func generate_oil_map() -> void:
+	randomize()
+
+	print("Création de l'image")
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
+
+	print("Initialisation du bruit")
+	var noise = FastNoiseLite.new()
+	noise.seed = randi()
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise.frequency = 3.0 / float(self.circonference)
+	noise.fractal_octaves = 9
+	noise.fractal_gain = 0.85
+	noise.fractal_lacunarity = 4.0
+
+	print("Génération de la carte")
+	var range = circonference / (self.nb_thread / 2)
+	var threadArray = []
+	for i in range(0, (self.nb_thread / 2), 1):
+		var x1 = i * range
+		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
+		var thread = Thread.new()
+		threadArray.append(thread)
+		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, oil_calcul))
+	# Wait for all threads to finish after starting them all
+	for thread in threadArray:
+		thread.wait_to_finish()
+
+	print("Fin de la génération de la carte")
+	self.addProgress(15)
+	self.oil_map = img
+
+func oil_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
+	var value = noise.get_noise_2d(float(x), float(y))
+	value = clamp(value, 0.0, 1.0)
+
+	if value > 0.25:
+		img.set_pixel(x, y, Color.hex(0x000000FF))  # Oil color
+	else:
+		img.set_pixel(x, y, Color.hex(0xFFFFFFFF))  # Non-oil area
+
+func generate_banquise_map() -> void:
+	randomize()
+
+	print("Création de l'image")
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
+
+	print("Initialisation du bruit")
+	var noise = FastNoiseLite.new()
+	noise.seed = randi()
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise.frequency = 3.0 / float(self.circonference)
+	noise.fractal_octaves = 9
+	noise.fractal_gain = 0.85
+	noise.fractal_lacunarity = 4.0
+
+	print("Génération de la carte")
+	var range = circonference / (self.nb_thread / 2)
+	var threadArray = []
+	for i in range(0, (self.nb_thread / 2), 1):
+		var x1 = i * range
+		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
+		var thread = Thread.new()
+		threadArray.append(thread)
+		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, banquise_calcul))
+	
+	for thread in threadArray:
+		thread.wait_to_finish()
+
+	print("Fin de la génération de la carte")
+	self.addProgress(15)
+	self.banquise_map = img
+
+func banquise_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
+	var value = noise.get_noise_2d(float(x), float(y))
+	value = clamp(value, 0.0, 1.0)
+
+	if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
+		if Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y)) < 0.0 and value > 0.05:
+			img.set_pixel(x, y, Color.hex(0xFFFFFFFF))  # Ice color
+		else:
+			img.set_pixel(x, y, Color.hex(0x000000FF))  # Non-ice area
+	else:
+		img.set_pixel(x, y, Color.hex(0x000000FF))  # Non-ice area
+		
 
 func elevation_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 	var value = noise.get_noise_2d(float(x), float(y))
@@ -210,7 +298,7 @@ func generate_precipitation_map() -> void:
 		var thread = Thread.new()
 		threadArray.append(thread)
 		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, precipitation_calcul))
-	# Wait for all threads to finish after starting them all
+	
 	for thread in threadArray:
 		thread.wait_to_finish()
 
@@ -248,7 +336,7 @@ func generate_water_map() -> void:
 		var thread = Thread.new()
 		threadArray.append(thread)
 		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, water_calcul))
-	# Wait for all threads to finish after starting them all
+	
 	for thread in threadArray:
 		thread.wait_to_finish()
 
@@ -308,7 +396,7 @@ func generate_temperature_map() -> void:
 		var thread = Thread.new()
 		threadArray.append(thread)
 		thread.start(thread_calcul.bind(img, noise, noise2, x1, x2, temperature_calcul))
-	# Wait for all threads to finish after starting them all
+	
 	for thread in threadArray:
 		thread.wait_to_finish()
 
@@ -427,12 +515,15 @@ func addProgress(value) -> void:
 	if self.renderProgress != null:
 		self.renderProgress.call_deferred("set_value", self.renderProgress.value + value)
 
-static func save_image(image: Image, file_name : String, file_path: String = "res://data/img/temp") -> String:
+static func save_image(image: Image, file_name : String, file_path: String = "res://data/img/temp/") -> String:
+	if not file_path.ends_with("/"):
+		file_path += "/"
+	
 	var dir = DirAccess.open(file_path)
-	if dir == null && file_path == "res://data/img/temp":
-		dir = DirAccess.open("res://data/img")
+	if dir == null && file_path == "res://data/img/temp/":
+		dir = DirAccess.open("res://data/img/")
 		dir.make_dir("temp")
-		dir = DirAccess.open("res://data/img/temp")
+		dir = DirAccess.open("res://data/img/temp/")
 	else :
 		DirAccess.make_dir_absolute(file_path)
 		dir = DirAccess.open(file_path)
@@ -443,11 +534,11 @@ static func save_image(image: Image, file_name : String, file_path: String = "re
 	return img_path
 
 static func deleteImagesTemps():
-	var dir = DirAccess.open("res://data/img/temp")
+	var dir = DirAccess.open("res://data/img/temp/")
 	if dir == null:
-		dir = DirAccess.open("res://data/img")
+		dir = DirAccess.open("res://data/img/")
 		dir.make_dir("temp")
-		dir = DirAccess.open("res://data/img/temp")
+		dir = DirAccess.open("res://data/img/temp/")
 
 	dir.list_dir_begin()
 	var file_name = dir.get_next()

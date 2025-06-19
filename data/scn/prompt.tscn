@@ -1,5 +1,6 @@
-[gd_scene load_steps=8 format=3 uid="uid://c2lveiakbyo3c"]
+[gd_scene load_steps=9 format=3 uid="uid://c2lveiakbyo3c"]
 
+[ext_resource type="Script" uid="uid://c0afmo6c8fdwo" path="res://src/prompt.gd" id="1_6sb3f"]
 [ext_resource type="Theme" uid="uid://bdbapd43uy2gd" path="res://data/font/font.tres" id="1_dykqr"]
 [ext_resource type="Texture2D" uid="uid://dttwbcryk75ow" path="res://data/img/lineBack.png" id="1_n8cy6"]
 [ext_resource type="Texture2D" uid="uid://bxafg08etx5tr" path="res://data/img/line.png" id="2_imjpk"]
@@ -19,6 +20,7 @@ texture = ExtResource("2_imjpk")
 
 [node name="Master" type="Node2D"]
 z_index = 50
+script = ExtResource("1_6sb3f")
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
 position = Vector2(-0.656677, 0.230225)
@@ -59,13 +61,27 @@ scale = Vector2(0.025, 0.025)
 metadata/_edit_lock_ = true
 
 [node name="btnComfirme" type="Button" parent="btnComfirmer"]
-offset_left = -1.21973
-offset_top = -2.61442
-offset_right = 7611.78
-offset_bottom = 1797.38
+offset_left = 4653.33
+offset_top = -0.000284433
+offset_right = 12266.3
+offset_bottom = 1799.99
 theme = SubResource("Theme_lgl2j")
 theme_override_colors/font_color = Color(0.670588, 0.670588, 0.670588, 1)
 theme_override_styles/normal = SubResource("StyleBoxTexture_q7ub8")
 text = "Générer"
 metadata/_edit_use_anchors_ = true
 metadata/_edit_lock_ = true
+
+[node name="btnAnnuler" type="Button" parent="btnComfirmer"]
+offset_left = -5185.8
+offset_top = -0.000244379
+offset_right = 2427.2
+offset_bottom = 1799.99
+theme = SubResource("Theme_lgl2j")
+theme_override_colors/font_color = Color(0.670588, 0.670588, 0.670588, 1)
+theme_override_styles/normal = SubResource("StyleBoxTexture_q7ub8")
+text = "Annuler"
+metadata/_edit_use_anchors_ = true
+metadata/_edit_lock_ = true
+
+[connection signal="pressed" from="btnComfirmer/btnAnnuler" to="." method="_on_btn_annuler_pressed"]

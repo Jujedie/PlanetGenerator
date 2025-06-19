@@ -99,10 +99,13 @@ func _on_btn_comfirme_pressed() -> void:
 	var sldThread = $Node2D/Control/sldThread
 	print("\nNombre de thread : "+str(sldThread.value))
 
+	maps      = []
+	map_index = 0
+
 	var renderProgress = $Node2D/Control/renderProgress
-	print("Render Progress : ")
-	print(renderProgress)
+
 	planetGenerator = PlanetGenerator.new(nom.text, sldRayonPlanetaire.value, sldTempMoy.value, sldHautEau.value, sldPrecipitationMoy.value, sldPercentEau.value, sldElevation.value , sldThread.value, renderProgress )
+
 	var echelle = 100.0 / sldRayonPlanetaire.value
 	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.scale = Vector2(echelle, echelle)
 	planetGenerator.finished.connect(_on_planetGenerator_finished)
@@ -112,10 +115,10 @@ func _on_btn_comfirme_pressed() -> void:
 	var thread = Thread.new()
 	thread.start(planetGenerator.generate_planet)
 
-	$Node2D/Control/btnComfirmer/btnComfirme.disabled = true
+	$Node2D/Control/btnComfirmer/btnComfirme.disabled      = true
 	$Node2D/Control/btnSauvegarder/btnSauvegarder.disabled = true
-	$Node2D/Control/btnSuivant/btnSuivant.disabled = true
-	$Node2D/Control/btnPrecedant/btnPrecedant.disabled = true
+	$Node2D/Control/btnSuivant/btnSuivant.disabled         = true
+	$Node2D/Control/btnPrecedant/btnPrecedant.disabled     = true
 	
 
 func _on_planetGenerator_finished() -> void:
@@ -149,8 +152,6 @@ func _on_prompt_confirmed() -> void:
 	var prompt = $Node2D/Control.get_child(-1)
 	var input = prompt.get_child(1).get_child(1).text
 	if input != "":
-		if not input.ends_with("/"):
-			input += "/"
 		planetGenerator.cheminSauvegarde = input
 		planetGenerator.save_maps()
 		print("Planète sauvegardée dans : ", planetGenerator.cheminSauvegarde)
