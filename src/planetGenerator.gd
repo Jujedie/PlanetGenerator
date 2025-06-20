@@ -166,6 +166,25 @@ func generate_elevation_map() -> void:
 	self.addProgress(15)
 	self.elevation_map = img
 
+func elevation_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
+	var value = noise.get_noise_2d(float(x), float(y))
+	var value2 = noise2[0].get_noise_2d(float(x), float(y))
+	var elevation = ceil(value * (1000 + clamp(value2, 0.0, 1.0) * elevation_modifier))
+
+	if elevation >= 400:
+		value = noise2[1].get_noise_2d(float(x), float(y))
+		value = clamp(value, 0.0, 1.0)
+		elevation = elevation + ceil(value * Enum.ALTITUDE_MAX)
+	elif elevation <= -(400 + elevation_modifier):
+		value = noise2[1].get_noise_2d(float(x), float(y))
+		value = clamp(value, -1.0, 0.0)
+		elevation = elevation + ceil(value * Enum.ALTITUDE_MAX)
+
+	var color = Enum.getElevationColor(elevation)
+
+	img.set_pixel(x, y, color)
+
+
 func generate_oil_map() -> void:
 	randomize()
 
@@ -207,6 +226,7 @@ func oil_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
 		img.set_pixel(x, y, Color.hex(0x000000FF))  # Oil color
 	else:
 		img.set_pixel(x, y, Color.hex(0xFFFFFFFF))  # Non-oil area
+
 
 func generate_banquise_map() -> void:
 	randomize()
@@ -252,25 +272,6 @@ func banquise_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
 			img.set_pixel(x, y, Color.hex(0x000000FF))  # Non-ice area
 	else:
 		img.set_pixel(x, y, Color.hex(0x000000FF))  # Non-ice area
-		
-
-func elevation_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
-	var value = noise.get_noise_2d(float(x), float(y))
-	var value2 = noise2[0].get_noise_2d(float(x), float(y))
-	var elevation = ceil(value * (1000 + self.water_elevation + value2 * elevation_modifier))
-
-	if elevation >=  (1000 + self.water_elevation + elevation_modifier) - 100:
-		value = noise2[1].get_noise_2d(float(x), float(y))
-		value = clamp(value, 0.0, 1.0)
-		elevation = elevation + ceil(value * Enum.ALTITUDE_MAX)
-	elif elevation <= -(1000 + self.water_elevation + elevation_modifier) + 100:
-		value = noise2[1].get_noise_2d(float(x), float(y))
-		value = clamp(value, -1.0, 0.0)
-		elevation = elevation + ceil(value * Enum.ALTITUDE_MAX)
-
-	var color = Enum.getElevationColor(elevation)
-
-	img.set_pixel(x, y, color)
 
 
 func generate_precipitation_map() -> void:

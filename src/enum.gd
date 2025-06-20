@@ -55,7 +55,7 @@ var COULEURS_ELEVATIONS = {
 	-300: Color.hex(0x61b0ffFF),  # 300m 
 	-200: Color.hex(0x70b8ffFF),  # 200m 
 	-100: Color.hex(0x85c2ffFF),  # 100m 
-	-50: Color.hex(0x99ccff),  # 50m
+	-50: Color.hex(0x99ccffFF),  # 50m
 	-20: Color.hex(0xa8d4ffFF),  # 20m
 
 	0: Color.hex(0x526b3fFF)   , # 0m et moins
