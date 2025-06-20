@@ -43,44 +43,44 @@ var BIOMES = [
 
 # Définition des couleurs pour les élévations
 var COULEURS_ELEVATIONS = {
-	-ALTITUDE_MAX: Color.hex(0x010101FF),
-	-20000: Color.hex(0x020202FF), # 20000m
-	-8000: Color.hex(0x030303FF), # 8000m
-	-4000: Color.hex(0x040404FF), # 4000m
-	-2000: Color.hex(0x050505FF), # 2000m 
-	-1500: Color.hex(0x0A0A0AFF), # 1500m 
-	-1000: Color.hex(0x0F0F0FFF), # 1000m 
-	-500: Color.hex(0x141414FF),  # 500m 
-	-400: Color.hex(0x181818FF),  # 400m 
-	-300: Color.hex(0x1C1C1CFF),  # 300m 
-	-200: Color.hex(0x1E1E1EFF),  # 200m 
-	-100: Color.hex(0x202020FF),  # 100m 
-	-50: Color.hex(0x212121FF),  # 50m
-	-20: Color.hex(0x222222FF),  # 20m
+	-ALTITUDE_MAX: Color.hex(0x005cb8FF),
+	-20000: Color.hex(0x0066ccFF), # 20000m
+	-8000: Color.hex(0x006bd6FF), # 8000m
+	-4000: Color.hex(0x0070e0FF), # 4000m
+	-2000: Color.hex(0x148affFF), # 2000m 
+	-1500: Color.hex(0x2491ffFF), # 1500m 
+	-1000: Color.hex(0x2e96ffFF), # 1000m 
+	-500: Color.hex(0x4da6ffFF),  # 500m 
+	-400: Color.hex(0x57abffFF),  # 400m 
+	-300: Color.hex(0x61b0ffFF),  # 300m 
+	-200: Color.hex(0x70b8ffFF),  # 200m 
+	-100: Color.hex(0x85c2ffFF),  # 100m 
+	-50: Color.hex(0x99ccff),  # 50m
+	-20: Color.hex(0xa8d4ffFF),  # 20m
 
-	0: Color.hex(0x232323FF)   , # 0m et moins
+	0: Color.hex(0x526b3fFF)   , # 0m et moins
 
-	20: Color.hex(0x242424FF) , # 20m
-	50: Color.hex(0x252525FF) , # 50m
-	100: Color.hex(0x282828FF) , # 100m 
-	200: Color.hex(0x2E2E2EFF) , # 200m 
-	300: Color.hex(0x353535FF) , # 300m 
-	400: Color.hex(0x3C3C3CFF) , # 400m 
-	500: Color.hex(0x434343FF) , # 500m 
-	600: Color.hex(0x4A4A4AFF) , # 600m 
-	700: Color.hex(0x525252FF) , # 700m 
-	800: Color.hex(0x5C5C5CFF) , # 800m
-	900: Color.hex(0x666666FF) , # 900m
-	1000: Color.hex(0x717171FF), # 1000m
-	1500: Color.hex(0x7D7D7DFF), # 1500m
-	2000: Color.hex(0x888888FF), # 2000m 
-	4000: Color.hex(0x949494FF), # 4000m
-	8000: Color.hex(0xA0A0A0FF), # 8000m
-	12000: Color.hex(0xA5A5A5FF), # 12000m
-	16000: Color.hex(0xA8A8A8FF), # 16000m
-	20000: Color.hex(0xABABABFF), # 20000m
-	24000: Color.hex(0xAEAEAEFF), # 24000m
-	ALTITUDE_MAX: Color.hex(0xA5A5A5FF) 
+	20: Color.hex(0x567042FF) , # 20m
+	50: Color.hex(0x597444FF) , # 50m
+	100: Color.hex(0x5b7746FF) , # 100m 
+	200: Color.hex(0x5e7a48FF) , # 200m 
+	300: Color.hex(0x62814bFF) , # 300m 
+	400: Color.hex(0x67874fFF) , # 400m 
+	500: Color.hex(0x6c8d53FF) , # 500m 
+	600: Color.hex(0x808d53FF) , # 600m 
+	700: Color.hex(0x889155FF) , # 700m 
+	800: Color.hex(0x919457FF) , # 800m
+	900: Color.hex(0x96995aFF) , # 900m
+	1000: Color.hex(0x9b9e5dFF), # 1000m
+	1500: Color.hex(0xa19e5fFF), # 1500m
+	2000: Color.hex(0xa3a160FF), # 2000m 
+	4000: Color.hex(0x9e995dFF), # 4000m
+	8000: Color.hex(0x99945aFF), # 8000m
+	12000: Color.hex(0x948f57FF), # 12000m
+	16000: Color.hex(0x8f8a54FF), # 16000m
+	20000: Color.hex(0x8a8551FF), # 20000m
+	24000: Color.hex(0x85804eFF), # 24000m
+	ALTITUDE_MAX: Color.hex(0x7d794aFF) 
 }
 
 var COULEURS_TEMPERATURE = {
