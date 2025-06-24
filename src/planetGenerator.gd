@@ -149,6 +149,15 @@ func generate_elevation_map() -> void:
 	noise3.fractal_gain = 0.85
 	noise3.fractal_lacunarity = 3.0
 
+	var noiseTectonic = FastNoiseLite.new()
+	noiseTectonic.seed = randi()
+	noiseTectonic.noise_type = FastNoiseLite.TYPE_VALUE_CUBIC
+	noiseTectonic.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noiseTectonic.frequency = 0.5 / float(self.circonference)
+	noiseTectonic.fractal_octaves = 6
+	noiseTectonic.fractal_gain = 0.5
+	noiseTectonic.fractal_lacunarity = 4.0
+
 	print("Génération de la carte")
 	var range = circonference / (self.nb_thread / 2)
 	var threadArray = []
@@ -157,7 +166,7 @@ func generate_elevation_map() -> void:
 		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
 		var thread = Thread.new()
 		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noise, [noise2,noise3], x1, x2, elevation_calcul))
+		thread.start(thread_calcul.bind(img, [ noise, noise2, noise3], noiseTectonic, x1, x2, elevation_calcul))
 	
 	for thread in threadArray:
 		thread.wait_to_finish()
@@ -169,15 +178,20 @@ func generate_elevation_map() -> void:
 func elevation_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 	var value = noise.get_noise_2d(float(x), float(y))
 	var value2 = noise2[0].get_noise_2d(float(x), float(y))
-	var elevation = ceil(value * (1000 + clamp(value2, 0.0, 1.0) * elevation_modifier))
+	var elevation = ceil(value * (1680 + clamp(value2, 0.0, 1.0) * elevation_modifier))
+	if elevation > 600:
+		print("Elevation : ", elevation, " - Value: ", value, " - Value2: ", value2)
 
-	if elevation >= 400:
+	if elevation >= 600:
 		value = noise2[1].get_noise_2d(float(x), float(y))
-		value = clamp(value, 0.0, 1.0)
+		if value < 0.0:
+			value = value * -1.0 
+		print("Elevation positive : ", elevation, " - Value2: ", value)
 		elevation = elevation + ceil(value * Enum.ALTITUDE_MAX)
-	elif elevation <= -(400 + elevation_modifier):
+	elif elevation <= -600:
 		value = noise2[1].get_noise_2d(float(x), float(y))
-		value = clamp(value, -1.0, 0.0)
+		if value > 0.0:
+			value = value * -1.0
 		elevation = elevation + ceil(value * Enum.ALTITUDE_MAX)
 
 	var color = Enum.getElevationColor(elevation)
@@ -263,7 +277,7 @@ func generate_banquise_map() -> void:
 
 func banquise_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
 	var value = noise.get_noise_2d(float(x), float(y))
-	value = clamp(value, 0.0, 1.0)
+	value = abs(value)
 
 	if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
 		if Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y)) < 0.0 and value > 0.05:
