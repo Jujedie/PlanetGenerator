@@ -195,16 +195,12 @@ func elevation_calcul(img: Image, noise, noises, x: int, y: int) -> void:
 	var value2 = noise2.get_noise_2d(float(x), float(y))
 	var elevation = ceil(value * (2000 + clamp(value2, 0.0, 1.0) * elevation_modifier))
 
-	# Tectonic plates: mountain ridges
 	var tectonic_mountain_val = abs(tectonic_mountain_noise.get_noise_2d(float(x), float(y)))
 	if tectonic_mountain_val > 0.45 and tectonic_mountain_val < 0.55:
-		# On the tectonic plate boundary, add mountains if on land
-		elevation += 800 * (1.0 - abs(tectonic_mountain_val - 0.5) * 20.0) # sharper ridge
+		elevation += 800 * (1.0 - abs(tectonic_mountain_val - 0.5) * 20.0)
 
-	# Tectonic plates: canyons
 	var tectonic_canyon_val = abs(tectonic_canyon_noise.get_noise_2d(float(x), float(y)))
 	if tectonic_canyon_val > 0.45 and tectonic_canyon_val < 0.55:
-		# On the tectonic plate boundary, add canyons (lower elevation)
 		elevation -= 600 * (1.0 - abs(tectonic_canyon_val - 0.5) * 20.0)
 
 	if elevation > 600:
@@ -580,3 +576,9 @@ static func deleteImagesTemps():
 		dir.remove(file_name)
 		file_name = dir.get_next()
 	dir.list_dir_end()
+
+func get_wrapped_noise_2d(noise: FastNoiseLite, x: int, y: int, width: int, height: int) -> float:
+    var angle = float(x) / float(width) * PI * 2.0
+    var nx = cos(angle)
+    var ny = sin(angle)
+    return noise.get_noise_3d(nx, ny, float(y) / float(height))
