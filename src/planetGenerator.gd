@@ -149,14 +149,18 @@ func generate_elevation_map() -> void:
 	noise3.fractal_gain = 0.85
 	noise3.fractal_lacunarity = 3.0
 
-	var noiseTectonic = FastNoiseLite.new()
-	noiseTectonic.seed = randi()
-	noiseTectonic.noise_type = FastNoiseLite.TYPE_VALUE_CUBIC
-	noiseTectonic.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noiseTectonic.frequency = 0.5 / float(self.circonference)
-	noiseTectonic.fractal_octaves = 6
-	noiseTectonic.fractal_gain = 0.5
-	noiseTectonic.fractal_lacunarity = 4.0
+	# Tectonic plates noises
+	var tectonic_mountain_noise = FastNoiseLite.new()
+	tectonic_mountain_noise.seed = randi()
+	tectonic_mountain_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	tectonic_mountain_noise.frequency = 0.25 / float(self.circonference)
+	tectonic_mountain_noise.fractal_octaves = 2
+
+	var tectonic_canyon_noise = FastNoiseLite.new()
+	tectonic_canyon_noise.seed = randi()
+	tectonic_canyon_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	tectonic_canyon_noise.frequency = 0.25 / float(self.circonference)
+	tectonic_canyon_noise.fractal_octaves = 2
 
 	print("Génération de la carte")
 	var range = circonference / (self.nb_thread / 2)
@@ -166,7 +170,13 @@ func generate_elevation_map() -> void:
 		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
 		var thread = Thread.new()
 		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, [ noise, noise2, noise3], noiseTectonic, x1, x2, elevation_calcul))
+		thread.start(thread_calcul.bind(
+			img, 
+			noise, 
+			[noise2, noise3, tectonic_mountain_noise, tectonic_canyon_noise], 
+			x1, x2, 
+			elevation_calcul
+		))
 	
 	for thread in threadArray:
 		thread.wait_to_finish()
@@ -175,27 +185,36 @@ func generate_elevation_map() -> void:
 	self.addProgress(15)
 	self.elevation_map = img
 
-func elevation_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
-	var value = noise.get_noise_2d(float(x), float(y))
-	var value2 = noise2[0].get_noise_2d(float(x), float(y))
-	var elevation = ceil(value * (1680 + clamp(value2, 0.0, 1.0) * elevation_modifier))
-	if elevation > 600:
-		print("Elevation : ", elevation, " - Value: ", value, " - Value2: ", value2)
+func elevation_calcul(img: Image, noise, noises, x: int, y: int) -> void:
+	var noise2 = noises[0]
+	var noise3 = noises[1]
+	var tectonic_mountain_noise = noises[2]
+	var tectonic_canyon_noise = noises[3]
 
-	if elevation >= 600:
-		value = noise2[1].get_noise_2d(float(x), float(y))
-		if value < 0.0:
-			value = value * -1.0 
-		print("Elevation positive : ", elevation, " - Value2: ", value)
-		elevation = elevation + ceil(value * Enum.ALTITUDE_MAX)
+	var value = noise.get_noise_2d(float(x), float(y))
+	var value2 = noise2.get_noise_2d(float(x), float(y))
+	var elevation = ceil(value * (2000 + clamp(value2, 0.0, 1.0) * elevation_modifier))
+
+	# Tectonic plates: mountain ridges
+	var tectonic_mountain_val = abs(tectonic_mountain_noise.get_noise_2d(float(x), float(y)))
+	if tectonic_mountain_val > 0.45 and tectonic_mountain_val < 0.55:
+		# On the tectonic plate boundary, add mountains if on land
+		elevation += 800 * (1.0 - abs(tectonic_mountain_val - 0.5) * 20.0) # sharper ridge
+
+	# Tectonic plates: canyons
+	var tectonic_canyon_val = abs(tectonic_canyon_noise.get_noise_2d(float(x), float(y)))
+	if tectonic_canyon_val > 0.45 and tectonic_canyon_val < 0.55:
+		# On the tectonic plate boundary, add canyons (lower elevation)
+		elevation -= 600 * (1.0 - abs(tectonic_canyon_val - 0.5) * 20.0)
+
+	if elevation > 600:
+		var value3 = clamp(noise3.get_noise_2d(float(x), float(y)), 0.0, 1.0)
+		elevation = elevation + ceil(value3 * Enum.ALTITUDE_MAX)
 	elif elevation <= -600:
-		value = noise2[1].get_noise_2d(float(x), float(y))
-		if value > 0.0:
-			value = value * -1.0
-		elevation = elevation + ceil(value * Enum.ALTITUDE_MAX)
+		var value3 = clamp(noise3.get_noise_2d(float(x), float(y)), 0.0, 1.0)
+		elevation = elevation + ceil(value3 * Enum.ALTITUDE_MAX)
 
 	var color = Enum.getElevationColor(elevation)
-
 	img.set_pixel(x, y, color)
 
 
