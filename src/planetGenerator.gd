@@ -207,7 +207,7 @@ func elevation_calcul(img: Image, noise, noises, x: int, y: int) -> void:
 		var value3 = clamp(noise3.get_noise_2d(float(x), float(y)), 0.0, 1.0)
 		elevation = elevation + ceil(value3 * Enum.ALTITUDE_MAX)
 	elif elevation <= -600:
-		var value3 = clamp(noise3.get_noise_2d(float(x), float(y)), 0.0, 1.0)
+		var value3 = clamp(noise3.get_noise_2d(float(x), float(y)), -1.0, 0.0)
 		elevation = elevation + ceil(value3 * Enum.ALTITUDE_MAX)
 
 	var color = Enum.getElevationColor(elevation)
@@ -576,9 +576,3 @@ static func deleteImagesTemps():
 		dir.remove(file_name)
 		file_name = dir.get_next()
 	dir.list_dir_end()
-
-func get_wrapped_noise_2d(noise: FastNoiseLite, x: int, y: int, width: int, height: int) -> float:
-    var angle = float(x) / float(width) * PI * 2.0
-    var nx = cos(angle)
-    var ny = sin(angle)
-    return noise.get_noise_3d(nx, ny, float(y) / float(height))

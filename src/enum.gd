@@ -40,13 +40,13 @@ var BIOMES = [
 
 # Définition des couleurs pour les élévations
 var COULEURS_ELEVATIONS = {
-	-ALTITUDE_MAX: Color.hex(0x005cb8FF),
-	-20000: Color.hex(0x0066ccFF),
-	-8000: Color.hex(0x006bd6FF),
-	-4000: Color.hex(0x0070e0FF),
-	-2000: Color.hex(0x148affFF),
-	-1500: Color.hex(0x2491ffFF),
-	-1000: Color.hex(0x2e96ffFF),
+	-ALTITUDE_MAX: Color.hex(0x2491ffbFF),
+	-20000: Color.hex(0x2994ffFF),
+	-8000: Color.hex(0x2e96ffFF),
+	-4000: Color.hex(0x3399ffFF),
+	-2000: Color.hex(0x389cffFF),
+	-1500: Color.hex(0x3d9effFF),
+	-1000: Color.hex(0x42a1ffFF),
 	-500: Color.hex(0x4da6ffFF),
 	-400: Color.hex(0x57abffFF),
 	-300: Color.hex(0x61b0ffFF),
