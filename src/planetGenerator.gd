@@ -437,17 +437,14 @@ func generate_temperature_map() -> void:
 func temperature_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 	# Latitude-based temperature adjustment
 	var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
-	var latitude_temp = -7.5 * latitude + 7.5 * (1-latitude) + self.avg_temperature
+	var latitude_temp = -20.5 * latitude + 5.5 * (1-latitude) + self.avg_temperature
 
 	# Altitude-based temperature adjustment
 	var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 	var altitude_temp = 0.0
 
-	if elevation_val > self.water_elevation:
-		altitude_temp = -0.065 * (elevation_val - self.water_elevation)  # Temperature decreases by 6.5°C per 100m
-	elif elevation_val < self.water_elevation and self.water_map.get_pixel(x, y) != Color.hex(0xFFFFFFFF):
-		altitude_temp = -0.02 * (self.water_elevation - elevation_val)  # Temperature increases by 6.5°C per 100m
-	
+	altitude_temp = get_temperature_delta_from_altitude(elevation_val - self.water_elevation )
+
 	# Noise-based randomness
 	var noise_value = noise.get_noise_2d(float(x), float(y))
 	var noise_temp_factor = noise_value * (self.avg_temperature / 1.5) 
@@ -576,3 +573,31 @@ static func deleteImagesTemps():
 		dir.remove(file_name)
 		file_name = dir.get_next()
 	dir.list_dir_end()
+
+func get_temperature_delta_from_altitude(altitude: float) -> float:
+	# Table extraite de l'image (altitude en m, température en °C à latitude 0)
+	var altitude_table = [
+		-500, 0, 500, 1000, 1500, 2000, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000, 9500, 10000, 10500
+	]
+	var temp_table = [
+		18.3, 15.0, 11.8, 8.5, 5.3, 2.0, -4.5, -7.8, -11.0, -14.3, -17.5, -20.8, -24.0, -27.3, -30.7, -33.8, -37.0, -40.3, -43.5, -46.8, -50.0, -53.3
+	]
+	
+	# Clamp altitude to table range
+	if altitude <= altitude_table[0]:
+		return temp_table[0] - 15.0
+	if altitude >= altitude_table[-1]:
+		return temp_table[-1] - 15.0
+
+	# Recherche de l'intervalle
+	for i in range(1, altitude_table.size()):
+		if altitude < altitude_table[i]:
+			var alt0 = altitude_table[i-1]
+			var alt1 = altitude_table[i]
+			var temp0 = temp_table[i-1]
+			var temp1 = temp_table[i]
+			# Interpolation linéaire
+			var t = (altitude - alt0) / (alt1 - alt0)
+			var temp = lerp(temp0, temp1, t)
+			return temp - 15.0 # Différence par rapport à 15°C (niveau 0)
+	return 0.0
