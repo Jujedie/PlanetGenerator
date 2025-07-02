@@ -173,7 +173,7 @@ theme_override_icons/tick = ExtResource("2_w6tpy")
 theme_override_styles/slider = ExtResource("3_7ybw1")
 theme_override_styles/grabber_area = ExtResource("4_w6tpy")
 theme_override_styles/grabber_area_highlight = ExtResource("4_w6tpy")
-min_value = -100.0
+min_value = -2500.0
 max_value = 2500.0
 metadata/_edit_lock_ = true
 
