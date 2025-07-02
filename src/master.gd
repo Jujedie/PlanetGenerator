@@ -92,8 +92,6 @@ func _on_btn_comfirme_pressed() -> void:
 	print("\nElevation des mers : "+str(sldHautEau.value))
 	var sldPrecipitationMoy = $Node2D/Control/sldPrecipitationMoy
 	print("\nPrécipitation Moyenne : "+str(sldPrecipitationMoy.value)+"\n")
-	var sldPercentEau = $Node2D/Control/sldPercentEau
-	print("\nPourcentage d'eau : "+str(sldPercentEau.value))
 	var sldElevation = $Node2D/Control/sldElevation
 	print("\nElevation bonus : "+str(sldElevation.value))
 	var sldThread = $Node2D/Control/sldThread
@@ -104,7 +102,7 @@ func _on_btn_comfirme_pressed() -> void:
 
 	var renderProgress = $Node2D/Control/renderProgress
 
-	planetGenerator = PlanetGenerator.new(nom.text, sldRayonPlanetaire.value, sldTempMoy.value, sldHautEau.value, sldPrecipitationMoy.value, sldPercentEau.value, sldElevation.value , sldThread.value, renderProgress )
+	planetGenerator = PlanetGenerator.new(nom.text, sldRayonPlanetaire.value, sldTempMoy.value, sldHautEau.value, sldPrecipitationMoy.value, sldElevation.value , sldThread.value, renderProgress )
 
 	var echelle = 100.0 / sldRayonPlanetaire.value
 	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.scale = Vector2(echelle, echelle)
@@ -160,6 +158,10 @@ func _on_prompt_confirmed() -> void:
 	prompt.queue_free()
 
 func _on_btn_suivant_pressed() -> void:
+	if maps.is_empty():
+		print("Aucune carte disponible.")
+		return 
+
 	map_index += 1
 	if map_index >= maps.size():
 		map_index = 0
@@ -173,6 +175,10 @@ func _on_btn_suivant_pressed() -> void:
 		print("Erreur lors du chargement de l'image: ", maps[map_index])
 
 func _on_btn_precedant_pressed() -> void:
+	if maps.is_empty():
+		print("Aucune carte disponible.")
+		return 
+
 	map_index -= 1
 	if map_index < 0:
 		map_index = maps.size() - 1
