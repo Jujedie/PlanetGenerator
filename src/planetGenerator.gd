@@ -1,6 +1,9 @@
 extends RefCounted
 
+
+
 class_name PlanetGenerator
+
 
 var nom: String
 signal finished
@@ -12,7 +15,6 @@ var cheminSauvegarde: String
 var avg_temperature   : float
 var water_elevation   : int    # l'élévation de l'eau par rapport à la terre [-oo,+oo]
 var avg_precipitation : float  # entre 0 et 1
-var percent_eau_monde : float
 var elevation_modifier: int
 var nb_thread         : int
 
@@ -26,7 +28,7 @@ var biome_map   : Image
 var oil_map     : Image
 var final_map   : Image
 
-func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, percent_eau_monde_param: float = 0.7, elevation_modifier_param: int = 0, nb_thread_param : int = 8, renderProgress: ProgressBar = null, cheminSauvegarde_param: String = "res://data/img/temp/") -> void:
+func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, elevation_modifier_param: int = 0, nb_thread_param : int = 8, renderProgress: ProgressBar = null, cheminSauvegarde_param: String = "res://data/img/temp/") -> void:
 	self.nom = nom_param
 	
 	self.circonference        =  int(rayon * 2 * PI)
@@ -37,7 +39,6 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 	self.avg_temperature   = avg_temperature_param
 	self.water_elevation   = water_elevation_param
 	self.avg_precipitation = avg_precipitation_param
-	self.percent_eau_monde = percent_eau_monde_param
 	self.elevation_modifier= elevation_modifier_param
 	self.nb_thread         = nb_thread_param
 
@@ -340,7 +341,7 @@ func precipitation_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
 	var value = noise.get_noise_2d(float(x), float(y))
 	value = clamp((value + self.avg_precipitation * value / 2.0), 0.0, 1.0)
 
-	img.set_pixel(x, y, Color(value, value, value))
+	img.set_pixel(x, y, Enum.getPrecipitationColor(value))
 
 
 func generate_water_map() -> void:
@@ -365,7 +366,7 @@ func generate_water_map() -> void:
 		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
 		var thread = Thread.new()
 		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, water_calcul))
+		thread.start(thread_calcul.bind(img, noise, 0, x1, x2, water_calcul))
 	
 	for thread in threadArray:
 		thread.wait_to_finish()
@@ -375,21 +376,17 @@ func generate_water_map() -> void:
 	self.water_map = img
 
 func water_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
-		var cptCase = 0
 		randomize()
 
 		var value = noise.get_noise_2d(float(x), float(y))
-		value = clamp(value, 0.0, 1.0)
+		value = abs(value)
 
 		var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
-		var minCasesEau = int(self.circonference * (self.circonference / 2.0)) * self.percent_eau_monde
 			
-		if elevation_val <= self.water_elevation and ( cptCase < minCasesEau  or value < self.percent_eau_monde ):
+		if elevation_val <= self.water_elevation:
 			img.set_pixel(x, y, Color.hex(0xFFFFFFFF))
 		else:
 			img.set_pixel(x, y, Color.hex(0x000000FF))
-			
-		cptCase += 1
 
 
 func generate_temperature_map() -> void:
