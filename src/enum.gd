@@ -115,6 +115,17 @@ var COULEURS_TEMPERATURE = {
 	100: Color.hex(0x6e1408FF)
 }
 
+var COULEUR_PRECIPITATION = {
+	0.0: Color.hex(0xb118b4FF),
+	0.1: Color.hex(0x8d1490FF),
+	0.2: Color.hex(0x6c16a2FF),
+	0.3: Color.hex(0x4a18afFF),
+	0.4: Color.hex(0x2c1bc5FF),
+	0.5: Color.hex(0x1d33d3FF),
+	0.7: Color.hex(0x1f4fe0FF),
+	1.0: Color.hex(0x3583e3FF)
+}
+
 func getElevationColor(elevation: int) -> Color:
 	for key in COULEURS_ELEVATIONS.keys():
 		if elevation <= key:
@@ -205,3 +216,9 @@ func getMostCommonSurroundingBiome(biomes : Array) -> Biome:
 			return biome
 	
 	return Biome.NULL
+
+func getPrecipitationColor(precipitation: float) -> Color:
+	for key in COULEUR_PRECIPITATION.keys():
+		if precipitation <= key:
+			return COULEUR_PRECIPITATION[key]
+	return COULEUR_PRECIPITATION[1.0]

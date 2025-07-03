@@ -17,6 +17,7 @@ var water_elevation   : int    # l'élévation de l'eau par rapport à la terre 
 var avg_precipitation : float  # entre 0 et 1
 var elevation_modifier: int
 var nb_thread         : int
+var atmosphere_type   : int
 
 # Images générées
 var elevation_map    : Image
@@ -28,7 +29,7 @@ var biome_map   : Image
 var oil_map     : Image
 var final_map   : Image
 
-func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, elevation_modifier_param: int = 0, nb_thread_param : int = 8, renderProgress: ProgressBar = null, cheminSauvegarde_param: String = "res://data/img/temp/") -> void:
+func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, elevation_modifier_param: int = 0, nb_thread_param : int = 8, atmosphere_type_param: int = 0, renderProgress: ProgressBar = null, cheminSauvegarde_param: String = "res://data/img/temp/") -> void:
 	self.nom = nom_param
 	
 	self.circonference        =  int(rayon * 2 * PI)
@@ -41,6 +42,7 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 	self.avg_precipitation = avg_precipitation_param
 	self.elevation_modifier= elevation_modifier_param
 	self.nb_thread         = nb_thread_param
+	self.atmosphere_type   = atmosphere_type_param
 
 	
 
@@ -239,7 +241,7 @@ func generate_oil_map() -> void:
 		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
 		var thread = Thread.new()
 		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, oil_calcul))
+		thread.start(thread_calcul.bind(img, noise, self.atmosphere_type != 3, x1, x2, oil_calcul))
 	# Wait for all threads to finish after starting them all
 	for thread in threadArray:
 		thread.wait_to_finish()
@@ -248,11 +250,11 @@ func generate_oil_map() -> void:
 	self.addProgress(15)
 	self.oil_map = img
 
-func oil_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
+func oil_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 	var value = noise.get_noise_2d(float(x), float(y))
 	value = clamp(value, 0.0, 1.0)
 
-	if value > 0.25:
+	if value > 0.25 and noise2:
 		img.set_pixel(x, y, Color.hex(0x000000FF))  # Oil color
 	else:
 		img.set_pixel(x, y, Color.hex(0xFFFFFFFF))  # Non-oil area
@@ -296,7 +298,7 @@ func banquise_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
 	value = abs(value)
 
 	if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
-		if Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y)) < 0.0 and value > 0.05:
+		if Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y)) < 0.0 and value > 0.001:
 			img.set_pixel(x, y, Color.hex(0xFFFFFFFF))  # Ice color
 		else:
 			img.set_pixel(x, y, Color.hex(0x000000FF))  # Non-ice area
