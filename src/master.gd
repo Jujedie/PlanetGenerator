@@ -96,13 +96,18 @@ func _on_btn_comfirme_pressed() -> void:
 	print("\nElevation bonus : "+str(sldElevation.value))
 	var sldThread = $Node2D/Control/sldThread
 	print("\nNombre de thread : "+str(sldThread.value))
+	var typeAtmosphere = $Node2D/Control/typeAtmosphere/ItemList
+	print("\nType d'atmosphère : "+typeAtmosphere.get_item_text(typeAtmosphere.get_selected_id()))
+
+	if typeAtmosphere.get_selected_id() == -1:
+		typeAtmosphere.select(0)
 
 	maps      = []
 	map_index = 0
 
 	var renderProgress = $Node2D/Control/renderProgress
 
-	planetGenerator = PlanetGenerator.new(nom.text, sldRayonPlanetaire.value, sldTempMoy.value, sldHautEau.value, sldPrecipitationMoy.value, sldElevation.value , sldThread.value, renderProgress )
+	planetGenerator = PlanetGenerator.new(nom.text, sldRayonPlanetaire.value, sldTempMoy.value, sldHautEau.value, sldPrecipitationMoy.value, sldElevation.value , sldThread.value, typeAtmosphere.get_selected_id(), renderProgress )
 
 	var echelle = 100.0 / sldRayonPlanetaire.value
 	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.scale = Vector2(echelle, echelle)
