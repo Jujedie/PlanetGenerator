@@ -29,7 +29,7 @@ var biome_map   : Image
 var oil_map     : Image
 var final_map   : Image
 
-func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, elevation_modifier_param: int = 0, nb_thread_param : int = 8, atmosphere_type_param: int = 0, renderProgress: ProgressBar = null, cheminSauvegarde_param: String = "user://PlanetGenerator/temp/") -> void:
+func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, elevation_modifier_param: int = 0, nb_thread_param : int = 8, atmosphere_type_param: int = 0, renderProgress: ProgressBar = null, cheminSauvegarde_param: String = "user://temp/") -> void:
 	self.nom = nom_param
 	
 	self.circonference        =  int(rayon * 2 * PI)
@@ -541,15 +541,14 @@ func addProgress(value) -> void:
 	if self.renderProgress != null:
 		self.renderProgress.call_deferred("set_value", self.renderProgress.value + value)
 
-static func save_image(image: Image, file_name : String, file_path: String = "user://PlanetGenerator/temp/") -> String:
+static func save_image(image: Image, file_name : String, file_path: String = "user://temp/") -> String:
 	if not file_path.ends_with("/"):
 		file_path += "/"
 	
 	var dir = DirAccess.open(file_path)
-	if dir == null && file_path == "user://PlanetGenerator/temp/":
-		dir = DirAccess.open("user://PlanetGenerator/")
-		dir.make_dir("temp")
-		dir = DirAccess.open("user://PlanetGenerator/temp/")
+	if dir == null && file_path == "user://temp/":
+		DirAccess.make_dir_absolute("user://temp/")
+		dir = DirAccess.open("user://temp/")
 	else :
 		DirAccess.make_dir_absolute(file_path)
 		dir = DirAccess.open(file_path)
@@ -560,11 +559,10 @@ static func save_image(image: Image, file_name : String, file_path: String = "us
 	return img_path
 
 static func deleteImagesTemps():
-	var dir = DirAccess.open("user://PlanetGenerator/temp/")
+	var dir = DirAccess.open("user://temp/")
 	if dir == null:
-		dir = DirAccess.open("user://PlanetGenerator/")
-		dir.make_dir("temp")
-		dir = DirAccess.open("user://PlanetGenerator/temp/")
+		DirAccess.make_dir_absolute("user://temp/")
+		dir = DirAccess.open("user://temp/")
 
 	dir.list_dir_begin()
 	var file_name = dir.get_next()
