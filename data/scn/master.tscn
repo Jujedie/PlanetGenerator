@@ -343,34 +343,36 @@ theme_override_colors/font_color = Color(0.670588, 0.670588, 0.670588, 1)
 text = "Vue Précédante"
 flat = true
 
-[node name="typeAtmosphere" type="Node2D" parent="Node2D/Control"]
+[node name="typePlanete" type="Node2D" parent="Node2D/Control"]
 position = Vector2(912, 388.172)
 scale = Vector2(0.02, 0.02)
 metadata/_edit_lock_ = true
 
-[node name="ItemList" type="OptionButton" parent="Node2D/Control/typeAtmosphere"]
+[node name="ItemList" type="OptionButton" parent="Node2D/Control/typePlanete"]
 offset_right = 8205.0
 offset_bottom = 1257.0
 theme_override_styles/normal = ExtResource("4_i0hn2")
-item_count = 4
-popup/item_0/text = "NORMAL ATMOSPHERE"
+item_count = 5
+popup/item_0/text = "Habitable"
 popup/item_0/id = 0
-popup/item_1/text = "TOXIC ATMOSPHERE"
+popup/item_1/text = "Toxique"
 popup/item_1/id = 1
-popup/item_2/text = "ANOXIC ATMOSPHERE"
+popup/item_2/text = "Volcanique"
 popup/item_2/id = 2
-popup/item_3/text = "NO ATMOSPHERE"
-popup/item_3/id = 3
+popup/item_3/text = "Morte"
+popup/item_3/id = 4
+popup/item_4/text = "Sans Atmosphère"
+popup/item_4/id = 3
 metadata/_edit_use_anchors_ = true
 
-[node name="Label" type="Label" parent="Node2D/Control/typeAtmosphere"]
+[node name="Label" type="Label" parent="Node2D/Control/typePlanete"]
 offset_left = 3.9987
 offset_top = -1280.5
 offset_right = 8174.0
 offset_bottom = -80.5012
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
-text = "Type d'Atmosphere :"
+text = "Type de Planète :"
 metadata/_edit_use_anchors_ = true
 metadata/_edit_lock_ = true
 
