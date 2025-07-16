@@ -37,7 +37,7 @@ var BIOMES = [
 	Biome.new("Désert semi-aride", Color.hex(0xbe9e5cFF), Color.hex(0xbda367FF), [25, 50], [0.0, 0.35], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
 	Biome.new("Désert", Color.hex(0x945724FF), Color.hex(0xb89e63FF), [36, 60], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
 	Biome.new("Désert aride", Color.hex(0x83492bFF), Color.hex(0xb39a60FF), [45, 70], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
-	Biome.new("Désert mort", Color.hex(0x6e3825FF), Color.hex(0xaf965aFF), [70, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false)
+	Biome.new("Désert mort", Color.hex(0x6e3825FF), Color.hex(0xaf965aFF), [70, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
 
 
 	# Biomes Toxique
@@ -205,7 +205,7 @@ func getTemperatureViaColor(color: Color) -> float:
 			return key
 	return 0.0
 
-func getBiome(elevation_val : int, precipitation_val : float, temperature_val : int, is_water : bool, img_biome: Image, x:int, y:int) -> Biome:
+func getBiome(type_planete : int, elevation_val : int, precipitation_val : float, temperature_val : int, is_water : bool, img_biome: Image, x:int, y:int) -> Biome:
 	var corresponding_biome : Array[Biome] = []
 
 	for biome in BIOMES:
@@ -215,7 +215,8 @@ func getBiome(elevation_val : int, precipitation_val : float, temperature_val : 
 			temperature_val <= biome.get_interval_temp()[1] and
 			precipitation_val >= biome.get_interval_precipitation()[0] and
 			precipitation_val <= biome.get_interval_precipitation()[1] and
-			is_water == biome.get_water_need()):
+			is_water == biome.get_water_need() and 
+			type_planete in biome.get_type_planete()):
 			corresponding_biome.append(biome)
 		
 	var taille = corresponding_biome.size()
