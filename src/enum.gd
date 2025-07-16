@@ -21,20 +21,20 @@ var BIOMES = [
 	Biome.new("Calotte glaciaire polaire", Color.hex(0x949ca9FF), Color.hex(0xe0e0e0FF), [-100, -50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
 	Biome.new("Toundra", Color.hex(0xcbb15fFF), Color.hex(0xb4894eFF), [-50, -5], [0.0, 1.0], [-ALTITUDE_MAX, 750], false),
 	Biome.new("Toundra alpine", Color.hex(0xb79e50FF), Color.hex(0xaf854bFF), [-50, -5], [0.0, 1.0], [750, ALTITUDE_MAX], false),
-	Biome.new("Taïga (forêt boréale)", Color.hex(0x476b3eFF), Color.hex(0x394f36FF), [-10, 5], [0.0, 1.0], [-ALTITUDE_MAX, 2500], false),
+	Biome.new("Taïga (forêt boréale)", Color.hex(0x476b3eFF), Color.hex(0x394f36FF), [-10, 10], [0.0, 1.0], [-ALTITUDE_MAX, 2500], false),
 	Biome.new("Forêt de montagne", Color.hex(0x4f8a40FF), Color.hex(0x3a5637FF), [-15, 20], [0.0, 1.0], [300, 2500], false),
 	
 	Biome.new("Forêt tempérée", Color.hex(0x65c44eFF), Color.hex(0x3b6336FF), [5, 25], [0., 1.0], [-ALTITUDE_MAX, 1000], false),
 	Biome.new("Prairie", Color.hex(0x8fe07cFF), Color.hex(0x425a3fFF), [5, 25], [0.0, 1.0], [-ALTITUDE_MAX, 1000], false),
-	Biome.new("Méditerranée", Color.hex(0x7c61cbFF), Color.hex(0x536b4fFF), [15, 25], [0.3, 1.0], [-ALTITUDE_MAX, 1000], false),	
-	Biome.new("Steppes sèches", Color.hex(0x9f9075FF), Color.hex(0xccaa62FF), [-10, 30], [0.0, 0.35], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
-	Biome.new("Steppes tempérées", Color.hex(0x83765fFF), Color.hex(0xc7a65fFF), [5, 25], [0.36, 1.0], [-ALTITUDE_MAX, 1000], false),
-	Biome.new("Forêt tropicale", Color.hex(0x1b5a21FF), Color.hex(0x2d4929FF), [25, 30], [0.5, 1.0], [-ALTITUDE_MAX, 1000], false),
-	Biome.new("Savane", Color.hex(0xa27442FF), Color.hex(0xccbf62FF), [20, 35], [0.0, 0.45], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
+	Biome.new("Méditerranée", Color.hex(0x7c61cbFF), Color.hex(0x536b4fFF), [15, 25], [0.0, 1.0], [-ALTITUDE_MAX, 1000], false),	
+	Biome.new("Steppes sèches", Color.hex(0x9f9075FF), Color.hex(0xccaa62FF), [-10, 35], [0.0, 0.35], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
+	Biome.new("Steppes tempérées", Color.hex(0x83765fFF), Color.hex(0xc7a65fFF), [5, 35], [0.36, 1.0], [-ALTITUDE_MAX, 1000], false),
+	Biome.new("Forêt tropicale", Color.hex(0x1b5a21FF), Color.hex(0x2d4929FF), [20, 35], [0.5, 1.0], [-ALTITUDE_MAX, 1000], false),
+	Biome.new("Savane", Color.hex(0xa27442FF), Color.hex(0xccbf62FF), [20, 35], [0.0, 0.4], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
 	Biome.new("Savane d'arbres", Color.hex(0x946b3eFF), Color.hex(0xc8bb56FF), [20, 35], [0.35, 1.0], [-ALTITUDE_MAX, 1000], false),
 	Biome.new("Désert semi-aride", Color.hex(0xbe9e5cFF), Color.hex(0xbda367FF), [25, 50], [0.0, 0.5], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
-	Biome.new("Désert", Color.hex(0x945724FF), Color.hex(0xb89e63FF), [30, 60], [0.0, 0.3], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
-	Biome.new("Désert aride", Color.hex(0x83492bFF), Color.hex(0xb39a60FF), [35, 70], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
+	Biome.new("Désert", Color.hex(0x945724FF), Color.hex(0xb89e63FF), [30, 60], [0.0, 0.35], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
+	Biome.new("Désert aride", Color.hex(0x83492bFF), Color.hex(0xb39a60FF), [36, 70], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
 	Biome.new("Désert mort", Color.hex(0x6e3825FF), Color.hex(0xaf965aFF), [70, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false)
 ]
 
