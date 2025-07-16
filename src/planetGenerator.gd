@@ -82,6 +82,8 @@ func generate_planet():
 	var thread_banquise = Thread.new()
 	thread_banquise.start(generate_banquise_map)
 
+	thread_banquise.wait_to_finish()
+
 	print("\nGénération de la carte des biomes\n")
 	var thread_biome = Thread.new()
 	thread_biome.start(generate_biome_map)
@@ -455,7 +457,9 @@ func temperature_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 
 	if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
 		temp = temp - 5.6
-
+	
+	if temp > 100 and self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
+		temp = 100.0  # Cap temperature at 100°C for water areas
 	# Get color based on temperature
 	var color = Enum.getTemperatureColor(temp)
 
@@ -494,12 +498,16 @@ func generate_biome_map() -> void:
 	self.biome_map = img
 
 func biome_calcul(img: Image,_noise, _noise2, x : int,y : int) -> void:
-	var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+	var elevation_val     = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 	var precipitation_val = self.precipitation_map.get_pixel(x, y).r
-	var temperature_val = Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
-	var is_water = self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
+	var temperature_val   = Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
+	var is_water          = self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
 
-	var biome = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water, img, x, y)
+	var biome
+	if self.banquise_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
+		biome = Enum.BIOMES[0]
+	else:
+		biome = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water, img, x, y)
 
 	img.set_pixel(x, y, biome.get_couleur())
 	self.final_map.set_pixel(x, y, biome.get_couleur_vegetation())
@@ -563,7 +571,7 @@ static func deleteImagesTemps():
 	if dir == null:
 		DirAccess.make_dir_absolute("user://temp/")
 		dir = DirAccess.open("user://temp/")
-
+ 
 	dir.list_dir_begin()
 	var file_name = dir.get_next()
 	while file_name != "":
