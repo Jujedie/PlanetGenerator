@@ -27,6 +27,7 @@ var water_map   : Image
 var banquise_map: Image
 var biome_map   : Image
 var oil_map     : Image
+var nuage_map   : Image
 var final_map   : Image
 
 func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, elevation_modifier_param: int = 0, nb_thread_param : int = 8, atmosphere_type_param: int = 0, renderProgress: ProgressBar = null, cheminSauvegarde_param: String = "user://temp/") -> void:
@@ -380,17 +381,21 @@ func generate_water_map() -> void:
 	self.water_map = img
 
 func water_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
-		randomize()
+	if self.atmosphere_type == 3:
+		img.set_pixel(x, y, Color.hex(0x000000FF))
+		return
+	
+	randomize()
 
-		var value = noise.get_noise_2d(float(x), float(y))
-		value = abs(value)
+	var value = noise.get_noise_2d(float(x), float(y))
+	value = abs(value)
 
-		var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+	var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 			
-		if elevation_val <= self.water_elevation:
-			img.set_pixel(x, y, Color.hex(0xFFFFFFFF))
-		else:
-			img.set_pixel(x, y, Color.hex(0x000000FF))
+	if elevation_val <= self.water_elevation:
+		img.set_pixel(x, y, Color.hex(0xFFFFFFFF))
+	else:
+		img.set_pixel(x, y, Color.hex(0x000000FF))
 
 
 func generate_temperature_map() -> void:
