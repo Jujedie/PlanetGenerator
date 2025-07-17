@@ -512,7 +512,7 @@ func biome_calcul(img: Image,_noise, _noise2, x : int,y : int) -> void:
 	if self.banquise_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
 		biome = Enum.BIOMES[0]
 	else:
-		biome = Enum.getBiome(elevation_val, precipitation_val, temperature_val, is_water, img, x, y)
+		biome = Enum.getBiome(self.atmosphere_type, elevation_val, precipitation_val, temperature_val, is_water, img, x, y)
 
 	img.set_pixel(x, y, biome.get_couleur())
 	self.final_map.set_pixel(x, y, biome.get_couleur_vegetation())
