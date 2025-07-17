@@ -48,6 +48,8 @@ var BIOMES = [
 
 	#	Biomes terrestres
 	Biome.new("Déserts de soufre", Color.hex(0x5a3c2bFF), Color.hex(0x7f4d3cFF), [-273, 50], [0.0, 0.35], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
+	Biome.new("Glaciers toxiques", Color.hex(0x4a2b2bFF), Color.hex(0x6f3c3cFF), [-273, -150], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
+	Biome.new("Toundra toxique", Color.hex(0x3c2b2bFF), Color.hex(0x5d3c3cFF), [-150, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
 	Biome.new("Forêts fongiques extrêmes", Color.hex(0x4a2b2bFF), Color.hex(0x6f3c3cFF), [0, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
 	Biome.new("Plaines toxiques", Color.hex(0x3c2b2bFF), Color.hex(0x5d3c3cFF), [5, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
 	Biome.new("Solfatares", Color.hex(0x3c2b2bFF), Color.hex(0x4d3c3cFF), [45, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
