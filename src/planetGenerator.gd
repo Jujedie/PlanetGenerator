@@ -3,6 +3,10 @@ extends RefCounted
 # TODO :
 # - Changer répertoire de sauvegarde
 # - mettre de la banquise via les biomes appropriés et non pas via la banquise de défaut
+# - Verifier tout fonctionne | biomes manquants toxiques
+# - Changer les couleurs des biomes
+# - changer les coulers des biomes sur la carte finale pour refléter élévation basiquement ajouter une couleur élévation avec un alpha < 1 et mettre des nuages
+# - faire une map nuage pour les bons biomes
 
 
 class_name PlanetGenerator
