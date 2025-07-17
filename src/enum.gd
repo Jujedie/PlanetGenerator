@@ -43,6 +43,7 @@ var BIOMES = [
 	# Biomes Toxique
 
 	#	Biomes aquatiques
+	Biome.new("Banquise toxique", Color.hex(0x5a2b2bFF), Color.hex(0x7f3c3cFF), [-273, 0], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [1]),
 	Biome.new("Océan toxique", Color.hex(0x5a2b2bFF), Color.hex(0x7f3c3cFF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [1]),
 	Biome.new("Marécages acides", Color.hex(0x4a3c2bFF), Color.hex(0x6f4d3cFF), [5, 100], [0.0, 1.0], [-20, ALTITUDE_MAX], true, [1]),
 
@@ -58,10 +59,13 @@ var BIOMES = [
 	# Biomes Volcaniques
 
 	#	Biomes aquatiques
+	Biome.new("Champs de Lave Refroidis", Color.hex(0x5a2b2bFF), Color.hex(0x7f3c3cFF), [-273, 0], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [2]),
 	Biome.new("Champs de lave", Color.hex(0x7f4d3cFF), Color.hex(0x9f5e4dFF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [2]),
 	Biome.new("Lacs de magma", Color.hex(0x6f3c2bFF), Color.hex(0x8f4d3cFF), [0, 100], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [2]),
 
 	#	Biomes terrestres
+	Biome.new("Déserts de cendres", Color.hex(0x7f4d3cFF), Color.hex(0x9f5e4dFF), [-273, 50], [0.0, 0.35], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
+	Biome.new("Plaines de roches", Color.hex(0x6f3c2bFF), Color.hex(0x8f4d3cFF), [-273, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
 	Biome.new("Montagnes volcaniques", Color.hex(0x5a2b2bFF), Color.hex(0x7f3c3cFF), [-20, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
 	Biome.new("Plaines volcaniques", Color.hex(0x4a3c2bFF), Color.hex(0x6f4d3cFF), [5, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
 	Biome.new("Terrasses minérales", Color.hex(0x3c2b2bFF), Color.hex(0x5d3c3cFF), [20, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
@@ -72,6 +76,7 @@ var BIOMES = [
 	# Biomes Morts
 
 	#	Biomes aquatiques
+	Biome.new("Banquise morte", Color.hex(0x2b1b1bFF), Color.hex(0x4d2c2cFF), [-273, 0], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [3]),
 	Biome.new("Marécages luminescents", Color.hex(0x3c2b2bFF), Color.hex(0x5d3c3cFF), [0, 100], [0.0, 1.0], [-100, ALTITUDE_MAX], true, [4]),
 	Biome.new("Océan mort", Color.hex(0x2b1b1bFF), Color.hex(0x4d2c2cFF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [4]),
 
@@ -280,3 +285,10 @@ func getPrecipitationColor(precipitation: float) -> Color:
 		if precipitation <= key:
 			return COULEUR_PRECIPITATION[key]
 	return COULEUR_PRECIPITATION[1.0]
+
+func getBanquiseBiome( typePlanete : int) -> Biome:
+	for biome in BIOMES:
+		if typePlanete in biome.get_type_planete():
+			if biome.get_nom().find("Banquise") != -1 or biome.get_nom().find("Refroidis") != -1:
+				return biome
+	return Biome.NULL

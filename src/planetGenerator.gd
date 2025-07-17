@@ -1,5 +1,8 @@
 extends RefCounted
 
+# TODO :
+# - Changer répertoire de sauvegarde
+# - mettre de la banquise via les biomes appropriés et non pas via la banquise de défaut
 
 
 class_name PlanetGenerator
@@ -510,7 +513,7 @@ func biome_calcul(img: Image,_noise, _noise2, x : int,y : int) -> void:
 
 	var biome
 	if self.banquise_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
-		biome = Enum.BIOMES[0]
+		biome = Enum.getBanquiseBiome(self.atmosphere_type)
 	else:
 		biome = Enum.getBiome(self.atmosphere_type, elevation_val, precipitation_val, temperature_val, is_water, img, x, y)
 
