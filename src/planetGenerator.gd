@@ -8,9 +8,7 @@ extends RefCounted
 # - changer les coulers des biomes sur la carte finale pour refléter élévation basiquement ajouter une couleur élévation avec un alpha < 1 et mettre des nuages
 # - faire une map nuage pour les bons biomes
 
-
 class_name PlanetGenerator
-
 
 var nom: String
 signal finished
@@ -51,8 +49,6 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 	self.elevation_modifier= elevation_modifier_param
 	self.nb_thread         = nb_thread_param
 	self.atmosphere_type   = atmosphere_type_param
-
-	
 
 func generate_planet():
 	print("\nGénération de la carte finale\n")
