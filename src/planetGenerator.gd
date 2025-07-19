@@ -43,21 +43,21 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 	self.renderProgress.value = 0.0
 	self.cheminSauvegarde     = cheminSauvegarde_param
 
-	self.avg_temperature   = avg_temperature_param
-	self.water_elevation   = water_elevation_param
-	self.avg_precipitation = avg_precipitation_param
-	self.elevation_modifier= elevation_modifier_param
-	self.nb_thread         = nb_thread_param
-	self.atmosphere_type   = atmosphere_type_param
+	self.avg_temperature    = avg_temperature_param
+	self.water_elevation    = water_elevation_param
+	self.avg_precipitation  = avg_precipitation_param
+	self.elevation_modifier = elevation_modifier_param
+	self.nb_thread          = nb_thread_param
+	self.atmosphere_type    = atmosphere_type_param
 
 func generate_planet():
-	print("\nGénération de la carte finale\n")
-	var thread_final = Thread.new()
-	thread_final.start(generate_final_map)
-
 	print("\nGénération de la carte du pétrole\n")
 	var thread_oil = Thread.new()
 	thread_oil.start(generate_oil_map)
+
+	print("\nGénération de la carte des nuages\n")
+	var thread_nuage = Thread.new()
+	thread_nuage.start(generate_nuage_map)
 
 	print("\nGénération de la carte topographique\n")
 	var thread_elevation = Thread.new()
@@ -93,6 +93,12 @@ func generate_planet():
 	thread_biome.start(generate_biome_map)
 
 	thread_biome.wait_to_finish()
+
+	print("\nGénération de la carte finale\n")
+	var thread_final = Thread.new()
+	thread_final.start(generate_final_map)
+
+	thread_final.wait_to_finish()
 
 	print("\n===================")
 	print("Génération Terminée\n")
