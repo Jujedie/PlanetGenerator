@@ -1,8 +1,6 @@
 extends RefCounted
 
 # TODO :
-# - Changer répertoire de sauvegarde
-# - mettre de la banquise via les biomes appropriés et non pas via la banquise de défaut
 # - Verifier tout fonctionne | biomes manquants toxiques
 # - Changer les couleurs des biomes
 # - changer les coulers des biomes sur la carte finale pour refléter élévation basiquement ajouter une couleur élévation avec un alpha < 1 et mettre des nuages
@@ -12,9 +10,9 @@ class_name PlanetGenerator
 
 var nom: String
 signal finished
-var circonference   : int
-var renderProgress  : ProgressBar
-var cheminSauvegarde: String
+var circonference			: int
+var renderProgress			: ProgressBar
+var cheminSauvegarde		: String
 
 # Paramètres de génération
 var avg_temperature   : float
@@ -35,13 +33,13 @@ var oil_map     : Image
 var nuage_map   : Image
 var final_map   : Image
 
-func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, elevation_modifier_param: int = 0, nb_thread_param : int = 8, atmosphere_type_param: int = 0, renderProgress: ProgressBar = null, cheminSauvegarde_param: String = "user://temp/") -> void:
+func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, elevation_modifier_param: int = 0, nb_thread_param : int = 8, atmosphere_type_param: int = 0, renderProgress_param: ProgressBar = null, cheminSauvegarde_param: String = "user://temp/") -> void:
 	self.nom = nom_param
 	
-	self.circonference        =  int(rayon * 2 * PI)
-	self.renderProgress       = renderProgress
-	self.renderProgress.value = 0.0
-	self.cheminSauvegarde     = cheminSauvegarde_param
+	self.circonference			=  int(rayon * 2 * PI)
+	self.renderProgress			= renderProgress_param
+	self.renderProgress.value	= 0.0
+	self.cheminSauvegarde		= cheminSauvegarde_param
 
 	self.avg_temperature    = avg_temperature_param
 	self.water_elevation    = water_elevation_param
@@ -51,6 +49,12 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 	self.atmosphere_type    = atmosphere_type_param
 
 func generate_planet():
+	print("\nGénération de la carte finale\n")
+	var thread_final = Thread.new()
+	thread_final.start(generate_final_map)
+
+	thread_final.wait_to_finish()
+
 	print("\nGénération de la carte du pétrole\n")
 	var thread_oil = Thread.new()
 	thread_oil.start(generate_oil_map)
@@ -94,12 +98,6 @@ func generate_planet():
 
 	thread_biome.wait_to_finish()
 
-	print("\nGénération de la carte finale\n")
-	var thread_final = Thread.new()
-	thread_final.start(generate_final_map)
-
-	thread_final.wait_to_finish()
-
 	print("\n===================")
 	print("Génération Terminée\n")
 	emit_signal("finished")
@@ -129,6 +127,48 @@ func save_maps():
 	print("\nSauvegarde de la carte du pétrole")
 	save_image(self.oil_map, "oil_map.png", self.cheminSauvegarde)
 
+
+func generate_nuage_map() -> void:
+	randomize()
+
+	print("Création de l'image")
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
+
+	print("Initialisation du bruit")
+	var noise = FastNoiseLite.new()
+	noise.seed = randi()
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise.frequency = 2.5 / float(self.circonference)
+	noise.fractal_octaves = 8
+	noise.fractal_gain = 0.85
+	noise.fractal_lacunarity = 1.5
+
+	print("Génération de la carte")
+	var range = circonference / (self.nb_thread / 2)
+	var threadArray = []
+	for i in range(0, (self.nb_thread / 2), 1):
+		var x1 = i * range
+		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
+		var thread = Thread.new()
+		threadArray.append(thread)
+		thread.start(thread_calcul.bind(img, noise, null, x1, x2, nuage_calcul))
+	
+	for thread in threadArray:
+		thread.wait_to_finish()
+
+	print("Fin de la génération de la carte")
+	self.addProgress(15)
+	self.nuage_map = img
+
+func nuage_calcul(img: Image, noise, _noise2, x : int, y : int) -> void:
+	var value = noise.get_noise_2d(float(x), float(y))
+	value = abs(value)
+
+	if value > 0.25:
+		img.set_pixel(x, y, Color.hex(0x22FFFFFF))  # White for clouds
+	else:
+		img.set_pixel(x, y, Color.hex(0x000000FF))  # Black for no clouds
 
 func generate_elevation_map() -> void:
 	randomize()
@@ -254,7 +294,6 @@ func generate_oil_map() -> void:
 		var thread = Thread.new()
 		threadArray.append(thread)
 		thread.start(thread_calcul.bind(img, noise, self.atmosphere_type != 3, x1, x2, oil_calcul))
-	# Wait for all threads to finish after starting them all
 	for thread in threadArray:
 		thread.wait_to_finish()
 
@@ -267,9 +306,9 @@ func oil_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 	value = clamp(value, 0.0, 1.0)
 
 	if value > 0.25 and noise2:
-		img.set_pixel(x, y, Color.hex(0x000000FF))  # Oil color
+		img.set_pixel(x, y, Color.hex(0x000000FF))
 	else:
-		img.set_pixel(x, y, Color.hex(0xFFFFFFFF))  # Non-oil area
+		img.set_pixel(x, y, Color.hex(0xFFFFFFFF))
 
 
 func generate_banquise_map() -> void:
@@ -279,14 +318,6 @@ func generate_banquise_map() -> void:
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
 
 	print("Initialisation du bruit")
-	var noise = FastNoiseLite.new()
-	noise.seed = randi()
-	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.frequency = 3.0 / float(self.circonference)
-	noise.fractal_octaves = 9
-	noise.fractal_gain = 0.85
-	noise.fractal_lacunarity = 4.0
 
 	print("Génération de la carte")
 	var range = circonference / (self.nb_thread / 2)
@@ -296,7 +327,7 @@ func generate_banquise_map() -> void:
 		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
 		var thread = Thread.new()
 		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, banquise_calcul))
+		thread.start(thread_calcul.bind(img, null, null, x1, x2, banquise_calcul))
 	
 	for thread in threadArray:
 		thread.wait_to_finish()
@@ -305,17 +336,14 @@ func generate_banquise_map() -> void:
 	self.addProgress(15)
 	self.banquise_map = img
 
-func banquise_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
-	var value = noise.get_noise_2d(float(x), float(y))
-	value = abs(value)
-
+func banquise_calcul(img: Image,_noise, _noise2, x : int,y : int) -> void:
 	if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
-		if Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y)) < 0.0 and value > 0.001:
-			img.set_pixel(x, y, Color.hex(0xFFFFFFFF))  # Ice color
+		if Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y)) < 0.0 and randf() < 0.9:
+			img.set_pixel(x, y, Color.hex(0xFFFFFFFF))
 		else:
-			img.set_pixel(x, y, Color.hex(0x000000FF))  # Non-ice area
+			img.set_pixel(x, y, Color.hex(0x000000FF))
 	else:
-		img.set_pixel(x, y, Color.hex(0x000000FF))  # Non-ice area
+		img.set_pixel(x, y, Color.hex(0x000000FF))
 
 
 func generate_precipitation_map() -> void:
@@ -450,7 +478,6 @@ func generate_temperature_map() -> void:
 	self.temperature_map = img
 
 func temperature_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
-	# Latitude-based temperature adjustment
 	var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
 	var latitude_temp = -20.5 * latitude + 5.5 * (1-latitude) + self.avg_temperature
 
@@ -474,7 +501,7 @@ func temperature_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 	
 	if temp > 100 and self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
 		temp = 100.0  # Cap temperature at 100°C for water areas
-	# Get color based on temperature
+
 	var color = Enum.getTemperatureColor(temp)
 
 	img.set_pixel(x, y, color)
@@ -503,7 +530,7 @@ func generate_biome_map() -> void:
 		var thread = Thread.new()
 		threadArray.append(thread)
 		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, biome_calcul))
-	# Wait for all threads to finish after starting them all
+
 	for thread in threadArray:
 		thread.wait_to_finish()
 
@@ -547,6 +574,7 @@ func getMaps() -> Array[String]:
 
 	return [
 		save_image(self.elevation_map,"elevation_map.png"),
+		save_image(self.nuage_map,"nuage_map.png"),
 		save_image(self.oil_map,"oil_map.png"),
 		save_image(self.precipitation_map,"precipitation_map.png"),
 		save_image(self.temperature_map,"temperature_map.png"),
@@ -563,15 +591,21 @@ func addProgress(value) -> void:
 	if self.renderProgress != null:
 		self.renderProgress.call_deferred("set_value", self.renderProgress.value + value)
 
-static func save_image(image: Image, file_name : String, file_path: String = "user://temp/") -> String:
+static func save_image(image: Image, file_name : String, file_path = null) -> String:
+	if file_path == null:
+		var img_path = "user://temp/" + file_name
+		if DirAccess.open("user://temp/" ) == null:
+			DirAccess.make_dir_absolute("user://temp/" )
+
+		image.save_png(img_path)
+		print("Saved: ", img_path)
+		return img_path
+		
 	if not file_path.ends_with("/"):
 		file_path += "/"
 	
 	var dir = DirAccess.open(file_path)
-	if dir == null && file_path == "user://temp/":
-		DirAccess.make_dir_absolute("user://temp/")
-		dir = DirAccess.open("user://temp/")
-	else :
+	if dir == null :
 		DirAccess.make_dir_absolute(file_path)
 		dir = DirAccess.open(file_path)
 
@@ -583,6 +617,7 @@ static func save_image(image: Image, file_name : String, file_path: String = "us
 static func deleteImagesTemps():
 	var dir = DirAccess.open("user://temp/")
 	if dir == null:
+		print("Directory 'user://temp/' does not exist, creating it.")
 		DirAccess.make_dir_absolute("user://temp/")
 		dir = DirAccess.open("user://temp/")
  
@@ -594,7 +629,6 @@ static func deleteImagesTemps():
 	dir.list_dir_end()
 
 func get_temperature_delta_from_altitude(altitude: float) -> float:
-	# Table extraite de l'image (altitude en m, température en °C à latitude 0)
 	var altitude_table = [
 		-500, 0, 500, 1000, 1500, 2000, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000, 9500, 10000, 10500
 	]
@@ -602,21 +636,19 @@ func get_temperature_delta_from_altitude(altitude: float) -> float:
 		18.3, 15.0, 11.8, 8.5, 5.3, 2.0, -4.5, -7.8, -11.0, -14.3, -17.5, -20.8, -24.0, -27.3, -30.7, -33.8, -37.0, -40.3, -43.5, -46.8, -50.0, -53.3
 	]
 	
-	# Clamp altitude to table range
 	if altitude <= altitude_table[0]:
 		return temp_table[0] - 15.0
 	if altitude >= altitude_table[-1]:
 		return temp_table[-1] - 15.0
 
-	# Recherche de l'intervalle
 	for i in range(1, altitude_table.size()):
 		if altitude < altitude_table[i]:
 			var alt0 = altitude_table[i-1]
 			var alt1 = altitude_table[i]
 			var temp0 = temp_table[i-1]
 			var temp1 = temp_table[i]
-			# Interpolation linéaire
+
 			var t = (altitude - alt0) / (alt1 - alt0)
 			var temp = lerp(temp0, temp1, t)
-			return temp - 15.0 # Différence par rapport à 15°C (niveau 0)
+			return temp - 15.0
 	return 0.0

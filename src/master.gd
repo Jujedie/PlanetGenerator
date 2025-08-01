@@ -1,8 +1,8 @@
 extends Node2D
 
-var planetGenerator : PlanetGenerator
-var maps            : Array[String]
-var map_index       : int = 0
+var planetGenerator  : PlanetGenerator
+var maps             : Array[String]
+var map_index        : int = 0
 
 func _ready() -> void:
 	var sldRayonPlanetaire = $Node2D/Control/sldRayonPlanetaire
@@ -32,7 +32,6 @@ func _ready() -> void:
 	var sldThread = $Node2D/Control/sldThread
 	label = $Node2D/Control/sldThread/Node2D/Label
 	label.text = "Nombre de thread : "+str(sldThread.value)
-
 
 func _on_sld_rayon_planetaire_value_changed(value: float) -> void:
 	var sld = $Node2D/Control/sldRayonPlanetaire
@@ -107,7 +106,7 @@ func _on_btn_comfirme_pressed() -> void:
 
 	var renderProgress = $Node2D/Control/renderProgress
 
-	planetGenerator = PlanetGenerator.new(nom.text, sldRayonPlanetaire.value, sldTempMoy.value, sldHautEau.value, sldPrecipitationMoy.value, sldElevation.value , sldThread.value, typePlanete.get_selected_id(), renderProgress )
+	planetGenerator = PlanetGenerator.new(nom.text, sldRayonPlanetaire.value, sldTempMoy.value, sldHautEau.value, sldPrecipitationMoy.value, sldElevation.value , sldThread.value, typePlanete.get_selected_id(), renderProgress)
 
 	var echelle = 100.0 / sldRayonPlanetaire.value
 	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.scale = Vector2(echelle, echelle)
