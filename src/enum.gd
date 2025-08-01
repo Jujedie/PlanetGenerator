@@ -139,6 +139,40 @@ var COULEURS_ELEVATIONS = {
 	ALTITUDE_MAX: Color.hex(0x7d794aFF) 
 }
 
+var COULEURS_ELEVATIONS_FINAL = {
+	-ALTITUDE_MAX: Color.hex(),
+	-20000: Color.hex(),
+	-8000: Color.hex(),
+	-4000: Color.hex(),
+	-2000: Color.hex(),
+	-1500: Color.hex(),
+	-1000: Color.hex(),
+	-500: Color.hex(),
+	-400: Color.hex(),
+	-300: Color.hex(),
+	-200: Color.hex(),
+	-100: Color.hex(),
+	-50: Color.hex(),
+	-20: Color.hex(),
+
+	0: Color.hex(),
+
+	20: Color.hex(),
+	50: Color.hex(),
+	100: Color.hex(),
+	200: Color.hex(),
+	300: Color.hex(),
+	400: Color.hex(),
+	500: Color.hex(),
+	600: Color.hex(),
+	700: Color.hex(),
+	800: Color.hex(),
+	900: Color.hex(),
+	1000: Color.hex(),
+	1500: Color.hex(),
+	2000: Color.hex()
+}
+
 var COULEURS_TEMPERATURE = {
 	-200: Color.hex(0x478fe6FF),
 	-150: Color.hex(0x4D007AFF),
