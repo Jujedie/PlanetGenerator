@@ -139,38 +139,45 @@ var COULEURS_ELEVATIONS = {
 	ALTITUDE_MAX: Color.hex(0x7d794aFF) 
 }
 
-var COULEURS_ELEVATIONS_FINAL = {
-	-ALTITUDE_MAX: Color.hex(),
-	-20000: Color.hex(),
-	-8000: Color.hex(),
-	-4000: Color.hex(),
-	-2000: Color.hex(),
-	-1500: Color.hex(),
-	-1000: Color.hex(),
-	-500: Color.hex(),
-	-400: Color.hex(),
-	-300: Color.hex(),
-	-200: Color.hex(),
-	-100: Color.hex(),
-	-50: Color.hex(),
-	-20: Color.hex(),
+var COULEURS_ELEVATIONS_GREY = {
+	-ALTITUDE_MAX: Color.hex(0x35353510),
+	-20000: Color.hex(0x3c3c3c10),
+	-8000: Color.hex(0x43434310),
+	-4000: Color.hex(0x4a4a4a10),
+	-2000: Color.hex(0x51515110),
+	-1500: Color.hex(0x5a5a5a10),
+	-1000: Color.hex(0x63636310),
+	-500: Color.hex(0x6c6c6c10),
+	-400: Color.hex(0x75757510),
+	-300: Color.hex(0x7e7e7e10),
+	-200: Color.hex(0x87878710),
+	-100: Color.hex(0x90909010),
+	-50: Color.hex(0x99999910),
+	-20: Color.hex(0xa2a2a210),
 
-	0: Color.hex(),
+	0: Color.hex(0xababab10),
 
-	20: Color.hex(),
-	50: Color.hex(),
-	100: Color.hex(),
-	200: Color.hex(),
-	300: Color.hex(),
-	400: Color.hex(),
-	500: Color.hex(),
-	600: Color.hex(),
-	700: Color.hex(),
-	800: Color.hex(),
-	900: Color.hex(),
-	1000: Color.hex(),
-	1500: Color.hex(),
-	2000: Color.hex()
+	20: Color.hex(0xb4b4b410),
+	50: Color.hex(0xbdbdbd10),
+	100: Color.hex(0xc6c6c610),
+	200: Color.hex(0xcfcfcf10),
+	300: Color.hex(0xd8d8d810),
+	400: Color.hex(0xe1e1e110),
+	500: Color.hex(0xeaeaea10),
+	600: Color.hex(0xf3f3f310),
+	700: Color.hex(0xfafafa10),
+	800: Color.hex(0xffffff10),
+	900: Color.hex(0xffffff10),
+	1000: Color.hex(0xffffff10),
+	1500: Color.hex(0xffffff10),
+	2000: Color.hex(0xffffff10),
+	4000: Color.hex(0xffffff10),
+	8000: Color.hex(0xffffff10),
+	12000: Color.hex(0xffffff10),
+	16000: Color.hex(0xffffff10),
+	20000: Color.hex(0xffffff10),
+	24000: Color.hex(0xffffff10),
+	ALTITUDE_MAX: Color.hex(0xffffff10) 
 }
 
 var COULEURS_TEMPERATURE = {
@@ -222,11 +229,17 @@ var COULEUR_PRECIPITATION = {
 	1.0: Color.hex(0x3583e3FF)
 }
 
-func getElevationColor(elevation: int) -> Color:
-	for key in COULEURS_ELEVATIONS.keys():
-		if elevation <= key:
-			return COULEURS_ELEVATIONS[key]
-	return COULEURS_ELEVATIONS[ALTITUDE_MAX]
+func getElevationColor(elevation: int, grey_version : bool = false) -> Color:
+	if not grey_version:
+		for key in COULEURS_ELEVATIONS.keys():
+			if elevation <= key:
+				return COULEURS_ELEVATIONS[key]
+		return COULEURS_ELEVATIONS[ALTITUDE_MAX]
+	else:
+		for key in COULEURS_ELEVATIONS_GREY.keys():
+			if elevation <= key:
+				return COULEURS_ELEVATIONS_GREY[key]
+		return COULEURS_ELEVATIONS_GREY[ALTITUDE_MAX]
 
 func getElevationViaColor(color: Color) -> int:
 	for key in COULEURS_ELEVATIONS.keys():

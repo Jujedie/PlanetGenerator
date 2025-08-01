@@ -3,8 +3,8 @@ extends RefCounted
 # TODO :
 # - Verifier tout fonctionne | biomes manquants toxiques
 # - Changer les couleurs des biomes
-# - changer les coulers des biomes sur la carte finale pour refléter élévation basiquement ajouter une couleur élévation avec un alpha < 1 et mettre des nuages
-# - carte finale ajouter nuage, élévation sur la carte des biomes
+# - Améliorer la génération de la map nuage
+
 
 class_name PlanetGenerator
 
@@ -552,8 +552,13 @@ func biome_calcul(img: Image,_noise, _noise2, x : int,y : int) -> void:
 	else:
 		biome = Enum.getBiome(self.atmosphere_type, elevation_val, precipitation_val, temperature_val, is_water, img, x, y)
 
+	var elevation_color = Enum.getElevationColor(elevation_val, true)
+	var color_final = elevation_color * biome.get_couleur_vegetation() 
+	#if self.nuage_map.get_pixel(x, y) != Color.hex(0x000000FF):
+	#	color_final = Color.hex(0xFFFFFF01)
+
 	img.set_pixel(x, y, biome.get_couleur())
-	self.final_map.set_pixel(x, y, biome.get_couleur_vegetation())
+	self.final_map.set_pixel(x, y, color_final)
 
 
 func thread_calcul(img: Image, noise: FastNoiseLite, misc_value , x1: int, x2: int, function : Callable) -> void:
