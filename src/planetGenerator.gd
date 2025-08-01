@@ -4,7 +4,7 @@ extends RefCounted
 # - Verifier tout fonctionne | biomes manquants toxiques
 # - Changer les couleurs des biomes
 # - changer les coulers des biomes sur la carte finale pour refléter élévation basiquement ajouter une couleur élévation avec un alpha < 1 et mettre des nuages
-# - faire une map nuage pour les bons biomes
+# - carte finale ajouter nuage, élévation sur la carte des biomes
 
 class_name PlanetGenerator
 
@@ -139,7 +139,7 @@ func generate_nuage_map() -> void:
 	noise.seed = randi()
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.frequency = 2.5 / float(self.circonference)
+	noise.frequency = 3 / float(self.circonference)
 	noise.fractal_octaves = 8
 	noise.fractal_gain = 0.85
 	noise.fractal_lacunarity = 1.5
@@ -166,7 +166,7 @@ func nuage_calcul(img: Image, noise, _noise2, x : int, y : int) -> void:
 	value = abs(value)
 
 	if value > 0.25:
-		img.set_pixel(x, y, Color.hex(0x22FFFFFF))  # White for clouds
+		img.set_pixel(x, y, Color.hex(0xFFFFFFFF))  # White for clouds
 	else:
 		img.set_pixel(x, y, Color.hex(0x000000FF))  # Black for no clouds
 
