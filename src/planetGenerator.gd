@@ -208,14 +208,16 @@ func generate_elevation_map() -> void:
 	var tectonic_mountain_noise = FastNoiseLite.new()
 	tectonic_mountain_noise.seed = randi()
 	tectonic_mountain_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	tectonic_mountain_noise.frequency = 0.25 / float(self.circonference)
-	tectonic_mountain_noise.fractal_octaves = 2
+	tectonic_mountain_noise.frequency = 0.4 / float(self.circonference)
+	tectonic_mountain_noise.fractal_gain = 0.55
+	tectonic_mountain_noise.fractal_octaves = 10
 
 	var tectonic_canyon_noise = FastNoiseLite.new()
 	tectonic_canyon_noise.seed = randi()
 	tectonic_canyon_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	tectonic_canyon_noise.frequency = 0.25 / float(self.circonference)
-	tectonic_canyon_noise.fractal_octaves = 2
+	tectonic_canyon_noise.frequency = 0.4 / float(self.circonference)
+	tectonic_canyon_noise.fractal_gain = 0.55
+	tectonic_canyon_noise.fractal_octaves = 4
 
 	print("Génération de la carte")
 	var range = circonference / (self.nb_thread / 2)
