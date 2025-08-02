@@ -43,13 +43,13 @@ var BIOMES = [
 	# Biomes Toxique
 
 	#	Biomes aquatiques
-	Biome.new("Banquise toxique", Color.hex(0xb0beabFF), Color.hex(0x43c813FF), [-273, 0], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [1]),
-	Biome.new("Océan toxique", Color.hex(0x329837FF), Color.hex(0x839884FF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [1]),
-	Biome.new("Marécages acides", Color.hex(0x359b3aFF), Color.hex(0x7c917dFF), [5, 100], [0.0, 1.0], [-20, ALTITUDE_MAX], true, [1]),
+	Biome.new("Banquise toxique", Color.hex(0x48d63bFF), Color.hex(0xb0beabFF), [-273, 0], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [1]),
+	Biome.new("Océan toxique", Color.hex(0x329b837FF), Color.hex(0x3b6e61FF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [1]),
+	Biome.new("Marécages acides", Color.hex(0x359b3aFF), Color.hex(0x356458FF), [5, 100], [0.0, 1.0], [-20, ALTITUDE_MAX], true, [1]),
 
 	#	Biomes terrestres
-	Biome.new("Déserts de soufre", Color.hex(0x788d29FF), Color.hex(0x848d63bFF), [-273, 50], [0.0, 0.35], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
-	Biome.new("Glaciers toxiques", Color.hex(0xadcb45FF), Color.hex(0xadcb45FF), [-273, -150], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
+	Biome.new("Déserts de soufre", Color.hex(0x788d29FF), Color.hex(0x848d63FF), [-273, 50], [0.0, 0.35], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
+	Biome.new("Glaciers toxiques", Color.hex(0xadcb45FF), Color.hex(0xc3cba8FF), [-273, -150], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
 	Biome.new("Toundra toxique", Color.hex(0x83944bFF), Color.hex(0x8e986eFF), [-150, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
 	Biome.new("Forêts fongiques extrêmes", Color.hex(0x317536FF), Color.hex(0x59755bFF), [0, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
 	Biome.new("Plaines toxiques", Color.hex(0x378d3eFF), Color.hex(0x678a6aFF), [5, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
