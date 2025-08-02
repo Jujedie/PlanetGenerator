@@ -21,10 +21,6 @@ func _ready() -> void:
 	label = $Node2D/Control/sldPrecipitationMoy/Node2D/Label
 	label.text = "Précipitation Moyenne : "+str(sldPrecipitationMoy.value)+" | 0 <-> 1\n"
 
-	var sldPercentEau = $Node2D/Control/sldPercentEau
-	label = $Node2D/Control/sldPercentEau/Node2D/Label
-	label.text = "Pourcentage d'eau : "+str(sldPercentEau.value)+" | 0 <-> 1\n"
-
 	var sldElevation = $Node2D/Control/sldElevation
 	label = $Node2D/Control/sldElevation/Node2D/Label
 	label.text = "Elevation bonus : "+str(sldElevation.value)
@@ -103,6 +99,7 @@ func _on_btn_comfirme_pressed() -> void:
 
 	maps      = []
 	map_index = 0
+	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = null
 
 	var renderProgress = $Node2D/Control/renderProgress
 
