@@ -150,7 +150,7 @@ theme_override_styles/slider = ExtResource("3_7ybw1")
 theme_override_styles/grabber_area = ExtResource("4_w6tpy")
 theme_override_styles/grabber_area_highlight = ExtResource("4_w6tpy")
 min_value = -273.0
-max_value = 500.0
+max_value = 200.0
 value = 21.0
 metadata/_edit_lock_ = true
 
