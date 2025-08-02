@@ -194,3 +194,7 @@ func _on_btn_precedant_pressed() -> void:
 		$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = tex
 	else:
 		print("Erreur lors du chargement de l'image: ", maps[map_index])
+
+
+func _on_btn_quitter_pressed() -> void:
+	get_tree().quit()

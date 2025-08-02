@@ -24,6 +24,7 @@ var atmosphere_type   : int
 
 # Images générées
 var elevation_map    : Image
+var elevation_map_alt: Image
 var precipitation_map: Image
 var temperature_map  : Image
 var water_map   : Image
@@ -32,6 +33,8 @@ var biome_map   : Image
 var oil_map     : Image
 var nuage_map   : Image
 var final_map   : Image
+
+var preview: Image
 
 func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, elevation_modifier_param: int = 0, nb_thread_param : int = 8, atmosphere_type_param: int = 0, renderProgress_param: ProgressBar = null, cheminSauvegarde_param: String = "user://temp/") -> void:
 	self.nom = nom_param
@@ -175,6 +178,7 @@ func generate_elevation_map() -> void:
 
 	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
+	self.elevation_map_alt = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
 
 	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
@@ -269,6 +273,8 @@ func elevation_calcul(img: Image, noise, noises, x: int, y: int) -> void:
 
 	var color = Enum.getElevationColor(elevation)
 	img.set_pixel(x, y, color)
+	color = Enum.getElevationColor(elevation, true)
+	self.elevation_map_alt.set_pixel(x, y, color)
 
 
 func generate_oil_map() -> void:
@@ -581,12 +587,12 @@ func getMaps() -> Array[String]:
 
 	return [
 		save_image(self.elevation_map,"elevation_map.png"),
+		save_image(self.elevation_map_alt,"elevation_map_alt.png"),
 		save_image(self.nuage_map,"nuage_map.png"),
 		save_image(self.oil_map,"oil_map.png"),
 		save_image(self.precipitation_map,"precipitation_map.png"),
 		save_image(self.temperature_map,"temperature_map.png"),
 		save_image(self.water_map,"water_map.png"),
-		save_image(self.banquise_map,"banquise_map.png"),
 		save_image(self.biome_map,"biome_map.png"),
 		save_image(self.final_map,"final_map.png")
 	]
