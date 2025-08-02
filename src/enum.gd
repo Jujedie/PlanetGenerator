@@ -59,18 +59,18 @@ var BIOMES = [
 	# Biomes Volcaniques
 
 	#	Biomes aquatiques
-	Biome.new("Champs de Lave Refroidis", Color.hex(0x5a2b2bFF), Color.hex(0x7f3c3cFF), [-273, 0], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [2]),
-	Biome.new("Champs de lave", Color.hex(0x7f4d3cFF), Color.hex(0x9f5e4dFF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [2]),
-	Biome.new("Lacs de magma", Color.hex(0x6f3c2bFF), Color.hex(0x8f4d3cFF), [0, 100], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [2]),
+	Biome.new("Champs de Lave Refroidis", Color.hex(0xb76b0eFF), Color.hex(0x3b312bFF), [-273, 0], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [2]),
+	Biome.new("Champs de lave", Color.hex(0xd69617FF), Color.hex(0xc44217FF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [2]),
+	Biome.new("Lacs de magma", Color.hex(0xb7490eFF), Color.hex(0xb3370eFF), [0, 100], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [2]),
 
 	#	Biomes terrestres
-	Biome.new("Déserts de cendres", Color.hex(0x7f4d3cFF), Color.hex(0x9f5e4dFF), [-273, 50], [0.0, 0.35], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
-	Biome.new("Plaines de roches", Color.hex(0x6f3c2bFF), Color.hex(0x8f4d3cFF), [-273, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
-	Biome.new("Montagnes volcaniques", Color.hex(0x5a2b2bFF), Color.hex(0x7f3c3cFF), [-20, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
-	Biome.new("Plaines volcaniques", Color.hex(0x4a3c2bFF), Color.hex(0x6f4d3cFF), [5, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
-	Biome.new("Terrasses minérales", Color.hex(0x3c2b2bFF), Color.hex(0x5d3c3cFF), [20, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
-	Biome.new("Volcans actifs", Color.hex(0x2b1b1bFF), Color.hex(0x4d2c2cFF), [45, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
-	Biome.new("Fumerolles et sources chaudes", Color.hex(0x1b1b1bFF), Color.hex(0x3c2c2cFF), [70, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
+	Biome.new("Déserts de cendres", Color.hex(0xdd7d13FF), Color.hex(0x4c3229FF), [-273, 50], [0.0, 0.35], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
+	Biome.new("Plaines de roches", Color.hex(0xcf7410FF), Color.hex(0x4c413eFF), [-273, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
+	Biome.new("Montagnes volcaniques", Color.hex(0x9b6326FF), Color.hex(0x3b3533FF), [-20, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
+	Biome.new("Plaines volcaniques", Color.hex(0x98540aFF), Color.hex(0x534a47FF), [5, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
+	Biome.new("Terrasses minérales", Color.hex(0x945511FF), Color.hex(0x413a38FF), [20, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
+	Biome.new("Volcans actifs", Color.hex(0x5d4428FF), Color.hex(0x642d1aFF), [45, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
+	Biome.new("Fumerolles et sources chaudes", Color.hex(0x483825FF), Color.hex(0x2d2b2aFF), [70, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
 
 
 	# Biomes Morts
