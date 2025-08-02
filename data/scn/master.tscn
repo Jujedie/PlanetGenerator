@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3 uid="uid://c7gj7wdupqeeb"]
+[gd_scene load_steps=16 format=3 uid="uid://c7gj7wdupqeeb"]
 
 [ext_resource type="Texture2D" uid="uid://bm5bxcrxtppve" path="res://data/img/fond_machine.png" id="1_7ybw1"]
 [ext_resource type="Script" uid="uid://d12q01wdkxsvn" path="res://src/master.gd" id="1_qfml0"]
@@ -11,6 +11,7 @@
 [ext_resource type="Theme" uid="uid://bdbapd43uy2gd" path="res://data/font/font.tres" id="5_e2i44"]
 [ext_resource type="FontFile" uid="uid://bkpe48sacfdbi" path="res://data/font/orange kid.ttf" id="7_ggrey"]
 [ext_resource type="Texture2D" uid="uid://bxafg08etx5tr" path="res://data/img/line.png" id="7_qfml0"]
+[ext_resource type="Texture2D" uid="uid://dulee01leo348" path="res://data/img/line2.png" id="10_i0hn2"]
 
 [sub_resource type="Theme" id="Theme_qfml0"]
 default_font = ExtResource("7_ggrey")
@@ -18,6 +19,10 @@ default_font_size = 1500
 
 [sub_resource type="StyleBoxTexture" id="StyleBoxTexture_3fsd5"]
 texture = ExtResource("7_qfml0")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_okhqb"]
+texture = ExtResource("10_i0hn2")
+modulate_color = Color(0.423499, 0.0766972, 0.045357, 1)
 
 [node name="Master" type="Node2D"]
 script = ExtResource("1_qfml0")
@@ -312,6 +317,22 @@ theme_override_styles/normal = SubResource("StyleBoxTexture_3fsd5")
 text = "Sauvegarder"
 metadata/_edit_lock_ = true
 
+[node name="btnQuitter" type="Node2D" parent="Node2D/Control"]
+position = Vector2(942.409, -79.474)
+scale = Vector2(0.02, 0.02)
+
+[node name="btnQuitter" type="Button" parent="Node2D/Control/btnQuitter"]
+offset_left = -0.00109863
+offset_top = 0.00415022
+offset_right = 7613.0
+offset_bottom = 1800.0
+theme = SubResource("Theme_qfml0")
+theme_override_colors/font_color = Color(0.646029, 0.646029, 0.646029, 1)
+theme_override_styles/normal = SubResource("StyleBoxTexture_okhqb")
+text = "Quitter"
+metadata/_edit_use_anchors_ = true
+metadata/_edit_lock_ = true
+
 [node name="btnSuivant" type="Node2D" parent="Node2D/Control"]
 position = Vector2(553, 502)
 scale = Vector2(0.02, 0.02)
@@ -423,5 +444,6 @@ metadata/_edit_lock_ = true
 [connection signal="value_changed" from="Node2D/Control/sldThread" to="." method="_on_sld_thread_value_changed"]
 [connection signal="pressed" from="Node2D/Control/btnComfirmer/btnComfirme" to="." method="_on_btn_comfirme_pressed"]
 [connection signal="pressed" from="Node2D/Control/btnSauvegarder/btnSauvegarder" to="." method="_on_btn_sauvegarder_pressed"]
+[connection signal="pressed" from="Node2D/Control/btnQuitter/btnQuitter" to="." method="_on_btn_quitter_pressed"]
 [connection signal="pressed" from="Node2D/Control/btnSuivant/btnSuivant" to="." method="_on_btn_suivant_pressed"]
 [connection signal="pressed" from="Node2D/Control/btnPrecedant/btnPrecedant" to="." method="_on_btn_precedant_pressed"]
