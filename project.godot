@@ -28,6 +28,7 @@ Enum="*res://src/enum.gd"
 window/size/viewport_width=1600
 window/size/viewport_height=900
 window/size/resizable=false
+window/size/sharp_corners=true
 
 [rendering]
 

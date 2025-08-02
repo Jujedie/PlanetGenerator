@@ -2,8 +2,6 @@ extends RefCounted
 
 # TODO :
 # - Verifier tout fonctionne | biomes manquants toxiques
-# - Changer les couleurs des biomes
-# - Améliorer la génération de la map nuage
 
 
 class_name PlanetGenerator
@@ -140,9 +138,9 @@ func generate_nuage_map() -> void:
 	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
 	noise.seed = randi()
-	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.frequency = 3 / float(self.circonference)
+	noise.frequency = 5 / float(self.circonference)
 	noise.fractal_octaves = 8
 	noise.fractal_gain = 0.85
 	noise.fractal_lacunarity = 1.5
@@ -168,7 +166,7 @@ func nuage_calcul(img: Image, noise, _noise2, x : int, y : int) -> void:
 	var value = noise.get_noise_2d(float(x), float(y))
 	value = abs(value)
 
-	if value > 0.25:
+	if value > 0.15:
 		img.set_pixel(x, y, Color.hex(0xFFFFFFFF))  # White for clouds
 	else:
 		img.set_pixel(x, y, Color.hex(0x000000FF))  # Black for no clouds
@@ -365,7 +363,7 @@ func generate_precipitation_map() -> void:
 	noise.seed = randi()
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.frequency = 3.0 / float(self.circonference)
+	noise.frequency = 2.0 / float(self.circonference)
 	noise.fractal_octaves = 9
 	noise.fractal_gain = 0.85
 	noise.fractal_lacunarity = 4.0
@@ -487,7 +485,7 @@ func generate_temperature_map() -> void:
 
 func temperature_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 	var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
-	var latitude_temp = -20.5 * latitude + 5.5 * (1-latitude) + self.avg_temperature
+	var latitude_temp = -20.5 * latitude + 7.5 * (1-latitude) + self.avg_temperature
 
 	# Altitude-based temperature adjustment
 	var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
