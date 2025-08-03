@@ -1,10 +1,8 @@
 extends RefCounted
 
 # TODO :
-# - Verifier tout fonctionne | biomes manquants toxiques
 # - Créer map régions
-# - remplacer slider percentage d'eau par un slider pour le nombre moyen de cases par région
-# - Ajouter la traduction via les csv
+# - Rééquillibrer les threads
 
 class_name PlanetGenerator
 
@@ -21,6 +19,7 @@ var avg_precipitation : float  # entre 0 et 1
 var elevation_modifier: int
 var nb_thread         : int
 var atmosphere_type   : int
+var nb_avg_cases      : int
 
 # Images générées
 var elevation_map    : Image
@@ -37,13 +36,14 @@ var final_map   : Image
 
 var preview: Image
 
-func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, elevation_modifier_param: int = 0, nb_thread_param : int = 8, atmosphere_type_param: int = 0, renderProgress_param: ProgressBar = null, cheminSauvegarde_param: String = "user://temp/") -> void:
+func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, elevation_modifier_param: int = 0, nb_thread_param : int = 8, atmosphere_type_param: int = 0, renderProgress_param: ProgressBar = null, nb_avg_cases_param : int = 50, cheminSauvegarde_param: String = "user://temp/") -> void:
 	self.nom = nom_param
 	
 	self.circonference			=  int(rayon * 2 * PI)
 	self.renderProgress			= renderProgress_param
 	self.renderProgress.value	= 0.0
 	self.cheminSauvegarde		= cheminSauvegarde_param
+	self.nb_avg_cases           = nb_avg_cases_param
 
 	self.avg_temperature    = avg_temperature_param
 	self.water_elevation    = water_elevation_param
@@ -84,6 +84,10 @@ func generate_planet():
 	thread_precipitation.wait_to_finish()
 	thread_water.wait_to_finish()
 
+	print("\nGénération de la carte des regions\n")
+	var thread_region = Thread.new()
+	thread_region.start(generate_region_map)
+
 	print("\nGénération de la carte des températures moyennes\n")
 	var thread_temperature = Thread.new()
 	thread_temperature.start(generate_temperature_map)
@@ -101,6 +105,7 @@ func generate_planet():
 	thread_biome.start(generate_biome_map)
 
 	thread_biome.wait_to_finish()
+	thread_region.wait_to_finish()
 
 	print("\n===================")
 	print("Génération Terminée\n")
@@ -173,6 +178,7 @@ func nuage_calcul(img: Image, noise, _noise2, x : int, y : int) -> void:
 		img.set_pixel(x, y, Color.hex(0xFFFFFFFF))  # White for clouds
 	else:
 		img.set_pixel(x, y, Color.hex(0x000000FF))  # Black for no clouds
+
 
 func generate_elevation_map() -> void:
 	randomize()
@@ -442,6 +448,35 @@ func water_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
 		img.set_pixel(x, y, Color.hex(0xFFFFFFFF))
 	else:
 		img.set_pixel(x, y, Color.hex(0x000000FF))
+
+func generate_region_map() -> void:
+	var cases_done : Array[Array] = []
+	randomize()
+
+	print("Création de l'image")
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
+
+	print("Génération de la carte")
+	var range = circonference / (self.nb_thread / 4)
+	var threadArray = []
+	for i in range(0, (self.nb_thread / 4), 1):
+		var x1 = i * range
+		var x2 = self.circonference if i == ((self.nb_thread / 4) - 1) else (i + 1) * range
+		var thread = Thread.new()
+		threadArray.append(thread)
+		thread.start(thread_calcul.bind(img, null, cases_done, x1, x2, region_calcul))
+	
+	for thread in threadArray:
+		thread.wait_to_finish()
+
+	print("Fin de la génération de la carte")
+	self.addProgress(15)
+	self.region_map = img
+
+func region_calcul(img: Image, _noise, cases_done : Array[Array], x : int, y : int ) -> void:
+	#TO DO
+	pass
+		
 
 
 func generate_temperature_map() -> void:
