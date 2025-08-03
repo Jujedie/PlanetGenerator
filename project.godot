@@ -32,7 +32,7 @@ window/size/sharp_corners=true
 
 [internationalization]
 
-locale/translations=PackedStringArray("res://data/translations/base.en.translation", "res://data/translations/base.fr.translation")
+locale/translations=PackedStringArray("res://data/translations/base.de.translation", "res://data/translations/base.en.translation", "res://data/translations/base.fr.translation", "res://data/translations/base.ru.translation")
 
 [rendering]
 
