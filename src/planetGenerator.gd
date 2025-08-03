@@ -2,7 +2,9 @@ extends RefCounted
 
 # TODO :
 # - Verifier tout fonctionne | biomes manquants toxiques
-
+# - Créer map régions
+# - remplacer slider percentage d'eau par un slider pour le nombre moyen de cases par région
+# - Ajouter la traduction via les csv
 
 class_name PlanetGenerator
 
@@ -25,6 +27,7 @@ var elevation_map    : Image
 var elevation_map_alt: Image
 var precipitation_map: Image
 var temperature_map  : Image
+var region_map  : Image
 var water_map   : Image
 var banquise_map: Image
 var biome_map   : Image
