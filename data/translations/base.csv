@@ -1,20 +1,20 @@
-key,en,fr
-LEAVE,Leave,Quitter
-NAME,Planet name,Nom de la planète
-NB_CASE_REGION,Number of cases per region : {val},Nombre de cases par régions : {val}
-RAYON_PLANET,Planetary radius : {val},Rayon planétaire : {val}
-AVG_TEMP,Average temperature : {val},Température moyenne : {val}
-WATER_ELEVATION,Elevation of water : {val},Élévation des mers : {val}
-AVG_PRECIPITATION,Average precipitations : {val},Précipitation moyenne : {val}
-BONUS_ELEVATION,Elevation additionnal : {val},Élévation additionnelle : {val}
-THREAD_NUMBER,Number of Thread : {val},Nombre de Thread : {val}
-PLANET_TYPE,Planet type,Type de planète
-SAUVEGARDER,Save,Sauvegarder
-GENERER,Generate,Générer
-VUE_SUIVANTE,Next map,Vue Suivante
-VUE_PRECEDANTE,Previous map,Vue Précédente
-TYPE_DEFAUT,Default,Défaut
-TYPE_TOXIQUE,Toxic,Toxique
-TYPE_VOLCAN,Volcanic,Volcanique
-TYPE_MORTE,Dead,Morte
-TYPE_NO_ATMOSPHERE,No Atmosphere,Sans Atmosphère
+key,en,fr,de,ru
+LEAVE,Leave,Quitter,Verlassen,Выйти
+NAME,Planet name,Nom de la planète,Name des Planeten,Название планеты
+NB_CASE_REGION,Number of cases per region : {val},Nombre de cases par régions : {val},Anzahl der Felder pro Region: {val},Количество ячеек на регион: {val}
+RAYON_PLANET,Planetary radius : {val},Rayon planétaire : {val},Planetarischer Radius: {val},Планетарный радиус: {val}
+AVG_TEMP,Average temperature : {val},Température moyenne : {val},Durchschnittstemperatur: {val},Средняя температура: {val}
+WATER_ELEVATION,Elevation of water : {val},Élévation des mers : {val},Wasserstand: {val},Уровень воды: {val}
+AVG_PRECIPITATION,Average precipitations : {val},Précipitation moyenne : {val},Durchschnittliche Niederschläge: {val},Среднее количество осадков: {val}
+BONUS_ELEVATION,Elevation additionnal : {val},Élévation additionnelle : {val},Zusätzliche Erhöhung: {val},Дополнительное повышение: {val}
+THREAD_NUMBER,Number of Thread : {val},Nombre de Thread : {val},Anzahl der Threads: {val},Количество потоков: {val}
+PLANET_TYPE,Planet type,Type de planète,Planetenart,Тип планеты
+SAUVEGARDER,Save,Sauvegarder,Speichern,Сохранить
+GENERER,Generate,Générer,Generieren,Создать
+VUE_SUIVANTE,Next map,Vue Suivante,Weiteres Kartenbild,Следующая карта
+VUE_PRECEDANTE,Previous map,Vue Précédente,Vorheriges Kartenbild,Предыдущая карта
+TYPE_DEFAUT,Standard,Défaut,Standard,Стандартный
+TYPE_TOXIQUE,Toxic,Toxique,Giftig,Токсичный
+TYPE_VOLCAN,Volcanic,Volcanique,Vulkanisch,Вулканический
+TYPE_MORTE,Dead,Morte,Tot,Мёртвый
+TYPE_NO_ATMOSPHERE,No Atmosphere,Sans Atmosphère,Ohne Atmosphäre,Без атмосферы

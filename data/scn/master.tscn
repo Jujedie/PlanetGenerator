@@ -1,4 +1,4 @@
-[gd_scene load_steps=23 format=3 uid="uid://c7gj7wdupqeeb"]
+[gd_scene load_steps=26 format=3 uid="uid://c7gj7wdupqeeb"]
 
 [ext_resource type="Texture2D" uid="uid://bm5bxcrxtppve" path="res://data/img/fond_machine.png" id="1_7ybw1"]
 [ext_resource type="Script" uid="uid://d12q01wdkxsvn" path="res://src/master.gd" id="1_qfml0"]
@@ -19,6 +19,9 @@
 [ext_resource type="Texture2D" uid="uid://bkniysufwx0t1" path="res://data/img/can.png" id="16_gg1ai"]
 [ext_resource type="Texture2D" uid="uid://4h3fjme73ij1" path="res://data/img/can_pressed.png" id="17_lb8ov"]
 [ext_resource type="Texture2D" uid="uid://cw6pnbs1hygv1" path="res://data/img/can_hover.png" id="18_gihwl"]
+[ext_resource type="Texture2D" uid="uid://diokt46h6vckc" path="res://data/img/deu.png" id="19_s305m"]
+[ext_resource type="Texture2D" uid="uid://co7aie2jxumbk" path="res://data/img/deu_pressed.png" id="20_i1wak"]
+[ext_resource type="Texture2D" uid="uid://ghqhdoqx52oy" path="res://data/img/deu_hover.png" id="21_1512y"]
 
 [sub_resource type="Theme" id="Theme_qfml0"]
 default_font = ExtResource("7_ggrey")
@@ -438,17 +441,6 @@ position = Vector2(358, 35.5)
 scale = Vector2(16.2, 1.65)
 texture = ExtResource("12_okhqb")
 
-[node name="FRA" type="TextureButton" parent="Node2D/Control/SubViewportContainer/SubViewport"]
-offset_left = 44.0
-offset_top = 433.817
-offset_right = 84.0
-offset_bottom = 473.817
-texture_normal = ExtResource("13_eqo0y")
-texture_pressed = ExtResource("14_krsn2")
-texture_hover = ExtResource("15_ctyun")
-texture_disabled = ExtResource("14_krsn2")
-texture_focused = ExtResource("13_eqo0y")
-
 [node name="CAN" type="TextureButton" parent="Node2D/Control/SubViewportContainer/SubViewport"]
 offset_left = 131.405
 offset_top = 433.817
@@ -459,6 +451,28 @@ texture_pressed = ExtResource("17_lb8ov")
 texture_hover = ExtResource("18_gihwl")
 texture_disabled = ExtResource("17_lb8ov")
 texture_focused = ExtResource("16_gg1ai")
+
+[node name="DEU" type="TextureButton" parent="Node2D/Control/SubViewportContainer/SubViewport"]
+offset_left = 236.945
+offset_top = 433.817
+offset_right = 306.945
+offset_bottom = 483.817
+texture_normal = ExtResource("19_s305m")
+texture_pressed = ExtResource("20_i1wak")
+texture_hover = ExtResource("21_1512y")
+texture_disabled = ExtResource("20_i1wak")
+texture_focused = ExtResource("19_s305m")
+
+[node name="FRA" type="TextureButton" parent="Node2D/Control/SubViewportContainer/SubViewport"]
+offset_left = 44.0
+offset_top = 433.817
+offset_right = 114.0
+offset_bottom = 483.817
+texture_normal = ExtResource("13_eqo0y")
+texture_pressed = ExtResource("14_krsn2")
+texture_hover = ExtResource("15_ctyun")
+texture_disabled = ExtResource("14_krsn2")
+texture_focused = ExtResource("13_eqo0y")
 
 [node name="renderProgress" type="ProgressBar" parent="Node2D/Control"]
 layout_mode = 0
@@ -486,5 +500,6 @@ metadata/_edit_lock_ = true
 [connection signal="pressed" from="Node2D/Control/btnQuitter/btnQuitter" to="." method="_on_btn_quitter_pressed"]
 [connection signal="pressed" from="Node2D/Control/btnSuivant/btnSuivant" to="." method="_on_btn_suivant_pressed"]
 [connection signal="pressed" from="Node2D/Control/btnPrecedant/btnPrecedant" to="." method="_on_btn_precedant_pressed"]
-[connection signal="pressed" from="Node2D/Control/SubViewportContainer/SubViewport/FRA" to="." method="_on_btn_french_pressed"]
 [connection signal="pressed" from="Node2D/Control/SubViewportContainer/SubViewport/CAN" to="." method="_on_btn_english_pressed"]
+[connection signal="pressed" from="Node2D/Control/SubViewportContainer/SubViewport/DEU" to="." method="_on_btn_german_pressed"]
+[connection signal="pressed" from="Node2D/Control/SubViewportContainer/SubViewport/FRA" to="." method="_on_btn_french_pressed"]
