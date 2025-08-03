@@ -463,33 +463,88 @@ func water_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
 
 
 func generate_region_map() -> void:
-	var cases_done : Array[Array] = []
+	var cases_done : Dictionary = {}
 	randomize()
 
 	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
 	print("Génération de la carte")
-	var range = circonference / (self.nb_thread / 4)
-	var threadArray = []
-	for i in range(0, (self.nb_thread / 4), 1):
-		var x1 = i * range
-		var x2 = self.circonference if i == ((self.nb_thread / 4) - 1) else (i + 1) * range
-		var thread = Thread.new()
-		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, null, cases_done, x1, x2, region_calcul))
-	
-	for thread in threadArray:
-		thread.wait_to_finish()
+	region_calcul(img, [0,0],cases_done)
 
 	print("Fin de la génération de la carte")
 	self.addProgress(10)
 	self.region_map = img
 
-func region_calcul(img: Image, _noise, cases_done : Array[Array], x : int, y : int ) -> void:
-	#TO DO
-	pass
-		
+func region_calcul(img: Image, pos: Array[int], cases_done: Dictionary, ensRegion : Array[Region] = [], current_region : Region = null, nbEssai : int = 0) -> void:
+	if cases_done.has(pos[0]) and cases_done[pos[0]].has(pos[1]):
+		return
+
+	if current_region == null:
+		var size = cases_done.keys().size()
+		for i in cases_done.keys():
+			size += cases_done[i].size()
+		if size >= self.circonference * (self.circonference / 2):
+			return
+
+	if self.water_map.get_pixel(pos[0], pos[1]) == Color.hex(0xFFFFFFFF):
+		img.set_pixel(pos[0], pos[1], Color.hex(0x000000FF))
+
+		cases_done[pos[0]] = { pos[1]: null }
+
+		if pos[0] > 0:
+			region_calcul(img, [pos[0] - 1, pos[1]], cases_done, ensRegion, current_region)
+		if pos[0] < self.circonference - 1:
+			region_calcul(img, [pos[0] + 1, pos[1]], cases_done, ensRegion, current_region)
+		if pos[1] > 0:
+			region_calcul(img, [pos[0], pos[1] - 1], cases_done, ensRegion, current_region)
+		if pos[1] < self.circonference / 2 - 1:
+			region_calcul(img, [pos[0], pos[1] + 1], cases_done, ensRegion, current_region)
+
+	if current_region == null:
+		var avg_block = (randi() % (self.nb_avg_cases)) + (self.nb_avg_cases / 4)
+		current_region = Region.new(avg_block)
+		ensRegion.append(current_region)
+
+	if not (cases_done.has(pos[0]) and cases_done[pos[0]].has(pos[1])):
+		var is_neighbor = false
+		# Check if the current position is neighboring a case of the region
+		if current_region.cases.size() == 0:
+			is_neighbor = true
+		else:
+			for neighbor_offset in [[-1,0],[1,0],[0,-1],[0,1]]:
+				var nx = pos[0] + neighbor_offset[0]
+				var ny = pos[1] + neighbor_offset[1]
+				if nx >= 0 and nx < self.circonference and ny >= 0 and ny < self.circonference / 2:
+					if cases_done.has(nx) and cases_done[nx].has(ny) and cases_done[nx][ny] == current_region:
+						is_neighbor = true
+						break
+		if is_neighbor:
+			current_region.addCase(pos)
+			if not cases_done.has(pos[0]):
+				cases_done[pos[0]] = {}
+			cases_done[pos[0]][pos[1]] = current_region
+
+			if current_region.isComplete():
+				current_region.majNeighbors(cases_done)
+				current_region.majColor()
+				current_region.setColorCases(img)
+				current_region = null
+			nbEssai = 0
+		else:
+			nbEssai += 1
+			if nbEssai >= 4:
+				current_region = null
+				nbEssai = 0
+	else:
+		if pos[0] > 0:
+			region_calcul(img, [pos[0] - 1, pos[1]], cases_done, ensRegion, current_region)
+		if pos[0] < self.circonference - 1:
+			region_calcul(img, [pos[0] + 1, pos[1]], cases_done, ensRegion, current_region)
+		if pos[1] > 0:
+			region_calcul(img, [pos[0], pos[1] - 1], cases_done, ensRegion, current_region)
+		if pos[1] < self.circonference / 2 - 1:
+			region_calcul(img, [pos[0], pos[1] + 1], cases_done, ensRegion, current_region)
 
 func generate_temperature_map() -> void:
 	randomize()
@@ -660,6 +715,7 @@ func getMaps() -> Array[String]:
 		save_image(self.water_map,"water_map.png"),
 		save_image(self.biome_map,"biome_map.png"),
 		save_image(self.final_map,"final_map.png"),
+		save_image(self.region_map,"region_map.png"),
 		save_image(self.preview,"preview.png")
 
 	]
