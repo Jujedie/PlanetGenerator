@@ -53,7 +53,7 @@ var BIOMES = [
 	Biome.new("Toundra toxique", Color.hex(0x83944bFF), Color.hex(0x8e986eFF), [-150, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
 	Biome.new("Forêts fongiques extrêmes", Color.hex(0x317536FF), Color.hex(0x59755bFF), [0, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
 	Biome.new("Plaines toxiques", Color.hex(0x378d3eFF), Color.hex(0x678a6aFF), [5, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
-	Biome.new("Solfatares", Color.hex(0x3d7542FF), Color.hex(0x606e61FF), [45, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
+	Biome.new("Solfatares", Color.hex(0x3d7542FF), Color.hex(0x606e61FF), [36, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
 
 
 	# Biomes Volcaniques
@@ -76,25 +76,25 @@ var BIOMES = [
 	# Biomes Morts
 
 	#	Biomes aquatiques
-	Biome.new("Banquise morte", Color.hex(0x2b1b1bFF), Color.hex(0x4d2c2cFF), [-273, 0], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [3]),
-	Biome.new("Marécages luminescents", Color.hex(0x3c2b2bFF), Color.hex(0x5d3c3cFF), [0, 100], [0.0, 1.0], [-100, ALTITUDE_MAX], true, [4]),
-	Biome.new("Océan mort", Color.hex(0x2b1b1bFF), Color.hex(0x4d2c2cFF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [4]),
+	Biome.new("Banquise morte", Color.hex(0xd9d1ccFF), Color.hex(0xcbc8c5FF), [-273, 0], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [3]),
+	Biome.new("Marécages luminescents", Color.hex(0x619f63FF), Color.hex(0x4c6e4dFF), [0, 100], [0.0, 1.0], [-100, ALTITUDE_MAX], true, [4]),
+	Biome.new("Océan mort", Color.hex(0x49794aFF), Color.hex(0x374f38FF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [4]),
 
 	#	Biomes terrestres
-	Biome.new("Désert de sel", Color.hex(0x1b1b1bFF), Color.hex(0x3c2c2cFF), [-273, 50], [0.0, 0.35], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [4]),
-	Biome.new("Plaines de cendres", Color.hex(0x3c2b2bFF), Color.hex(0x5d3c3cFF), [0, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [4]),
-	Biome.new("Cratères nucléaires", Color.hex(0x2b1b1bFF), Color.hex(0x4d2c2cFF), [5, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [4]),
-	Biome.new("Terres désolées", Color.hex(0x1b1b1FF), Color.hex(0x3c2c2cFF), [20, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [4]),
-	Biome.new("Forêts mutantes", Color.hex(0x4a3c2bFF), Color.hex(0x6f4d3cFF), [45, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [4]),
-	Biome.new("Plaines de poussière", Color.hex(0x3c2b2bFF), Color.hex(0x5d3c3cFF), [70, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [4]),
+	Biome.new("Désert de sel", Color.hex(0xd9cba0FF), Color.hex(0xc4b893FF), [-273, 50], [0.0, 0.35], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [4]),
+	Biome.new("Plaines de cendres", Color.hex(0x292826FF), Color.hex(0x53504bFF), [0, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [4]),
+	Biome.new("Cratères nucléaires", Color.hex(0x343331FF), Color.hex(0x484641FF), [5, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [4]),
+	Biome.new("Terres désolées", Color.hex(0x807969FF), Color.hex(0x56544fFF), [20, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [4]),
+	Biome.new("Forêts mutantes", Color.hex(0x867048FF), Color.hex(0x7c6c4dFF), [45, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [4]),
+	Biome.new("Plaines de poussière", Color.hex(0xa98c59FF), Color.hex(0x8a7650FF), [70, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [4]),
 
 
 	# Biomes Sans Atmosphères
 
 	#	Biomes terrestres 
-	Biome.new("Déserts rocheux nus", Color.hex(0x7f4d3cFF), Color.hex(0x9f5e4dFF), [-273, 200], [0.0, 0.1], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [3]),
-	Biome.new("Régolithes criblés de cratères", Color.hex(0x6f3c2bFF), Color.hex(0x8f4d3cFF), [-273, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [3]),
-	Biome.new("Fosses d’impact", Color.hex(0x5a2b2bFF), Color.hex(0x7f3c3cFF), [-273, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [3])
+	Biome.new("Déserts rocheux nus", Color.hex(0x75736fFF), Color.hex(0x4f4d4aFF), [-273, 200], [0.0, 0.1], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [3]),
+	Biome.new("Régolithes criblés de cratères", Color.hex(0x676662FF), Color.hex(0x4a4845FF), [-273, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [3]),
+	Biome.new("Fosses d’impact", Color.hex(0x5d5c59FF), Color.hex(0x474543FF), [-273, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [3])
 ]
 
 # Définition des couleurs pour les élévations
