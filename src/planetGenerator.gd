@@ -107,6 +107,8 @@ func generate_planet():
 	thread_biome.wait_to_finish()
 	thread_region.wait_to_finish()
 
+	generate_preview()
+
 	print("\n===================")
 	print("Génération Terminée\n")
 	emit_signal("finished")
@@ -118,6 +120,9 @@ func save_maps():
 	print("\nSauvegarde de la carte topographique")
 	save_image(self.elevation_map, "elevation_map.png", self.cheminSauvegarde)
 
+	print("\nSauvegarde de la carte topographique alternative")
+	save_image(self.elevation_map_alt, "elevation_map_alt.png", self.cheminSauvegarde)
+
 	print("\nSauvegarde de la carte des précipitations")
 	save_image(self.precipitation_map, "precipitation_map.png", self.cheminSauvegarde)
 
@@ -127,21 +132,28 @@ func save_maps():
 	print("\nSauvegarde de la carte des mers")
 	save_image(self.water_map, "water_map.png", self.cheminSauvegarde)
 
-	print("\nSauvegarde de la carte de la banquise")
-	save_image(self.banquise_map, "banquise_map.png", self.cheminSauvegarde)
-
 	print("\nSauvegarde de la carte des biomes")
 	save_image(self.biome_map, "biome_map.png", self.cheminSauvegarde)
 
 	print("\nSauvegarde de la carte du pétrole")
 	save_image(self.oil_map, "oil_map.png", self.cheminSauvegarde)
 
+	print("\nSauvegarde de la carte des nuages")
+	save_image(self.nuage_map, "nuage_map.png", self.cheminSauvegarde)
+
+	print("\nSauvegarde de la carte de prévisualisation")
+	save_image(self.preview, "preview.png", self.cheminSauvegarde)
+
+	print("\nSauvegarde de la carte des régions")
+	save_image(self.region_map, "region_map.png", self.cheminSauvegarde)
+
+	print("\nSauvegarde terminée")
 
 func generate_nuage_map() -> void:
 	randomize()
 
 	print("Création de l'image")
-	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
 	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
@@ -175,17 +187,17 @@ func nuage_calcul(img: Image, noise, _noise2, x : int, y : int) -> void:
 	value = abs(value)
 
 	if value > 0.15:
-		img.set_pixel(x, y, Color.hex(0xFFFFFFFF))  # White for clouds
+		img.set_pixel(x, y, Color.hex(0xc4c4c4FF))  # White for clouds
 	else:
-		img.set_pixel(x, y, Color.hex(0x000000FF))  # Black for no clouds
+		img.set_pixel(x, y, Color.hex(0x00000000))  # Black for no clouds
 
 
 func generate_elevation_map() -> void:
 	randomize()
 
 	print("Création de l'image")
-	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
-	self.elevation_map_alt = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
+	self.elevation_map_alt = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
 	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
@@ -288,7 +300,7 @@ func generate_oil_map() -> void:
 	randomize()
 
 	print("Création de l'image")
-	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8)
 
 	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
@@ -330,7 +342,7 @@ func generate_banquise_map() -> void:
 	randomize()
 
 	print("Création de l'image")
-	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
 	print("Initialisation du bruit")
 
@@ -365,7 +377,7 @@ func generate_precipitation_map() -> void:
 	randomize()
 
 	print("Création de l'image")
-	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
 	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
@@ -405,7 +417,7 @@ func generate_water_map() -> void:
 	randomize()
 
 	print("Création de l'image")
-	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
 	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
@@ -449,12 +461,13 @@ func water_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
 	else:
 		img.set_pixel(x, y, Color.hex(0x000000FF))
 
+
 func generate_region_map() -> void:
 	var cases_done : Array[Array] = []
 	randomize()
 
 	print("Création de l'image")
-	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
 	print("Génération de la carte")
 	var range = circonference / (self.nb_thread / 4)
@@ -478,12 +491,11 @@ func region_calcul(img: Image, _noise, cases_done : Array[Array], x : int, y : i
 	pass
 		
 
-
 func generate_temperature_map() -> void:
 	randomize()
 
 	print("Création de l'image")
-	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
 	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
@@ -553,7 +565,7 @@ func temperature_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 
 func generate_biome_map() -> void:
 	print("Création de l'image")
-	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 	
 	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
@@ -595,9 +607,8 @@ func biome_calcul(img: Image,_noise, _noise2, x : int,y : int) -> void:
 		biome = Enum.getBiome(self.atmosphere_type, elevation_val, precipitation_val, temperature_val, is_water, img, x, y)
 
 	var elevation_color = Enum.getElevationColor(elevation_val, true)
-	var color_final = elevation_color * biome.get_couleur_vegetation() 
-	#if self.nuage_map.get_pixel(x, y) != Color.hex(0x000000FF):
-	#	color_final = Color.hex(0xFFFFFF01)
+	var color_final = elevation_color * biome.get_couleur_vegetation()
+	color_final.a = 1.0
 
 	img.set_pixel(x, y, biome.get_couleur())
 	self.final_map.set_pixel(x, y, color_final)
@@ -612,11 +623,29 @@ func thread_calcul(img: Image, noise: FastNoiseLite, misc_value , x1: int, x2: i
 func generate_final_map() -> void:
 	pass
 	print("Création de l'image")
-	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
 	print("Fin de la génération de la carte")
 	self.addProgress(10)
 	self.final_map = img
+
+func generate_preview() -> void:
+	self.preview = Image.create(self.circonference / 2, self.circonference / 2, false, Image.FORMAT_RGBA8 )
+
+	var radius = self.circonference / 4
+	var center = Vector2(self.circonference / 4, self.circonference / 4)
+
+	for x in range(self.preview.get_width()):
+		for y in range(self.preview.get_height()):
+			var pos = Vector2(x, y)
+			if pos.distance_to(center) <= radius:
+				if self.nuage_map.get_pixel(x, y) != Color.hex(0x00000000):
+					self.preview.set_pixel(x, y, self.nuage_map.get_pixel(x, y))
+				else:
+					self.preview.set_pixel(x, y, self.final_map.get_pixel(x, y))
+			else:
+				self.preview.set_pixel(x, y, Color.TRANSPARENT)
+
 
 func getMaps() -> Array[String]:
 	deleteImagesTemps()
@@ -630,7 +659,9 @@ func getMaps() -> Array[String]:
 		save_image(self.temperature_map,"temperature_map.png"),
 		save_image(self.water_map,"water_map.png"),
 		save_image(self.biome_map,"biome_map.png"),
-		save_image(self.final_map,"final_map.png")
+		save_image(self.final_map,"final_map.png"),
+		save_image(self.preview,"preview.png")
+
 	]
 
 func is_ready() -> bool:
