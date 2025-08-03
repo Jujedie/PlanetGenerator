@@ -3,46 +3,45 @@ extends RefCounted
 class_name Region
 
 static var colors : Array[Color] = [
-	Color(0.894, 0.102, 0.110),
-	Color(0.216, 0.494, 0.722),
-	Color(0.302, 0.686, 0.290),
-	Color(0.596, 0.306, 0.639),
-	Color(1.000, 0.498, 0.000),
-	Color(1.000, 1.000, 0.200),
-	Color(0.651, 0.337, 0.157),
-	Color(0.969, 0.506, 0.749),
-	Color(0.600, 0.600, 0.600),
-	Color(0.737, 0.741, 0.133),
-	Color(0.090, 0.745, 0.811),
-	Color(0.992, 0.682, 0.380),
-	Color(0.419, 0.239, 0.600),
-	Color(0.694, 0.349, 0.157),
-	Color(0.984, 0.603, 0.600),
-	Color(0.549, 0.337, 0.294),
-	Color(0.890, 0.466, 0.760),
-	Color(0.498, 0.498, 0.000),
-	Color(0.737, 0.560, 0.560),
-	Color(0.184, 0.800, 0.800),
-	Color(0.800, 0.922, 0.773),
-	Color(0.580, 0.403, 0.741),
-	Color(0.929, 0.694, 0.125),
-	Color(0.400, 0.400, 0.400),
-	Color(0.600, 0.600, 0.200),
-	Color(0.200, 0.600, 0.600),
-	Color(0.800, 0.400, 0.400),
-	Color(0.400, 0.800, 0.400),
-	Color(0.400, 0.400, 0.800),
-	Color(0.800, 0.800, 0.400),
-	Color(0.400, 0.800, 0.800),
-	Color(0.800, 0.400, 0.800),
-	Color(0.600, 0.200, 0.600),
-	Color(0.200, 0.600, 0.200),
-	Color(0.600, 0.600, 0.800),
-	Color(0.800, 0.600, 0.600),
-	Color(0.600, 0.800, 0.600),
-	Color(0.600, 0.600, 0.400),
-	Color(0.400, 0.600, 0.600),
-	Color(0.600, 0.400, 0.600)
+	Color.hex(0x377EB8FF),
+	Color.hex(0x4DAF4AFF),
+	Color.hex(0x984EA3FF),
+	Color.hex(0xFF7F00FF),
+	Color.hex(0xFFFF33FF),
+	Color.hex(0xA65628FF),
+	Color.hex(0xF781BFFF),
+	Color.hex(0x999999FF),
+	Color.hex(0xBCBD22FF),
+	Color.hex(0x17BECFFF),
+	Color.hex(0xFCA85EFF),
+	Color.hex(0x6B3D99FF),
+	Color.hex(0xB15A28FF),
+	Color.hex(0xFBAA99FF),
+	Color.hex(0x8C564BFF),
+	Color.hex(0xE377C2FF),
+	Color.hex(0x7F7F00FF),
+	Color.hex(0xBC9090FF),
+	Color.hex(0x2FD0CCFF),
+	Color.hex(0xCCEBC5FF),
+	Color.hex(0x9467BDFF),
+	Color.hex(0xEDC949FF),
+	Color.hex(0x666666FF),
+	Color.hex(0x999933FF),
+	Color.hex(0x339999FF),
+	Color.hex(0xCC6666FF),
+	Color.hex(0x66CC66FF),
+	Color.hex(0x6666CCFF),
+	Color.hex(0xCCCC66FF),
+	Color.hex(0x66CCCCFF),
+	Color.hex(0xCC66CCFF),
+	Color.hex(0x993399FF),
+	Color.hex(0x339933FF),
+	Color.hex(0x9999CCFF),
+	Color.hex(0xCC9999FF),
+	Color.hex(0x99CC99FF),
+	Color.hex(0x999966FF),
+	Color.hex(0x669999FF),
+	Color.hex(0x996699FF)
 ]
 
 var color : Color
@@ -90,6 +89,13 @@ func majColor() -> void:
 			available_colors.append(colors[i])
 
 	self.color = colors[randi_range(0, available_colors.size() - 1)]
+
+func setColorCases(img: Image) -> void:
+	for case in self.cases:
+		var x = case[0]
+		var y = case[1]
+		if img.get_pixel(x, y) != self.color:
+			img.set_pixel(x, y, self.color)
 
 func majNeighbors(ensCases: Dictionary) -> void:
 	for case in self.cases:
