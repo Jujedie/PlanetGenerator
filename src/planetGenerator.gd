@@ -167,7 +167,7 @@ func generate_nuage_map() -> void:
 		thread.wait_to_finish()
 
 	print("Fin de la génération de la carte")
-	self.addProgress(15)
+	self.addProgress(5)
 	self.nuage_map = img
 
 func nuage_calcul(img: Image, noise, _noise2, x : int, y : int) -> void:
@@ -250,7 +250,7 @@ func generate_elevation_map() -> void:
 		thread.wait_to_finish()
 			
 	print("Fin de la génération de la carte")
-	self.addProgress(15)
+	self.addProgress(10)
 	self.elevation_map = img
 
 func elevation_calcul(img: Image, noise, noises, x: int, y: int) -> void:
@@ -313,7 +313,7 @@ func generate_oil_map() -> void:
 		thread.wait_to_finish()
 
 	print("Fin de la génération de la carte")
-	self.addProgress(15)
+	self.addProgress(5)
 	self.oil_map = img
 
 func oil_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
@@ -348,7 +348,7 @@ func generate_banquise_map() -> void:
 		thread.wait_to_finish()
 
 	print("Fin de la génération de la carte")
-	self.addProgress(15)
+	self.addProgress(5)
 	self.banquise_map = img
 
 func banquise_calcul(img: Image,_noise, _noise2, x : int,y : int) -> void:
@@ -391,7 +391,7 @@ func generate_precipitation_map() -> void:
 		thread.wait_to_finish()
 
 	print("Fin de la génération de la carte")
-	self.addProgress(15)
+	self.addProgress(10)
 	self.precipitation_map = img
 
 func precipitation_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
@@ -429,7 +429,7 @@ func generate_water_map() -> void:
 		thread.wait_to_finish()
 
 	print("Fin de la génération de la carte")
-	self.addProgress(15)
+	self.addProgress(10)
 	self.water_map = img
 
 func water_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
@@ -470,7 +470,7 @@ func generate_region_map() -> void:
 		thread.wait_to_finish()
 
 	print("Fin de la génération de la carte")
-	self.addProgress(15)
+	self.addProgress(10)
 	self.region_map = img
 
 func region_calcul(img: Image, _noise, cases_done : Array[Array], x : int, y : int ) -> void:
@@ -518,7 +518,7 @@ func generate_temperature_map() -> void:
 		thread.wait_to_finish()
 
 	print("Fin de la génération de la carte")
-	self.addProgress(15)
+	self.addProgress(10)
 	self.temperature_map = img
 
 func temperature_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
@@ -579,7 +579,7 @@ func generate_biome_map() -> void:
 		thread.wait_to_finish()
 
 	print("Fin de la génération de la carte")
-	self.addProgress(38)
+	self.addProgress(25)
 	self.biome_map = img
 
 func biome_calcul(img: Image,_noise, _noise2, x : int,y : int) -> void:
@@ -615,7 +615,7 @@ func generate_final_map() -> void:
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGB8)
 
 	print("Fin de la génération de la carte")
-	self.addProgress(2)
+	self.addProgress(10)
 	self.final_map = img
 
 func getMaps() -> Array[String]:
