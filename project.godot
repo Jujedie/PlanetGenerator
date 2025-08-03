@@ -30,6 +30,10 @@ window/size/viewport_height=900
 window/size/resizable=false
 window/size/sharp_corners=true
 
+[internationalization]
+
+locale/translations=PackedStringArray("res://data/translations/base.en.translation", "res://data/translations/base.fr.translation")
+
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
