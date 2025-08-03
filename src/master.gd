@@ -10,7 +10,7 @@ func _ready() -> void:
 		langue = "en"
 
 	TranslationServer.set_locale(langue)
-	
+
 	# Initialisation des paramètres de la planète
 	maj_labels()
 
@@ -108,7 +108,7 @@ func _on_btn_comfirme_pressed() -> void:
 	$Node2D/Control/btnSauvegarder/btnSauvegarder.disabled = true
 	$Node2D/Control/btnSuivant/btnSuivant.disabled         = true
 	$Node2D/Control/btnPrecedant/btnPrecedant.disabled     = true
-	
+
 
 func _on_planetGenerator_finished() -> void:
 	call_deferred("_on_planetGenerator_finished_main")
@@ -136,7 +136,7 @@ func _on_btn_sauvegarder_pressed() -> void:
 		$Node2D/Control.add_child(prompt_instance)
 		prompt_instance.position = Vector2i(200, 125)
 		prompt_instance.get_child(-1).get_child(-1).pressed.connect(_on_prompt_confirmed)
-	
+
 func _on_prompt_confirmed() -> void:
 	var prompt = $Node2D/Control.get_child(-1)
 	var input = prompt.get_child(1).get_child(1).text
@@ -203,6 +203,26 @@ func _on_btn_english_pressed() -> void:
 	langue = "en"
 	TranslationServer.set_locale(langue)
 	print("Language changed to English.")
+	maj_labels()
+
+func _on_btn_german_pressed() -> void:
+	if langue == "de":
+		print("Die Sprache ist bereits auf Deutsch eingestellt.")
+		return
+
+	langue = "de"
+	TranslationServer.set_locale(langue)
+	print("Sprache auf Deutsch geändert.")
+	maj_labels()
+
+func _on_btn_russian_pressed() -> void:
+	if langue == "ru":
+		print("Язык уже установлен на русский.")
+		return
+
+	langue = "ru"
+	TranslationServer.set_locale(langue)
+	print("Язык изменен на русский.")
 	maj_labels()
 
 func maj_labels() -> void:
