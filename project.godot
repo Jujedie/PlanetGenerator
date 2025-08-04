@@ -10,7 +10,12 @@ config_version=5
 
 [application]
 
-config/name="PlanetGenerator"
+config/name="Planet Generator"
+config/name_localized={
+"ca_FR": "Générateur de Planète",
+"de_DE": "",
+"fr_FR": "Générateur de Planète"
+}
 config/description="Application de génération de carte planétaire
 "
 config/version="v3.58"
@@ -33,6 +38,7 @@ window/size/sharp_corners=true
 [internationalization]
 
 locale/translations=PackedStringArray("res://data/translations/base.de.translation", "res://data/translations/base.en.translation", "res://data/translations/base.fr.translation", "res://data/translations/base.ru.translation")
+locale/locale_filter_mode=1
 
 [rendering]
 
