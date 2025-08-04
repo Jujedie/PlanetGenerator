@@ -18,7 +18,7 @@ config/name_localized={
 }
 config/description="Application de génération de carte planétaire
 "
-config/version="v3.65"
+config/version="v3.67"
 run/main_scene="res://data/scn/master.tscn"
 config/features=PackedStringArray("4.4", "Forward Plus")
 config/icon="uid://1nqqy1krp4q5"
