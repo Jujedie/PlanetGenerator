@@ -13,12 +13,12 @@ config_version=5
 config/name="Planet Generator"
 config/name_localized={
 "ca_FR": "Générateur de Planète",
-"de_DE": "",
+"de_DE": "Zufälliger Planetengenerator",
 "fr_FR": "Générateur de Planète"
 }
 config/description="Application de génération de carte planétaire
 "
-config/version="v3.58"
+config/version="v3.65"
 run/main_scene="res://data/scn/master.tscn"
 config/features=PackedStringArray("4.4", "Forward Plus")
 config/icon="uid://1nqqy1krp4q5"
