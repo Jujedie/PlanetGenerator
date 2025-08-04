@@ -68,21 +68,15 @@ func _on_sld_nb_cases_regions_value_changed(value: float) -> void:
 
 func _on_btn_comfirme_pressed() -> void:
 	var nom = $Node2D/Control/planeteName/LineEdit
-	print("\nNom de la planète : "+nom.text)
+	var sldNbCasesRegions = $Node2D/Control/sldNbCasesRegions
 	var sldRayonPlanetaire = $Node2D/Control/sldRayonPlanetaire
-	print("\nRayon Planétaire : "+str(sldRayonPlanetaire.value))
 	var sldTempMoy = $Node2D/Control/sldTempMoy
-	print("\nTempérature Moyenne : "+str(sldTempMoy.value))
 	var sldHautEau = $Node2D/Control/sldHautEau
-	print("\nElevation des mers : "+str(sldHautEau.value))
 	var sldPrecipitationMoy = $Node2D/Control/sldPrecipitationMoy
-	print("\nPrécipitation Moyenne : "+str(sldPrecipitationMoy.value)+"\n")
 	var sldElevation = $Node2D/Control/sldElevation
-	print("\nElevation bonus : "+str(sldElevation.value))
 	var sldThread = $Node2D/Control/sldThread
-	print("\nNombre de thread : "+str(sldThread.value))
 	var typePlanete = $Node2D/Control/typePlanete/ItemList
-	print("\nType d'atmosphère : "+typePlanete.get_item_text(typePlanete.get_selected_id()))
+	
 
 	if typePlanete.get_selected_id() == -1:
 		typePlanete.select(0)
@@ -93,7 +87,7 @@ func _on_btn_comfirme_pressed() -> void:
 
 	var renderProgress = $Node2D/Control/renderProgress
 
-	planetGenerator = PlanetGenerator.new(nom.text, sldRayonPlanetaire.value, sldTempMoy.value, sldHautEau.value, sldPrecipitationMoy.value, sldElevation.value , sldThread.value, typePlanete.get_selected_id(), renderProgress)
+	planetGenerator = PlanetGenerator.new(nom.text, sldRayonPlanetaire.value, sldTempMoy.value, sldHautEau.value, sldPrecipitationMoy.value, sldElevation.value , sldThread.value, typePlanete.get_selected_id(), renderProgress, sldNbCasesRegions.value)
 
 	var echelle = 100.0 / sldRayonPlanetaire.value
 	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.scale = Vector2(echelle, echelle)
@@ -135,13 +129,19 @@ func _on_btn_sauvegarder_pressed() -> void:
 		var prompt_instance = load("res://data/scn/prompt.tscn").instantiate()
 		$Node2D/Control.add_child(prompt_instance)
 		prompt_instance.position = Vector2i(200, 125)
-		prompt_instance.get_child(-1).get_child(-1).pressed.connect(_on_prompt_confirmed)
+		prompt_instance.get_child(2).get_child(0).pressed.connect(_on_prompt_confirmed)
 
 func _on_prompt_confirmed() -> void:
 	var prompt = $Node2D/Control.get_child(-1)
-	var input = prompt.get_child(1).get_child(1).text
+	var input_line_edit = prompt.get_child(1).get_child(1)
+	var input = input_line_edit.text
+	input_line_edit.editable = false
+	prompt.get_child(2).get_child(0).disabled = true
+	prompt.get_child(2).get_child(1).disabled = true
 	if input != "":
-		planetGenerator.cheminSauvegarde = input
+		if planetGenerator.nom == "":
+			planetGenerator.nom = "Planète Générée"
+		planetGenerator.cheminSauvegarde = input + "/" + planetGenerator.nom 
 		planetGenerator.save_maps()
 		print("Planète sauvegardée dans : ", planetGenerator.cheminSauvegarde)
 	else:
