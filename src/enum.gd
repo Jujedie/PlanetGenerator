@@ -7,8 +7,8 @@ var BIOMES = [
 	# Biomes Défauts
 
 	#	Biomes aquatiques
-	Biome.new("Banquise", Color.hex(0xbfbebbFF), Color.hex(0xe8e8e8FF), [-273, 0], [0.0, 1.0], [-ALTITUDE_MAX, 0], true),
-	Biome.new("Océan", Color.hex(0x25528aFF), Color.hex(0x466181FF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, 0], true),
+	Biome.new("Banquise", Color.hex(0xbfbebbFF), Color.hex(0xe8e8e8FF), [-273, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true),
+	Biome.new("Océan", Color.hex(0x25528aFF), Color.hex(0x466181FF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true),
 	Biome.new("Lac", Color.hex(0x4584d2FF), Color.hex(0x3d5571FF), [0, 100], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true),
 	Biome.new("Zone côtière (littorale)", Color.hex(0x2860a5FF), Color.hex(0x445f7eFF), [0, 100], [0.0, 1.0], [-1000, 0], true),
 
