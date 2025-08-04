@@ -26,5 +26,6 @@ of the planet for example :
  - 9 : final map
  - 10: region map
 
-in the end the images generated will be given to the user in
-a png format.
+in the end the images generated will be given to the user in a png format.
+
+V 3.58
