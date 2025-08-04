@@ -48,6 +48,7 @@ var color : Color
 var ensVoisins : Array[Region]
 var cases : Array[Array]
 var nbCaseLeft : int
+var isComplete : bool
 
 
 func _init(nbCaseLeft: int) -> void:
@@ -55,6 +56,7 @@ func _init(nbCaseLeft: int) -> void:
 	self.color = color
 	self.ensVoisins = []
 	self.cases = []
+	self.isComplete = false
 
 
 func getColor() -> Color:
@@ -111,5 +113,27 @@ func majNeighbors(ensCases: Dictionary) -> void:
 
 	majColor()
 
-func isComplete() -> bool:
+func is_complete() -> bool:
 	return self.nbCaseLeft == 0
+
+func is_potential_complete(ensCases: Dictionary) -> bool:
+	if self.isComplete:
+		return true
+	else :
+		if self.cases.size() == 0:
+			return false
+		
+		for case in self.cases:
+			var x = case[0]
+			var y = case[1]
+			for dx in [-1, 0, 1]:
+				for dy in [-1, 0, 1]:
+					if dx == 0 and dy == 0:
+						continue
+					var nx = x + dx
+					var ny = y + dy
+					if not ensCases.has(nx) or not ensCases[nx].has(ny):
+						return false
+		
+		self.isComplete = true
+		return true

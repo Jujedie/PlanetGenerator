@@ -1,8 +1,5 @@
 extends RefCounted
 
-# TODO :
-# - Créer map régions
-# - Rééquillibrer les threads
 
 class_name PlanetGenerator
 
@@ -14,8 +11,8 @@ var cheminSauvegarde		: String
 
 # Paramètres de génération
 var avg_temperature   : float
-var water_elevation   : int    # l'élévation de l'eau par rapport à la terre [-oo,+oo]
-var avg_precipitation : float  # entre 0 et 1
+var water_elevation   : int
+var avg_precipitation : float
 var elevation_modifier: int
 var nb_thread         : int
 var atmosphere_type   : int
@@ -152,10 +149,8 @@ func save_maps():
 func generate_nuage_map() -> void:
 	randomize()
 
-	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
-	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
 	noise.seed = randi()
 	noise.noise_type = FastNoiseLite.TYPE_PERLIN
@@ -165,7 +160,6 @@ func generate_nuage_map() -> void:
 	noise.fractal_gain = 0.85
 	noise.fractal_lacunarity = 1.5
 
-	print("Génération de la carte")
 	var range = circonference / (self.nb_thread / 2)
 	var threadArray = []
 	for i in range(0, (self.nb_thread / 2), 1):
@@ -178,7 +172,6 @@ func generate_nuage_map() -> void:
 	for thread in threadArray:
 		thread.wait_to_finish()
 
-	print("Fin de la génération de la carte")
 	self.addProgress(5)
 	self.nuage_map = img
 
@@ -195,11 +188,9 @@ func nuage_calcul(img: Image, noise, _noise2, x : int, y : int) -> void:
 func generate_elevation_map() -> void:
 	randomize()
 
-	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 	self.elevation_map_alt = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
-	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
 	noise.seed = randi()
 	noise.noise_type = FastNoiseLite.TYPE_PERLIN
@@ -242,7 +233,6 @@ func generate_elevation_map() -> void:
 	tectonic_canyon_noise.fractal_gain = 0.55
 	tectonic_canyon_noise.fractal_octaves = 4
 
-	print("Génération de la carte")
 	var range = circonference / (self.nb_thread / 2)
 	var threadArray = []
 	for i in range(0, (self.nb_thread / 2), 1):
@@ -260,8 +250,7 @@ func generate_elevation_map() -> void:
 	
 	for thread in threadArray:
 		thread.wait_to_finish()
-			
-	print("Fin de la génération de la carte")
+
 	self.addProgress(10)
 	self.elevation_map = img
 
@@ -299,10 +288,8 @@ func elevation_calcul(img: Image, noise, noises, x: int, y: int) -> void:
 func generate_oil_map() -> void:
 	randomize()
 
-	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8)
 
-	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
 	noise.seed = randi()
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
@@ -312,7 +299,6 @@ func generate_oil_map() -> void:
 	noise.fractal_gain = 0.85
 	noise.fractal_lacunarity = 4.0
 
-	print("Génération de la carte")
 	var range = circonference / (self.nb_thread / 2)
 	var threadArray = []
 	for i in range(0, (self.nb_thread / 2), 1):
@@ -324,7 +310,6 @@ func generate_oil_map() -> void:
 	for thread in threadArray:
 		thread.wait_to_finish()
 
-	print("Fin de la génération de la carte")
 	self.addProgress(5)
 	self.oil_map = img
 
@@ -341,12 +326,8 @@ func oil_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 func generate_banquise_map() -> void:
 	randomize()
 
-	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
-	print("Initialisation du bruit")
-
-	print("Génération de la carte")
 	var range = circonference / (self.nb_thread / 2)
 	var threadArray = []
 	for i in range(0, (self.nb_thread / 2), 1):
@@ -359,7 +340,6 @@ func generate_banquise_map() -> void:
 	for thread in threadArray:
 		thread.wait_to_finish()
 
-	print("Fin de la génération de la carte")
 	self.addProgress(5)
 	self.banquise_map = img
 
@@ -376,10 +356,8 @@ func banquise_calcul(img: Image,_noise, _noise2, x : int,y : int) -> void:
 func generate_precipitation_map() -> void:
 	randomize()
 
-	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
-	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
 	noise.seed = randi()
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
@@ -389,7 +367,6 @@ func generate_precipitation_map() -> void:
 	noise.fractal_gain = 0.85
 	noise.fractal_lacunarity = 4.0
 
-	print("Génération de la carte")
 	var range = circonference / (self.nb_thread / 2)
 	var threadArray = []
 	for i in range(0, (self.nb_thread / 2), 1):
@@ -402,7 +379,6 @@ func generate_precipitation_map() -> void:
 	for thread in threadArray:
 		thread.wait_to_finish()
 
-	print("Fin de la génération de la carte")
 	self.addProgress(10)
 	self.precipitation_map = img
 
@@ -416,10 +392,8 @@ func precipitation_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
 func generate_water_map() -> void:
 	randomize()
 
-	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
-	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
 	noise.seed = randi()
 	noise.frequency = 1.0 / float(self.circonference)
@@ -427,7 +401,6 @@ func generate_water_map() -> void:
 	noise.fractal_gain = 0.5
 	noise.fractal_lacunarity = 0.5
 
-	print("Génération de la carte")
 	var range = circonference / (self.nb_thread / 2)
 	var threadArray = []
 	for i in range(0, (self.nb_thread / 2), 1):
@@ -440,7 +413,6 @@ func generate_water_map() -> void:
 	for thread in threadArray:
 		thread.wait_to_finish()
 
-	print("Fin de la génération de la carte")
 	self.addProgress(10)
 	self.water_map = img
 
@@ -463,96 +435,123 @@ func water_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
 
 
 func generate_region_map() -> void:
-	var cases_done : Dictionary = {}
-	randomize()
 
-	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
-	print("Génération de la carte")
-	region_calcul(img, [0,0],cases_done)
+	region_calcul(img)
 
-	print("Fin de la génération de la carte")
 	self.addProgress(10)
 	self.region_map = img
 
-func region_calcul(img: Image, pos: Array[int], cases_done: Dictionary, ensRegion : Array[Region] = [], current_region : Region = null, nbEssai : int = 0) -> void:
-	if cases_done.has(pos[0]) and cases_done[pos[0]].has(pos[1]):
-		return
+func region_calcul(img: Image) -> void:
+	var cases_done : Dictionary = {}
+	var current_region : Region = null
 
-	if current_region == null:
-		var size = cases_done.keys().size()
-		for i in cases_done.keys():
-			size += cases_done[i].size()
-		if size >= self.circonference * (self.circonference / 2):
-			return
+	for x in range(0, self.circonference):
+		for y in range(0, self.circonference / 2):
+			if not (cases_done.has(x) and cases_done[x].has(y)):
+				if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
+					img.set_pixel(x, y, Color.hex(0x2f343bFF))
+					if not cases_done.has(x):
+						cases_done[x] = {}
+					cases_done[x][y] = null
+					continue
+				else :
+					var avg_block = (randi() % (self.nb_avg_cases)) + (self.nb_avg_cases / 4)
+					current_region = Region.new(avg_block)
 
-	if self.water_map.get_pixel(pos[0], pos[1]) == Color.hex(0xFFFFFFFF):
-		img.set_pixel(pos[0], pos[1], Color.hex(0x000000FF))
+					region_creation(img, [x, y], cases_done, current_region)
+			else:
+				continue
 
-		cases_done[pos[0]] = { pos[1]: null }
+func region_creation(img: Image, start_pos: Array[int], cases_done: Dictionary, current_region: Region) -> void:
+	var frontier = [start_pos]
+	var origin = Vector2(start_pos[0], start_pos[1])
 
-		if pos[0] > 0:
-			region_calcul(img, [pos[0] - 1, pos[1]], cases_done, ensRegion, current_region)
-		if pos[0] < self.circonference - 1:
-			region_calcul(img, [pos[0] + 1, pos[1]], cases_done, ensRegion, current_region)
-		if pos[1] > 0:
-			region_calcul(img, [pos[0], pos[1] - 1], cases_done, ensRegion, current_region)
-		if pos[1] < self.circonference / 2 - 1:
-			region_calcul(img, [pos[0], pos[1] + 1], cases_done, ensRegion, current_region)
+	while frontier.size() > 0 and not current_region.is_complete():
+		# Trier la frontier en fonction de la distance à l'origine + aléa
+		frontier.sort_custom(func(a, b):
+			var da = Vector2(a[0], a[1]).distance_to(origin) + randf() * 10.0
+			var db = Vector2(b[0], b[1]).distance_to(origin) + randf() * 10.0
+			return da < db
+		)
 
-	if current_region == null:
-		var avg_block = (randi() % (self.nb_avg_cases)) + (self.nb_avg_cases / 4)
-		current_region = Region.new(avg_block)
-		ensRegion.append(current_region)
+		var pos = frontier.pop_front()
+		var x = pos[0]
+		var y = pos[1]
 
-	if not (cases_done.has(pos[0]) and cases_done[pos[0]].has(pos[1])):
-		var is_neighbor = false
-		# Check if the current position is neighboring a case of the region
-		if current_region.cases.size() == 0:
-			is_neighbor = true
-		else:
-			for neighbor_offset in [[-1,0],[1,0],[0,-1],[0,1]]:
-				var nx = pos[0] + neighbor_offset[0]
-				var ny = pos[1] + neighbor_offset[1]
+		# Skip si traité
+		if cases_done.has(x) and cases_done[x].has(y):
+			continue
+
+		if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
+			img.set_pixel(x, y, Color.hex(0x2f343bFF))
+			if not cases_done.has(x):
+				cases_done[x] = {}
+			cases_done[x][y] = null
+			continue
+
+		current_region.addCase(pos)
+		if not cases_done.has(x):
+			cases_done[x] = {}
+		cases_done[x][y] = current_region
+
+		# Ajout des voisins non encore traités
+		for dir in [[-1,0],[1,0],[0,-1],[0,1]]:
+			var nx = x + dir[0]
+			var ny = y + dir[1]
+			if nx >= 0 and nx < self.circonference and ny >= 0 and ny < self.circonference / 2:
+				if not (cases_done.has(nx) and cases_done[nx].has(ny)):
+					frontier.append([nx, ny])
+
+	if current_region.cases.size() <= 10:
+		# Try to integrate with a neighboring region
+		var target_region : Region = null
+
+		for pos in current_region.cases:
+			var x = pos[0]
+			var y = pos[1]
+
+			for dir in [[-1,0],[1,0],[0,-1],[0,1]]:
+				var nx = x + dir[0]
+				var ny = y + dir[1]
 				if nx >= 0 and nx < self.circonference and ny >= 0 and ny < self.circonference / 2:
-					if cases_done.has(nx) and cases_done[nx].has(ny) and cases_done[nx][ny] == current_region:
-						is_neighbor = true
-						break
-		if is_neighbor:
-			current_region.addCase(pos)
-			if not cases_done.has(pos[0]):
-				cases_done[pos[0]] = {}
-			cases_done[pos[0]][pos[1]] = current_region
+					if cases_done.has(nx) and cases_done[nx].has(ny):
+						var neighbor_region = cases_done[nx][ny]
+						if neighbor_region != null and neighbor_region != current_region:
+							target_region = neighbor_region
+							break
+			if target_region != null:
+				break
 
-			if current_region.isComplete():
-				current_region.majNeighbors(cases_done)
-				current_region.majColor()
-				current_region.setColorCases(img)
-				current_region = null
-			nbEssai = 0
+		# If found, assign this tile to the neighboring region
+		if target_region != null:
+			for pos in current_region.cases:
+				var x = pos[0]
+				var y = pos[1]
+				target_region.addCase(pos)
+				cases_done[x][y] = target_region
+			# Recolor the tile with the neighbor region color
+			target_region.setColorCases(img)
 		else:
-			nbEssai += 1
-			if nbEssai >= 4:
-				current_region = null
-				nbEssai = 0
+			# If no neighbor, remove completely
+			for pos in current_region.cases:
+				var x = pos[0]
+				var y = pos[1]
+				if cases_done.has(x):
+					cases_done[x].erase(y)
+					if cases_done[x].is_empty():
+						cases_done.erase(x)
 	else:
-		if pos[0] > 0:
-			region_calcul(img, [pos[0] - 1, pos[1]], cases_done, ensRegion, current_region)
-		if pos[0] < self.circonference - 1:
-			region_calcul(img, [pos[0] + 1, pos[1]], cases_done, ensRegion, current_region)
-		if pos[1] > 0:
-			region_calcul(img, [pos[0], pos[1] - 1], cases_done, ensRegion, current_region)
-		if pos[1] < self.circonference / 2 - 1:
-			region_calcul(img, [pos[0], pos[1] + 1], cases_done, ensRegion, current_region)
+		current_region.majNeighbors(cases_done)
+		current_region.setColorCases(img)
+
 
 func generate_temperature_map() -> void:
 	randomize()
 
-	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
-	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
 	noise.seed = randi()
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
@@ -571,7 +570,6 @@ func generate_temperature_map() -> void:
 	noise2.fractal_gain = 0.75
 	noise2.fractal_lacunarity = 2.0
 
-	print("Génération de la carte")
 	var range = circonference / (self.nb_thread / 2)
 	var threadArray = []
 	for i in range(0, (self.nb_thread / 2), 1):
@@ -584,7 +582,6 @@ func generate_temperature_map() -> void:
 	for thread in threadArray:
 		thread.wait_to_finish()
 
-	print("Fin de la génération de la carte")
 	self.addProgress(10)
 	self.temperature_map = img
 
@@ -619,10 +616,8 @@ func temperature_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 
 
 func generate_biome_map() -> void:
-	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 	
-	print("Initialisation du bruit")
 	var noise = FastNoiseLite.new()
 	noise.seed = randi()
 	noise.noise_type = FastNoiseLite.TYPE_PERLIN
@@ -632,7 +627,6 @@ func generate_biome_map() -> void:
 	noise.fractal_gain = 0.5
 	noise.fractal_lacunarity = 0.5
 	
-	print("Génération de la carte")
 	var range = circonference / self.nb_thread
 	var threadArray = []
 	for i in range(0, self.nb_thread, 1):
@@ -645,7 +639,6 @@ func generate_biome_map() -> void:
 	for thread in threadArray:
 		thread.wait_to_finish()
 
-	print("Fin de la génération de la carte")
 	self.addProgress(25)
 	self.biome_map = img
 
@@ -717,11 +710,10 @@ func getMaps() -> Array[String]:
 		save_image(self.final_map,"final_map.png"),
 		save_image(self.region_map,"region_map.png"),
 		save_image(self.preview,"preview.png")
-
 	]
 
 func is_ready() -> bool:
-	return self.elevation_map != null and self.precipitation_map != null and self.temperature_map != null and self.water_map != null and self.biome_map != null and self.final_map != null
+	return self.elevation_map != null and self.precipitation_map != null and self.temperature_map != null and self.water_map != null and self.biome_map != null and self.final_map != null and self.region_map != null and self.nuage_map != null and self.oil_map != null and self.banquise_map != null and self.preview != null
 
 func addProgress(value) -> void:
 	if self.renderProgress != null:
@@ -753,7 +745,6 @@ static func save_image(image: Image, file_name : String, file_path = null) -> St
 static func deleteImagesTemps():
 	var dir = DirAccess.open("user://temp/")
 	if dir == null:
-		print("Directory 'user://temp/' does not exist, creating it.")
 		DirAccess.make_dir_absolute("user://temp/")
 		dir = DirAccess.open("user://temp/")
  
