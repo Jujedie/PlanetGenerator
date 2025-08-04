@@ -451,7 +451,7 @@ func region_calcul(img: Image) -> void:
 		for y in range(0, self.circonference / 2):
 			if not (cases_done.has(x) and cases_done[x].has(y)):
 				if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
-					img.set_pixel(x, y, Color.hex(0x2f343bFF))
+					img.set_pixel(x, y, Color.hex(0x161a1fFF))
 					if not cases_done.has(x):
 						cases_done[x] = {}
 					cases_done[x][y] = null
@@ -485,7 +485,7 @@ func region_creation(img: Image, start_pos: Array[int], cases_done: Dictionary, 
 			continue
 
 		if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
-			img.set_pixel(x, y, Color.hex(0x2f343bFF))
+			img.set_pixel(x, y, Color.hex(0x161a1fFF))
 			if not cases_done.has(x):
 				cases_done[x] = {}
 			cases_done[x][y] = null
@@ -534,14 +534,17 @@ func region_creation(img: Image, start_pos: Array[int], cases_done: Dictionary, 
 			# Recolor the tile with the neighbor region color
 			target_region.setColorCases(img)
 		else:
-			# If no neighbor, remove completely
+			# If no neighbor, create a new region with the remaining cases
+			var new_region = Region.new(current_region.cases.size())
 			for pos in current_region.cases:
 				var x = pos[0]
 				var y = pos[1]
-				if cases_done.has(x):
-					cases_done[x].erase(y)
-					if cases_done[x].is_empty():
-						cases_done.erase(x)
+				new_region.addCase(pos)
+				if not cases_done.has(x):
+					cases_done[x] = {}
+				cases_done[x][y] = new_region
+			new_region.majColor()
+			new_region.setColorCases(img)
 	else:
 		current_region.majNeighbors(cases_done)
 		current_region.setColorCases(img)
