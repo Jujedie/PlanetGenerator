@@ -17,7 +17,7 @@ config/version="v3.58"
 run/main_scene="res://data/scn/master.tscn"
 config/features=PackedStringArray("4.4", "Forward Plus")
 config/icon="uid://1nqqy1krp4q5"
-config/windows_native_icon="uid://1nqqy1krp4q5"
+config/windows_native_icon="res://icon.ico"
 
 [autoload]
 
