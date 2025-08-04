@@ -28,4 +28,4 @@ of the planet for example :
 
 in the end the images generated will be given to the user in a png format.
 
-v3.67
+v1.0.0
