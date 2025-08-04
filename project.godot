@@ -13,7 +13,7 @@ config_version=5
 config/name="PlanetGenerator"
 config/description="Application de génération de carte planétaire
 "
-config/version="v1.0"
+config/version="v0.96"
 run/main_scene="res://data/scn/master.tscn"
 config/features=PackedStringArray("4.4", "Forward Plus")
 config/icon="uid://1nqqy1krp4q5"
