@@ -42,8 +42,8 @@ var nbCaseLeft : int
 var isComplete : bool
 
 
-func _init(nbCaseLeft: int) -> void:
-	self.nbCaseLeft = nbCaseLeft
+func _init(nbCaseLeft_param: int) -> void:
+	self.nbCaseLeft = nbCaseLeft_param
 	self.color = color
 	self.ensVoisins = []
 	self.cases = []
