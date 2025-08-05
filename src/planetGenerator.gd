@@ -218,7 +218,6 @@ func generate_elevation_map() -> void:
 	noise3.fractal_gain = 0.85
 	noise3.fractal_lacunarity = 3.0
 
-	# Tectonic plates noises
 	var tectonic_mountain_noise = FastNoiseLite.new()
 	tectonic_mountain_noise.seed = randi()
 	tectonic_mountain_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
@@ -469,7 +468,6 @@ func region_creation(img: Image, start_pos: Array[int], cases_done: Dictionary, 
 	var origin = Vector2(start_pos[0], start_pos[1])
 
 	while frontier.size() > 0 and not current_region.is_complete():
-		# Trier la frontier en fonction de la distance à l'origine + aléa
 		frontier.sort_custom(func(a, b):
 			var da = Vector2(a[0], a[1]).distance_to(origin) + randf() * 10.0
 			var db = Vector2(b[0], b[1]).distance_to(origin) + randf() * 10.0
@@ -480,7 +478,6 @@ func region_creation(img: Image, start_pos: Array[int], cases_done: Dictionary, 
 		var x = pos[0]
 		var y = pos[1]
 
-		# Skip si traité
 		if cases_done.has(x) and cases_done[x].has(y):
 			continue
 
@@ -496,7 +493,6 @@ func region_creation(img: Image, start_pos: Array[int], cases_done: Dictionary, 
 			cases_done[x] = {}
 		cases_done[x][y] = current_region
 
-		# Ajout des voisins non encore traités
 		for dir in [[-1,0],[1,0],[0,-1],[0,1]]:
 			var nx = x + dir[0]
 			var ny = y + dir[1]
@@ -505,7 +501,6 @@ func region_creation(img: Image, start_pos: Array[int], cases_done: Dictionary, 
 					frontier.append([nx, ny])
 
 	if current_region.cases.size() <= 10:
-		# Try to integrate with a neighboring region
 		var target_region : Region = null
 
 		for pos in current_region.cases:
@@ -524,17 +519,14 @@ func region_creation(img: Image, start_pos: Array[int], cases_done: Dictionary, 
 			if target_region != null:
 				break
 
-		# If found, assign this tile to the neighboring region
 		if target_region != null:
 			for pos in current_region.cases:
 				var x = pos[0]
 				var y = pos[1]
 				target_region.addCase(pos)
 				cases_done[x][y] = target_region
-			# Recolor the tile with the neighbor region color
 			target_region.setColorCases(img)
 		else:
-			# If no neighbor, create a new region with the remaining cases
 			var new_region = Region.new(current_region.cases.size())
 			for pos in current_region.cases:
 				var x = pos[0]
@@ -592,26 +584,23 @@ func temperature_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 	var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
 	var latitude_temp = -20.5 * latitude + 7.5 * (1-latitude) + self.avg_temperature
 
-	# Altitude-based temperature adjustment
 	var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 	var altitude_temp = 0.0
 
 	altitude_temp = get_temperature_delta_from_altitude(elevation_val - self.water_elevation )
 
-	# Noise-based randomness
 	var noise_value = noise.get_noise_2d(float(x), float(y))
 	var noise_temp_factor = noise_value * (self.avg_temperature / 1.5) 
 	noise_value = noise2.get_noise_2d(float(x), float(y))
 	noise_temp_factor += noise_value * (self.avg_temperature / 3)
 
-	# Calculate final temperature
 	var temp = latitude_temp + altitude_temp + noise_temp_factor
 
 	if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
 		temp = temp - 5.6
 	
 	if temp > 100 and self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
-		temp = 100.0  # Cap temperature at 100°C for water areas
+		temp = 100.0
 
 	var color = Enum.getTemperatureColor(temp)
 
