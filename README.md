@@ -28,4 +28,11 @@ of the planet for example :
 
 in the end the images generated will be given to the user in a png format.
 
+## Supported Platforms
+
+The Planet Generator is available for the following platforms:
+- **Windows**: x86_64 architecture (Planet Generator.exe)
+- **Linux**: x86_64 architecture (PlanetGenerator.x86_64) - Compatible with Debian, Ubuntu, and other x86_64 distributions
+- **Linux**: ARM64 architecture (PlanetGenerator.arm64) - For ARM-based systems
+
 v1.0.0
