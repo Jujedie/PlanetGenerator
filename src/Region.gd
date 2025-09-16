@@ -2,7 +2,7 @@ extends RefCounted
 
 class_name Region
 
-static nextColor = [0,0,0,255]
+static var nextColor = [0,0,0,255]
 
 var color : Color
 var ensVoisins : Array[Region]
