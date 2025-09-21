@@ -20,7 +20,7 @@ config/description="Application de génération de carte planétaire
 "
 config/version="v1.0.0"
 run/main_scene="res://data/scn/master.tscn"
-config/features=PackedStringArray("4.4", "Forward Plus")
+config/features=PackedStringArray("4.5", "Forward Plus")
 config/icon="uid://1nqqy1krp4q5"
 config/windows_native_icon="res://icon.ico"
 
