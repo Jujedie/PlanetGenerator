@@ -434,9 +434,7 @@ func water_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
 
 
 func generate_region_map() -> void:
-	# Réinitialiser le compteur de couleurs pour chaque génération
-	Region.reset_color_counter()
-	
+
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
 	region_calcul(img)
@@ -537,10 +535,8 @@ func region_creation(img: Image, start_pos: Array[int], cases_done: Dictionary, 
 				if not cases_done.has(x):
 					cases_done[x] = {}
 				cases_done[x][y] = new_region
-			#new_region.majColor()
 			new_region.setColorCases(img)
 	else:
-		#current_region.majNeighbors(cases_done)
 		current_region.setColorCases(img)
 
 
