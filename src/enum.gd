@@ -18,11 +18,11 @@ var BIOMES = [
 
 	#	Biomes terrestres
 	Biome.new("Désert cryogénique mort", Color.hex(0xdddfe3FF), Color.hex(0xd9d9d9FF), [-273, -150], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
-	Biome.new("Glacier", Color.hex(0xc7cdd6FF), Color.hex(0xe3e3e3FF), [-150, -20], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
-	Biome.new("Désert artique", Color.hex(0xabb2beFF), Color.hex(0xebebebFF), [-150, -50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
-	Biome.new("Calotte glaciaire polaire", Color.hex(0x949ca9FF), Color.hex(0xdededeFF), [-100, -50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
-	Biome.new("Toundra", Color.hex(0xcbb15fFF), Color.hex(0xbaa269FF), [-50, 4], [0.0, 1.0], [-ALTITUDE_MAX, 300], false),
-	Biome.new("Toundra alpine", Color.hex(0xb79e50FF), Color.hex(0xbca46cFF), [-50, 4], [0.0, 1.0], [300, ALTITUDE_MAX], false),
+	Biome.new("Glacier", Color.hex(0xc7cdd6FF), Color.hex(0xe3e3e3FF), [-150, -10], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
+	Biome.new("Désert artique", Color.hex(0xabb2beFF), Color.hex(0xebebebFF), [-150, -20], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
+	Biome.new("Calotte glaciaire polaire", Color.hex(0x949ca9FF), Color.hex(0xdededeFF), [-100, -20], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
+	Biome.new("Toundra", Color.hex(0xcbb15fFF), Color.hex(0xbaa269FF), [-20, 4], [0.0, 1.0], [-ALTITUDE_MAX, 300], false),
+	Biome.new("Toundra alpine", Color.hex(0xb79e50FF), Color.hex(0xbca46cFF), [-20, 4], [0.0, 1.0], [300, ALTITUDE_MAX], false),
 	Biome.new("Taïga (forêt boréale)", Color.hex(0x476b3eFF), Color.hex(0x3a4d38FF), [0, 10], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
 	Biome.new("Forêt de montagne", Color.hex(0x4f8a40FF), Color.hex(0x3f533cFF), [-15, 20], [0.0, 1.0], [300, ALTITUDE_MAX], false),
 	
