@@ -28,6 +28,7 @@ var water_map   : Image
 var banquise_map: Image
 var biome_map   : Image
 var oil_map     : Image
+var ressource_map: Image
 var nuage_map   : Image
 var final_map   : Image
 
@@ -59,6 +60,10 @@ func generate_planet():
 	print("\nGénération de la carte du pétrole\n")
 	var thread_oil = Thread.new()
 	thread_oil.start(generate_oil_map)
+
+	print("\nGénération de la carte des ressources\n")
+	var thread_ressource = Thread.new()
+	thread_ressource.start(generate_ressource_map)
 
 	print("\nGénération de la carte des nuages\n")
 	var thread_nuage = Thread.new()
@@ -101,6 +106,8 @@ func generate_planet():
 	var thread_biome = Thread.new()
 	thread_biome.start(generate_biome_map)
 
+	thread_oil.wait_to_finish()
+	thread_ressource.wait_to_finish()
 	thread_biome.wait_to_finish()
 	thread_region.wait_to_finish()
 
@@ -134,6 +141,9 @@ func save_maps():
 
 	print("\nSauvegarde de la carte du pétrole")
 	save_image(self.oil_map, "oil_map.png", self.cheminSauvegarde)
+
+	print("\nSauvegarde de la carte des ressources")
+	save_image(self.ressource_map, "ressource_map.png", self.cheminSauvegarde)
 
 	print("\nSauvegarde de la carte des nuages")
 	save_image(self.nuage_map, "nuage_map.png", self.cheminSauvegarde)
@@ -539,6 +549,52 @@ func region_creation(img: Image, start_pos: Array[int], cases_done: Dictionary, 
 	else:
 		current_region.setColorCases(img)
 
+func generate_ressource_map() -> void:
+	randomize()
+
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8)
+
+	var width = self.circonference
+	var height = int(self.circonference / 2)
+	for x in range(0, width):
+		for y in range(0, height):
+			if self.water_map != null and self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
+				continue
+			# créer/étendre un gisement à partir de cette case
+			ressource_calcul(img, x, y)
+
+	self.addProgress(5)
+	self.ressource_map = img
+
+
+func ressource_calcul(img: Image, x : int,y : int) -> void:
+	var deposit = Ressource.copy(Enum.getRessourceByProbabilite())
+	if deposit == null:
+		return
+
+	deposit.addCase([x, y])
+	img.set_pixel(x, y, deposit.couleur)
+
+	# Étendre le gisement aléatoirement autour du point initial
+	var attempts = 0
+	var max_attempts = max(10, deposit.getNbCaseLeft() * 2)
+	var cases = deposit.getCases()
+	while not deposit.is_complete() and attempts < max_attempts:
+		attempts += 1
+
+		var base = cases[randi() % cases.size()]
+		var nx = base[0] + (randi() % 3) - 1
+		var ny = base[1] + (randi() % 3) - 1
+
+		# Vérifier limites
+		if nx < 0 or nx >= img.get_width() or ny < 0 or ny >= img.get_height():
+			continue
+		
+		if img.get_pixel(nx, ny) != Color.hex(0x00000000):
+			continue
+
+		deposit.addCase([nx, ny])
+		img.set_pixel(nx, ny, deposit.couleur)
 
 func generate_temperature_map() -> void:
 	randomize()
@@ -693,6 +749,7 @@ func getMaps() -> Array[String]:
 		save_image(self.elevation_map_alt,"elevation_map_alt.png"),
 		save_image(self.nuage_map,"nuage_map.png"),
 		save_image(self.oil_map,"oil_map.png"),
+		save_image(self.ressource_map,"ressource_map.png"),
 		save_image(self.precipitation_map,"precipitation_map.png"),
 		save_image(self.temperature_map,"temperature_map.png"),
 		save_image(self.water_map,"water_map.png"),

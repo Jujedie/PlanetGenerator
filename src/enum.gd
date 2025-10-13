@@ -229,6 +229,32 @@ var COULEUR_PRECIPITATION = {
 	1.0: Color.hex(0x3583e3FF)
 }
 
+var RESSOURCES = [
+	# Format: Ressource.new(nom, couleur, probabilité_relative, taille_moyenne_gisement)
+	# Probabilités sont relatives (somme < 1 possible) et utilisées pour tirage cumulatif.
+	# Les tailles moyennes sont en nombre de cases (entiers).
+	Ressource.new("Fer",      Color.hex(0x9e9e9eFF),  0.20, 300), # Très commun
+	Ressource.new("Charbon",   Color.hex(0x2b2b2bFF),  0.18, 400), # Commun (gisement volumineux)
+	Ressource.new("Silicium",  Color.hex(0xc2c2c2FF),  0.12, 250), # Utilitaire (ajouté pour réalisme)
+	Ressource.new("Aluminium", Color.hex(0xdcdcdcFF),  0.10, 200), # Commun
+	Ressource.new("Cuivre",    Color.hex(0xb87333FF),  0.08, 180), # Relativement courant
+	Ressource.new("Nickel",    Color.hex(0x808080FF),  0.05, 120), # Modéré
+	Ressource.new("Zinc",      Color.hex(0x7f7f7fFF),  0.04, 100), # Modéré
+	Ressource.new("Plomb",     Color.hex(0x6e6e6eFF),  0.03, 90),  # Moins courant
+	Ressource.new("Etain",     Color.hex(0xd2b48cFF),  0.02, 60),  # Rare
+	Ressource.new("Titane",    Color.hex(0x8a8a8aFF),  0.02, 50),  # Rare
+	Ressource.new("Lithium",   Color.hex(0xb0e0e6FF),  0.015,40),  # Rare (batteries)
+	Ressource.new("Cobalt",    Color.hex(0x0047abFF),  0.01, 30),  # Très rare
+	Ressource.new("Uranium",   Color.hex(0x4e9a06FF),  0.005,20),  # Très rare
+	Ressource.new("Pétrole",   Color.hex(0x1c1c1cFF),  0.03, 250), # Dépôts modérés
+	Ressource.new("Sel",       Color.hex(0xffffffFF),  0.10, 500), # Commun en surface/océan
+	Ressource.new("Quartz",    Color.hex(0xf5f5f5FF),  0.07, 200), # Commun (silicates)
+	Ressource.new("Diamant",   Color.hex(0xadd8e6FF),  0.001,5),   # Très rare et petits gisements
+	Ressource.new("Or",        Color.hex(0xffd700FF),  0.002,10),  # Très rare
+	Ressource.new("Argent",    Color.hex(0xc0c0c0FF),  0.004,15),  # Rare
+	Ressource.new("Platine",   Color.hex(0xe5e4e2FF),  0.005,3)   # Extrêmement rare
+]
+
 func getElevationColor(elevation: int, grey_version : bool = false) -> Color:
 	if not grey_version:
 		for key in COULEURS_ELEVATIONS.keys():
@@ -339,3 +365,12 @@ func getBanquiseBiome( typePlanete : int) -> Biome:
 			if biome.get_nom().find("Banquise") != -1 or biome.get_nom().find("Refroidis") != -1:
 				return biome
 	return Biome.NULL
+
+func getRessourceByProbabilite() -> Ressource:
+	var rand_val = randf()
+	var cumulative_prob = 0.0
+	for ressource in RESSOURCES:
+		cumulative_prob += ressource.probabilite
+		if rand_val <= cumulative_prob:
+			return ressource
+	return RESSOURCES[-1] # Retourne la dernière ressource si aucune n'a été trouvée
