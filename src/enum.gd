@@ -285,7 +285,7 @@ func getTemperatureViaColor(color: Color) -> float:
 			return key
 	return 0.0
 
-func getBiome(type_planete : int, elevation_val : int, precipitation_val : float, temperature_val : int, is_water : bool, img_biome: Image, x:int, y:int) -> Biome:
+func getBiome(type_planete : int, elevation_val : int, precipitation_val : float, temperature_val : int, is_water : bool, img_biome: Image, x:int, y:int, generator = null) -> Biome:
 	var corresponding_biome : Array[Biome] = []
 
 	for biome in BIOMES:
@@ -301,7 +301,7 @@ func getBiome(type_planete : int, elevation_val : int, precipitation_val : float
 		
 	var taille = corresponding_biome.size()
 	
-	var most_common_biome = getMostCommonSurroundingBiome(getSuroundingBiomes(img_biome, x, y))
+	var most_common_biome = getMostCommonSurroundingBiome(getSuroundingBiomes(img_biome, x, y, generator))
 
 	randomize()
 	var chance = randf()
@@ -314,16 +314,20 @@ func getBiome(type_planete : int, elevation_val : int, precipitation_val : float
 	
 	return Biome.new("Aucun", Color.hex(0xFF0000FF), Color.hex(0xFF0000FF), [0, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false)
 
-func getSuroundingBiomes(img_biome: Image, x:int, y:int) -> Array:
+func getSuroundingBiomes(img_biome: Image, x:int, y:int, generator = null) -> Array:
 	var surrounding_biomes = []
+	var width = img_biome.get_width()
+	var height = img_biome.get_height()
 	
 	for i in range(-1, 2):
 		for j in range(-1, 2):
 			if i == 0 and j == 0:
 				continue
-			var new_x = x + i
+			# Wrap horizontal pour la continuité torique
+			var new_x = posmod(x + i, width)
 			var new_y = y + j
-			if new_x >= 0 and new_x < img_biome.get_width() and new_y >= 0 and new_y < img_biome.get_height():
+			# Pas de wrap vertical (les pôles ne se rejoignent pas)
+			if new_y >= 0 and new_y < height:
 				var color = img_biome.get_pixel(new_x, new_y)
 				for biome in BIOMES:
 					if biome.get_couleur() == color:

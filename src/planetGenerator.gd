@@ -34,6 +34,9 @@ var final_map   : Image
 
 var preview: Image
 
+# Constantes pour la conversion cylindrique
+var cylinder_radius: float
+
 func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, elevation_modifier_param: int = 0, nb_thread_param : int = 8, atmosphere_type_param: int = 0, renderProgress_param: ProgressBar = null, nb_avg_cases_param : int = 50, cheminSauvegarde_param: String = "user://temp/") -> void:
 	self.nom = nom_param
 	
@@ -49,6 +52,21 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 	self.elevation_modifier = elevation_modifier_param
 	self.nb_thread          = nb_thread_param
 	self.atmosphere_type    = atmosphere_type_param
+	
+	# Rayon du cylindre pour la projection
+	self.cylinder_radius = self.circonference / (2.0 * PI)
+
+# Convertit les coordonnées 2D en coordonnées 3D cylindriques pour un bruit continu horizontalement
+func get_cylindrical_coords(x: int, y: int) -> Vector3:
+	var angle = (float(x) / float(self.circonference)) * 2.0 * PI
+	var cx = cos(angle) * cylinder_radius
+	var cz = sin(angle) * cylinder_radius
+	var cy = float(y)
+	return Vector3(cx, cy, cz)
+
+# Wrap horizontal pour les coordonnées x
+func wrap_x(x: int) -> int:
+	return posmod(x, self.circonference)
 
 func generate_planet():
 	print("\nGénération de la carte finale\n")
@@ -186,7 +204,8 @@ func generate_nuage_map() -> void:
 	self.nuage_map = img
 
 func nuage_calcul(img: Image, noise, _noise2, x : int, y : int) -> void:
-	var value = noise.get_noise_2d(float(x), float(y))
+	var coords = get_cylindrical_coords(x, y)
+	var value = noise.get_noise_3d(coords.x, coords.y, coords.z)
 	value = abs(value)
 
 	if value > 0.15:
@@ -269,23 +288,25 @@ func elevation_calcul(img: Image, noise, noises, x: int, y: int) -> void:
 	var tectonic_mountain_noise = noises[2]
 	var tectonic_canyon_noise = noises[3]
 
-	var value = noise.get_noise_2d(float(x), float(y))
-	var value2 = noise2.get_noise_2d(float(x), float(y))
+	var coords = get_cylindrical_coords(x, y)
+	
+	var value = noise.get_noise_3d(coords.x, coords.y, coords.z)
+	var value2 = noise2.get_noise_3d(coords.x, coords.y, coords.z)
 	var elevation = ceil(value * (2000 + clamp(value2, 0.0, 1.0) * elevation_modifier))
 
-	var tectonic_mountain_val = abs(tectonic_mountain_noise.get_noise_2d(float(x), float(y)))
+	var tectonic_mountain_val = abs(tectonic_mountain_noise.get_noise_3d(coords.x, coords.y, coords.z))
 	if tectonic_mountain_val > 0.45 and tectonic_mountain_val < 0.55:
 		elevation += 800 * (1.0 - abs(tectonic_mountain_val - 0.5) * 20.0)
 
-	var tectonic_canyon_val = abs(tectonic_canyon_noise.get_noise_2d(float(x), float(y)))
+	var tectonic_canyon_val = abs(tectonic_canyon_noise.get_noise_3d(coords.x, coords.y, coords.z))
 	if tectonic_canyon_val > 0.45 and tectonic_canyon_val < 0.55:
 		elevation -= 600 * (1.0 - abs(tectonic_canyon_val - 0.5) * 20.0)
 
 	if elevation > 600:
-		var value3 = clamp(noise3.get_noise_2d(float(x), float(y)), 0.0, 1.0)
+		var value3 = clamp(noise3.get_noise_3d(coords.x, coords.y, coords.z), 0.0, 1.0)
 		elevation = elevation + ceil(value3 * Enum.ALTITUDE_MAX)
 	elif elevation <= -600:
-		var value3 = clamp(noise3.get_noise_2d(float(x), float(y)), -1.0, 0.0)
+		var value3 = clamp(noise3.get_noise_3d(coords.x, coords.y, coords.z), -1.0, 0.0)
 		elevation = elevation + ceil(value3 * Enum.ALTITUDE_MAX)
 
 	var color = Enum.getElevationColor(elevation)
@@ -322,8 +343,9 @@ func generate_oil_map() -> void:
 	self.addProgress(5)
 	self.oil_map = img
 
-func oil_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
-	var value = noise.get_noise_2d(float(x), float(y))
+func oil_calcul(img: Image, noise, noise2, x : int, y : int) -> void:
+	var coords = get_cylindrical_coords(x, y)
+	var value = noise.get_noise_3d(coords.x, coords.y, coords.z)
 	value = clamp(value, 0.0, 1.0)
 
 	if value > 0.25 and noise2:
@@ -391,8 +413,9 @@ func generate_precipitation_map() -> void:
 	self.addProgress(10)
 	self.precipitation_map = img
 
-func precipitation_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
-	var value = noise.get_noise_2d(float(x), float(y))
+func precipitation_calcul(img: Image, noise, _noise2, x : int,y : int) -> void:
+	var coords = get_cylindrical_coords(x, y)
+	var value = noise.get_noise_3d(coords.x, coords.y, coords.z)
 	value = clamp((value + self.avg_precipitation * value / 2.0), 0.0, 1.0)
 
 	img.set_pixel(x, y, Enum.getPrecipitationColor(value))
@@ -425,14 +448,15 @@ func generate_water_map() -> void:
 	self.addProgress(10)
 	self.water_map = img
 
-func water_calcul(img: Image,noise, _noise2, x : int,y : int) -> void:
+func water_calcul(img: Image, noise, _noise2, x : int, y : int) -> void:
 	if self.atmosphere_type == 3:
 		img.set_pixel(x, y, Color.hex(0x000000FF))
 		return
 	
 	randomize()
 
-	var value = noise.get_noise_2d(float(x), float(y))
+	var coords = get_cylindrical_coords(x, y)
+	var value = noise.get_noise_3d(coords.x, coords.y, coords.z)
 	value = abs(value)
 
 	var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
@@ -503,10 +527,11 @@ func region_creation(img: Image, start_pos: Array[int], cases_done: Dictionary, 
 			cases_done[x] = {}
 		cases_done[x][y] = current_region
 
+		# Utilise wrap_x pour les voisins horizontaux
 		for dir in [[-1,0],[1,0],[0,-1],[0,1]]:
-			var nx = x + dir[0]
+			var nx = wrap_x(x + dir[0])
 			var ny = y + dir[1]
-			if nx >= 0 and nx < self.circonference and ny >= 0 and ny < self.circonference / 2:
+			if ny >= 0 and ny < self.circonference / 2:
 				if not (cases_done.has(nx) and cases_done[nx].has(ny)):
 					frontier.append([nx, ny])
 
@@ -518,9 +543,9 @@ func region_creation(img: Image, start_pos: Array[int], cases_done: Dictionary, 
 			var y = pos[1]
 
 			for dir in [[-1,0],[1,0],[0,-1],[0,1]]:
-				var nx = x + dir[0]
+				var nx = wrap_x(x + dir[0])
 				var ny = y + dir[1]
-				if nx >= 0 and nx < self.circonference and ny >= 0 and ny < self.circonference / 2:
+				if ny >= 0 and ny < self.circonference / 2:
 					if cases_done.has(nx) and cases_done[nx].has(ny):
 						var neighbor_region = cases_done[nx][ny]
 						if neighbor_region != null and neighbor_region != current_region:
@@ -634,7 +659,7 @@ func generate_temperature_map() -> void:
 	self.addProgress(10)
 	self.temperature_map = img
 
-func temperature_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
+func temperature_calcul(img: Image, noise, noise2, x : int, y : int) -> void:
 	var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
 	var latitude_temp = -20.5 * latitude + 7.5 * (1-latitude) + self.avg_temperature
 
@@ -643,9 +668,10 @@ func temperature_calcul(img: Image,noise, noise2, x : int,y : int) -> void:
 
 	altitude_temp = get_temperature_delta_from_altitude(elevation_val - self.water_elevation )
 
-	var noise_value = noise.get_noise_2d(float(x), float(y))
+	var coords = get_cylindrical_coords(x, y)
+	var noise_value = noise.get_noise_3d(coords.x, coords.y, coords.z)
 	var noise_temp_factor = noise_value * (self.avg_temperature / 1.5) 
-	noise_value = noise2.get_noise_2d(float(x), float(y))
+	noise_value = noise2.get_noise_3d(coords.x, coords.y, coords.z)
 	noise_temp_factor += noise_value * (self.avg_temperature / 3)
 
 	var temp = latitude_temp + altitude_temp + noise_temp_factor
@@ -680,7 +706,7 @@ func generate_biome_map() -> void:
 		var x2 = self.circonference if i == (self.nb_thread - 1) else (i + 1) * range
 		var thread = Thread.new()
 		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, biome_calcul))
+		thread.start(thread_calcul.bind(img, noise, self, x1, x2, biome_calcul))
 
 	for thread in threadArray:
 		thread.wait_to_finish()
@@ -688,7 +714,7 @@ func generate_biome_map() -> void:
 	self.addProgress(25)
 	self.biome_map = img
 
-func biome_calcul(img: Image,_noise, _noise2, x : int,y : int) -> void:
+func biome_calcul(img: Image, _noise, generator, x : int, y : int) -> void:
 	var elevation_val     = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 	var precipitation_val = self.precipitation_map.get_pixel(x, y).r
 	var temperature_val   = Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
@@ -698,7 +724,7 @@ func biome_calcul(img: Image,_noise, _noise2, x : int,y : int) -> void:
 	if self.banquise_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
 		biome = Enum.getBanquiseBiome(self.atmosphere_type)
 	else:
-		biome = Enum.getBiome(self.atmosphere_type, elevation_val, precipitation_val, temperature_val, is_water, img, x, y)
+		biome = Enum.getBiome(self.atmosphere_type, elevation_val, precipitation_val, temperature_val, is_water, img, x, y, generator)
 
 	var elevation_color = Enum.getElevationColor(elevation_val, true)
 	var color_final = elevation_color * biome.get_couleur_vegetation()
