@@ -16,6 +16,13 @@ var BIOMES = [
 	Biome.new("Récif corallien", Color.hex(0x4f8a91FF), Color.hex(0x405a77FF), [20, 35], [0.0, 1.0], [-500, 0], true),
 	Biome.new("Lagune salée", Color.hex(0x3a666bFF), Color.hex(0x405a77FF), [10, 100], [0.0, 1.0], [-10, 500], true),
 
+	# Biomes Rivières/Fleuves/Lacs - Type Défaut (0)
+	Biome.new("Rivière", Color.hex(0x4A90D9FF), Color.hex(0x3d6a9eFF), [-20, 100], [0.25, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [0]),
+	Biome.new("Fleuve", Color.hex(0x3E7FC4FF), Color.hex(0x355d8aFF), [-20, 100], [0.3, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [0]),
+	Biome.new("Lac d'eau douce", Color.hex(0x5BA3E0FF), Color.hex(0x4a7eb0FF), [-10, 100], [0.4, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [0]),
+	Biome.new("Lac gelé", Color.hex(0xA8D4E6FF), Color.hex(0xc5dde8FF), [-50, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [0]),
+	Biome.new("Rivière glaciaire", Color.hex(0x7EC8E3FF), Color.hex(0x8ac4d6FF), [-30, 5], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [0]),
+
 	#	Biomes terrestres
 	Biome.new("Désert cryogénique mort", Color.hex(0xdddfe3FF), Color.hex(0xd9d9d9FF), [-273, -150], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
 	Biome.new("Glacier", Color.hex(0xc7cdd6FF), Color.hex(0xe3e3e3FF), [-150, -10], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
@@ -47,6 +54,13 @@ var BIOMES = [
 	Biome.new("Océan toxique", Color.hex(0x329b83FF), Color.hex(0x3b6e61FF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [1]),
 	Biome.new("Marécages acides", Color.hex(0x359b3aFF), Color.hex(0x356458FF), [5, 100], [0.0, 1.0], [-20, ALTITUDE_MAX], true, [1]),
 
+	# Biomes Rivières/Lacs - Type Toxique (1)
+	Biome.new("Rivière acide", Color.hex(0x5BC45AFF), Color.hex(0x4a9e49FF), [-20, 100], [0.25, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [1]),
+	Biome.new("Fleuve toxique", Color.hex(0x48B847FF), Color.hex(0x3d9d3cFF), [-20, 100], [0.3, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [1]),
+	Biome.new("Lac d'acide", Color.hex(0x6ED96DFF), Color.hex(0x5ab859FF), [-10, 100], [0.4, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [1]),
+	Biome.new("Lac toxique gelé", Color.hex(0xB8E6B7FF), Color.hex(0xa3d1a2FF), [-50, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [1]),
+	Biome.new("Cours d'eau contaminé", Color.hex(0x7ADB79FF), Color.hex(0x68c467FF), [-30, 35], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [1]),
+
 	#	Biomes terrestres
 	Biome.new("Déserts de soufre", Color.hex(0x788d29FF), Color.hex(0x848d63FF), [-273, 50], [0.0, 0.35], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
 	Biome.new("Glaciers toxiques", Color.hex(0xadcb45FF), Color.hex(0xc3cba8FF), [-273, -150], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [1]),
@@ -62,6 +76,13 @@ var BIOMES = [
 	Biome.new("Champs de Lave Refroidis", Color.hex(0xb76b0eFF), Color.hex(0x3b312bFF), [-273, 0], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [2]),
 	Biome.new("Champs de lave", Color.hex(0xd69617FF), Color.hex(0xc44217FF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [2]),
 	Biome.new("Lacs de magma", Color.hex(0xb7490eFF), Color.hex(0xb3370eFF), [0, 100], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [2]),
+
+	# Biomes Rivières/Lacs - Type Volcanique (2)
+	Biome.new("Rivière de lave", Color.hex(0xFF6B1AFF), Color.hex(0xd45a15FF), [30, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [2]),
+	Biome.new("Fleuve de magma", Color.hex(0xE85A0FFF), Color.hex(0xc44b0dFF), [50, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [2]),
+	Biome.new("Lac de lave", Color.hex(0xFF8533FF), Color.hex(0xd97029FF), [40, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [2]),
+	Biome.new("Bassin de magma refroidi", Color.hex(0x8B4513FF), Color.hex(0x6b3510FF), [-50, 30], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [2]),
+	Biome.new("Cours de lave solidifiée", Color.hex(0xA0522DFF), Color.hex(0x804020FF), [-30, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [2]),
 
 	#	Biomes terrestres
 	Biome.new("Déserts de cendres", Color.hex(0xdd7d13FF), Color.hex(0x4c3229FF), [-273, 50], [0.0, 0.35], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [2]),
@@ -79,6 +100,13 @@ var BIOMES = [
 	Biome.new("Banquise morte", Color.hex(0xd9d1ccFF), Color.hex(0xcbc8c5FF), [-273, 0], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [3]),
 	Biome.new("Marécages luminescents", Color.hex(0x619f63FF), Color.hex(0x4c6e4dFF), [0, 100], [0.0, 1.0], [-100, ALTITUDE_MAX], true, [4]),
 	Biome.new("Océan mort", Color.hex(0x49794aFF), Color.hex(0x374f38FF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [4]),
+
+	# Biomes Rivières/Lacs - Type Mort (4)
+	Biome.new("Rivière stagnante", Color.hex(0x5A7A5BFF), Color.hex(0x4a694bFF), [-20, 100], [0.25, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [4]),
+	Biome.new("Fleuve pollué", Color.hex(0x4A6A4BFF), Color.hex(0x3d5a3eFF), [-20, 100], [0.3, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [4]),
+	Biome.new("Lac irradié", Color.hex(0x6B8B6CFF), Color.hex(0x5a7a5bFF), [-10, 100], [0.4, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [4]),
+	Biome.new("Lac de boue", Color.hex(0x8B7355FF), Color.hex(0x7a6248FF), [-10, 50], [0.3, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [4]),
+	Biome.new("Mare stagnante", Color.hex(0x7A9A7BFF), Color.hex(0x698968FF), [0, 40], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [4]),
 
 	#	Biomes terrestres
 	Biome.new("Désert de sel", Color.hex(0xd9cba0FF), Color.hex(0xc4b893FF), [-273, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [4]),
@@ -389,6 +417,53 @@ func getBanquiseBiome( typePlanete : int) -> Biome:
 			if biome.get_nom().find("Banquise") != -1 or biome.get_nom().find("Refroidis") != -1:
 				return biome
 	return Biome.NULL
+
+func getRiverBiome(temperature_val: int, precipitation_val: float, type_planete: int) -> Biome:
+	# Chercher les biomes rivière/lac appropriés selon la température
+	var best_biome : Biome = null
+	var best_score : float = -1.0
+	
+	for biome in BIOMES:
+		var nom = biome.get_nom()
+		# Vérifier si c'est un biome de rivière/lac
+		if nom.find("Rivière") == -1 and nom.find("Fleuve") == -1 and nom.find("Lac") == -1:
+			continue
+		
+		# Vérifier le type de planète
+		if type_planete not in biome.get_type_planete():
+			continue
+		
+		# Vérifier la température
+		var temp_range = biome.get_interval_temp()
+		if temperature_val < temp_range[0] or temperature_val > temp_range[1]:
+			continue
+		
+		# Vérifier les précipitations
+		var precip_range = biome.get_interval_precipitation()
+		if precipitation_val < precip_range[0] or precipitation_val > precip_range[1]:
+			continue
+		
+		# Score basé sur la correspondance
+		var temp_center = (temp_range[0] + temp_range[1]) / 2.0
+		var temp_score = 1.0 - abs(temperature_val - temp_center) / max(1, temp_range[1] - temp_range[0])
+		
+		if temp_score > best_score:
+			best_score = temp_score
+			best_biome = biome
+	
+	# Si aucun biome trouvé, retourner un biome par défaut
+	if best_biome == null:
+		# Lac gelé si froid, rivière sinon
+		if temperature_val < 0:
+			for biome in BIOMES:
+				if biome.get_nom() == "Lac gelé":
+					return biome
+		for biome in BIOMES:
+			if biome.get_nom() == "Rivière":
+				return biome
+		return Biome.NULL
+	
+	return best_biome
 
 func getRessourceByProbabilite() -> Ressource:
 	var rand_val = randf()
