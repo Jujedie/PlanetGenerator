@@ -231,28 +231,48 @@ var COULEUR_PRECIPITATION = {
 
 var RESSOURCES = [
 	# Format: Ressource.new(nom, couleur, probabilité_relative, taille_moyenne_gisement)
-	# Probabilités sont relatives (somme < 1 possible) et utilisées pour tirage cumulatif.
-	# Les tailles moyennes sont en nombre de cases (entiers).
-	Ressource.new("Fer",      Color.hex(0x9e9e9eFF),  0.20, 300), # Très commun
-	Ressource.new("Charbon",   Color.hex(0x2b2b2bFF),  0.18, 400), # Commun (gisement volumineux)
-	Ressource.new("Silicium",  Color.hex(0xc2c2c2FF),  0.12, 250), # Utilitaire (ajouté pour réalisme)
-	Ressource.new("Aluminium", Color.hex(0xdcdcdcFF),  0.10, 200), # Commun
-	Ressource.new("Cuivre",    Color.hex(0xb87333FF),  0.08, 180), # Relativement courant
-	Ressource.new("Nickel",    Color.hex(0x808080FF),  0.05, 120), # Modéré
-	Ressource.new("Zinc",      Color.hex(0x7f7f7fFF),  0.04, 100), # Modéré
-	Ressource.new("Plomb",     Color.hex(0x6e6e6eFF),  0.03, 90),  # Moins courant
-	Ressource.new("Etain",     Color.hex(0xd2b48cFF),  0.02, 60),  # Rare
-	Ressource.new("Titane",    Color.hex(0x8a8a8aFF),  0.02, 50),  # Rare
-	Ressource.new("Lithium",   Color.hex(0xb0e0e6FF),  0.015,40),  # Rare (batteries)
-	Ressource.new("Cobalt",    Color.hex(0x0047abFF),  0.01, 30),  # Très rare
-	Ressource.new("Uranium",   Color.hex(0x4e9a06FF),  0.005,20),  # Très rare
-	Ressource.new("Pétrole",   Color.hex(0x1c1c1cFF),  0.03, 250), # Dépôts modérés
-	Ressource.new("Sel",       Color.hex(0xffffffFF),  0.10, 500), # Commun en surface/océan
-	Ressource.new("Quartz",    Color.hex(0xf5f5f5FF),  0.07, 200), # Commun (silicates)
-	Ressource.new("Diamant",   Color.hex(0xadd8e6FF),  0.001,5),   # Très rare et petits gisements
-	Ressource.new("Or",        Color.hex(0xffd700FF),  0.002,10),  # Très rare
-	Ressource.new("Argent",    Color.hex(0xc0c0c0FF),  0.004,15),  # Rare
-	Ressource.new("Platine",   Color.hex(0xe5e4e2FF),  0.005,3)   # Extrêmement rare
+	# Probabilités basées sur l'abondance réelle dans la croûte terrestre
+	# Couleurs distinctives pour chaque ressource
+	
+	# === TRÈS COMMUNS (abondance croûte terrestre > 1%) ===
+	Ressource.new("Fer",       Color.hex(0x8B4513FF), 0.22, 350),  # Brun rouille - 5% croûte
+	Ressource.new("Aluminium", Color.hex(0xA8A9ADFF), 0.18, 280),  # Gris métallique clair - 8% croûte
+	Ressource.new("Silicium",  Color.hex(0x4A4A4AFF), 0.15, 400),  # Gris foncé - 28% croûte (mais exploitable moins)
+	
+	# === COMMUNS (abondance 0.1% - 1%) ===
+	Ressource.new("Charbon",   Color.hex(0x1C1C1CFF), 0.12, 500),  # Noir profond
+	Ressource.new("Calcaire",  Color.hex(0xF5F5DCFF), 0.08, 450),  # Beige crème
+	Ressource.new("Sel",       Color.hex(0xFFFAFAFF), 0.06, 350),  # Blanc pur
+	Ressource.new("Cuivre",    Color.hex(0xB87333FF), 0.04, 120),  # Orange cuivré
+	
+	# === MODÉRÉS (abondance 0.01% - 0.1%) ===
+	Ressource.new("Zinc",      Color.hex(0x7D7D7DFF), 0.025, 80),  # Gris bleuté
+	Ressource.new("Plomb",     Color.hex(0x2F4F4FFF), 0.020, 70),  # Gris ardoise foncé
+	Ressource.new("Nickel",    Color.hex(0x727472FF), 0.018, 60),  # Gris verdâtre
+	Ressource.new("Manganèse", Color.hex(0x8B8589FF), 0.015, 90),  # Gris rosé
+	
+	# === RARES (abondance 0.001% - 0.01%) ===
+	Ressource.new("Étain",     Color.hex(0xD3D4D5FF), 0.010, 40),  # Argent mat
+	Ressource.new("Tungstène", Color.hex(0x36454FFF), 0.008, 25),  # Gris charbon
+	Ressource.new("Titane",    Color.hex(0xC4CACEAF), 0.012, 55),  # Blanc métallique
+	Ressource.new("Lithium",   Color.hex(0xDDA0DDFF), 0.006, 35),  # Violet pâle
+	Ressource.new("Cobalt",    Color.hex(0x0047ABFF), 0.005, 20),  # Bleu cobalt
+	
+	# === TRÈS RARES (abondance < 0.001%) ===
+	Ressource.new("Uranium",   Color.hex(0x7FFF00FF), 0.003, 15),  # Vert radioactif
+	Ressource.new("Argent",    Color.hex(0xC0C0C0FF), 0.0025, 12), # Argent brillant
+	Ressource.new("Or",        Color.hex(0xFFD700FF), 0.0008, 8),  # Or brillant
+	Ressource.new("Platine",   Color.hex(0xE5E4E2FF), 0.0004, 4),  # Blanc platine
+	Ressource.new("Diamant",   Color.hex(0xB9F2FFFF), 0.0002, 3),  # Bleu cristallin
+	
+	# === HYDROCARBURES (distribution géologique) ===
+	Ressource.new("Pétrole",   Color.hex(0x000000FF), 0.025, 200), # Noir
+	Ressource.new("Gaz naturel", Color.hex(0x87CEEBFF), 0.020, 180), # Bleu ciel
+	
+	# === PIERRES PRÉCIEUSES ===
+	Ressource.new("Émeraude",  Color.hex(0x50C878FF), 0.0003, 2),  # Vert émeraude
+	Ressource.new("Rubis",     Color.hex(0xE0115FFF), 0.0003, 2),  # Rouge rubis
+	Ressource.new("Saphir",    Color.hex(0x0F52BAFF), 0.0003, 2)   # Bleu saphir
 ]
 
 func getElevationColor(elevation: int, grey_version : bool = false) -> Color:
