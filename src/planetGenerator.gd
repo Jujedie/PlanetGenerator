@@ -178,24 +178,43 @@ func generate_nuage_map() -> void:
 	randomize()
 
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
+	var base_seed = randi()
 
-	var noise = FastNoiseLite.new()
-	noise.seed = randi()
-	noise.noise_type = FastNoiseLite.TYPE_PERLIN
-	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.frequency = 5 / float(self.circonference)
-	noise.fractal_octaves = 8
-	noise.fractal_gain = 0.85
-	noise.fractal_lacunarity = 1.5
+	# Bruit cellulaire pour formes circulaires
+	var cell_noise = FastNoiseLite.new()
+	cell_noise.seed = base_seed
+	cell_noise.noise_type = FastNoiseLite.TYPE_CELLULAR
+	cell_noise.cellular_distance_function = FastNoiseLite.DISTANCE_EUCLIDEAN
+	cell_noise.cellular_return_type = FastNoiseLite.RETURN_DISTANCE
+	cell_noise.frequency = 6.0 / float(self.circonference)
+	
+	# Bruit de forme pour varier les nuages
+	var shape_noise = FastNoiseLite.new()
+	shape_noise.seed = base_seed + 1
+	shape_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	shape_noise.frequency = 4.0 / float(self.circonference)
+	shape_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	shape_noise.fractal_octaves = 4
+	shape_noise.fractal_gain = 0.5
+	
+	# Bruit de détail pour bords irréguliers
+	var detail_noise = FastNoiseLite.new()
+	detail_noise.seed = base_seed + 2
+	detail_noise.noise_type = FastNoiseLite.TYPE_PERLIN
+	detail_noise.frequency = 15.0 / float(self.circonference)
+	detail_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	detail_noise.fractal_octaves = 3
 
-	var range = circonference / (self.nb_thread / 2)
+	var noises = [cell_noise, shape_noise, detail_noise]
+
+	var range_size = circonference / (self.nb_thread / 2)
 	var threadArray = []
 	for i in range(0, (self.nb_thread / 2), 1):
-		var x1 = i * range
-		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
+		var x1 = i * range_size
+		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range_size
 		var thread = Thread.new()
 		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noise, null, x1, x2, nuage_calcul))
+		thread.start(thread_calcul.bind(img, noises[0], noises, x1, x2, nuage_calcul))
 	
 	for thread in threadArray:
 		thread.wait_to_finish()
@@ -203,15 +222,34 @@ func generate_nuage_map() -> void:
 	self.addProgress(5)
 	self.nuage_map = img
 
-func nuage_calcul(img: Image, noise, _noise2, x : int, y : int) -> void:
+func nuage_calcul(img: Image, _noise, noises, x : int, y : int) -> void:
 	var coords = get_cylindrical_coords(x, y)
-	var value = noise.get_noise_3d(coords.x, coords.y, coords.z)
-	value = abs(value)
-
-	if value > 0.15:
-		img.set_pixel(x, y, Color.hex(0xc4c4c4FF))  # White for clouds
+	
+	var cell_noise = noises[0]
+	var shape_noise = noises[1]
+	var detail_noise = noises[2]
+	
+	# Valeur cellulaire - crée des formes rondes
+	var cell_val = cell_noise.get_noise_3d(coords.x, coords.y, coords.z)
+	cell_val = 1.0 - abs(cell_val)  # Inverser pour avoir des blobs
+	
+	# Forme générale
+	var shape_val = shape_noise.get_noise_3d(coords.x, coords.y, coords.z)
+	shape_val = (shape_val + 1.0) / 2.0  # Normaliser 0-1
+	
+	# Détail des bords
+	var detail_val = detail_noise.get_noise_3d(coords.x, coords.y, coords.z) * 0.15
+	
+	# Combiner
+	var cloud_val = cell_val * 0.6 + shape_val * 0.4 + detail_val
+	
+	# Seuil pour créer les nuages
+	var threshold = 0.55
+	
+	if cloud_val > threshold:
+		img.set_pixel(x, y, Color.hex(0xFFFFFFFF))  # Blanc pur
 	else:
-		img.set_pixel(x, y, Color.hex(0x00000000))  # Black for no clouds
+		img.set_pixel(x, y, Color.hex(0x00000000))  # Transparent
 
 
 func generate_elevation_map() -> void:
@@ -503,13 +541,19 @@ func region_creation(img: Image, start_pos: Array[int], cases_done: Dictionary, 
 
 	while frontier.size() > 0 and not current_region.is_complete():
 		frontier.sort_custom(func(a, b):
-			var da = Vector2(a[0], a[1]).distance_to(origin) + randf() * 10.0
-			var db = Vector2(b[0], b[1]).distance_to(origin) + randf() * 10.0
+			# Distance torique pour le tri
+			var ax = a[0]
+			var bx = b[0]
+			var ox = origin.x
+			var dx_a = min(abs(ax - ox), self.circonference - abs(ax - ox))
+			var dx_b = min(abs(bx - ox), self.circonference - abs(bx - ox))
+			var da = sqrt(dx_a * dx_a + (a[1] - origin.y) * (a[1] - origin.y)) + randf() * 10.0
+			var db = sqrt(dx_b * dx_b + (b[1] - origin.y) * (b[1] - origin.y)) + randf() * 10.0
 			return da < db
 		)
 
 		var pos = frontier.pop_front()
-		var x = pos[0]
+		var x = wrap_x(pos[0])  # Toujours wrapper x
 		var y = pos[1]
 
 		if cases_done.has(x) and cases_done[x].has(y):
@@ -522,12 +566,12 @@ func region_creation(img: Image, start_pos: Array[int], cases_done: Dictionary, 
 			cases_done[x][y] = null
 			continue
 
-		current_region.addCase(pos)
+		current_region.addCase([x, y])  # Stocker avec x wrappé
 		if not cases_done.has(x):
 			cases_done[x] = {}
 		cases_done[x][y] = current_region
 
-		# Utilise wrap_x pour les voisins horizontaux
+		# Voisins avec wrap horizontal
 		for dir in [[-1,0],[1,0],[0,-1],[0,1]]:
 			var nx = wrap_x(x + dir[0])
 			var ny = y + dir[1]
@@ -539,7 +583,7 @@ func region_creation(img: Image, start_pos: Array[int], cases_done: Dictionary, 
 		var target_region : Region = null
 
 		for pos in current_region.cases:
-			var x = pos[0]
+			var x = pos[0]  # Déjà wrappé
 			var y = pos[1]
 
 			for dir in [[-1,0],[1,0],[0,-1],[0,1]]:
@@ -613,6 +657,10 @@ func ressource_calcul(img: Image, x : int,y : int) -> void:
 
 		# Vérifier limites
 		if nx < 0 or nx >= img.get_width() or ny < 0 or ny >= img.get_height():
+			continue
+		
+		# Vérifier que ce n'est pas de l'eau
+		if self.water_map != null and self.water_map.get_pixel(nx, ny) == Color.hex(0xFFFFFFFF):
 			continue
 		
 		if img.get_pixel(nx, ny) != Color.hex(0x00000000):
@@ -790,10 +838,16 @@ func generate_preview() -> void:
 		for y in range(self.preview.get_height()):
 			var pos = Vector2(x, y)
 			if pos.distance_to(center) <= radius:
+				var base_color = self.final_map.get_pixel(x, y)
 				if self.nuage_map.get_pixel(x, y) != Color.hex(0x00000000):
-					self.preview.set_pixel(x, y, self.nuage_map.get_pixel(x, y))
+					# Mélanger nuage semi-transparent avec la couleur de base
+					var cloud_alpha = 0.7  # Opacité des nuages
+					var cloud_color = Color(1.0, 1.0, 1.0, cloud_alpha)
+					var blended = base_color.lerp(cloud_color, cloud_alpha)
+					blended.a = 1.0
+					self.preview.set_pixel(x, y, blended)
 				else:
-					self.preview.set_pixel(x, y, self.final_map.get_pixel(x, y))
+					self.preview.set_pixel(x, y, base_color)
 			else:
 				self.preview.set_pixel(x, y, Color.TRANSPARENT)
 
