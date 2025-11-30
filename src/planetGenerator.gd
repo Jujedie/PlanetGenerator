@@ -626,23 +626,34 @@ func generate_temperature_map() -> void:
 
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
+	# Bruit principal pour les variations climatiques régionales
 	var noise = FastNoiseLite.new()
 	noise.seed = randi()
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.frequency = 4.0 / float(self.circonference)
-	noise.fractal_octaves = 14
-	noise.fractal_gain = 0.25
-	noise.fractal_lacunarity = 0.2
+	noise.frequency = 3.0 / float(self.circonference)
+	noise.fractal_octaves = 6
+	noise.fractal_gain = 0.5
+	noise.fractal_lacunarity = 2.0
 
+	# Bruit secondaire pour les courants océaniques/masses d'air
 	var noise2 = FastNoiseLite.new()
 	noise2.seed = randi()
 	noise2.noise_type = FastNoiseLite.TYPE_PERLIN
 	noise2.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise2.frequency = 2.0 / float(self.circonference)
-	noise2.fractal_octaves = 8
-	noise2.fractal_gain = 0.75
+	noise2.frequency = 1.5 / float(self.circonference)
+	noise2.fractal_octaves = 4
+	noise2.fractal_gain = 0.6
 	noise2.fractal_lacunarity = 2.0
+	
+	# Bruit pour les anomalies thermiques locales
+	var noise3 = FastNoiseLite.new()
+	noise3.seed = randi()
+	noise3.noise_type = FastNoiseLite.TYPE_CELLULAR
+	noise3.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise3.frequency = 6.0 / float(self.circonference)
+	noise3.fractal_octaves = 3
+	noise3.fractal_gain = 0.4
 
 	var range = circonference / (self.nb_thread / 2)
 	var threadArray = []
@@ -651,7 +662,7 @@ func generate_temperature_map() -> void:
 		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
 		var thread = Thread.new()
 		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noise, noise2, x1, x2, temperature_calcul))
+		thread.start(thread_calcul.bind(img, noise, [noise2, noise3], x1, x2, temperature_calcul))
 	
 	for thread in threadArray:
 		thread.wait_to_finish()
@@ -659,25 +670,45 @@ func generate_temperature_map() -> void:
 	self.addProgress(10)
 	self.temperature_map = img
 
-func temperature_calcul(img: Image, noise, noise2, x : int, y : int) -> void:
-	var latitude = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0  # Normalized latitude (0 at equator, 1 at poles)
-	var latitude_temp = -20.5 * latitude + 7.5 * (1-latitude) + self.avg_temperature
-
-	var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
-	var altitude_temp = 0.0
-
-	altitude_temp = get_temperature_delta_from_altitude(elevation_val - self.water_elevation )
-
+func temperature_calcul(img: Image, noise, noises, x : int, y : int) -> void:
+	var noise2 = noises[0]
+	var noise3 = noises[1]
+	
+	# Latitude normalisée (0 à l'équateur, 1 aux pôles)
+	var lat_normalized = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0
+	
 	var coords = get_cylindrical_coords(x, y)
-	var noise_value = noise.get_noise_3d(coords.x, coords.y, coords.z)
-	var noise_temp_factor = noise_value * (self.avg_temperature / 1.5) 
-	noise_value = noise2.get_noise_3d(coords.x, coords.y, coords.z)
-	noise_temp_factor += noise_value * (self.avg_temperature / 3)
-
-	var temp = latitude_temp + altitude_temp + noise_temp_factor
-
+	
+	# Grande variation régionale qui brise les bandes horizontales
+	# Ce bruit détermine les "zones climatiques" indépendamment de la latitude
+	var climate_zone = noise.get_noise_3d(coords.x, coords.y, coords.z)
+	
+	# Température de base selon latitude (réduite pour laisser place aux variations)
+	# Équateur: avg_temp + 10, Pôles: avg_temp - 25
+	var latitude_influence = 0.6  # Réduit l'influence de la latitude
+	var base_lat_temp = self.avg_temperature + 10.0 * (1.0 - lat_normalized) - 25.0 * lat_normalized
+	base_lat_temp = self.avg_temperature + (base_lat_temp - self.avg_temperature) * latitude_influence
+	
+	# Variations longitudinales fortes (crée des zones chaudes/froides sur la même latitude)
+	# C'est ce qui fait que le Sahara existe mais pas la jungle amazonienne = désert
+	var longitudinal_variation = climate_zone * 20.0
+	
+	# Deuxième couche de variation pour plus de diversité
+	var secondary_variation = noise2.get_noise_3d(coords.x, coords.y, coords.z) * 10.0
+	
+	# Microclimats locaux
+	var local_variation = noise3.get_noise_3d(coords.x, coords.y, coords.z) * 6.0
+	
+	# Effet de l'altitude
+	var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+	var altitude_temp = get_temperature_delta_from_altitude(elevation_val - self.water_elevation)
+	
+	var temp = base_lat_temp + longitudinal_variation + secondary_variation + local_variation + altitude_temp
+	
+	# Effet modérateur des océans (températures moins extrêmes sur l'eau)
 	if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
-		temp = temp - 5.6
+		temp = temp * 0.6 + self.avg_temperature * 0.4
+		temp -= 2.0
 	
 	if temp > 100 and self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
 		temp = 100.0
