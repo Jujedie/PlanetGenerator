@@ -376,12 +376,14 @@ flat = true
 
 [node name="typePlanete" type="Node2D" parent="Node2D/Control"]
 position = Vector2(912, 388.172)
-scale = Vector2(0.02, 0.02)
+scale = Vector2(0.5, 0.5)
 metadata/_edit_lock_ = true
 
 [node name="ItemList" type="OptionButton" parent="Node2D/Control/typePlanete"]
-offset_right = 8205.0
-offset_bottom = 1257.0
+offset_left = 104.23732
+offset_top = -12.04014
+offset_right = 302.2373
+offset_bottom = 50.95986
 theme_override_styles/normal = ExtResource("4_i0hn2")
 item_count = 5
 popup/item_0/text = "TYPE_DEFAUT"
@@ -396,16 +398,18 @@ popup/item_4/text = "TYPE_NO_ATMOSPHERE"
 popup/item_4/id = 3
 metadata/_edit_use_anchors_ = true
 
-[node name="Label" type="Label" parent="Node2D/Control/typePlanete"]
-offset_left = 3.9987
-offset_top = -1280.5
-offset_right = 8174.0
-offset_bottom = -80.5012
+[node name="Node2D" type="Node2D" parent="Node2D/Control/typePlanete"]
+scale = Vector2(0.03, 0.03)
+
+[node name="Label" type="Label" parent="Node2D/Control/typePlanete/Node2D"]
+offset_left = 4242.5156
+offset_top = -1601.2429
+offset_right = 8979.516
+offset_bottom = -401.24292
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
 text = "PLANET_TYPE"
 metadata/_edit_use_anchors_ = true
-metadata/_edit_lock_ = true
 
 [node name="SubViewportContainer" type="SubViewportContainer" parent="Node2D/Control"]
 custom_minimum_size = Vector2(752, 513)
