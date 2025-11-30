@@ -25,6 +25,8 @@ of the planet for example :
  - 8 : cloud map
  - 9 : final map
  - 10: region map
+ - 11: ressource map
+ - 12: river map
 
 in the end the images generated will be given to the user in a png format.
 
@@ -35,4 +37,4 @@ The Planet Generator is available for the following platforms:
 - **Linux**: x86_64 architecture (PlanetGenerator.x86_64) - Compatible with Debian, Ubuntu, and other x86_64 distributions
 - **Linux**: ARM64 architecture (PlanetGenerator.arm64) - For ARM-based systems
 
-v1.0.0
+v1.4.0
