@@ -30,6 +30,7 @@ var biome_map   : Image
 var oil_map     : Image
 var ressource_map: Image
 var nuage_map   : Image
+var river_map   : Image
 var final_map   : Image
 
 var preview: Image
@@ -104,6 +105,12 @@ func generate_planet():
 	thread_precipitation.wait_to_finish()
 	thread_water.wait_to_finish()
 
+	print("\nGénération de la carte des rivières/lacs\n")
+	var thread_river = Thread.new()
+	thread_river.start(generate_river_map)
+
+	thread_river.wait_to_finish()
+
 	print("\nGénération de la carte des regions\n")
 	var thread_region = Thread.new()
 	thread_region.start(generate_region_map)
@@ -153,6 +160,9 @@ func save_maps():
 
 	print("\nSauvegarde de la carte des mers")
 	save_image(self.water_map, "water_map.png", self.cheminSauvegarde)
+
+	print("\nSauvegarde de la carte des rivières/lacs")
+	save_image(self.river_map, "river_map.png", self.cheminSauvegarde)
 
 	print("\nSauvegarde de la carte des biomes")
 	save_image(self.biome_map, "biome_map.png", self.cheminSauvegarde)
@@ -505,6 +515,166 @@ func water_calcul(img: Image, noise, _noise2, x : int, y : int) -> void:
 		img.set_pixel(x, y, Color.hex(0x000000FF))
 
 
+# =============================================================================
+# GÉNÉRATION DES RIVIÈRES / FLEUVES / LACS
+# =============================================================================
+
+func generate_river_map() -> void:
+	randomize()
+	
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8)
+	var height = self.circonference / 2
+	
+	# Remplir de transparent d'abord
+	img.fill(Color.hex(0x00000000))
+	
+	# Ne pas générer de rivières sur planètes sans atmosphère
+	if self.atmosphere_type == 3:
+		self.river_map = img
+		self.addProgress(5)
+		return
+	
+	var base_seed = randi()
+	
+	# Bruit pour variation du tracé des rivières
+	var meander_noise = FastNoiseLite.new()
+	meander_noise.seed = base_seed
+	meander_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	meander_noise.frequency = 15.0 / float(self.circonference)
+	meander_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	meander_noise.fractal_octaves = 3
+	
+	# Bruit pour les lacs
+	var lake_noise = FastNoiseLite.new()
+	lake_noise.seed = base_seed + 1
+	lake_noise.noise_type = FastNoiseLite.TYPE_CELLULAR
+	lake_noise.cellular_distance_function = FastNoiseLite.DISTANCE_EUCLIDEAN
+	lake_noise.cellular_return_type = FastNoiseLite.RETURN_DISTANCE
+	lake_noise.frequency = 4.0 / float(self.circonference)
+	
+	# Trouver les points sources potentiels (haute altitude + précipitations)
+	var sources : Array = []
+	var step = max(8, self.circonference / 128)  # Échantillonnage
+	
+	for x in range(0, self.circonference, step):
+		for y in range(0, height, step):
+			if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
+				continue
+			
+			var elevation = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+			var precipitation = self.precipitation_map.get_pixel(x, y).r
+			
+			# Sources: altitude > 200m et précipitations > 35%
+			if elevation > 200 and precipitation > 0.35:
+				var score = elevation * precipitation
+				sources.append({"x": x, "y": y, "score": score, "elevation": elevation})
+	
+	# Trier par score décroissant et limiter le nombre
+	sources.sort_custom(func(a, b): return a.score > b.score)
+	var max_rivers = max(15, self.circonference / 64)
+	sources = sources.slice(0, min(sources.size(), max_rivers))
+	
+	# Tracer chaque rivière
+	for source in sources:
+		trace_river(img, source.x, source.y, meander_noise, height)
+	
+	# Ajouter quelques lacs dans les zones humides
+	for x in range(0, self.circonference):
+		for y in range(0, height):
+			if img.get_pixel(x, y) != Color.hex(0x00000000):
+				continue
+			if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
+				continue
+			
+			var precipitation = self.precipitation_map.get_pixel(x, y).r
+			if precipitation < 0.5:
+				continue
+			
+			var coords = get_cylindrical_coords(x, y)
+			var lake_val = lake_noise.get_noise_3d(coords.x, coords.y, coords.z)
+			lake_val = 1.0 - abs(lake_val)
+			
+			if lake_val > 0.75:
+				img.set_pixel(x, y, Color.hex(0x5BA3E0FF))  # Lac
+	
+	self.addProgress(5)
+	self.river_map = img
+
+func trace_river(img: Image, start_x: int, start_y: int, meander_noise: FastNoiseLite, height: int) -> void:
+	var x = start_x
+	var y = start_y
+	var max_steps = self.circonference  # Limite de sécurité
+	var river_color = Color.hex(0x4A90D9FF)
+	var width = self.circonference
+	
+	for step in range(max_steps):
+		# Vérifier si on a atteint l'eau
+		if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
+			break
+		
+		# Dessiner le pixel de rivière
+		img.set_pixel(x, y, river_color)
+		
+		# Trouver la direction de descente (plus basse élévation)
+		var current_elev = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+		var best_dir = Vector2i(0, 0)
+		var best_elev = current_elev
+		var found_water = false
+		
+		# Vérifier les 8 directions
+		var directions = [
+			Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1),
+			Vector2i(-1, 0),                   Vector2i(1, 0),
+			Vector2i(-1, 1),  Vector2i(0, 1),  Vector2i(1, 1)
+		]
+		
+		for dir in directions:
+			var nx = wrap_x(x + dir.x)
+			var ny = y + dir.y
+			
+			if ny < 0 or ny >= height:
+				continue
+			
+			# Priorité à l'eau (océan)
+			if self.water_map.get_pixel(nx, ny) == Color.hex(0xFFFFFFFF):
+				best_dir = dir
+				found_water = true
+				break
+			
+			var elev = Enum.getElevationViaColor(self.elevation_map.get_pixel(nx, ny))
+			if elev < best_elev:
+				best_elev = elev
+				best_dir = dir
+		
+		if found_water:
+			# Dessiner jusqu'à l'eau
+			x = wrap_x(x + best_dir.x)
+			y = y + best_dir.y
+			img.set_pixel(x, y, river_color)
+			break
+		
+		# Si pas de descente possible, ajouter du méandre
+		if best_dir == Vector2i(0, 0):
+			var coords = get_cylindrical_coords(x, y)
+			var meander = meander_noise.get_noise_3d(coords.x, coords.y, coords.z + step * 0.1)
+			
+			# Direction aléatoire avec préférence vers le bas (équateur ou pôles selon position)
+			if meander > 0.3:
+				best_dir = Vector2i(1, 0)
+			elif meander < -0.3:
+				best_dir = Vector2i(-1, 0)
+			else:
+				best_dir = Vector2i(0, 1 if y < height / 2 else -1)
+		
+		# Appliquer le mouvement
+		x = wrap_x(x + best_dir.x)
+		y = clamp(y + best_dir.y, 0, height - 1)
+		
+		# Éviter les boucles infinies
+		if img.get_pixel(x, y) == river_color:
+			break
+
+
 func generate_region_map() -> void:
 
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
@@ -798,10 +968,14 @@ func biome_calcul(img: Image, _noise, generator, x : int, y : int) -> void:
 	var precipitation_val = self.precipitation_map.get_pixel(x, y).r
 	var temperature_val   = Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
 	var is_water          = self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
+	var is_river          = self.river_map.get_pixel(x, y) != Color.hex(0x00000000)
 
 	var biome
 	if self.banquise_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
 		biome = Enum.getBanquiseBiome(self.atmosphere_type)
+	elif is_river:
+		# Biome rivière/lac basé sur la température
+		biome = Enum.getRiverBiome(temperature_val, precipitation_val, self.atmosphere_type)
 	else:
 		biome = Enum.getBiome(self.atmosphere_type, elevation_val, precipitation_val, temperature_val, is_water, img, x, y, generator)
 
@@ -864,6 +1038,7 @@ func getMaps() -> Array[String]:
 		save_image(self.precipitation_map,"precipitation_map.png"),
 		save_image(self.temperature_map,"temperature_map.png"),
 		save_image(self.water_map,"water_map.png"),
+		save_image(self.river_map,"river_map.png"),
 		save_image(self.biome_map,"biome_map.png"),
 		save_image(self.final_map,"final_map.png"),
 		save_image(self.region_map,"region_map.png"),
@@ -871,7 +1046,7 @@ func getMaps() -> Array[String]:
 	]
 
 func is_ready() -> bool:
-	return self.elevation_map != null and self.precipitation_map != null and self.temperature_map != null and self.water_map != null and self.biome_map != null and self.final_map != null and self.region_map != null and self.nuage_map != null and self.oil_map != null and self.banquise_map != null and self.preview != null
+	return self.elevation_map != null and self.precipitation_map != null and self.temperature_map != null and self.water_map != null and self.river_map != null and self.biome_map != null and self.final_map != null and self.region_map != null and self.nuage_map != null and self.oil_map != null and self.banquise_map != null and self.preview != null
 
 func addProgress(value) -> void:
 	if self.renderProgress != null:
