@@ -44,7 +44,7 @@ var BIOMES = [
 
 	#	Biomes aquatiques
 	Biome.new("Banquise toxique", Color.hex(0x48d63bFF), Color.hex(0xb0beabFF), [-273, 0], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [1]),
-	Biome.new("Océan toxique", Color.hex(0x329b837FF), Color.hex(0x3b6e61FF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [1]),
+	Biome.new("Océan toxique", Color.hex(0x329b83FF), Color.hex(0x3b6e61FF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [1]),
 	Biome.new("Marécages acides", Color.hex(0x359b3aFF), Color.hex(0x356458FF), [5, 100], [0.0, 1.0], [-20, ALTITUDE_MAX], true, [1]),
 
 	#	Biomes terrestres
@@ -99,7 +99,7 @@ var BIOMES = [
 
 # Définition des couleurs pour les élévations
 var COULEURS_ELEVATIONS = {
-	-ALTITUDE_MAX: Color.hex(0x2491ffbFF),
+	-ALTITUDE_MAX: Color.hex(0x2491ffFF),
 	-20000: Color.hex(0x2994ffFF),
 	-8000: Color.hex(0x2e96ffFF),
 	-4000: Color.hex(0x3399ffFF),

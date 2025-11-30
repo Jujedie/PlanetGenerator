@@ -292,22 +292,22 @@ func elevation_calcul(img: Image, noise, noises, x: int, y: int) -> void:
 	
 	var value = noise.get_noise_3d(coords.x, coords.y, coords.z)
 	var value2 = noise2.get_noise_3d(coords.x, coords.y, coords.z)
-	var elevation = ceil(value * (2000 + clamp(value2, 0.0, 1.0) * elevation_modifier))
+	var elevation = ceil(value * (3500 + clamp(value2, 0.0, 1.0) * elevation_modifier))
 
 	var tectonic_mountain_val = abs(tectonic_mountain_noise.get_noise_3d(coords.x, coords.y, coords.z))
 	if tectonic_mountain_val > 0.45 and tectonic_mountain_val < 0.55:
-		elevation += 800 * (1.0 - abs(tectonic_mountain_val - 0.5) * 20.0)
+		elevation += 2500 * (1.0 - abs(tectonic_mountain_val - 0.5) * 20.0)
 
 	var tectonic_canyon_val = abs(tectonic_canyon_noise.get_noise_3d(coords.x, coords.y, coords.z))
 	if tectonic_canyon_val > 0.45 and tectonic_canyon_val < 0.55:
-		elevation -= 600 * (1.0 - abs(tectonic_canyon_val - 0.5) * 20.0)
+		elevation -= 1500 * (1.0 - abs(tectonic_canyon_val - 0.5) * 20.0)
 
-	if elevation > 600:
+	if elevation > 800:
 		var value3 = clamp(noise3.get_noise_3d(coords.x, coords.y, coords.z), 0.0, 1.0)
-		elevation = elevation + ceil(value3 * Enum.ALTITUDE_MAX)
-	elif elevation <= -600:
+		elevation = elevation + ceil(value3 * 5000)
+	elif elevation <= -800:
 		var value3 = clamp(noise3.get_noise_3d(coords.x, coords.y, coords.z), -1.0, 0.0)
-		elevation = elevation + ceil(value3 * Enum.ALTITUDE_MAX)
+		elevation = elevation + ceil(value3 * 5000)
 
 	var color = Enum.getElevationColor(elevation)
 	img.set_pixel(x, y, color)
