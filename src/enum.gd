@@ -19,10 +19,10 @@ var BIOMES = [
 	# Biomes Rivières/Fleuves/Lacs - Type Défaut (0) - EXCLUSIFS À river_map
 	Biome.new("Rivière", Color.hex(0x4A90D9FF), Color.hex(0x3d6a9eFF), [-20, 100], [0.25, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [0], true),
 	Biome.new("Fleuve", Color.hex(0x3E7FC4FF), Color.hex(0x355d8aFF), [-20, 100], [0.3, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [0], true),
-	Biome.new("Affluent", Color.hex(0x6BAAE5FF), Color.hex(0x5a94c8FF), [-20, 100], [0.2, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [0], true),
-	Biome.new("Lac d'eau douce", Color.hex(0x5BA3E0FF), Color.hex(0x4a7eb0FF), [-10, 100], [0.4, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [0], true),
-	Biome.new("Lac gelé", Color.hex(0xA8D4E6FF), Color.hex(0xc5dde8FF), [-50, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [0], true),
-	Biome.new("Rivière glaciaire", Color.hex(0x7EC8E3FF), Color.hex(0x8ac4d6FF), [-30, 5], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [0], true),
+	Biome.new("Affluent", Color.hex(0x6BAAE5FF), Color.hex(0x42739fFF), [-20, 100], [0.2, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [0], true),
+	Biome.new("Lac d'eau douce", Color.hex(0x5BA3E0FF), Color.hex(0x4478aaFF), [-10, 100], [0.4, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [0], true),
+	Biome.new("Lac gelé", Color.hex(0xA8D4E6FF), Color.hex(0x688ca8FF), [-50, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [0], true),
+	Biome.new("Rivière glaciaire", Color.hex(0x7EC8E3FF), Color.hex(0x60819bFF), [-30, 5], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [0], true),
 
 	#	Biomes terrestres
 	Biome.new("Désert cryogénique mort", Color.hex(0xdddfe3FF), Color.hex(0xd9d9d9FF), [-273, -150], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
@@ -34,7 +34,7 @@ var BIOMES = [
 	Biome.new("Taïga (forêt boréale)", Color.hex(0x476b3eFF), Color.hex(0x3a4d38FF), [0, 10], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
 	Biome.new("Forêt de montagne", Color.hex(0x4f8a40FF), Color.hex(0x3f533cFF), [-15, 20], [0.0, 1.0], [300, ALTITUDE_MAX], false),
 	
-	Biome.new("Forêt tempérée", Color.hex(0x65c44eFF), Color.hex(0x435940FF), [5, 25], [0., 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
+	Biome.new("Forêt tempérée", Color.hex(0x65c44eFF), Color.hex(0x435940FF), [5, 25], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
 	Biome.new("Prairie", Color.hex(0x8fe07cFF), Color.hex(0x485f45FF), [5, 25], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
 	Biome.new("Méditerranée", Color.hex(0x4a6247FF), Color.hex(0x536b4fFF), [15, 25], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),	
 	Biome.new("Steppes sèches", Color.hex(0x9f9075FF), Color.hex(0xb89f65FF), [26, 40], [0.0, 0.35], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
