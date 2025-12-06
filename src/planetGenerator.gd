@@ -1208,65 +1208,63 @@ func temperature_calcul(img: Image, noise, noises, x : int, y : int) -> void:
 	
 	var coords = get_cylindrical_coords(x, y)
 	
-	# Grande variation régionale qui brise les bandes horizontales
-	# Ce bruit détermine les "zones climatiques" indépendamment de la latitude
+	# Bruit pour variations régionales
 	var climate_zone = noise.get_noise_3d(coords.x, coords.y, coords.z)
 	
-	# Température de base selon latitude (réduite pour laisser place aux variations)
-	# Équateur: avg_temp + 10, Pôles: avg_temp - 25
-	var latitude_influence = 0.6  # Réduit l'influence de la latitude
-	var base_lat_temp = self.avg_temperature + 10.0 * (1.0 - lat_normalized) - 25.0 * lat_normalized
-	base_lat_temp = self.avg_temperature + (base_lat_temp - self.avg_temperature) * latitude_influence
+	# =========================================================================
+	# MODÈLE DE TEMPÉRATURE BASÉ SUR LES DONNÉES TERRESTRES
+	# Ajusté pour éviter un froid excessif aux latitudes moyennes
+	# =========================================================================
 	
-	# Variations longitudinales fortes (crée des zones chaudes/froides sur la même latitude)
-	# C'est ce qui fait que le Sahara existe mais pas la jungle amazonienne = désert
-	var longitudinal_variation = climate_zone * 20.0
+	# Décalages par rapport à la moyenne planétaire
+	var equator_offset = 8.0    # Équateur: avg + 8°C
+	var pole_offset = 35.0      # Pôles: avg - 35°C (réduit de 45)
 	
-	# Deuxième couche de variation pour plus de diversité
-	var secondary_variation = noise2.get_noise_3d(coords.x, coords.y, coords.z) * 10.0
+	# Courbe avec transition plus douce - le froid intense n'arrive qu'aux vrais pôles
+	# pow(lat, 1.5) fait que le froid s'accentue surtout près des pôles
+	var lat_curve = pow(lat_normalized, 1.5)
 	
-	# Microclimats locaux
-	var local_variation = noise3.get_noise_3d(coords.x, coords.y, coords.z) * 6.0
+	# Température de base: équateur chaud, pôles froids
+	var base_temp = self.avg_temperature + equator_offset * (1.0 - lat_normalized) - pole_offset * lat_curve
+	
+	# Variations longitudinales (±8°C - continentalité, courants océaniques)
+	var longitudinal_variation = climate_zone * 8.0
+	
+	# Variations secondaires (±5°C - masses d'air)
+	var secondary_variation = noise2.get_noise_3d(coords.x, coords.y, coords.z) * 5.0
+	
+	# Microclimats locaux (±3°C)
+	var local_variation = noise3.get_noise_3d(coords.x, coords.y, coords.z) * 3.0
 	
 	# =========================================================================
-	# EFFET RÉALISTE DE L'ALTITUDE SUR LA TEMPÉRATURE
-	# Gradient adiabatique: environ -6.5°C par 1000m d'altitude
+	# EFFET DE L'ALTITUDE (-6.5°C / 1000m - gradient adiabatique)
+	# Ne s'applique PAS sur l'eau (océan/banquise)
 	# =========================================================================
 	var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
-	var altitude_above_sea = max(0.0, elevation_val - self.water_elevation)
+	var is_water = self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
+	var altitude_temp = 0.0
 	
-	# Gradient adiabatique standard: -6.5°C / 1000m
-	# Légèrement réduit (-5.5°C/1000m) pour les basses altitudes (effet de masse thermique)
-	# Plus fort (-7.5°C/1000m) pour les très hautes altitudes (air sec)
-	var altitude_temp : float = 0.0
-	if altitude_above_sea <= 2000:
-		# Basses altitudes: gradient atténué
-		altitude_temp = -5.5 * (altitude_above_sea / 1000.0)
-	elif altitude_above_sea <= 5000:
-		# Moyennes altitudes: gradient standard
-		altitude_temp = -5.5 * 2.0 + -6.5 * ((altitude_above_sea - 2000.0) / 1000.0)
-	else:
-		# Hautes altitudes: gradient accentué (air très sec)
-		altitude_temp = -5.5 * 2.0 + -6.5 * 3.0 + -7.5 * ((altitude_above_sea - 5000.0) / 1000.0)
+	# L'altitude n'affecte que les terres émergées
+	if not is_water:
+		var altitude_above_sea = max(0.0, elevation_val - self.water_elevation)
+		altitude_temp = -6.5 * (altitude_above_sea / 1000.0)
+		
+		# Inversion thermique sous le niveau de la mer (terres sous niveau marin)
+		if elevation_val < self.water_elevation:
+			var depth_below_sea = self.water_elevation - elevation_val
+			altitude_temp = 2.0 * (depth_below_sea / 1000.0)
 	
-	# Effet d'inversion thermique dans les vallées profondes (sous le niveau de la mer)
-	if elevation_val < self.water_elevation:
-		var depth_below_sea = self.water_elevation - elevation_val
-		# Les dépressions profondes sont plus chaudes (+3°C / 1000m)
-		altitude_temp = 3.0 * (depth_below_sea / 1000.0)
+	var temp = base_temp + longitudinal_variation + secondary_variation + local_variation + altitude_temp
 	
-	var temp = base_lat_temp + longitudinal_variation + secondary_variation + local_variation + altitude_temp
+	# =========================================================================
+	# EFFET MODÉRATEUR DES OCÉANS (inertie thermique de l'eau)
+	# Les océans modèrent les températures extrêmes
+	# =========================================================================
+	if is_water:
+		temp = temp * 0.8 + self.avg_temperature * 0.2
 	
-	# Effet modérateur des océans (températures moins extrêmes sur l'eau)
-	if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
-		temp = temp * 0.6 + self.avg_temperature * 0.4
-		temp -= 2.0
-	
-	if temp > 100 and self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
-		temp = 100.0
-
+	temp = clamp(temp, -80.0, 60.0)  # Limites terrestres réalistes
 	var color = Enum.getTemperatureColor(temp)
-
 	img.set_pixel(x, y, color)
 
 
@@ -1425,9 +1423,19 @@ func apply_final_colors(img: Image, x: int, y: int) -> void:
 	var biome = Enum.getBiomeByColor(biome_color)
 	
 	if biome != null:
-		var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
-		var elevation_color = Enum.getElevationColor(elevation_val, true)
-		var color_final = elevation_color * biome.get_couleur_vegetation()
+		var biome_nom = biome.get_nom()
+		var is_banquise = biome_nom.begins_with("Banquise") or biome_nom.find("Refroidis") != -1
+		
+		var color_final : Color
+		if is_banquise:
+			# Banquise uniquement : pas d'effet d'élévation
+			color_final = biome.get_couleur_vegetation()
+		else:
+			# Tout le reste (océans, terres) : appliquer l'élévation
+			var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+			var elevation_color = Enum.getElevationColor(elevation_val, true)
+			color_final = elevation_color * biome.get_couleur_vegetation()
+		
 		color_final.a = 1.0
 		self.final_map.set_pixel(x, y, color_final)
 
