@@ -70,79 +70,92 @@ func wrap_x(x: int) -> int:
 	return posmod(x, self.circonference)
 
 func generate_planet():
-	print("\nGénération de la carte finale\n")
-	var thread_final = Thread.new()
-	thread_final.start(generate_final_map)
-
-	thread_final.wait_to_finish()
-
-	print("\nGénération de la carte des nuages\n")
-	var thread_nuage = Thread.new()
-	thread_nuage.start(generate_nuage_map)
-
-	print("\nGénération de la carte topographique\n")
-	var thread_elevation = Thread.new()
-	thread_elevation.start(generate_elevation_map)
-
-	print("\nGénération de la carte des précipitations\n")
-	var thread_precipitation = Thread.new()
-	thread_precipitation.start(generate_precipitation_map)
-
-	thread_elevation.wait_to_finish()
-
-	print("\nGénération de la carte des mers\n")
-	var thread_water = Thread.new()
-	thread_water.start(generate_water_map)
-
-	thread_precipitation.wait_to_finish()
-	thread_water.wait_to_finish()
-
-	# Génération du pétrole APRÈS elevation_map et water_map (dépendances)
-	print("\nGénération de la carte du pétrole\n")
-	var thread_oil = Thread.new()
-	thread_oil.start(generate_oil_map)
-
-	# Génération des ressources APRÈS water_map pour éviter les ressources dans l'eau
-	print("\nGénération de la carte des ressources\n")
-	var thread_ressource = Thread.new()
-	thread_ressource.start(generate_ressource_map)
-
-	print("\nGénération de la carte des températures moyennes\n")
-	var thread_temperature = Thread.new()
-	thread_temperature.start(generate_temperature_map)
-
-	thread_temperature.wait_to_finish()
-
-	print("\nGénération de la carte des rivières/lacs\n")
-	var thread_river = Thread.new()
-	thread_river.start(generate_river_map)
-
-	thread_river.wait_to_finish()
-
-	print("\nGénération de la carte des regions\n")
-	var thread_region = Thread.new()
-	thread_region.start(generate_region_map)
-
-	print("\nGénération de la carte de la banquise\n")
-	var thread_banquise = Thread.new()
-	thread_banquise.start(generate_banquise_map)
-
-	thread_banquise.wait_to_finish()
-
-	print("\nGénération de la carte des biomes\n")
-	var thread_biome = Thread.new()
-	thread_biome.start(generate_biome_map)
-
-	thread_oil.wait_to_finish()
-	thread_ressource.wait_to_finish()
-	thread_biome.wait_to_finish()
-	thread_region.wait_to_finish()
-
+	# Génération séquentielle - chaque carte utilise tous les threads disponibles
+	
+	print("\n=== Début de la génération de la planète ===\n")
+	
+	# 1. Carte finale (image vide pour commencer)
+	print("1/12 - Génération de la carte finale...")
+	generate_final_map()
+	
+	# 2. Carte des nuages (indépendante)
+	print("2/12 - Génération de la carte des nuages...")
+	generate_nuage_map()
+	
+	# 3. Carte topographique (indépendante)
+	print("3/12 - Génération de la carte topographique...")
+	generate_elevation_map()
+	
+	# 4. Carte des précipitations (indépendante)
+	print("4/12 - Génération de la carte des précipitations...")
+	generate_precipitation_map()
+	
+	# 5. Carte des mers (dépend de elevation_map)
+	print("5/12 - Génération de la carte des mers...")
+	generate_water_map()
+	
+	# 6. Carte du pétrole (dépend de elevation_map et water_map)
+	print("6/12 - Génération de la carte du pétrole...")
+	generate_oil_map()
+	
+	# 7. Carte des ressources (dépend de water_map)
+	print("7/12 - Génération de la carte des ressources...")
+	generate_ressource_map()
+	
+	# 8. Carte des températures (dépend de elevation_map et water_map)
+	print("8/12 - Génération de la carte des températures...")
+	generate_temperature_map()
+	
+	# 9. Carte des rivières/lacs (dépend de elevation_map, water_map, temperature_map, precipitation_map)
+	print("9/12 - Génération de la carte des rivières/lacs...")
+	generate_river_map()
+	
+	# 10. Carte de la banquise (dépend de water_map et temperature_map)
+	print("10/12 - Génération de la carte de la banquise...")
+	generate_banquise_map()
+	
+	# 11. Carte des régions (dépend de water_map)
+	print("11/12 - Génération de la carte des régions...")
+	generate_region_map()
+	
+	# 12. Carte des biomes (dépend de toutes les cartes précédentes)
+	print("12/12 - Génération de la carte des biomes...")
+	generate_biome_map()
+	
+	# Génération de la prévisualisation
+	print("\nGénération de la prévisualisation...")
 	generate_preview()
 
 	print("\n===================")
-	print("Génération Terminée\n")
+	print("Génération Terminée")
+	print("===================\n")
 	emit_signal("finished")
+
+
+# Fonction helper pour paralléliser le calcul sur tous les threads
+func parallel_generate(img: Image, noises, calcul_function: Callable) -> void:
+	var height = int(self.circonference / 2)
+	var thread_count = self.nb_thread
+	var rows_per_thread = int(ceil(float(height) / float(thread_count)))
+	
+	var threadArray = []
+	for i in range(thread_count):
+		var y1 = i * rows_per_thread
+		var y2 = min((i + 1) * rows_per_thread, height)
+		if y1 >= height:
+			break
+		var thread = Thread.new()
+		threadArray.append(thread)
+		thread.start(_thread_worker.bind(img, noises, y1, y2, calcul_function))
+	
+	for thread in threadArray:
+		thread.wait_to_finish()
+
+
+func _thread_worker(img: Image, noises, y1: int, y2: int, calcul_function: Callable) -> void:
+	for y in range(y1, y2):
+		for x in range(self.circonference):
+			calcul_function.call(img, noises, x, y)
 
 func save_maps():
 	print("\nSauvegarde de la carte finale")
@@ -189,7 +202,15 @@ func save_maps():
 func generate_nuage_map() -> void:
 	randomize()
 
-	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8)
+	
+	# Pas de nuages pour les planètes sans atmosphère (3) ou volcaniques (2)
+	if self.atmosphere_type == 2 or self.atmosphere_type == 3:
+		img.fill(Color(0, 0, 0, 0))  # Transparent
+		self.nuage_map = img
+		self.addProgress(5)
+		return
+	
 	var base_seed = randi()
 
 	# Bruit cellulaire pour formes circulaires
@@ -219,22 +240,12 @@ func generate_nuage_map() -> void:
 
 	var noises = [cell_noise, shape_noise, detail_noise]
 
-	var range_size = circonference / (self.nb_thread / 2)
-	var threadArray = []
-	for i in range(0, (self.nb_thread / 2), 1):
-		var x1 = i * range_size
-		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range_size
-		var thread = Thread.new()
-		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noises[0], noises, x1, x2, nuage_calcul))
-	
-	for thread in threadArray:
-		thread.wait_to_finish()
+	parallel_generate(img, noises, nuage_calcul)
 
 	self.addProgress(5)
 	self.nuage_map = img
 
-func nuage_calcul(img: Image, _noise, noises, x : int, y : int) -> void:
+func nuage_calcul(img: Image, noises, x : int, y : int) -> void:
 	var coords = get_cylindrical_coords(x, y)
 	
 	var cell_noise = noises[0]
@@ -311,32 +322,19 @@ func generate_elevation_map() -> void:
 	tectonic_canyon_noise.fractal_gain = 0.55
 	tectonic_canyon_noise.fractal_octaves = 4
 
-	var range = circonference / (self.nb_thread / 2)
-	var threadArray = []
-	for i in range(0, (self.nb_thread / 2), 1):
-		var x1 = i * range
-		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
-		var thread = Thread.new()
-		threadArray.append(thread)
-		thread.start(thread_calcul.bind(
-			img, 
-			noise, 
-			[noise2, noise3, tectonic_mountain_noise, tectonic_canyon_noise], 
-			x1, x2, 
-			elevation_calcul
-		))
+	var noises = [noise, noise2, noise3, tectonic_mountain_noise, tectonic_canyon_noise]
 	
-	for thread in threadArray:
-		thread.wait_to_finish()
+	parallel_generate(img, noises, elevation_calcul)
 
 	self.addProgress(10)
 	self.elevation_map = img
 
-func elevation_calcul(img: Image, noise, noises, x: int, y: int) -> void:
-	var noise2 = noises[0]
-	var noise3 = noises[1]
-	var tectonic_mountain_noise = noises[2]
-	var tectonic_canyon_noise = noises[3]
+func elevation_calcul(img: Image, noises, x: int, y: int) -> void:
+	var noise = noises[0]
+	var noise2 = noises[1]
+	var noise3 = noises[2]
+	var tectonic_mountain_noise = noises[3]
+	var tectonic_canyon_noise = noises[4]
 
 	var coords = get_cylindrical_coords(x, y)
 	
@@ -400,24 +398,18 @@ func generate_oil_map() -> void:
 	noise_fault.fractal_octaves = 3
 	noise_fault.fractal_gain = 0.4
 
-	var range = circonference / (self.nb_thread / 2)
-	var threadArray = []
-	for i in range(0, (self.nb_thread / 2), 1):
-		var x1 = i * range
-		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
-		var thread = Thread.new()
-		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noise_basin, [noise_deposit, noise_fault, self.atmosphere_type != 3], x1, x2, oil_calcul))
-	for thread in threadArray:
-		thread.wait_to_finish()
+	var noises = [noise_basin, noise_deposit, noise_fault, self.atmosphere_type != 3]
+	
+	parallel_generate(img, noises, oil_calcul)
 
 	self.addProgress(5)
 	self.oil_map = img
 
-func oil_calcul(img: Image, noise_basin, noises, x : int, y : int) -> void:
-	var noise_deposit = noises[0]
-	var noise_fault = noises[1]
-	var has_atmosphere = noises[2]
+func oil_calcul(img: Image, noises, x : int, y : int) -> void:
+	var noise_basin = noises[0]
+	var noise_deposit = noises[1]
+	var noise_fault = noises[2]
+	var has_atmosphere = noises[3]
 	
 	# Pas de pétrole sans atmosphère (pas de vie organique historique)
 	if not has_atmosphere:
@@ -425,7 +417,6 @@ func oil_calcul(img: Image, noise_basin, noises, x : int, y : int) -> void:
 		return
 	
 	var coords = get_cylindrical_coords(x, y)
-	var height = self.circonference / 2
 	
 	# Obtenir l'élévation - le pétrole se forme dans les bassins sédimentaires
 	var elevation = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
@@ -487,22 +478,12 @@ func generate_banquise_map() -> void:
 
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
-	var range = circonference / (self.nb_thread / 2)
-	var threadArray = []
-	for i in range(0, (self.nb_thread / 2), 1):
-		var x1 = i * range
-		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
-		var thread = Thread.new()
-		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, null, null, x1, x2, banquise_calcul))
-	
-	for thread in threadArray:
-		thread.wait_to_finish()
+	parallel_generate(img, null, banquise_calcul)
 
 	self.addProgress(5)
 	self.banquise_map = img
 
-func banquise_calcul(img: Image,_noise, _noise2, x : int,y : int) -> void:
+func banquise_calcul(img: Image, _noises, x : int, y : int) -> void:
 	if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
 		if Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y)) < 0.0 and randf() < 0.9:
 			img.set_pixel(x, y, Color.hex(0xFFFFFFFF))
@@ -545,27 +526,20 @@ func generate_precipitation_map() -> void:
 	noise_cells.cellular_distance_function = FastNoiseLite.DISTANCE_EUCLIDEAN
 	noise_cells.cellular_return_type = FastNoiseLite.RETURN_DISTANCE
 
-	var range = circonference / (self.nb_thread / 2)
-	var threadArray = []
-	for i in range(0, (self.nb_thread / 2), 1):
-		var x1 = i * range
-		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
-		var thread = Thread.new()
-		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noise_main, [noise_detail, noise_cells], x1, x2, precipitation_calcul))
+	var noises = [noise_main, noise_detail, noise_cells]
 	
-	for thread in threadArray:
-		thread.wait_to_finish()
+	parallel_generate(img, noises, precipitation_calcul)
 
 	self.addProgress(10)
 	self.precipitation_map = img
 
-func precipitation_calcul(img: Image, noise_main, noises, x : int, y : int) -> void:
+func precipitation_calcul(img: Image, noises, x : int, y : int) -> void:
 	var coords = get_cylindrical_coords(x, y)
-	var noise_detail = noises[0]
-	var noise_cells = noises[1]
+	var noise_main = noises[0]
+	var noise_detail = noises[1]
+	var noise_cells = noises[2]
 	
-	var height = self.circonference / 2
+	var height = int(self.circonference / 2)
 	
 	# Latitude normalisée (0 à l'équateur, 1 aux pôles)
 	var latitude = abs((float(y) / float(height)) - 0.5) * 2.0
@@ -623,28 +597,17 @@ func generate_water_map() -> void:
 	noise.fractal_gain = 0.5
 	noise.fractal_lacunarity = 0.5
 
-	var range = circonference / (self.nb_thread / 2)
-	var threadArray = []
-	for i in range(0, (self.nb_thread / 2), 1):
-		var x1 = i * range
-		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
-		var thread = Thread.new()
-		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noise, 0, x1, x2, water_calcul))
-	
-	for thread in threadArray:
-		thread.wait_to_finish()
+	parallel_generate(img, [noise], water_calcul)
 
 	self.addProgress(10)
 	self.water_map = img
 
-func water_calcul(img: Image, noise, _noise2, x : int, y : int) -> void:
+func water_calcul(img: Image, noises, x : int, y : int) -> void:
 	if self.atmosphere_type == 3:
 		img.set_pixel(x, y, Color.hex(0x000000FF))
 		return
-	
-	randomize()
 
+	var noise = noises[0]
 	var coords = get_cylindrical_coords(x, y)
 	var value = noise.get_noise_3d(coords.x, coords.y, coords.z)
 	value = abs(value)
@@ -1325,24 +1288,17 @@ func generate_temperature_map() -> void:
 	noise3.fractal_octaves = 3
 	noise3.fractal_gain = 0.4
 
-	var range = circonference / (self.nb_thread / 2)
-	var threadArray = []
-	for i in range(0, (self.nb_thread / 2), 1):
-		var x1 = i * range
-		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
-		var thread = Thread.new()
-		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noise, [noise2, noise3], x1, x2, temperature_calcul))
+	var noises = [noise, noise2, noise3]
 	
-	for thread in threadArray:
-		thread.wait_to_finish()
+	parallel_generate(img, noises, temperature_calcul)
 
 	self.addProgress(10)
 	self.temperature_map = img
 
-func temperature_calcul(img: Image, noise, noises, x : int, y : int) -> void:
-	var noise2 = noises[0]
-	var noise3 = noises[1]
+func temperature_calcul(img: Image, noises, x : int, y : int) -> void:
+	var noise = noises[0]
+	var noise2 = noises[1]
+	var noise3 = noises[2]
 	
 	# Latitude normalisée (0 à l'équateur, 1 aux pôles)
 	var lat_normalized = abs((y / (self.circonference / 2.0)) - 0.5) * 2.0
@@ -1461,7 +1417,7 @@ func biome_calcul_initial(img: Image, noise: FastNoiseLite, x: int, y: int) -> v
 	var is_water          = self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
 	var is_river          = self.river_map.get_pixel(x, y) != Color.hex(0x00000000)
 
-	var biome
+	var biome = null
 	if self.banquise_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
 		biome = Enum.getBanquiseBiome(self.atmosphere_type)
 	elif is_river:
@@ -1471,7 +1427,11 @@ func biome_calcul_initial(img: Image, noise: FastNoiseLite, x: int, y: int) -> v
 		var noise_val = (noise.get_noise_2d(float(x), float(y)) + 1.0) / 2.0  # 0 à 1
 		biome = Enum.getBiomeByNoise(self.atmosphere_type, elevation_val, precipitation_val, temperature_val, is_water, noise_val)
 
-	img.set_pixel(x, y, biome.get_couleur())
+	# Vérification de sécurité - utiliser une couleur par défaut si le biome est null
+	if biome == null:
+		img.set_pixel(x, y, Color.hex(0xFF00FFFF))  # Magenta pour debug
+	else:
+		img.set_pixel(x, y, biome.get_couleur())
 
 func smooth_biome_map(img: Image, width: int, height: int) -> void:
 	# Créer une copie pour lire pendant qu'on écrit
@@ -1563,11 +1523,17 @@ func apply_final_colors(img: Image, x: int, y: int) -> void:
 	var biome_color = img.get_pixel(x, y)
 	var biome = Enum.getBiomeByColor(biome_color)
 	
-	if biome != null:
+	var color_final : Color
+	
+	if biome == null:
+		# Biome non trouvé - utiliser la couleur de l'élévation avec un tint
+		var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+		var elevation_color = Enum.getElevationColor(elevation_val, true)
+		color_final = elevation_color
+	else:
 		var biome_nom = biome.get_nom()
 		var is_banquise = biome_nom.begins_with("Banquise") or biome_nom.find("Refroidis") != -1
 		
-		var color_final : Color
 		if is_banquise:
 			# Banquise uniquement : pas d'effet d'élévation
 			color_final = biome.get_couleur_vegetation()
@@ -1576,22 +1542,16 @@ func apply_final_colors(img: Image, x: int, y: int) -> void:
 			var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 			var elevation_color = Enum.getElevationColor(elevation_val, true)
 			color_final = elevation_color * biome.get_couleur_vegetation()
-		
-		color_final.a = 1.0
-		self.final_map.set_pixel(x, y, color_final)
+	
+	color_final.a = 1.0
+	self.final_map.set_pixel(x, y, color_final)
 
-func biome_calcul(_img: Image, _noise, _generator, _x : int, _y : int) -> void:
+func biome_calcul(_img: Image, _noises, _x : int, _y : int) -> void:
 	# Fonction obsolète, gardée pour compatibilité
 	pass
 
-func thread_calcul(img: Image, noise: FastNoiseLite, misc_value , x1: int, x2: int, function : Callable) -> void:
-	for x in range(x1, x2):
-		for y in range(self.circonference / 2):
-			function.call(img, noise, misc_value, x, y)
-
 
 func generate_final_map() -> void:
-	pass
 	print("Création de l'image")
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 

@@ -437,7 +437,10 @@ func getMostCommonSurroundingBiome(biomes : Array) -> Biome:
 		if biome.get_nom() == most_common_biome:
 			return biome
 	
-	return Biome.NULL
+	# Retourner le premier biome disponible comme fallback
+	if BIOMES.size() > 0:
+		return BIOMES[0]
+	return Biome.new("Fallback", Color.hex(0x808080FF), Color.hex(0x808080FF), [-100, 100], [0.0, 1.0], [-10000, 10000], false)
 
 func getPrecipitationColor(precipitation: float) -> Color:
 	for key in COULEUR_PRECIPITATION.keys():
@@ -483,7 +486,8 @@ func getBanquiseBiome( typePlanete : int) -> Biome:
 		if typePlanete in biome.get_type_planete():
 			if biome.get_nom().find("Banquise") != -1 or biome.get_nom().find("Refroidis") != -1:
 				return biome
-	return Biome.NULL
+	# Fallback: retourner un biome de glace générique
+	return Biome.new("Banquise", Color.hex(0xE8F4F8FF), Color.hex(0xFFFFFFFF), [-100, 0], [0.0, 1.0], [-10000, 10000], false)
 
 func getRiverBiome(temperature_val: int, precipitation_val: float, type_planete: int) -> Biome:
 	# Chercher les biomes rivière/lac appropriés selon la température
@@ -528,7 +532,8 @@ func getRiverBiome(temperature_val: int, precipitation_val: float, type_planete:
 		for biome in BIOMES:
 			if biome.get_nom() == "Rivière":
 				return biome
-		return Biome.NULL
+		# Fallback: créer un biome rivière générique
+		return Biome.new("Rivière", Color.hex(0x4A90D9FF), Color.hex(0x4A90D9FF), [-50, 100], [0.0, 1.0], [-10000, 10000], true, [0, 1, 2, 3], true)
 	
 	return best_biome
 
