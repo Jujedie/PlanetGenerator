@@ -22,6 +22,9 @@ config/version="v1.5.0"
 config/tags=PackedStringArray("generation_procedurale", "logiciel", "pixel")
 run/main_scene="res://data/scn/master.tscn"
 config/features=PackedStringArray("4.5", "Forward Plus")
+boot_splash/bg_color=Color(0.12955844, 0.12955847, 0.12955844, 1)
+boot_splash/fullsize=false
+boot_splash/image="uid://1nqqy1krp4q5"
 config/icon="uid://1nqqy1krp4q5"
 config/windows_native_icon="res://icon.ico"
 
