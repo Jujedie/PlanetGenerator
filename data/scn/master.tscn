@@ -297,6 +297,22 @@ theme_override_colors/font_color = Color(0.67069, 0.67069, 0.67069, 1)
 text = "THREAD_NUMBER"
 metadata/_edit_lock_ = true
 
+[node name="btnRandomise" type="Node2D" parent="Node2D/Control"]
+position = Vector2(1003.7155, 379.9921)
+scale = Vector2(0.02, 0.02)
+
+[node name="btnRandomise" type="Button" parent="Node2D/Control/btnRandomise"]
+offset_left = -0.00109863
+offset_top = 0.00415022
+offset_right = 7613.0
+offset_bottom = 1800.0
+theme = SubResource("Theme_qfml0")
+theme_override_colors/font_color = Color(0.670588, 0.670588, 0.670588, 1)
+theme_override_styles/normal = SubResource("StyleBoxTexture_3fsd5")
+text = "RANDOMISE"
+metadata/_edit_use_anchors_ = true
+metadata/_edit_lock_ = true
+
 [node name="btnComfirmer" type="Node2D" parent="Node2D/Control"]
 position = Vector2(942.409, 457.816)
 scale = Vector2(0.02, 0.02)
@@ -375,9 +391,8 @@ text = "VUE_PRECEDANTE"
 flat = true
 
 [node name="typePlanete" type="Node2D" parent="Node2D/Control"]
-position = Vector2(912, 388.172)
+position = Vector2(846.0481, 389.35135)
 scale = Vector2(0.5, 0.5)
-metadata/_edit_lock_ = true
 
 [node name="ItemList" type="OptionButton" parent="Node2D/Control/typePlanete"]
 offset_left = 104.23732
@@ -400,6 +415,7 @@ metadata/_edit_use_anchors_ = true
 
 [node name="Node2D" type="Node2D" parent="Node2D/Control/typePlanete"]
 scale = Vector2(0.03, 0.03)
+metadata/_edit_lock_ = true
 
 [node name="Label" type="Label" parent="Node2D/Control/typePlanete/Node2D"]
 offset_left = 4242.5156
@@ -487,6 +503,19 @@ offset_bottom = 21.0
 max_value = 90.0
 show_percentage = false
 
+[node name="Node2D" type="Node2D" parent="Node2D/Control/renderProgress"]
+scale = Vector2(0.03, 0.03)
+metadata/_edit_lock_ = true
+
+[node name="lblMapStatus" type="Label" parent="Node2D/Control/renderProgress/Node2D"]
+offset_left = 9609.403
+offset_top = 14026.325
+offset_right = 22640.36
+offset_bottom = 15226.325
+theme = ExtResource("5_e2i44")
+horizontal_alignment = 1
+vertical_alignment = 1
+
 [node name="Cadre" type="Sprite2D" parent="Node2D"]
 position = Vector2(83, -47)
 texture = ExtResource("1_xqn6k")
@@ -500,6 +529,7 @@ metadata/_edit_lock_ = true
 [connection signal="value_changed" from="Node2D/Control/sldPrecipitationMoy" to="." method="_on_sld_precipitation_moy_value_changed"]
 [connection signal="value_changed" from="Node2D/Control/sldElevation" to="." method="_on_sld_elevation_value_changed"]
 [connection signal="value_changed" from="Node2D/Control/sldThread" to="." method="_on_sld_thread_value_changed"]
+[connection signal="pressed" from="Node2D/Control/btnRandomise/btnRandomise" to="." method="_on_btn_randomise_pressed"]
 [connection signal="pressed" from="Node2D/Control/btnComfirmer/btnComfirme" to="." method="_on_btn_comfirme_pressed"]
 [connection signal="pressed" from="Node2D/Control/btnSauvegarder/btnSauvegarder" to="." method="_on_btn_sauvegarder_pressed"]
 [connection signal="pressed" from="Node2D/Control/btnQuitter/btnQuitter" to="." method="_on_btn_quitter_pressed"]
