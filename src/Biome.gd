@@ -13,8 +13,9 @@ var interval_precipitation: Array[float]
 var interval_elevation    : Array[int]
 var water_need			  : bool
 var type_planete          : Array
+var river_lake_only       : bool  # Si true, ce biome n'apparaît que sur river_map
 
-func _init(nom_param: String, couleur_param: Color, couleur_vegetation_param: Color, interval_temp_param: Array[int], interval_precipitation_param: Array[float], interval_elevation_param: Array[int], water_need_param: bool, type_planete_param: Array = [0]):
+func _init(nom_param: String, couleur_param: Color, couleur_vegetation_param: Color, interval_temp_param: Array[int], interval_precipitation_param: Array[float], interval_elevation_param: Array[int], water_need_param: bool, type_planete_param: Array = [0], river_lake_only_param: bool = false):
 	self.nom     = nom_param
 	self.couleur = couleur_param
 	self.couleur_vegetation = couleur_vegetation_param
@@ -24,6 +25,7 @@ func _init(nom_param: String, couleur_param: Color, couleur_vegetation_param: Co
 	self.interval_elevation     = interval_elevation_param
 	self.water_need             = water_need_param
 	self.type_planete           = type_planete_param
+	self.river_lake_only        = river_lake_only_param
 
 func get_interval_elevation() ->  Array[int]:
 	return self.interval_elevation
@@ -41,6 +43,8 @@ func get_couleur_vegetation() -> Color:
 	return self.couleur_vegetation
 func get_type_planete() -> Array:
 	return self.type_planete
+func get_river_lake_only() -> bool:
+	return self.river_lake_only
 
 func set_interval_elevation(interval_elevation: Array[int]):
 	self.interval_elevation = interval_elevation
@@ -58,3 +62,5 @@ func set_couleur_vegetation(couleur_vegetation: Color):
 	self.couleur_vegetation = couleur_vegetation
 func set_type_planete(type_planete: Array):
 	self.type_planete = type_planete
+func set_river_lake_only(river_lake_only: bool):
+	self.river_lake_only = river_lake_only
