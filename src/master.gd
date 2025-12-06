@@ -225,6 +225,43 @@ func _on_btn_russian_pressed() -> void:
 	print("Язык изменен на русский.")
 	maj_labels()
 
+func _on_btn_randomise_pressed() -> void:
+	randomize()
+	
+	# Randomiser le nom de la planète
+	var prefixes = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta", "Iota", "Kappa", "Nova", "Sigma", "Omega", "Proxima", "Kepler", "Gliese", "Trappist", "HD", "Wolf", "Ross"]
+	var suffixes = ["Prime", "Major", "Minor", "I", "II", "III", "IV", "V", "b", "c", "d"]
+	var random_name = prefixes[randi() % prefixes.size()] + "-" + str(randi() % 999 + 1)
+	if randf() > 0.5:
+		random_name += " " + suffixes[randi() % suffixes.size()]
+	$Node2D/Control/planeteName/LineEdit.text = random_name
+	
+	# Randomiser les sliders
+	var sldNbCasesRegions = $Node2D/Control/sldNbCasesRegions
+	sldNbCasesRegions.value = randi_range(int(sldNbCasesRegions.min_value), int(sldNbCasesRegions.max_value))
+	
+	var sldRayonPlanetaire = $Node2D/Control/sldRayonPlanetaire
+	sldRayonPlanetaire.value = randi_range(int(sldRayonPlanetaire.min_value / sldRayonPlanetaire.step), int(sldRayonPlanetaire.max_value / sldRayonPlanetaire.step)) * int(sldRayonPlanetaire.step)
+	
+	var sldTempMoy = $Node2D/Control/sldTempMoy
+	sldTempMoy.value = randi_range(int(sldTempMoy.min_value), int(sldTempMoy.max_value))
+	
+	var sldHautEau = $Node2D/Control/sldHautEau
+	sldHautEau.value = randi_range(int(sldHautEau.min_value), int(sldHautEau.max_value))
+	
+	var sldPrecipitationMoy = $Node2D/Control/sldPrecipitationMoy
+	sldPrecipitationMoy.value = randf_range(sldPrecipitationMoy.min_value, sldPrecipitationMoy.max_value)
+	
+	var sldElevation = $Node2D/Control/sldElevation
+	sldElevation.value = randi_range(int(sldElevation.min_value / sldElevation.step), int(sldElevation.max_value / sldElevation.step)) * int(sldElevation.step)
+	
+	# Randomiser le type de planète
+	var typePlanete = $Node2D/Control/typePlanete/ItemList
+	typePlanete.select(randi() % typePlanete.item_count)
+	
+	# Mettre à jour les labels
+	maj_labels()
+
 func maj_labels() -> void:
 	var sldRayonPlanetaire = $Node2D/Control/sldRayonPlanetaire
 	var label = $Node2D/Control/sldRayonPlanetaire/Node2D/Label
