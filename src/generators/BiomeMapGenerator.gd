@@ -52,13 +52,16 @@ func _biome_calcul_initial(img: Image, noise: FastNoiseLite, x: int, y: int) -> 
 	var precipitation_val = planet.precipitation_map.get_pixel(x, y).r
 	var temperature_val = Enum.getTemperatureViaColor(planet.temperature_map.get_pixel(x, y))
 	var is_water = planet.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
-	var is_river = planet.river_map.get_pixel(x, y) != Color.hex(0x00000000)
+	var river_color = planet.river_map.get_pixel(x, y)
+	var is_river = river_color != Color.hex(0x00000000)
 
 	var biome
 	if planet.banquise_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
 		biome = Enum.getBanquiseBiome(planet.atmosphere_type)
 	elif is_river:
-		biome = Enum.getRiverBiome(temperature_val, precipitation_val, planet.atmosphere_type)
+		# Utiliser directement la couleur de la river_map (déjà correctement colorée par type de planète)
+		img.set_pixel(x, y, river_color)
+		return
 	else:
 		var noise_val = (noise.get_noise_2d(float(x), float(y)) + 1.0) / 2.0
 		biome = Enum.getBiomeByNoise(planet.atmosphere_type, elevation_val, precipitation_val, temperature_val, is_water, noise_val)
@@ -72,13 +75,26 @@ func _biome_calcul_initial(img: Image, noise: FastNoiseLite, x: int, y: int) -> 
 func _smooth_biome_map(img: Image, width: int, height: int) -> void:
 	var temp_img = img.duplicate()
 	
+	# Pré-calculer l'ensemble des couleurs de rivières pour une vérification rapide
+	var river_colors: Dictionary = {}
+	for x in range(width):
+		for y in range(height):
+			var river_color = planet.river_map.get_pixel(x, y)
+			if river_color != Color.hex(0x00000000):
+				river_colors[river_color.to_html()] = true
+	
 	for _pass in range(2):
 		for x in range(width):
 			for y in range(height):
+				# Vérifier directement via river_map si c'est une rivière/lac
+				var is_river = planet.river_map.get_pixel(x, y) != Color.hex(0x00000000)
+				if is_river:
+					continue
+				
 				var current_color = temp_img.get_pixel(x, y)
 				var current_biome = Enum.getBiomeByColor(current_color)
 				
-				if current_biome != null and (current_biome.get_river_lake_only() or current_biome.get_nom() == "Banquise" or current_biome.get_nom().begins_with("Banquise")):
+				if current_biome != null and (current_biome.get_nom() == "Banquise" or current_biome.get_nom().begins_with("Banquise")):
 					continue
 				
 				var neighbor_counts = {}
@@ -103,8 +119,8 @@ func _smooth_biome_map(img: Image, width: int, height: int) -> void:
 						best_color = Color.html(color_key)
 				
 				if max_count >= 5:
-					var best_biome = Enum.getBiomeByColor(best_color)
-					if best_biome != null and not best_biome.get_river_lake_only():
+					# Vérifier que la meilleure couleur n'est pas une couleur de rivière
+					if not river_colors.has(best_color.to_html()):
 						img.set_pixel(x, y, best_color)
 		
 		temp_img = img.duplicate()
@@ -112,12 +128,25 @@ func _smooth_biome_map(img: Image, width: int, height: int) -> void:
 func _add_border_irregularity(img: Image, noise: FastNoiseLite, width: int, height: int) -> void:
 	var temp_img = img.duplicate()
 	
+	# Pré-calculer l'ensemble des couleurs de rivières pour une vérification rapide
+	var river_colors: Dictionary = {}
 	for x in range(width):
 		for y in range(height):
+			var river_color = planet.river_map.get_pixel(x, y)
+			if river_color != Color.hex(0x00000000):
+				river_colors[river_color.to_html()] = true
+	
+	for x in range(width):
+		for y in range(height):
+			# Vérifier directement via river_map si c'est une rivière/lac
+			var is_river = planet.river_map.get_pixel(x, y) != Color.hex(0x00000000)
+			if is_river:
+				continue
+				
 			var current_color = temp_img.get_pixel(x, y)
 			var current_biome = Enum.getBiomeByColor(current_color)
 			
-			if current_biome != null and (current_biome.get_river_lake_only() or current_biome.get_nom().begins_with("Banquise")):
+			if current_biome != null and current_biome.get_nom().begins_with("Banquise"):
 				continue
 			
 			var is_border = false
@@ -131,8 +160,8 @@ func _add_border_irregularity(img: Image, noise: FastNoiseLite, width: int, heig
 					var n_color = temp_img.get_pixel(nx, ny)
 					if n_color != current_color:
 						is_border = true
-						var n_biome = Enum.getBiomeByColor(n_color)
-						if n_biome != null and not n_biome.get_river_lake_only():
+						# Vérifier si la couleur voisine n'est pas une rivière
+						if not river_colors.has(n_color.to_html()):
 							neighbor_biomes.append(n_color)
 			
 			if is_border and neighbor_biomes.size() > 0:
@@ -143,24 +172,35 @@ func _add_border_irregularity(img: Image, noise: FastNoiseLite, width: int, heig
 
 func _apply_final_colors(img: Image, x: int, y: int) -> void:
 	var biome_color = img.get_pixel(x, y)
-	var biome = Enum.getBiomeByColor(biome_color)
+	var river_color = planet.river_map.get_pixel(x, y)
+	var is_river = river_color != Color.hex(0x00000000)
 	
 	var color_final: Color
 	
-	if biome == null:
-		var elevation_val = Enum.getElevationViaColor(planet.elevation_map.get_pixel(x, y))
-		var elevation_color = Enum.getElevationColor(elevation_val, true)
-		color_final = elevation_color
-	else:
-		var biome_nom = biome.get_nom()
-		var is_banquise = biome_nom.begins_with("Banquise") or biome_nom.find("Refroidis") != -1
-		
-		if is_banquise:
-			color_final = biome.get_couleur_vegetation()
+	if is_river:
+		# Pour les rivières, trouver le biome par sa couleur et utiliser couleur_vegetation
+		var river_biome = Enum.getBiomeByColor(river_color)
+		if river_biome != null:
+			color_final = river_biome.get_couleur_vegetation()
 		else:
+			# Fallback: utiliser directement la couleur de la river_map
+			color_final = river_color
+	else:
+		var biome = Enum.getBiomeByColor(biome_color)
+		if biome == null:
 			var elevation_val = Enum.getElevationViaColor(planet.elevation_map.get_pixel(x, y))
 			var elevation_color = Enum.getElevationColor(elevation_val, true)
-			color_final = elevation_color * biome.get_couleur_vegetation()
+			color_final = elevation_color
+		else:
+			var biome_nom = biome.get_nom()
+			var is_banquise = biome_nom.begins_with("Banquise") or biome_nom.find("Refroidis") != -1
+			
+			if is_banquise:
+				color_final = biome.get_couleur_vegetation()
+			else:
+				var elevation_val = Enum.getElevationViaColor(planet.elevation_map.get_pixel(x, y))
+				var elevation_color = Enum.getElevationColor(elevation_val, true)
+				color_final = elevation_color * biome.get_couleur_vegetation()
 	
 	color_final.a = 1.0
 	planet.final_map.set_pixel(x, y, color_final)

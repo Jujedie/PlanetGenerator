@@ -116,7 +116,17 @@ func _trace_river_to_ocean(img: Image, source: Dictionary, meander_noise: FastNo
 	var temp = source.temperature
 	var precipitation = source.precipitation
 	
-	var river_color = _get_river_color_by_size(river_size)
+	# Utiliser le biome rivière approprié selon le type de planète et la taille
+	var river_biome = Enum.getRiverBiomeBySize(int(temp), planet.atmosphere_type, river_size)
+	var river_color: Color
+	if river_biome != null:
+		river_color = river_biome.get_couleur()
+		# Debug: vérifier que le bon biome est utilisé
+		if x == source.x and y == source.y:
+			print("River biome: ", river_biome.get_nom(), " for type: ", planet.atmosphere_type, " color: ", river_color.to_html())
+	else:
+		river_color = _get_river_color_by_size(river_size)
+		print("FALLBACK used for type: ", planet.atmosphere_type)
 	
 	var visited: Dictionary = {}
 	var max_steps = planet.circonference * 3
@@ -145,7 +155,9 @@ func _trace_river_to_ocean(img: Image, source: Dictionary, meander_noise: FastNo
 		last_elevation = current_elev
 		
 		if steps_since_descent > 50:
-			img.set_pixel(x, y, _get_lake_color(temp))
+			var lake_biome = Enum.getLakeBiome(int(temp), planet.atmosphere_type)
+			var lake_color = lake_biome.get_couleur() if lake_biome != null else _get_lake_color(temp)
+			img.set_pixel(x, y, lake_color)
 			break
 		
 		var directions = [
@@ -200,7 +212,9 @@ func _trace_river_to_ocean(img: Image, source: Dictionary, meander_noise: FastNo
 			break
 		
 		if candidates.size() == 0:
-			img.set_pixel(x, y, _get_lake_color(temp))
+			var lake_biome = Enum.getLakeBiome(int(temp), planet.atmosphere_type)
+			var lake_color = lake_biome.get_couleur() if lake_biome != null else _get_lake_color(temp)
+			img.set_pixel(x, y, lake_color)
 			break
 		
 		candidates.sort_custom(func(a, b): return a.score > b.score)
@@ -229,7 +243,9 @@ func _trace_tributary(img: Image, source: Dictionary, meander_noise: FastNoiseLi
 	var y = source.y
 	var _temp = source.temperature
 	
-	var river_color = _get_river_color_by_size(0)
+	# Utiliser le biome rivière approprié (taille 0 = affluent)
+	var tributary_biome = Enum.getRiverBiomeBySize(int(_temp), planet.atmosphere_type, 0)
+	var river_color = tributary_biome.get_couleur() if tributary_biome != null else _get_river_color_by_size(0)
 	var visited = parent_visited
 	var max_steps = 100
 	var steps_since_descent = 0
@@ -393,4 +409,6 @@ func _generate_lakes(img: Image, lake_noise: FastNoiseLite, height: int) -> void
 				break
 		
 		if is_valid_lake:
-			img.set_pixel(candidate.x, candidate.y, _get_lake_color(candidate.temp))
+			var lake_biome = Enum.getLakeBiome(int(candidate.temp), planet.atmosphere_type)
+			var lake_color = lake_biome.get_couleur() if lake_biome != null else _get_lake_color(candidate.temp)
+			img.set_pixel(candidate.x, candidate.y, lake_color)
