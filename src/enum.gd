@@ -370,20 +370,33 @@ func getBiome(type_planete : int, elevation_val : int, precipitation_val : float
 		
 	var taille = corresponding_biome.size()
 	
-	var most_common_biome = getMostCommonSurroundingBiome(getSuroundingBiomes(img_biome, x, y, generator))
-
+	# Récupérer les biomes voisins et le plus courant
+	var surrounding = getSuroundingBiomes(img_biome, x, y, generator)
+	var most_common_biome = getMostCommonSurroundingBiome(surrounding)
+	
+	# Calculer le pourcentage de voisins avec le même biome pour renforcer l'homogénéité
+	var same_biome_count = 0
+	for b in surrounding:
+		if b != null and most_common_biome != null and b.get_nom() == most_common_biome.get_nom():
+			same_biome_count += 1
+	
 	randomize()
 	var chance = randf()
 	
-	if most_common_biome in corresponding_biome:
-		if chance <= 0.5:
+	# Plus il y a de voisins du même biome, plus on a de chances de le choisir
+	# Cela crée un effet de "blob" naturel
+	if most_common_biome != null and most_common_biome in corresponding_biome:
+		# Base 60% + 5% par voisin identique (max 8 voisins = 100%)
+		var homogeneity_chance = 0.6 + (same_biome_count * 0.05)
+		if chance <= homogeneity_chance:
 			return most_common_biome
+	
 	if taille > 0 :
 		return corresponding_biome[randi() % taille]
 	
 	return Biome.new("Aucun", Color.hex(0xFF0000FF), Color.hex(0xFF0000FF), [0, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false)
 
-func getSuroundingBiomes(img_biome: Image, x:int, y:int, generator = null) -> Array:
+func getSuroundingBiomes(img_biome: Image, x:int, y:int, _generator = null) -> Array:
 	var surrounding_biomes = []
 	var width = img_biome.get_width()
 	var height = img_biome.get_height()
@@ -431,6 +444,39 @@ func getPrecipitationColor(precipitation: float) -> Color:
 		if precipitation <= key:
 			return COULEUR_PRECIPITATION[key]
 	return COULEUR_PRECIPITATION[1.0]
+
+func getBiomeByNoise(type_planete: int, elevation_val: int, precipitation_val: float, temperature_val: int, is_water: bool, noise_val: float) -> Biome:
+	# Trouve tous les biomes correspondants et en sélectionne un basé sur le bruit
+	var corresponding_biome : Array[Biome] = []
+
+	for biome in BIOMES:
+		if biome.get_river_lake_only():
+			continue
+		
+		if (elevation_val >= biome.get_interval_elevation()[0] and
+			elevation_val <= biome.get_interval_elevation()[1] and
+			temperature_val >= biome.get_interval_temp()[0] and
+			temperature_val <= biome.get_interval_temp()[1] and
+			precipitation_val >= biome.get_interval_precipitation()[0] and
+			precipitation_val <= biome.get_interval_precipitation()[1] and
+			is_water == biome.get_water_need() and 
+			type_planete in biome.get_type_planete()):
+			corresponding_biome.append(biome)
+	
+	var taille = corresponding_biome.size()
+	if taille > 0:
+		# Utiliser le bruit pour sélectionner de façon déterministe
+		var index = int(noise_val * taille) % taille
+		return corresponding_biome[index]
+	
+	return Biome.new("Aucun", Color.hex(0xFF0000FF), Color.hex(0xFF0000FF), [0, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false)
+
+func getBiomeByColor(color: Color) -> Biome:
+	# Trouve un biome par sa couleur
+	for biome in BIOMES:
+		if biome.get_couleur() == color:
+			return biome
+	return null
 
 func getBanquiseBiome( typePlanete : int) -> Biome:
 	for biome in BIOMES:
