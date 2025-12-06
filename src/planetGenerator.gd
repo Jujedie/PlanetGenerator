@@ -8,6 +8,7 @@ signal finished
 var nom: String
 var circonference: int
 var renderProgress: ProgressBar
+var mapStatusLabel: Label
 var cheminSauvegarde: String
 
 # Paramètres de génération
@@ -38,11 +39,12 @@ var preview: Image
 # Constantes pour la conversion cylindrique
 var cylinder_radius: float
 
-func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, elevation_modifier_param: int = 0, nb_thread_param: int = 8, atmosphere_type_param: int = 0, renderProgress_param: ProgressBar = null, nb_avg_cases_param: int = 50, cheminSauvegarde_param: String = "user://temp/") -> void:
+func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, elevation_modifier_param: int = 0, nb_thread_param: int = 8, atmosphere_type_param: int = 0, renderProgress_param: ProgressBar = null, mapStatusLabel_param: Label = null, nb_avg_cases_param: int = 50, cheminSauvegarde_param: String = "user://temp/") -> void:
 	self.nom = nom_param
 	self.circonference = int(rayon * 2 * PI)
 	self.renderProgress = renderProgress_param
 	self.renderProgress.value = 0.0
+	self.mapStatusLabel = mapStatusLabel_param
 	self.cheminSauvegarde = cheminSauvegarde_param
 	self.nb_avg_cases = nb_avg_cases_param
 
@@ -55,21 +57,30 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 	
 	self.cylinder_radius = self.circonference / (2.0 * PI)
 
+func update_map_status(map_key: String) -> void:
+	if mapStatusLabel != null:
+		var map_name = tr(map_key)
+		var text = tr("CREATING").format({"map": map_name})
+		mapStatusLabel.call_deferred("set_text", text)
+
 func generate_planet():
 	print("\n=== Début de la génération de la planète ===\n")
 	
 	# 1. Carte finale (image vide pour commencer)
+	update_map_status("MAP_FINAL")
 	print("1/12 - Génération de la carte finale...")
 	self.final_map = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8)
 	addProgress(10)
 	
 	# 2. Carte des nuages
+	update_map_status("MAP_CLOUDS")
 	print("2/12 - Génération de la carte des nuages...")
 	var nuage_gen = NuageMapGenerator.new(self)
 	self.nuage_map = nuage_gen.generate()
 	addProgress(5)
 	
 	# 3. Carte topographique
+	update_map_status("MAP_ELEVATION")
 	print("3/12 - Génération de la carte topographique...")
 	var elevation_gen = ElevationMapGenerator.new(self)
 	self.elevation_map = elevation_gen.generate()
@@ -77,60 +88,70 @@ func generate_planet():
 	addProgress(10)
 	
 	# 4. Carte des précipitations
+	update_map_status("MAP_PRECIPITATION")
 	print("4/12 - Génération de la carte des précipitations...")
 	var precipitation_gen = PrecipitationMapGenerator.new(self)
 	self.precipitation_map = precipitation_gen.generate()
 	addProgress(10)
 	
 	# 5. Carte des mers
+	update_map_status("MAP_WATER")
 	print("5/12 - Génération de la carte des mers...")
 	var water_gen = WaterMapGenerator.new(self)
 	self.water_map = water_gen.generate()
 	addProgress(10)
 	
 	# 6. Carte du pétrole
+	update_map_status("MAP_OIL")
 	print("6/12 - Génération de la carte du pétrole...")
 	var oil_gen = OilMapGenerator.new(self)
 	self.oil_map = oil_gen.generate()
 	addProgress(5)
 	
 	# 7. Carte des ressources
+	update_map_status("MAP_RESOURCES")
 	print("7/12 - Génération de la carte des ressources...")
 	var ressource_gen = RessourceMapGenerator.new(self)
 	self.ressource_map = ressource_gen.generate()
 	addProgress(5)
 	
 	# 8. Carte des températures
+	update_map_status("MAP_TEMPERATURE")
 	print("8/12 - Génération de la carte des températures...")
 	var temperature_gen = TemperatureMapGenerator.new(self)
 	self.temperature_map = temperature_gen.generate()
 	addProgress(10)
 	
 	# 9. Carte des rivières/lacs
+	update_map_status("MAP_RIVERS")
 	print("9/12 - Génération de la carte des rivières/lacs...")
 	var river_gen = RiverMapGenerator.new(self)
 	self.river_map = river_gen.generate()
 	addProgress(5)
 	
 	# 10. Carte de la banquise
+	update_map_status("MAP_ICE")
 	print("10/12 - Génération de la carte de la banquise...")
 	var banquise_gen = BanquiseMapGenerator.new(self)
 	self.banquise_map = banquise_gen.generate()
 	addProgress(5)
 	
 	# 11. Carte des régions
+	update_map_status("MAP_REGIONS")
 	print("11/12 - Génération de la carte des régions...")
 	var region_gen = RegionMapGenerator.new(self)
 	self.region_map = region_gen.generate()
 	addProgress(10)
 	
 	# 12. Carte des biomes
+	update_map_status("MAP_BIOMES")
 	print("12/12 - Génération de la carte des biomes...")
 	var biome_gen = BiomeMapGenerator.new(self)
 	self.biome_map = biome_gen.generate()
 	addProgress(25)
 	
 	# Génération de la prévisualisation
+	update_map_status("MAP_DONE")
 	print("\nGénération de la prévisualisation...")
 	generate_preview()
 

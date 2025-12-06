@@ -5,6 +5,23 @@ var maps			: Array[String]
 var map_index		: int = 0
 var langue			: String = "fr"
 
+# Mapping des noms de fichiers vers les clés de traduction
+const MAP_NAME_TO_KEY = {
+	"elevation_map.png": "MAP_ELEVATION",
+	"elevation_map_alt.png": "MAP_ELEVATION_ALT",
+	"nuage_map.png": "MAP_CLOUDS",
+	"oil_map.png": "MAP_OIL",
+	"ressource_map.png": "MAP_RESOURCES",
+	"precipitation_map.png": "MAP_PRECIPITATION",
+	"temperature_map.png": "MAP_TEMPERATURE",
+	"water_map.png": "MAP_WATER",
+	"river_map.png": "MAP_RIVERS",
+	"biome_map.png": "MAP_BIOMES",
+	"final_map.png": "MAP_FINAL",
+	"region_map.png": "MAP_REGIONS",
+	"preview.png": "MAP_PREVIEW"
+}
+
 func _ready() -> void:
 	if OS.get_locale_language() != "fr":
 		langue = "en"
@@ -13,6 +30,18 @@ func _ready() -> void:
 
 	# Initialisation des paramètres de la planète
 	maj_labels()
+
+func get_map_display_name(file_path: String) -> String:
+	var file_name = file_path.get_file()
+	if MAP_NAME_TO_KEY.has(file_name):
+		return tr(MAP_NAME_TO_KEY[file_name])
+	return file_name
+
+func update_map_label() -> void:
+	if maps.is_empty():
+		return
+	var lbl = $Node2D/Control/renderProgress/Node2D/lblMapStatus
+	lbl.text = get_map_display_name(maps[map_index])
 
 func _on_sld_rayon_planetaire_value_changed(value: float) -> void:
 	var sld = $Node2D/Control/sldRayonPlanetaire
@@ -86,8 +115,9 @@ func _on_btn_comfirme_pressed() -> void:
 	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = null
 
 	var renderProgress = $Node2D/Control/renderProgress
+	var lblMapStatus = $Node2D/Control/renderProgress/Node2D/lblMapStatus
 
-	planetGenerator = PlanetGenerator.new(nom.text, sldRayonPlanetaire.value, sldTempMoy.value, sldHautEau.value, sldPrecipitationMoy.value, sldElevation.value , sldThread.value, typePlanete.get_selected_id(), renderProgress, sldNbCasesRegions.value)
+	planetGenerator = PlanetGenerator.new(nom.text, sldRayonPlanetaire.value, sldTempMoy.value, sldHautEau.value, sldPrecipitationMoy.value, sldElevation.value , sldThread.value, typePlanete.get_selected_id(), renderProgress, lblMapStatus, sldNbCasesRegions.value)
 
 	var echelle = 100.0 / sldRayonPlanetaire.value
 	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.scale = Vector2(echelle, echelle)
@@ -121,6 +151,7 @@ func _on_planetGenerator_finished_main() -> void:
 	if err == OK:
 		var tex = ImageTexture.create_from_image(img)
 		$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = tex
+		update_map_label()
 	else:
 		print("Erreur lors du chargement de l'image: ", maps[map_index])
 
@@ -162,6 +193,7 @@ func _on_btn_suivant_pressed() -> void:
 	if err == OK:
 		var tex = ImageTexture.create_from_image(img)
 		$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = tex
+		update_map_label()
 	else:
 		print("Erreur lors du chargement de l'image: ", maps[map_index])
 
@@ -179,6 +211,7 @@ func _on_btn_precedant_pressed() -> void:
 	if err == OK:
 		var tex = ImageTexture.create_from_image(img)
 		$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = tex
+		update_map_label()
 	else:
 		print("Erreur lors du chargement de l'image: ", maps[map_index])
 
