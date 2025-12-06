@@ -18,3 +18,20 @@ TYPE_TOXIQUE,Toxic,Toxique,Giftig,Токсичный
 TYPE_VOLCAN,Volcanic,Volcanique,Vulkanisch,Вулканический
 TYPE_MORTE,Dead,Morte,Tot,Мёртвый
 TYPE_NO_ATMOSPHERE,No Atmosphere,Sans Atmosphère,Ohne Atmosphäre,Без атмосферы
+RANDOMISE,Randomise,Aléatoire,Zufällig,Случайный
+CREATING,Creating {map}...,Création de {map}...,Erstelle {map}...,Создание {map}...
+MAP_FINAL,Final Map,Carte Finale,Endkarte,Финальная карта
+MAP_CLOUDS,Clouds,Nuages,Wolken,Облака
+MAP_ELEVATION,Elevation,Élévation,Höhe,Высота
+MAP_ELEVATION_ALT,Elevation (Alt),Élévation (Alt),Höhe (Alt),Высота (Альт)
+MAP_PRECIPITATION,Precipitation,Précipitations,Niederschlag,Осадки
+MAP_WATER,Seas,Mers,Meere,Моря
+MAP_OIL,Oil,Pétrole,Öl,Нефть
+MAP_RESOURCES,Resources,Ressources,Ressourcen,Ресурсы
+MAP_TEMPERATURE,Temperature,Température,Temperatur,Температура
+MAP_RIVERS,Rivers/Lakes,Rivières/Lacs,Flüsse/Seen,Реки/Озёра
+MAP_ICE,Ice Sheet,Banquise,Eisschicht,Ледовый покров
+MAP_BIOMES,Biomes,Biomes,Biome,Биомы
+MAP_REGIONS,Regions,Régions,Regionen,Регионы
+MAP_PREVIEW,Preview,Aperçu,Vorschau,Предпросмотр
+MAP_DONE,Done!,Terminé !,Fertig!,Готово!
