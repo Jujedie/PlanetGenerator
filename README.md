@@ -37,4 +37,4 @@ The Planet Generator is available for the following platforms:
 - **Linux**: x86_64 architecture (PlanetGenerator.x86_64) - Compatible with Debian, Ubuntu, and other x86_64 distributions
 - **Linux**: ARM64 architecture (PlanetGenerator.arm64) - For ARM-based systems
 
-v1.4.0
+v1.4.2

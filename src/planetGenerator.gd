@@ -80,10 +80,6 @@ func generate_planet():
 	var thread_oil = Thread.new()
 	thread_oil.start(generate_oil_map)
 
-	print("\nGénération de la carte des ressources\n")
-	var thread_ressource = Thread.new()
-	thread_ressource.start(generate_ressource_map)
-
 	print("\nGénération de la carte des nuages\n")
 	var thread_nuage = Thread.new()
 	thread_nuage.start(generate_nuage_map)
@@ -105,6 +101,17 @@ func generate_planet():
 	thread_precipitation.wait_to_finish()
 	thread_water.wait_to_finish()
 
+	# Génération des ressources APRÈS water_map pour éviter les ressources dans l'eau
+	print("\nGénération de la carte des ressources\n")
+	var thread_ressource = Thread.new()
+	thread_ressource.start(generate_ressource_map)
+
+	print("\nGénération de la carte des températures moyennes\n")
+	var thread_temperature = Thread.new()
+	thread_temperature.start(generate_temperature_map)
+
+	thread_temperature.wait_to_finish()
+
 	print("\nGénération de la carte des rivières/lacs\n")
 	var thread_river = Thread.new()
 	thread_river.start(generate_river_map)
@@ -114,12 +121,6 @@ func generate_planet():
 	print("\nGénération de la carte des regions\n")
 	var thread_region = Thread.new()
 	thread_region.start(generate_region_map)
-
-	print("\nGénération de la carte des températures moyennes\n")
-	var thread_temperature = Thread.new()
-	thread_temperature.start(generate_temperature_map)
-
-	thread_temperature.wait_to_finish()
 
 	print("\nGénération de la carte de la banquise\n")
 	var thread_banquise = Thread.new()
@@ -521,11 +522,10 @@ func water_calcul(img: Image, noise, _noise2, x : int, y : int) -> void:
 
 func generate_river_map() -> void:
 	randomize()
+	var height = int(self.circonference / 2)
+	var img = Image.create(self.circonference, height, false, Image.FORMAT_RGBA8)
 	
-	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8)
-	var height = self.circonference / 2
-	
-	# Remplir de transparent d'abord
+	# Remplir avec transparent
 	img.fill(Color.hex(0x00000000))
 	
 	# Ne pas générer de rivières sur planètes sans atmosphère
@@ -536,97 +536,177 @@ func generate_river_map() -> void:
 	
 	var base_seed = randi()
 	
-	# Bruit pour variation du tracé des rivières
+	# Bruit pour déterminer les sources de rivières
+	var source_noise = FastNoiseLite.new()
+	source_noise.seed = base_seed
+	source_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	source_noise.frequency = 6.0 / float(self.circonference)
+	source_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	source_noise.fractal_octaves = 3
+	
+	# Bruit pour les méandres
 	var meander_noise = FastNoiseLite.new()
-	meander_noise.seed = base_seed
+	meander_noise.seed = base_seed + 2
 	meander_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	meander_noise.frequency = 15.0 / float(self.circonference)
-	meander_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	meander_noise.fractal_octaves = 3
+	meander_noise.frequency = 25.0 / float(self.circonference)
 	
 	# Bruit pour les lacs
 	var lake_noise = FastNoiseLite.new()
-	lake_noise.seed = base_seed + 1
+	lake_noise.seed = base_seed + 3
 	lake_noise.noise_type = FastNoiseLite.TYPE_CELLULAR
 	lake_noise.cellular_distance_function = FastNoiseLite.DISTANCE_EUCLIDEAN
 	lake_noise.cellular_return_type = FastNoiseLite.RETURN_DISTANCE
-	lake_noise.frequency = 4.0 / float(self.circonference)
+	lake_noise.frequency = 6.0 / float(self.circonference)
 	
-	# Trouver les points sources potentiels (haute altitude + précipitations)
+	# =========================================================================
+	# ÉTAPE 1: Trouver les sources de rivières
+	# On cherche des points en altitude avec de bonnes précipitations
+	# =========================================================================
 	var sources : Array = []
-	var step = max(8, self.circonference / 128)  # Échantillonnage
+	var step = max(3, self.circonference / 256)
+	var source_threshold = 0.25  # Seuil plus bas pour plus de rivières
 	
 	for x in range(0, self.circonference, step):
 		for y in range(0, height, step):
+			# Pas sur l'eau (océan)
 			if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
+				continue
+			
+			# Température > 0°C (sauf glaciers qui fondent)
+			var temp = Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
+			if temp <= -10:  # Permettre fonte glaciaire
 				continue
 			
 			var elevation = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 			var precipitation = self.precipitation_map.get_pixel(x, y).r
 			
-			# Sources: altitude > 200m et précipitations > 35%
-			if elevation > 200 and precipitation > 0.35:
-				var score = elevation * precipitation
-				sources.append({"x": x, "y": y, "score": score, "elevation": elevation})
-	
-	# Trier par score décroissant et limiter le nombre
-	sources.sort_custom(func(a, b): return a.score > b.score)
-	var max_rivers = max(15, self.circonference / 64)
-	sources = sources.slice(0, min(sources.size(), max_rivers))
-	
-	# Tracer chaque rivière
-	for source in sources:
-		trace_river(img, source.x, source.y, meander_noise, height)
-	
-	# Ajouter quelques lacs dans les zones humides
-	for x in range(0, self.circonference):
-		for y in range(0, height):
-			if img.get_pixel(x, y) != Color.hex(0x00000000):
-				continue
-			if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
+			# Les sources doivent être en altitude (> 100m au-dessus du niveau de la mer)
+			if elevation < self.water_elevation + 100:
 				continue
 			
-			var precipitation = self.precipitation_map.get_pixel(x, y).r
-			if precipitation < 0.5:
-				continue
-			
+			# Vérifier le bruit
 			var coords = get_cylindrical_coords(x, y)
-			var lake_val = lake_noise.get_noise_3d(coords.x, coords.y, coords.z)
-			lake_val = 1.0 - abs(lake_val)
+			var noise_val = source_noise.get_noise_3d(coords.x, coords.y, coords.z)
+			if noise_val < source_threshold:
+				continue
 			
-			if lake_val > 0.75:
-				img.set_pixel(x, y, Color.hex(0x5BA3E0FF))  # Lac
+			# Score: favorise haute altitude + bonnes précipitations
+			var altitude_score = (elevation - self.water_elevation) / 1000.0
+			var score = altitude_score * (precipitation + 0.3) * (noise_val + 0.5)
+			
+			# Taille de rivière basée sur l'altitude et les précipitations
+			var river_size = 0
+			if elevation > 2000 and precipitation > 0.5:
+				river_size = 2  # Fleuve
+			elif elevation > 500 or precipitation > 0.4:
+				river_size = 1  # Rivière moyenne
+			# else: affluent
+			
+			sources.append({
+				"x": x, 
+				"y": y, 
+				"score": score, 
+				"elevation": elevation,
+				"river_size": river_size,
+				"temperature": temp,
+				"precipitation": precipitation
+			})
+	
+	# Trier par score et espacer les sources
+	sources.sort_custom(func(a, b): return a.score > b.score)
+	
+	var selected_sources : Array = []
+	var min_distance = max(10, self.circonference / 60)  # Moins d'espacement = plus de rivières
+	var max_rivers = max(40, self.circonference / 25)    # Plus de rivières
+	
+	for source in sources:
+		if selected_sources.size() >= max_rivers:
+			break
+		
+		var too_close = false
+		for existing in selected_sources:
+			var dx = abs(source.x - existing.x)
+			dx = min(dx, self.circonference - dx)
+			var dy = abs(source.y - existing.y)
+			if sqrt(dx * dx + dy * dy) < min_distance:
+				too_close = true
+				break
+		
+		if not too_close:
+			selected_sources.append(source)
+	
+	# =========================================================================
+	# ÉTAPE 2: Tracer chaque rivière avec un algorithme amélioré
+	# =========================================================================
+	for source in selected_sources:
+		trace_river_to_ocean(img, source, meander_noise, height)
+	
+	# =========================================================================
+	# ÉTAPE 3: Générer les lacs
+	# =========================================================================
+	generate_lakes(img, lake_noise, height)
 	
 	self.addProgress(5)
 	self.river_map = img
 
-func trace_river(img: Image, start_x: int, start_y: int, meander_noise: FastNoiseLite, height: int) -> void:
-	var x = start_x
-	var y = start_y
-	var max_steps = self.circonference  # Limite de sécurité
-	var river_color = Color.hex(0x4A90D9FF)
-	var width = self.circonference
+
+func trace_river_to_ocean(img: Image, source: Dictionary, meander_noise: FastNoiseLite, height: int) -> void:
+	var x = source.x
+	var y = source.y
+	var river_size = source.river_size
+	var temp = source.temperature
+	var precipitation = source.precipitation
+	
+	var river_color = get_river_color_by_size(river_size)
+	
+	var visited : Dictionary = {}
+	var max_steps = self.circonference * 3  # Beaucoup plus de steps permis
+	var steps_since_descent = 0  # Compteur pour détecter les plateaux
+	var last_elevation = source.elevation
+	
+	# Probabilité de bifurcation augmente avec les précipitations
+	var split_chance = 0.03 + precipitation * 0.05  # 3% à 8%
 	
 	for step in range(max_steps):
-		# Vérifier si on a atteint l'eau
+		# Vérifier si on a atteint l'océan
 		if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
+			# Succès! La rivière a rejoint l'océan
 			break
 		
-		# Dessiner le pixel de rivière
+		# Éviter les boucles
+		var key = str(x) + "_" + str(y)
+		if visited.has(key):
+			break
+		visited[key] = true
+		
+		# Dessiner le pixel
 		img.set_pixel(x, y, river_color)
 		
-		# Trouver la direction de descente (plus basse élévation)
+		# Récupérer l'élévation actuelle
 		var current_elev = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
-		var best_dir = Vector2i(0, 0)
-		var best_elev = current_elev
-		var found_water = false
 		
-		# Vérifier les 8 directions
+		# Détecter si on descend
+		if current_elev < last_elevation:
+			steps_since_descent = 0
+		else:
+			steps_since_descent += 1
+		last_elevation = current_elev
+		
+		# Si on est bloqué sur un plateau trop longtemps, créer un lac
+		if steps_since_descent > 50:
+			img.set_pixel(x, y, get_lake_color(temp))
+			break
+		
+		# =====================================================================
+		# Chercher la meilleure direction
+		# =====================================================================
 		var directions = [
-			Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1),
-			Vector2i(-1, 0),                   Vector2i(1, 0),
-			Vector2i(-1, 1),  Vector2i(0, 1),  Vector2i(1, 1)
+			Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0),
+			Vector2i(-1, -1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(1, 1)
 		]
+		
+		var candidates : Array = []
+		var ocean_candidate = null
 		
 		for dir in directions:
 			var nx = wrap_x(x + dir.x)
@@ -635,44 +715,275 @@ func trace_river(img: Image, start_x: int, start_y: int, meander_noise: FastNois
 			if ny < 0 or ny >= height:
 				continue
 			
-			# Priorité à l'eau (océan)
+			# Vérifier si déjà visité
+			var nkey = str(nx) + "_" + str(ny)
+			if visited.has(nkey):
+				continue
+			
+			# Priorité: océan
 			if self.water_map.get_pixel(nx, ny) == Color.hex(0xFFFFFFFF):
-				best_dir = dir
-				found_water = true
+				ocean_candidate = {"dir": dir, "nx": nx, "ny": ny}
 				break
 			
 			var elev = Enum.getElevationViaColor(self.elevation_map.get_pixel(nx, ny))
-			if elev < best_elev:
-				best_elev = elev
-				best_dir = dir
+			var descent = current_elev - elev
+			
+			# Calculer un score pour chaque direction
+			# On accepte même les légères montées pour traverser les plateaux
+			var tolerance = 20 + steps_since_descent * 5  # Plus on est bloqué, plus on tolère
+			
+			if descent >= -tolerance:
+				# Bonus si on descend vraiment
+				var score = descent
+				# Bonus si on se rapproche de l'eau (approximation par élévation basse)
+				if elev < current_elev:
+					score += 10
+				# Petit bonus aléatoire pour les méandres
+				var coords = get_cylindrical_coords(nx, ny)
+				var meander = meander_noise.get_noise_3d(coords.x, coords.y, coords.z)
+				score += meander * 5
+				
+				candidates.append({
+					"dir": dir, 
+					"elev": elev, 
+					"descent": descent, 
+					"score": score,
+					"nx": nx, 
+					"ny": ny
+				})
 		
-		if found_water:
-			# Dessiner jusqu'à l'eau
-			x = wrap_x(x + best_dir.x)
-			y = y + best_dir.y
+		# Si on a trouvé l'océan, y aller directement
+		if ocean_candidate != null:
+			x = ocean_candidate.nx
+			y = ocean_candidate.ny
 			img.set_pixel(x, y, river_color)
 			break
 		
-		# Si pas de descente possible, ajouter du méandre
-		if best_dir == Vector2i(0, 0):
-			var coords = get_cylindrical_coords(x, y)
-			var meander = meander_noise.get_noise_3d(coords.x, coords.y, coords.z + step * 0.1)
-			
-			# Direction aléatoire avec préférence vers le bas (équateur ou pôles selon position)
-			if meander > 0.3:
-				best_dir = Vector2i(1, 0)
-			elif meander < -0.3:
-				best_dir = Vector2i(-1, 0)
-			else:
-				best_dir = Vector2i(0, 1 if y < height / 2 else -1)
+		# Si aucun candidat, créer un lac et arrêter
+		if candidates.size() == 0:
+			img.set_pixel(x, y, get_lake_color(temp))
+			break
 		
-		# Appliquer le mouvement
+		# Trier par score (meilleure descente + méandres)
+		candidates.sort_custom(func(a, b): return a.score > b.score)
+		
+		# =====================================================================
+		# Bifurcation (création d'affluents)
+		# =====================================================================
+		if candidates.size() >= 2 and step > 5 and randf() < split_chance:
+			# Créer un affluent vers la 2ème meilleure direction
+			var tributary_source = {
+				"x": candidates[1].nx,
+				"y": candidates[1].ny,
+				"river_size": 0,  # Toujours un affluent
+				"temperature": temp,
+				"precipitation": precipitation * 0.6,
+				"elevation": candidates[1].elev
+			}
+			# Tracer l'affluent (récursif mais avec moins de potentiel)
+			trace_tributary(img, tributary_source, meander_noise, height, visited.duplicate())
+		
+		# Choisir la direction principale
+		var best = candidates[0]
+		
+		# Parfois prendre une direction alternative pour les méandres
+		if candidates.size() > 1 and randf() < 0.15 and abs(candidates[0].score - candidates[1].score) < 20:
+			best = candidates[1]
+		
+		x = best.nx
+		y = best.ny
+
+
+func trace_tributary(img: Image, source: Dictionary, meander_noise: FastNoiseLite, height: int, parent_visited: Dictionary) -> void:
+	# Trace un affluent (version simplifiée, moins longue, pas de sous-bifurcations)
+	var x = source.x
+	var y = source.y
+	var _temp = source.temperature
+	
+	var river_color = get_river_color_by_size(0)  # Couleur affluent
+	var visited = parent_visited  # Hérite des pixels visités du parent
+	var max_steps = 100  # Affluents plus courts
+	var steps_since_descent = 0
+	var last_elevation = source.elevation
+	
+	for step in range(max_steps):
+		if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
+			break
+		
+		var key = str(x) + "_" + str(y)
+		if visited.has(key):
+			break
+		visited[key] = true
+		
+		# Ne pas écraser une rivière existante (on rejoint)
+		if img.get_pixel(x, y) != Color.hex(0x00000000):
+			break
+		
+		img.set_pixel(x, y, river_color)
+		
+		var current_elev = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+		
+		if current_elev < last_elevation:
+			steps_since_descent = 0
+		else:
+			steps_since_descent += 1
+		last_elevation = current_elev
+		
+		if steps_since_descent > 20:
+			break
+		
+		# Chercher la direction de descente
+		var directions = [
+			Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0),
+			Vector2i(-1, -1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(1, 1)
+		]
+		
+		var best_dir = Vector2i(0, 0)
+		var best_score = -99999
+		
+		for dir in directions:
+			var nx = wrap_x(x + dir.x)
+			var ny = y + dir.y
+			
+			if ny < 0 or ny >= height:
+				continue
+			
+			var nkey = str(nx) + "_" + str(ny)
+			if visited.has(nkey):
+				continue
+			
+			# Rejoindre une rivière existante = bonus énorme
+			if img.get_pixel(nx, ny) != Color.hex(0x00000000):
+				best_dir = dir
+				best_score = 99999
+				break
+			
+			if self.water_map.get_pixel(nx, ny) == Color.hex(0xFFFFFFFF):
+				best_dir = dir
+				best_score = 99999
+				break
+			
+			var elev = Enum.getElevationViaColor(self.elevation_map.get_pixel(nx, ny))
+			var descent = current_elev - elev
+			
+			if descent >= -10:  # Tolérance limitée pour affluents
+				var score = descent
+				var coords = get_cylindrical_coords(nx, ny)
+				score += meander_noise.get_noise_3d(coords.x, coords.y, coords.z) * 3
+				
+				if score > best_score:
+					best_score = score
+					best_dir = dir
+		
+		if best_dir == Vector2i(0, 0):
+			break
+		
 		x = wrap_x(x + best_dir.x)
 		y = clamp(y + best_dir.y, 0, height - 1)
+
+
+func get_river_color_by_size(size: int) -> Color:
+	# Retourne la couleur selon la taille et le type de planète
+	match self.atmosphere_type:
+		1:  # Toxique
+			match size:
+				0: return Color.hex(0x7ADB79FF)  # Affluent toxique
+				1: return Color.hex(0x5BC45AFF)  # Rivière acide
+				2: return Color.hex(0x48B847FF)  # Fleuve toxique
+		2:  # Volcanique
+			match size:
+				0: return Color.hex(0xFF8533FF)  # Affluent de lave
+				1: return Color.hex(0xFF6B1AFF)  # Rivière de lave
+				2: return Color.hex(0xE85A0FFF)  # Fleuve de magma
+		4:  # Mort
+			match size:
+				0: return Color.hex(0x6A8A6BFF)  # Affluent pollué
+				1: return Color.hex(0x5A7A5BFF)  # Rivière stagnante
+				2: return Color.hex(0x4A6A4BFF)  # Fleuve pollué
+		_:  # Défaut (0)
+			match size:
+				0: return Color.hex(0x6BAAE5FF)  # Affluent
+				1: return Color.hex(0x4A90D9FF)  # Rivière
+				2: return Color.hex(0x3E7FC4FF)  # Fleuve
+	return Color.hex(0x4A90D9FF)
+
+
+func get_lake_color(temp: float) -> Color:
+	# Retourne la couleur du lac selon la température et le type de planète
+	match self.atmosphere_type:
+		1:  # Toxique
+			if temp < 0:
+				return Color.hex(0xB8E6B7FF)  # Lac toxique gelé
+			return Color.hex(0x6ED96DFF)  # Lac d'acide
+		2:  # Volcanique
+			return Color.hex(0xFF9944FF)  # Lac de lave
+		4:  # Mort
+			return Color.hex(0x6B8B6CFF)  # Lac irradié
+		_:  # Défaut
+			if temp < 0:
+				return Color.hex(0xA8D4E6FF)  # Lac gelé
+			return Color.hex(0x5BA3E0FF)  # Lac d'eau douce
+
+
+func generate_lakes(img: Image, lake_noise: FastNoiseLite, height: int) -> void:
+	# Générer des lacs dans les zones appropriées
+	# Les lacs ne montent pas - ils restent à leur altitude initiale
+	
+	var lake_candidates : Array = []
+	
+	for x in range(0, self.circonference):
+		for y in range(0, height):
+			# Ignorer si déjà une rivière
+			if img.get_pixel(x, y) != Color.hex(0x00000000):
+				continue
+			
+			# Ignorer l'eau (océan)
+			if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
+				continue
+			
+			# Vérifier les précipitations
+			var precipitation = self.precipitation_map.get_pixel(x, y).r
+			if precipitation < 0.4:
+				continue
+			
+			# Vérifier la température
+			var temp = Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
+			
+			var coords = get_cylindrical_coords(x, y)
+			var lake_val = lake_noise.get_noise_3d(coords.x, coords.y, coords.z)
+			lake_val = 1.0 - abs(lake_val)
+			
+			if lake_val > 0.78:
+				var elevation = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+				lake_candidates.append({"x": x, "y": y, "elevation": elevation, "temp": temp})
+	
+	# Pour chaque lac potentiel, vérifier qu'il ne "monte" pas
+	# Un lac ne peut s'étendre que sur des pixels de même altitude ou plus bas
+	for candidate in lake_candidates:
+		var start_elev = candidate.elevation
 		
-		# Éviter les boucles infinies
-		if img.get_pixel(x, y) == river_color:
-			break
+		# Vérifier les voisins - un lac est valide si entouré de terrain >= son altitude
+		var is_valid_lake = true
+		for dx in range(-1, 2):
+			for dy in range(-1, 2):
+				if dx == 0 and dy == 0:
+					continue
+				var nx = wrap_x(candidate.x + dx)
+				var ny = candidate.y + dy
+				if ny < 0 or ny >= height:
+					continue
+				
+				# Si un voisin terrestre est plus bas, l'eau coulerait (pas un lac stable)
+				if self.water_map.get_pixel(nx, ny) != Color.hex(0xFFFFFFFF):
+					var neighbor_elev = Enum.getElevationViaColor(self.elevation_map.get_pixel(nx, ny))
+					if neighbor_elev < start_elev - 50:  # Tolérance de 50m
+						is_valid_lake = false
+						break
+			if not is_valid_lake:
+				break
+		
+		if is_valid_lake:
+			img.set_pixel(candidate.x, candidate.y, get_lake_color(candidate.temp))
 
 
 func generate_region_map() -> void:
@@ -897,73 +1208,112 @@ func temperature_calcul(img: Image, noise, noises, x : int, y : int) -> void:
 	
 	var coords = get_cylindrical_coords(x, y)
 	
-	# Grande variation régionale qui brise les bandes horizontales
-	# Ce bruit détermine les "zones climatiques" indépendamment de la latitude
+	# Bruit pour variations régionales
 	var climate_zone = noise.get_noise_3d(coords.x, coords.y, coords.z)
 	
-	# Température de base selon latitude (réduite pour laisser place aux variations)
-	# Équateur: avg_temp + 10, Pôles: avg_temp - 25
-	var latitude_influence = 0.6  # Réduit l'influence de la latitude
-	var base_lat_temp = self.avg_temperature + 10.0 * (1.0 - lat_normalized) - 25.0 * lat_normalized
-	base_lat_temp = self.avg_temperature + (base_lat_temp - self.avg_temperature) * latitude_influence
+	# =========================================================================
+	# MODÈLE DE TEMPÉRATURE BASÉ SUR LES DONNÉES TERRESTRES
+	# Ajusté pour éviter un froid excessif aux latitudes moyennes
+	# =========================================================================
 	
-	# Variations longitudinales fortes (crée des zones chaudes/froides sur la même latitude)
-	# C'est ce qui fait que le Sahara existe mais pas la jungle amazonienne = désert
-	var longitudinal_variation = climate_zone * 20.0
+	# Décalages par rapport à la moyenne planétaire
+	var equator_offset = 8.0    # Équateur: avg + 8°C
+	var pole_offset = 35.0      # Pôles: avg - 35°C (réduit de 45)
 	
-	# Deuxième couche de variation pour plus de diversité
-	var secondary_variation = noise2.get_noise_3d(coords.x, coords.y, coords.z) * 10.0
+	# Courbe avec transition plus douce - le froid intense n'arrive qu'aux vrais pôles
+	# pow(lat, 1.5) fait que le froid s'accentue surtout près des pôles
+	var lat_curve = pow(lat_normalized, 1.5)
 	
-	# Microclimats locaux
-	var local_variation = noise3.get_noise_3d(coords.x, coords.y, coords.z) * 6.0
+	# Température de base: équateur chaud, pôles froids
+	var base_temp = self.avg_temperature + equator_offset * (1.0 - lat_normalized) - pole_offset * lat_curve
 	
-	# Effet de l'altitude
+	# Variations longitudinales (±8°C - continentalité, courants océaniques)
+	var longitudinal_variation = climate_zone * 8.0
+	
+	# Variations secondaires (±5°C - masses d'air)
+	var secondary_variation = noise2.get_noise_3d(coords.x, coords.y, coords.z) * 5.0
+	
+	# Microclimats locaux (±3°C)
+	var local_variation = noise3.get_noise_3d(coords.x, coords.y, coords.z) * 3.0
+	
+	# =========================================================================
+	# EFFET DE L'ALTITUDE (-6.5°C / 1000m - gradient adiabatique)
+	# Ne s'applique PAS sur l'eau (océan/banquise)
+	# =========================================================================
 	var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
-	var altitude_temp = get_temperature_delta_from_altitude(elevation_val - self.water_elevation)
+	var is_water = self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
+	var altitude_temp = 0.0
 	
-	var temp = base_lat_temp + longitudinal_variation + secondary_variation + local_variation + altitude_temp
+	# L'altitude n'affecte que les terres émergées
+	if not is_water:
+		var altitude_above_sea = max(0.0, elevation_val - self.water_elevation)
+		altitude_temp = -6.5 * (altitude_above_sea / 1000.0)
+		
+		# Inversion thermique sous le niveau de la mer (terres sous niveau marin)
+		if elevation_val < self.water_elevation:
+			var depth_below_sea = self.water_elevation - elevation_val
+			altitude_temp = 2.0 * (depth_below_sea / 1000.0)
 	
-	# Effet modérateur des océans (températures moins extrêmes sur l'eau)
-	if self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
-		temp = temp * 0.6 + self.avg_temperature * 0.4
-		temp -= 2.0
+	var temp = base_temp + longitudinal_variation + secondary_variation + local_variation + altitude_temp
 	
-	if temp > 100 and self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
-		temp = 100.0
-
+	# =========================================================================
+	# EFFET MODÉRATEUR DES OCÉANS (inertie thermique de l'eau)
+	# Les océans modèrent les températures extrêmes
+	# =========================================================================
+	if is_water:
+		temp = temp * 0.8 + self.avg_temperature * 0.2
+	
+	temp = clamp(temp, -80.0, 60.0)  # Limites terrestres réalistes
 	var color = Enum.getTemperatureColor(temp)
-
 	img.set_pixel(x, y, color)
 
 
 func generate_biome_map() -> void:
-	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
+	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8)
 	
-	var noise = FastNoiseLite.new()
-	noise.seed = randi()
-	noise.noise_type = FastNoiseLite.TYPE_PERLIN
-	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.frequency = 1.0 / float(self.circonference)
-	noise.fractal_octaves = 4
-	noise.fractal_gain = 0.5
-	noise.fractal_lacunarity = 0.5
+	# Bruit principal pour sélectionner parmi les biomes valides de façon cohérente spatialement
+	var biome_noise = FastNoiseLite.new()
+	biome_noise.seed = randi()
+	biome_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	biome_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	biome_noise.frequency = 4.0 / float(self.circonference)  # Grande échelle pour zones homogènes
+	biome_noise.fractal_octaves = 3
+	biome_noise.fractal_gain = 0.4
+	biome_noise.fractal_lacunarity = 2.0
 	
-	var range = circonference / self.nb_thread
-	var threadArray = []
-	for i in range(0, self.nb_thread, 1):
-		var x1 = i * range
-		var x2 = self.circonference if i == (self.nb_thread - 1) else (i + 1) * range
-		var thread = Thread.new()
-		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noise, self, x1, x2, biome_calcul))
-
-	for thread in threadArray:
-		thread.wait_to_finish()
+	# Bruit de détail pour ajouter de l'irrégularité aux bordures
+	var detail_noise = FastNoiseLite.new()
+	detail_noise.seed = randi()
+	detail_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	detail_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	detail_noise.frequency = 25.0 / float(self.circonference)  # Échelle moyenne pour détails
+	detail_noise.fractal_octaves = 4
+	detail_noise.fractal_gain = 0.5
+	detail_noise.fractal_lacunarity = 2.0
+	
+	var width = self.circonference
+	var height = int(self.circonference / 2)
+	
+	# Première passe : génération initiale des biomes
+	for x in range(width):
+		for y in range(height):
+			biome_calcul_initial(img, biome_noise, x, y)
+	
+	# Deuxième passe : lissage pour homogénéiser
+	smooth_biome_map(img, width, height)
+	
+	# Troisième passe : ajouter de l'irrégularité aux bordures
+	add_border_irregularity(img, detail_noise, width, height)
+	
+	# Appliquer les couleurs finales
+	for x in range(width):
+		for y in range(height):
+			apply_final_colors(img, x, y)
 
 	self.addProgress(25)
 	self.biome_map = img
 
-func biome_calcul(img: Image, _noise, generator, x : int, y : int) -> void:
+func biome_calcul_initial(img: Image, noise: FastNoiseLite, x: int, y: int) -> void:
 	var elevation_val     = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
 	var precipitation_val = self.precipitation_map.get_pixel(x, y).r
 	var temperature_val   = Enum.getTemperatureViaColor(self.temperature_map.get_pixel(x, y))
@@ -974,18 +1324,124 @@ func biome_calcul(img: Image, _noise, generator, x : int, y : int) -> void:
 	if self.banquise_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF):
 		biome = Enum.getBanquiseBiome(self.atmosphere_type)
 	elif is_river:
-		# Biome rivière/lac basé sur la température
 		biome = Enum.getRiverBiome(temperature_val, precipitation_val, self.atmosphere_type)
 	else:
-		biome = Enum.getBiome(self.atmosphere_type, elevation_val, precipitation_val, temperature_val, is_water, img, x, y, generator)
-
-	var elevation_color = Enum.getElevationColor(elevation_val, true)
-	var color_final = elevation_color * biome.get_couleur_vegetation()
-	color_final.a = 1.0
+		# Utiliser le bruit pour choisir de façon déterministe parmi les biomes valides
+		var noise_val = (noise.get_noise_2d(float(x), float(y)) + 1.0) / 2.0  # 0 à 1
+		biome = Enum.getBiomeByNoise(self.atmosphere_type, elevation_val, precipitation_val, temperature_val, is_water, noise_val)
 
 	img.set_pixel(x, y, biome.get_couleur())
-	self.final_map.set_pixel(x, y, color_final)
 
+func smooth_biome_map(img: Image, width: int, height: int) -> void:
+	# Créer une copie pour lire pendant qu'on écrit
+	var temp_img = img.duplicate()
+	
+	# Nombre de passes de lissage
+	for _pass in range(2):
+		for x in range(width):
+			for y in range(height):
+				var current_color = temp_img.get_pixel(x, y)
+				var current_biome = Enum.getBiomeByColor(current_color)
+				
+				# Ne pas lisser les biomes spéciaux (banquise, rivières)
+				if current_biome != null and (current_biome.get_river_lake_only() or current_biome.get_nom() == "Banquise" or current_biome.get_nom().begins_with("Banquise")):
+					continue
+				
+				# Compter les voisins
+				var neighbor_counts = {}
+				for dx in range(-1, 2):
+					for dy in range(-1, 2):
+						if dx == 0 and dy == 0:
+							continue
+						var nx = posmod(x + dx, width)
+						var ny = clampi(y + dy, 0, height - 1)
+						var n_color = temp_img.get_pixel(nx, ny)
+						var key = n_color.to_html()
+						if key in neighbor_counts:
+							neighbor_counts[key] += 1
+						else:
+							neighbor_counts[key] = 1
+				
+				# Trouver le biome voisin le plus fréquent
+				var max_count = 0
+				var best_color = current_color
+				for color_key in neighbor_counts:
+					if neighbor_counts[color_key] > max_count:
+						max_count = neighbor_counts[color_key]
+						best_color = Color.html(color_key)
+				
+				# Si >= 5 voisins ont le même biome, adopter ce biome
+				if max_count >= 5:
+					var best_biome = Enum.getBiomeByColor(best_color)
+					# Vérifier que le biome est compatible avec les conditions locales
+					if best_biome != null and not best_biome.get_river_lake_only():
+						img.set_pixel(x, y, best_color)
+		
+		# Mettre à jour temp_img pour la prochaine passe
+		temp_img = img.duplicate()
+
+func add_border_irregularity(img: Image, noise: FastNoiseLite, width: int, height: int) -> void:
+	# Ajoute de l'irrégularité aux bordures entre biomes
+	var temp_img = img.duplicate()
+	
+	for x in range(width):
+		for y in range(height):
+			var current_color = temp_img.get_pixel(x, y)
+			var current_biome = Enum.getBiomeByColor(current_color)
+			
+			# Ne pas modifier les biomes spéciaux
+			if current_biome != null and (current_biome.get_river_lake_only() or current_biome.get_nom().begins_with("Banquise")):
+				continue
+			
+			# Vérifier si on est près d'une bordure (voisins différents)
+			var is_border = false
+			var neighbor_biomes = []
+			for dx in range(-1, 2):
+				for dy in range(-1, 2):
+					if dx == 0 and dy == 0:
+						continue
+					var nx = posmod(x + dx, width)
+					var ny = clampi(y + dy, 0, height - 1)
+					var n_color = temp_img.get_pixel(nx, ny)
+					if n_color != current_color:
+						is_border = true
+						var n_biome = Enum.getBiomeByColor(n_color)
+						if n_biome != null and not n_biome.get_river_lake_only():
+							neighbor_biomes.append(n_color)
+			
+			# Si on est sur une bordure, utiliser le bruit pour décider si on change
+			if is_border and neighbor_biomes.size() > 0:
+				var noise_val = noise.get_noise_2d(float(x), float(y))
+				# 15% de chance de changer vers un biome voisin basé sur le bruit
+				if noise_val > 0.4:
+					# Choisir un biome voisin basé sur le bruit
+					var index = int((noise_val + 1.0) / 2.0 * neighbor_biomes.size()) % neighbor_biomes.size()
+					img.set_pixel(x, y, neighbor_biomes[index])
+
+func apply_final_colors(img: Image, x: int, y: int) -> void:
+	var biome_color = img.get_pixel(x, y)
+	var biome = Enum.getBiomeByColor(biome_color)
+	
+	if biome != null:
+		var biome_nom = biome.get_nom()
+		var is_banquise = biome_nom.begins_with("Banquise") or biome_nom.find("Refroidis") != -1
+		
+		var color_final : Color
+		if is_banquise:
+			# Banquise uniquement : pas d'effet d'élévation
+			color_final = biome.get_couleur_vegetation()
+		else:
+			# Tout le reste (océans, terres) : appliquer l'élévation
+			var elevation_val = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+			var elevation_color = Enum.getElevationColor(elevation_val, true)
+			color_final = elevation_color * biome.get_couleur_vegetation()
+		
+		color_final.a = 1.0
+		self.final_map.set_pixel(x, y, color_final)
+
+func biome_calcul(_img: Image, _noise, _generator, _x : int, _y : int) -> void:
+	# Fonction obsolète, gardée pour compatibilité
+	pass
 
 func thread_calcul(img: Image, noise: FastNoiseLite, misc_value , x1: int, x2: int, function : Callable) -> void:
 	for x in range(x1, x2):
