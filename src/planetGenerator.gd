@@ -76,10 +76,6 @@ func generate_planet():
 
 	thread_final.wait_to_finish()
 
-	print("\nGénération de la carte du pétrole\n")
-	var thread_oil = Thread.new()
-	thread_oil.start(generate_oil_map)
-
 	print("\nGénération de la carte des nuages\n")
 	var thread_nuage = Thread.new()
 	thread_nuage.start(generate_nuage_map)
@@ -100,6 +96,11 @@ func generate_planet():
 
 	thread_precipitation.wait_to_finish()
 	thread_water.wait_to_finish()
+
+	# Génération du pétrole APRÈS elevation_map et water_map (dépendances)
+	print("\nGénération de la carte du pétrole\n")
+	var thread_oil = Thread.new()
+	thread_oil.start(generate_oil_map)
 
 	# Génération des ressources APRÈS water_map pour éviter les ressources dans l'eau
 	print("\nGénération de la carte des ressources\n")
@@ -369,14 +370,35 @@ func generate_oil_map() -> void:
 
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8)
 
-	var noise = FastNoiseLite.new()
-	noise.seed = randi()
-	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.frequency = 3.0 / float(self.circonference)
-	noise.fractal_octaves = 9
-	noise.fractal_gain = 0.85
-	noise.fractal_lacunarity = 4.0
+	# Bruit principal pour les bassins sédimentaires (grandes structures géologiques)
+	var noise_basin = FastNoiseLite.new()
+	noise_basin.seed = randi()
+	noise_basin.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise_basin.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise_basin.frequency = 1.0 / float(self.circonference)
+	noise_basin.fractal_octaves = 5
+	noise_basin.fractal_gain = 0.5
+	noise_basin.fractal_lacunarity = 2.0
+
+	# Bruit pour les gisements locaux (poches de pétrole)
+	var noise_deposit = FastNoiseLite.new()
+	noise_deposit.seed = randi()
+	noise_deposit.noise_type = FastNoiseLite.TYPE_CELLULAR
+	noise_deposit.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise_deposit.frequency = 5.0 / float(self.circonference)
+	noise_deposit.fractal_octaves = 4
+	noise_deposit.fractal_gain = 0.6
+	noise_deposit.fractal_lacunarity = 2.5
+	noise_deposit.cellular_distance_function = FastNoiseLite.DISTANCE_EUCLIDEAN
+	noise_deposit.cellular_return_type = FastNoiseLite.RETURN_DISTANCE2
+
+	# Bruit pour les failles géologiques (où le pétrole peut s'accumuler)
+	var noise_fault = FastNoiseLite.new()
+	noise_fault.seed = randi()
+	noise_fault.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise_fault.frequency = 2.5 / float(self.circonference)
+	noise_fault.fractal_octaves = 3
+	noise_fault.fractal_gain = 0.4
 
 	var range = circonference / (self.nb_thread / 2)
 	var threadArray = []
@@ -385,22 +407,79 @@ func generate_oil_map() -> void:
 		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
 		var thread = Thread.new()
 		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noise, self.atmosphere_type != 3, x1, x2, oil_calcul))
+		thread.start(thread_calcul.bind(img, noise_basin, [noise_deposit, noise_fault, self.atmosphere_type != 3], x1, x2, oil_calcul))
 	for thread in threadArray:
 		thread.wait_to_finish()
 
 	self.addProgress(5)
 	self.oil_map = img
 
-func oil_calcul(img: Image, noise, noise2, x : int, y : int) -> void:
-	var coords = get_cylindrical_coords(x, y)
-	var value = noise.get_noise_3d(coords.x, coords.y, coords.z)
-	value = clamp(value, 0.0, 1.0)
-
-	if value > 0.25 and noise2:
-		img.set_pixel(x, y, Color.hex(0x000000FF))
-	else:
+func oil_calcul(img: Image, noise_basin, noises, x : int, y : int) -> void:
+	var noise_deposit = noises[0]
+	var noise_fault = noises[1]
+	var has_atmosphere = noises[2]
+	
+	# Pas de pétrole sans atmosphère (pas de vie organique historique)
+	if not has_atmosphere:
 		img.set_pixel(x, y, Color.hex(0xFFFFFFFF))
+		return
+	
+	var coords = get_cylindrical_coords(x, y)
+	var height = self.circonference / 2
+	
+	# Obtenir l'élévation - le pétrole se forme dans les bassins sédimentaires
+	var elevation = Enum.getElevationViaColor(self.elevation_map.get_pixel(x, y))
+	var is_water = self.water_map.get_pixel(x, y) == Color.hex(0xFFFFFFFF)
+	
+	# Facteur d'élévation - le pétrole est plus probable:
+	# - Sous les océans peu profonds (plateaux continentaux)
+	# - Dans les basses terres et bassins
+	# - Moins probable en haute montagne
+	var elevation_factor : float
+	if is_water:
+		# Sous l'eau: plus probable près des côtes (plateaux continentaux)
+		var depth = self.water_elevation - elevation
+		if depth < 500:  # Plateau continental
+			elevation_factor = 0.9
+		elif depth < 2000:  # Pente continentale
+			elevation_factor = 0.5
+		else:  # Plaine abyssale - moins de sédiments organiques
+			elevation_factor = 0.2
+	else:
+		# Sur terre: bassins et plaines sont favorables
+		var alt_above_water = elevation - self.water_elevation
+		if alt_above_water < 200:  # Plaines côtières
+			elevation_factor = 0.85
+		elif alt_above_water < 500:  # Plaines
+			elevation_factor = 0.7
+		elif alt_above_water < 1500:  # Collines
+			elevation_factor = 0.4
+		else:  # Montagnes
+			elevation_factor = 0.1
+	
+	# Bruit de bassin sédimentaire (grandes zones)
+	var basin_value = noise_basin.get_noise_3d(coords.x, coords.y, coords.z)
+	basin_value = (basin_value + 1.0) / 2.0
+	
+	# Bruit de gisement (poches locales)
+	var deposit_value = noise_deposit.get_noise_3d(coords.x, coords.y, coords.z)
+	deposit_value = (deposit_value + 1.0) / 2.0
+	
+	# Bruit de faille géologique (accumulation le long des failles)
+	var fault_value = abs(noise_fault.get_noise_3d(coords.x, coords.y, coords.z))
+	var fault_bonus = 0.0
+	if fault_value > 0.4 and fault_value < 0.6:  # Près d'une faille
+		fault_bonus = 0.3 * (1.0 - abs(fault_value - 0.5) * 5.0)
+	
+	# Combiner tous les facteurs
+	var oil_probability = basin_value * 0.4 + deposit_value * 0.3 + fault_bonus
+	oil_probability = oil_probability * elevation_factor
+	
+	# Seuil pour déterminer la présence de pétrole
+	if oil_probability > 0.35:
+		img.set_pixel(x, y, Color.hex(0x000000FF))  # Pétrole présent
+	else:
+		img.set_pixel(x, y, Color.hex(0xFFFFFFFF))  # Pas de pétrole
 
 
 func generate_banquise_map() -> void:
@@ -438,14 +517,33 @@ func generate_precipitation_map() -> void:
 
 	var img = Image.create(self.circonference, self.circonference / 2, false, Image.FORMAT_RGBA8 )
 
-	var noise = FastNoiseLite.new()
-	noise.seed = randi()
-	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.frequency = 2.0 / float(self.circonference)
-	noise.fractal_octaves = 9
-	noise.fractal_gain = 0.85
-	noise.fractal_lacunarity = 4.0
+	# Bruit principal - grandes masses d'air humides/sèches
+	var noise_main = FastNoiseLite.new()
+	noise_main.seed = randi()
+	noise_main.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise_main.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise_main.frequency = 2.5 / float(self.circonference)
+	noise_main.fractal_octaves = 6
+	noise_main.fractal_gain = 0.55
+	noise_main.fractal_lacunarity = 2.0
+
+	# Bruit de détail pour les variations locales
+	var noise_detail = FastNoiseLite.new()
+	noise_detail.seed = randi()
+	noise_detail.noise_type = FastNoiseLite.TYPE_PERLIN
+	noise_detail.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise_detail.frequency = 6.0 / float(self.circonference)
+	noise_detail.fractal_octaves = 4
+	noise_detail.fractal_gain = 0.5
+	noise_detail.fractal_lacunarity = 2.0
+
+	# Bruit cellulaire pour créer des zones de pluie irrégulières
+	var noise_cells = FastNoiseLite.new()
+	noise_cells.seed = randi()
+	noise_cells.noise_type = FastNoiseLite.TYPE_CELLULAR
+	noise_cells.frequency = 4.0 / float(self.circonference)
+	noise_cells.cellular_distance_function = FastNoiseLite.DISTANCE_EUCLIDEAN
+	noise_cells.cellular_return_type = FastNoiseLite.RETURN_DISTANCE
 
 	var range = circonference / (self.nb_thread / 2)
 	var threadArray = []
@@ -454,7 +552,7 @@ func generate_precipitation_map() -> void:
 		var x2 = self.circonference if i == ((self.nb_thread / 2) - 1) else (i + 1) * range
 		var thread = Thread.new()
 		threadArray.append(thread)
-		thread.start(thread_calcul.bind(img, noise, noise, x1, x2, precipitation_calcul))
+		thread.start(thread_calcul.bind(img, noise_main, [noise_detail, noise_cells], x1, x2, precipitation_calcul))
 	
 	for thread in threadArray:
 		thread.wait_to_finish()
@@ -462,10 +560,53 @@ func generate_precipitation_map() -> void:
 	self.addProgress(10)
 	self.precipitation_map = img
 
-func precipitation_calcul(img: Image, noise, _noise2, x : int,y : int) -> void:
+func precipitation_calcul(img: Image, noise_main, noises, x : int, y : int) -> void:
 	var coords = get_cylindrical_coords(x, y)
-	var value = noise.get_noise_3d(coords.x, coords.y, coords.z)
-	value = clamp((value + self.avg_precipitation * value / 2.0), 0.0, 1.0)
+	var noise_detail = noises[0]
+	var noise_cells = noises[1]
+	
+	var height = self.circonference / 2
+	
+	# Latitude normalisée (0 à l'équateur, 1 aux pôles)
+	var latitude = abs((float(y) / float(height)) - 0.5) * 2.0
+	
+	# Bruit principal - zones de haute/basse pression atmosphérique
+	var main_value = noise_main.get_noise_3d(coords.x, coords.y, coords.z)
+	main_value = (main_value + 1.0) / 2.0
+	
+	# Bruit de détail
+	var detail_value = noise_detail.get_noise_3d(coords.x, coords.y, coords.z)
+	detail_value = (detail_value + 1.0) / 2.0
+	
+	# Bruit cellulaire pour créer des fronts météo
+	var cell_value = noise_cells.get_noise_3d(coords.x, coords.y, coords.z)
+	cell_value = (cell_value + 1.0) / 2.0
+	
+	# Combiner les bruits de manière organique
+	var base_precip = main_value * 0.6 + detail_value * 0.25 + cell_value * 0.15
+	
+	# Légère influence de la latitude (moins prononcée pour éviter les bandes)
+	# Équateur légèrement plus humide, subtropiques légèrement plus secs
+	var lat_influence = 1.0
+	if latitude < 0.2:
+		# Zone équatoriale - un peu plus humide
+		lat_influence = 1.0 + 0.15 * (1.0 - latitude / 0.2)
+	elif latitude > 0.25 and latitude < 0.4:
+		# Zone subtropicale - un peu plus sèche
+		var t = (latitude - 0.25) / 0.15
+		lat_influence = 1.0 - 0.2 * sin(t * PI)
+	elif latitude > 0.85:
+		# Pôles - plus secs
+		lat_influence = 1.0 - 0.3 * (latitude - 0.85) / 0.15
+	
+	# Appliquer l'influence de latitude de manière subtile
+	var value = base_precip * lat_influence
+	
+	# Appliquer le modificateur global de précipitation
+	value = value * (0.4 + self.avg_precipitation * 0.6)
+	
+	# Clamper le résultat
+	value = clamp(value, 0.0, 1.0)
 
 	img.set_pixel(x, y, Enum.getPrecipitationColor(value))
 
