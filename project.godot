@@ -18,7 +18,7 @@ config/name_localized={
 }
 config/description="Application de génération de carte planétaire
 "
-config/version="v1.5.0"
+config/version="v1.5.1"
 config/tags=PackedStringArray("generation_procedurale", "logiciel", "pixel")
 run/main_scene="res://data/scn/master.tscn"
 config/features=PackedStringArray("4.5", "Forward Plus")
@@ -37,7 +37,7 @@ Enum="*res://src/enum.gd"
 window/size/viewport_width=1600
 window/size/viewport_height=900
 window/size/resizable=false
-window/size/sharp_corners=true
+window/size/maximize_disabled=true
 
 [internationalization]
 
