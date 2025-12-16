@@ -31,6 +31,7 @@ config/windows_native_icon="res://icon.ico"
 [autoload]
 
 Enum="*res://src/enum.gd"
+GpuContext="*res://src/classes/classes_gpu/gpu_context.gd"
 
 [display]
 

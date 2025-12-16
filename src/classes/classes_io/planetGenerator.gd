@@ -149,8 +149,10 @@ func generate_planet():
 	"""
 	
 	if use_gpu_acceleration and gpu_orchestrator:
+		print("[PlanetGenerator] Starting GPU generation...")
 		generate_planet_gpu()
 	else:
+		print("[PlanetGenerator] Starting CPU generation...")
 		generate_planet_cpu()
 
 # ============================================================================

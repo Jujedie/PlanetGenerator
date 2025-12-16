@@ -15,6 +15,7 @@ var langue: String = "fr"
 var planet_mesh_gen: PlanetMeshGenerator = null
 var camera_3d: Camera3D = null
 var viewport_3d: SubViewport = null
+var light: DirectionalLight3D = null  # Added class member
 var is_3d_mode: bool = false
 
 # --- Constants ---
@@ -63,12 +64,11 @@ func _setup_3d_viewport() -> void:
 	var viewport_container = $Node2D/Control/SubViewportContainer
 	var existing_viewport = viewport_container.get_child(0)
 	
-	# Create new 3D viewport (disabled initially)
+	# Create new 3D viewport (not added to container yet)
 	viewport_3d = SubViewport.new()
 	viewport_3d.size = existing_viewport.size
-	viewport_3d.render_target_update_mode = SubViewport.UPDATE_DISABLED  # Changé de UPDATE_ALWAYS et visible=false
-	viewport_3d.handle_input_locally = false # Let parent handle input
-	viewport_container.add_child(viewport_3d)
+	viewport_3d.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	viewport_3d.handle_input_locally = false
 	
 	# Create 3D World
 	var world_3d = World3D.new()
@@ -77,26 +77,24 @@ func _setup_3d_viewport() -> void:
 	# Add Planet Mesh Generator node
 	planet_mesh_gen = PlanetMeshGenerator.new()
 	viewport_3d.add_child(planet_mesh_gen)
-	planet_mesh_gen.generate_sphere(128) # High resolution sphere
+	planet_mesh_gen.generate_sphere(128)
 	
 	# Setup Camera
 	camera_3d = Camera3D.new()
 	viewport_3d.add_child(camera_3d)
 	camera_3d.position = Vector3(0, 0, 2.5)
-	camera_3d.look_at(Vector3.ZERO)
 	camera_3d.fov = 45
 	
 	# Add Lighting
-	var light = DirectionalLight3D.new()
+	light = DirectionalLight3D.new()  # Assigned to member
 	viewport_3d.add_child(light)
 	light.position = Vector3(2, 2, 2)
-	light.look_at(Vector3.ZERO)
 	light.light_energy = 1.2
 	
 	# Add Environment
 	var env = Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.02, 0.02, 0.05) # Space dark blue
+	env.background_color = Color(0.02, 0.02, 0.05)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.1, 0.1, 0.1)
 	
@@ -149,14 +147,23 @@ func toggle_3d_mode() -> void:
 	is_3d_mode = !is_3d_mode
 	
 	var viewport_container = $Node2D/Control/SubViewportContainer
-	var viewport_2d = viewport_container.get_child(0) # The original SubViewport
+	var viewport_2d = viewport_container.get_child(0) if viewport_container.get_child_count() > 0 else null
 	
 	if is_3d_mode:
-		viewport_2d.render_target_update_mode = SubViewport.UPDATE_DISABLED  # Remplace visible = false
-		viewport_3d.render_target_update_mode = SubViewport.UPDATE_ALWAYS   # Remplace visible = true
+		if viewport_2d:
+			viewport_container.remove_child(viewport_2d)
+		viewport_container.add_child(viewport_3d)
+		viewport_3d.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		# Added look_at calls after adding to tree
+		if camera_3d:
+			camera_3d.look_at_from_position(camera_3d.position, Vector3.ZERO)
+		if light:
+			light.look_at_from_position(light.position, Vector3.ZERO)
 	else:
-		viewport_2d.render_target_update_mode = SubViewport.UPDATE_ALWAYS   # Remplace visible = true
-		viewport_3d.render_target_update_mode = SubViewport.UPDATE_DISABLED # Remplace visible = false
+		viewport_container.remove_child(viewport_3d)
+		if viewport_2d:
+			viewport_container.add_child(viewport_2d)
+		viewport_3d.render_target_update_mode = SubViewport.UPDATE_DISABLED
 
 # ============================================================================
 # GENERATION LOGIC

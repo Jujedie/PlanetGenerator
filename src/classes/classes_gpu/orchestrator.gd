@@ -56,7 +56,8 @@ func _init_textures():
 	fmt.usage_bits = (
 		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
 		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
-		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT  # Added for texture_update()
 	)
 	
 	geo_state_texture = rd.texture_create(fmt, RDTextureView.new())
@@ -85,16 +86,22 @@ func _clear_texture(texture_rid: RID):
 
 func _init_pipelines():
 	# Pipeline Tectonique (existant)
-	var tectonic_shader = gpu.load_compute_shader("res://shader/compute/tectonic_shader.glsl")
-	tectonic_pipeline = rd.compute_pipeline_create(tectonic_shader)
+	if gpu.load_compute_shader("res://shader/compute/tectonic_shader.glsl", "tectonic"):
+		tectonic_pipeline = rd.compute_pipeline_create(gpu.shaders["tectonic"])
+	else:
+		push_error("Échec chargement shader tectonic")
 	
 	# Pipeline Atmosphérique (existant)
-	var atmosphere_shader = gpu.load_compute_shader("res://shader/compute/atmosphere_shader.glsl")
-	atmosphere_pipeline = rd.compute_pipeline_create(atmosphere_shader)
+	if gpu.load_compute_shader("res://shader/compute/atmosphere_shader.glsl", "atmosphere"):
+		atmosphere_pipeline = rd.compute_pipeline_create(gpu.shaders["atmosphere"])
+	else:
+		push_error("Échec chargement shader atmosphere")
 	
 	# === NOUVEAU PIPELINE : ÉROSION HYDRAULIQUE ===
-	var erosion_shader = gpu.load_compute_shader("res://shader/compute/hydraulic_erosion.glsl")
-	erosion_pipeline = rd.compute_pipeline_create(erosion_shader)
+	if gpu.load_compute_shader("res://shader/compute/hydraulic_erosion_shader.glsl", "erosion"):  # Reverted to match file name
+		erosion_pipeline = rd.compute_pipeline_create(gpu.shaders["erosion"])
+	else:
+		push_error("Échec chargement shader erosion")
 	
 	print("[Orchestrator] Pipelines créés (Tectonic, Atmosphere, Erosion)")
 
