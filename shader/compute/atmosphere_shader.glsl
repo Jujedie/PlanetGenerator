@@ -49,8 +49,8 @@ vec2 apply_coriolis(vec2 velocity, float latitude) {
 }
 
 // === ADVECTION SEMI-LAGRANGIENNE ===
-// Remonte le flux pour lire la valeur "amont"
-vec4 advect(image2D source, vec2 uv, vec2 velocity) {
+// Corrected: Removed the 'image2D' parameter. Accesses global variable directly.
+vec4 advect(vec2 uv, vec2 velocity) {
     vec2 back_uv = uv - velocity * params.delta_time;
     
     // Wrapping horizontal
@@ -58,7 +58,7 @@ vec4 advect(image2D source, vec2 uv, vec2 velocity) {
     back_uv.y = clamp(back_uv.y, 0.0, 1.0);
     
     ivec2 back_pixel = ivec2(back_uv * vec2(RESOLUTION));
-    return imageLoad(source, wrap_coords(back_pixel));
+    return imageLoad(atmospheric_state_in, wrap_coords(back_pixel));
 }
 
 void main() {
@@ -106,7 +106,8 @@ void main() {
     wind = apply_coriolis(wind, latitude);
     
     // === 5. ADVECTION HUMIDITÉ ===
-    vec4 advected = advect(atmospheric_state_in, uv, wind);
+    // Corrected call: removed the first argument
+    vec4 advected = advect(uv, wind);
     humidity = advected.g;
     
     // === 6. OROGRAPHIC LIFT (RELIEF + VENT = PLUIE) ===

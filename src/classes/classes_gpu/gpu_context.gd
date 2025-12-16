@@ -43,6 +43,13 @@ func _ready() -> void:
 	_load_shaders()
 	print("✓ GPUContext initialisé: %dx%d" % [RESOLUTION_WIDTH, RESOLUTION_HEIGHT])
 
+func get_vram_usage() -> String:
+    var total_bytes = 0
+    for tex_id in textures:
+        total_bytes += 2048 * 1024 * 16  # RGBAF32 = 16 bytes/pixel
+    
+    return "VRAM: %.2f MB" % (total_bytes / 1024.0 / 1024.0)
+
 # === CRÉATION DES TEXTURES ===
 func _initialize_textures() -> void:
 	var format := RDTextureFormat.new()

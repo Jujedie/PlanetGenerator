@@ -1,4 +1,3 @@
-#[compute]
 #version 450
 
 // Taille des groupes de threads (standard 8x8 pour les textures)
