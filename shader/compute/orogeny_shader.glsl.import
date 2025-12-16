@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://btqdrvmhypj2x"
+path="res://.godot/imported/orogeny_shader.glsl-50db1b67cfd94d0d176927fa724a72e7.res"
+
+[deps]
+
+source_file="res://shader/compute/orogeny_shader.glsl"
+dest_files=["res://.godot/imported/orogeny_shader.glsl-50db1b67cfd94d0d176927fa724a72e7.res"]
+
+[params]
+
