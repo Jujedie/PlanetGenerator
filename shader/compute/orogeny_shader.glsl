@@ -1,3 +1,4 @@
+#[compute]
 #version 450
 
 // Calcul des forces tectoniques: Convergence -> Montagnes, Divergence -> Rifts

@@ -1,3 +1,4 @@
+#[compute]
 #version 450
 
 // Simulation atmosphérique: Advection + Diffusion + Coriolis + Formation Nuages

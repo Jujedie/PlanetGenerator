@@ -1,3 +1,4 @@
+#[compute]
 #version 450
 
 // Jump Flooding Algorithm pour plaques tectoniques Voronoi

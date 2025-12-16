@@ -51,9 +51,10 @@ func _ready() -> void:
 	_setup_3d_viewport()
 	_create_ui_hints()
 
-	var planet_mesh = PlanetMeshGenerator.new()
-	add_child(planet_mesh)
-	$PlanetGenerator.set_3d_mesh_generator(planet_mesh)
+	# Créer planet_mesh ici, mais ne pas l'attacher encore (sera fait après génération)
+	planet_mesh_gen = PlanetMeshGenerator.new()
+	add_child(planet_mesh_gen)
+	planet_mesh_gen.generate_sphere(128)  # Générer la sphère une fois
 
 func _setup_3d_viewport() -> void:
 	"""
@@ -62,11 +63,10 @@ func _setup_3d_viewport() -> void:
 	var viewport_container = $Node2D/Control/SubViewportContainer
 	var existing_viewport = viewport_container.get_child(0)
 	
-	# Create new 3D viewport (hidden initially)
+	# Create new 3D viewport (disabled initially)
 	viewport_3d = SubViewport.new()
 	viewport_3d.size = existing_viewport.size
-	viewport_3d.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	viewport_3d.visible = false
+	viewport_3d.render_target_update_mode = SubViewport.UPDATE_DISABLED  # Changé de UPDATE_ALWAYS et visible=false
 	viewport_3d.handle_input_locally = false # Let parent handle input
 	viewport_container.add_child(viewport_3d)
 	
@@ -152,11 +152,11 @@ func toggle_3d_mode() -> void:
 	var viewport_2d = viewport_container.get_child(0) # The original SubViewport
 	
 	if is_3d_mode:
-		viewport_2d.visible = false
-		viewport_3d.visible = true
+		viewport_2d.render_target_update_mode = SubViewport.UPDATE_DISABLED  # Remplace visible = false
+		viewport_3d.render_target_update_mode = SubViewport.UPDATE_ALWAYS   # Remplace visible = true
 	else:
-		viewport_2d.visible = true
-		viewport_3d.visible = false
+		viewport_2d.render_target_update_mode = SubViewport.UPDATE_ALWAYS   # Remplace visible = true
+		viewport_3d.render_target_update_mode = SubViewport.UPDATE_DISABLED # Remplace visible = false
 
 # ============================================================================
 # GENERATION LOGIC
@@ -199,6 +199,9 @@ func _on_btn_comfirme_pressed() -> void:
 		lblMapStatus, 
 		sldNbCasesRegions.value
 	)
+
+	# Attacher le générateur de mesh 3D après création de planetGenerator
+	planetGenerator.set_3d_mesh_generator(planet_mesh_gen)
 
 	var echelle = 100.0 / sldRayonPlanetaire.value
 	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.scale = Vector2(echelle, echelle)
