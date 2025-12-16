@@ -51,6 +51,10 @@ func _ready() -> void:
 	_setup_3d_viewport()
 	_create_ui_hints()
 
+	var planet_mesh = PlanetMeshGenerator.new()
+	add_child(planet_mesh)
+	$PlanetGenerator.set_3d_mesh_generator(planet_mesh)
+
 func _setup_3d_viewport() -> void:
 	"""
 	Creates the 3D environment inside the existing container.

@@ -123,6 +123,87 @@ func _init_uniform_sets():
 # FONCTION PRINCIPALE : ÉROSION HYDRAULIQUE
 # ============================================================================
 
+func run_simulation(generation_params: Dictionary) -> void:
+	"""
+	Execute complete planet generation pipeline
+	
+	Args:
+		generation_params: Dictionary with keys:
+			- seed: int (random seed)
+			- planet_radius: float (km)
+			- avg_temperature: float (Celsius)
+			- sea_level: float (meters)
+			- avg_precipitation: float (0-1)
+			- elevation_modifier: float (terrain height multiplier)
+			- atmosphere_type: int (0=standard, 1=toxic, 2=volcanic, 3=dead, 4=no_atmo)
+			- nb_thread: int (CPU threads for hybrid operations)
+	"""
+	
+	print("[Orchestrator] Starting full simulation with params:")
+	print("  Seed: ", generation_params.get("seed", 0))
+	print("  Temperature: ", generation_params.get("avg_temperature", 15.0), "°C")
+	print("  Sea Level: ", generation_params.get("sea_level", 0.0), "m")
+	print("  Precipitation: ", generation_params.get("avg_precipitation", 0.5))
+	
+	# Phase 1: Initialize terrain with seed
+	_initialize_terrain(generation_params)
+	
+	# Phase 2: Run tectonics (if shaders ready)
+	# run_tectonic_simulation(generation_params)
+	
+	# Phase 3: Run atmospheric dynamics
+	# run_atmospheric_simulation(generation_params, 1000)
+	
+	# Phase 4: Run erosion
+	run_hydraulic_erosion(generation_params.get("erosion_iterations", 100), generation_params)
+
+func _initialize_terrain(params: Dictionary) -> void:
+	"""
+	Initialize geophysical texture with seed-based noise
+	This is a CPU-side initialization before GPU simulation
+	"""
+	
+	var seed_value = params.get("seed", 0)
+	var elevation_modifier = params.get("elevation_modifier", 0.0)
+	var sea_level = params.get("sea_level", 0.0)
+	
+	print("[Orchestrator] Initializing terrain (Seed: ", seed_value, ")")
+	
+	# Create initial noise-based terrain on CPU
+	var noise = FastNoiseLite.new()
+	noise.seed = seed_value
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise.frequency = 2.0 / float(resolution.x)
+	noise.fractal_octaves = 8
+	
+	var init_data = PackedFloat32Array()
+	init_data.resize(resolution.x * resolution.y * 4)
+	
+	for y in range(resolution.y):
+		for x in range(resolution.x):
+			var idx = (y * resolution.x + x) * 4
+			
+			# Generate height using noise
+			var nx = float(x) / float(resolution.x)
+			var ny = float(y) / float(resolution.y)
+			var height = noise.get_noise_2d(nx * 100, ny * 100) * 5000.0 + elevation_modifier
+			
+			# R = Lithosphere height
+			init_data[idx + 0] = height
+			
+			# G = Water (if below sea level)
+			init_data[idx + 1] = max(0.0, sea_level - height)
+			
+			# B = Sediment (initial zero)
+			init_data[idx + 2] = 0.0
+			
+			# A = Hardness (default 0.5)
+			init_data[idx + 3] = 0.5
+	
+	# Upload to GPU
+	rd.texture_update(geo_state_texture, 0, init_data.to_byte_array())
+	print("[Orchestrator] Terrain initialized")
+
 func run_hydraulic_erosion(iterations: int = 10, custom_params: Dictionary = {}):
 	"""
 	Exécute le cycle complet d'érosion hydraulique
