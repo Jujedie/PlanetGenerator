@@ -1,221 +1,251 @@
-extends Node
+extends RefCounted
+class_name GPUOrchestrator
 
-## Orchestre la simulation géophysique sur GPU
-class_name GeoComputeOrchestrator
+# ============================================================================
+# ORCHESTRATEUR GPU - Mise à jour Phase 3 : Érosion Hydraulique
+# ============================================================================
+# Ajout des textures temporaires et de la fonction run_hydraulic_erosion()
+# ============================================================================
 
-# === PARAMÈTRES DE SIMULATION ===
-@export var num_tectonic_plates := 25
-@export var planet_radius := 6371000.0  # Terre en mètres
-@export var simulation_years := 100_000_000  # 100M années
-@export var time_step_years := 10_000  # Pas de 10k ans
-
-# Références
 var gpu: GPUContext
 var rd: RenderingDevice
 
-# État simulation
-var current_year := 0.0
+# Textures principales
+var geo_state_texture: RID
+var atmo_state_texture: RID
 
-# === INITIALISATION ===
-func _ready() -> void:
-	gpu = GPUContext.instance
-	if not gpu:
-		push_error("GPUContext doit être initialisé avant")
-		return
+# Textures temporaires pour l'érosion
+var flux_map_texture: RID
+var velocity_map_texture: RID
+
+# Pipelines
+var tectonic_pipeline: RID
+var atmosphere_pipeline: RID
+var erosion_pipeline: RID  # NOUVEAU
+
+# Uniform Sets
+var tectonic_uniform_set: RID
+var atmosphere_uniform_set: RID
+var erosion_uniform_set: RID  # NOUVEAU
+
+# Paramètres
+var resolution: Vector2i
+var dt: float = 0.016  # 60 FPS par défaut
+
+# ============================================================================
+# INITIALISATION
+# ============================================================================
+
+func _init(gpu_context: GPUContext, res: Vector2i = Vector2i(2048, 1024)):
+	gpu = gpu_context
 	rd = gpu.rd
+	resolution = res
 	
-	_compile_all_shaders()
-	_initialize_tectonic_seeds()
-	print("✓ Orchestrateur prêt")
+	_init_textures()
+	_init_pipelines()
+	_init_uniform_sets()
+	
+	print("[Orchestrator] Initialisé avec résolution : ", resolution)
 
-# === COMPILATION SHADERS ===
-func _compile_all_shaders() -> void:
-	var shader_dir = "res://shaders/compute/"
+func _init_textures():
+	# === TEXTURES PRINCIPALES ===
+	var fmt = RDTextureFormat.new()
+	fmt.width = resolution.x
+	fmt.height = resolution.y
+	fmt.format = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
+	fmt.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
+	)
 	
-	# Liste des shaders à compiler
-	var shaders = [
-		"tectonic_plates.glsl",
-		"orogeny.glsl", 
-		"atmosphere_dynamics.glsl"
+	geo_state_texture = rd.texture_create(fmt, RDTextureView.new())
+	atmo_state_texture = rd.texture_create(fmt, RDTextureView.new())
+	
+	# === TEXTURES TEMPORAIRES POUR L'ÉROSION ===
+	flux_map_texture = rd.texture_create(fmt, RDTextureView.new())
+	velocity_map_texture = rd.texture_create(fmt, RDTextureView.new())
+	
+	# Initialisation à zéro
+	_clear_texture(flux_map_texture)
+	_clear_texture(velocity_map_texture)
+	
+	print("[Orchestrator] Textures créées (Geo, Atmo, Flux, Velocity)")
+
+func _clear_texture(texture_rid: RID):
+	var size = resolution.x * resolution.y * 4 * 4  # RGBA32F = 16 bytes
+	var zero_data = PackedByteArray()
+	zero_data.resize(size)
+	zero_data.fill(0)
+	rd.texture_update(texture_rid, 0, zero_data)
+
+# ============================================================================
+# INITIALISATION DES PIPELINES
+# ============================================================================
+
+func _init_pipelines():
+	# Pipeline Tectonique (existant)
+	var tectonic_shader = gpu.load_compute_shader("res://shader/compute/tectonic_shader.glsl")
+	tectonic_pipeline = rd.compute_pipeline_create(tectonic_shader)
+	
+	# Pipeline Atmosphérique (existant)
+	var atmosphere_shader = gpu.load_compute_shader("res://shader/compute/atmosphere_shader.glsl")
+	atmosphere_pipeline = rd.compute_pipeline_create(atmosphere_shader)
+	
+	# === NOUVEAU PIPELINE : ÉROSION HYDRAULIQUE ===
+	var erosion_shader = gpu.load_compute_shader("res://shader/compute/hydraulic_erosion.glsl")
+	erosion_pipeline = rd.compute_pipeline_create(erosion_shader)
+	
+	print("[Orchestrator] Pipelines créés (Tectonic, Atmosphere, Erosion)")
+
+# ============================================================================
+# INITIALISATION DES UNIFORM SETS
+# ============================================================================
+
+func _init_uniform_sets():
+	# Set 0 : Textures (partagé entre tous les shaders)
+	var texture_uniforms = [
+		gpu.create_texture_uniform(0, geo_state_texture),
+		gpu.create_texture_uniform(1, atmo_state_texture),
+		gpu.create_texture_uniform(2, flux_map_texture),
+		gpu.create_texture_uniform(3, velocity_map_texture)
 	]
 	
-	for shader_file in shaders:
-		var shader_name = shader_file.get_basename()
-		var success = gpu.compile_shader(shader_dir + shader_file, shader_name)
-		if not success:
-			push_error("Échec compilation: " + shader_name)
+	# Note : Les pipelines tectonique/atmo n'utilisent que bindings 0-1,
+	# mais on crée un set universel pour simplifier
+	tectonic_uniform_set = rd.uniform_set_create(texture_uniforms, tectonic_pipeline, 0)
+	atmosphere_uniform_set = rd.uniform_set_create(texture_uniforms, atmosphere_pipeline, 0)
+	erosion_uniform_set = rd.uniform_set_create(texture_uniforms, erosion_pipeline, 0)
+	
+	print("[Orchestrator] Uniform Sets créés")
 
-# === INITIALISATION SEEDS TECTONIQUES ===
-func _initialize_tectonic_seeds() -> void:
+# ============================================================================
+# FONCTION PRINCIPALE : ÉROSION HYDRAULIQUE
+# ============================================================================
+
+func run_hydraulic_erosion(iterations: int = 10, custom_params: Dictionary = {}):
 	"""
-	Génère N positions aléatoires pour les plaques.
-	Écrit dans PLATE_DATA: R=PlateID, GB=Seed_UV, A=0
+	Exécute le cycle complet d'érosion hydraulique
+	
+	Args:
+		iterations: Nombre d'itérations de la simulation
+		custom_params: Dictionnaire optionnel pour surcharger les paramètres
+			- delta_time: Pas de temps (défaut: 0.016)
+			- rain_rate: Taux de pluie (défaut: 0.001)
+			- erosion_rate: Taux d'érosion (défaut: 0.01)
+			- etc. (voir shader pour la liste complète)
 	"""
-	randomize()
-	var seed_data := PackedFloat32Array()
-	seed_data.resize(2048 * 1024 * 4)  # RGBAF32
-	seed_data.fill(0.0)
 	
-	# Générer seeds aléatoires
-	for i in range(num_tectonic_plates):
-		var seed_x = randf()
-		var seed_y = randf()
-		var pixel_x = int(seed_x * 2048)
-		var pixel_y = int(seed_y * 1024)
-		var idx = (pixel_y * 2048 + pixel_x) * 4
+	print("[Orchestrator] Démarrage érosion hydraulique : ", iterations, " itérations")
+	
+	# Paramètres par défaut
+	var params = {
+		"delta_time": custom_params.get("delta_time", 0.016),
+		"pipe_area": custom_params.get("pipe_area", 1.0),
+		"pipe_length": custom_params.get("pipe_length", 1.0),
+		"gravity": custom_params.get("gravity", 9.81),
+		"rain_rate": custom_params.get("rain_rate", 0.001),
+		"evaporation_rate": custom_params.get("evaporation_rate", 0.0001),
+		"sediment_capacity_k": custom_params.get("sediment_capacity_k", 0.1),
+		"erosion_rate": custom_params.get("erosion_rate", 0.01),
+		"deposition_rate": custom_params.get("deposition_rate", 0.01),
+		"min_height_delta": custom_params.get("min_height_delta", 0.001)
+	}
+	
+	# Calcul des groupes de travail (8x8 local size)
+	var groups_x = ceili(resolution.x / 8.0)
+	var groups_y = ceili(resolution.y / 8.0)
+	
+	for i in range(iterations):
+		# === ÉTAPE 0 : PLUIE ===
+		_dispatch_erosion_step(0, params, groups_x, groups_y)
+		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
-		seed_data[idx + 0] = float(i + 1)  # PlateID (0 = pas de plaque)
-		seed_data[idx + 1] = seed_x
-		seed_data[idx + 2] = seed_y
-		seed_data[idx + 3] = 0.0
-	
-	# Upload vers GPU
-	var bytes := seed_data.to_byte_array()
-	rd.texture_update(gpu.textures[GPUContext.TextureID.PLATE_DATA], 0, bytes)
-	
-	print("✓ %d plaques initialisées" % num_tectonic_plates)
-
-# === SIMULATION TECTONIQUE COMPLÈTE ===
-func execute_tectonic_simulation() -> void:
-	print("=== PHASE TECTONIQUE ===")
-	
-	# 1. Jump Flooding Algorithm (log2(max_dim) passes)
-	var max_steps = int(ceil(log(2048) / log(2)))  # ~11 passes
-	for i in range(max_steps):
-		var step_size = int(pow(2, max_steps - i - 1))
-		_jump_flood_pass(step_size, i)
-	
-	# 2. Calculer vecteurs de plaque (gradient du champ de distance)
-	_compute_plate_vectors()
-	
-	# 3. Orogénèse sur N cycles
-	var num_cycles = simulation_years / time_step_years
-	for cycle in range(int(num_cycles)):
-		_orogeny_cycle(time_step_years)
-		current_year += time_step_years
+		# === ÉTAPE 1 : CALCUL DES FLUX ===
+		_dispatch_erosion_step(1, params, groups_x, groups_y)
+		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
-		if cycle % 100 == 0:
-			print("  Cycle %d / %d (%.1fM ans)" % [cycle, num_cycles, current_year / 1e6])
+		# === ÉTAPE 2 : MISE À JOUR DE L'EAU & VITESSE ===
+		_dispatch_erosion_step(2, params, groups_x, groups_y)
+		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
+		
+		# === ÉTAPE 3 : ÉROSION/DÉPOSITION ===
+		_dispatch_erosion_step(3, params, groups_x, groups_y)
+		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
+		
+		if i % 10 == 0:
+			print("  Itération ", i, "/", iterations, " terminée")
 	
-	print("✓ Tectonique terminée: %.1fM ans" % (current_year / 1e6))
+	# Synchronisation finale
+	rd.submit()
+	rd.sync()
+	
+	print("[Orchestrator] Érosion hydraulique terminée")
 
-# === JUMP FLOOD PASS ===
-func _jump_flood_pass(step_size: int, iteration: int) -> void:
-	# Créer uniform set pour ce pass
-	var bindings = [
-		{"binding": 0, "texture": GPUContext.TextureID.PLATE_DATA},      # Input
-		{"binding": 1, "texture": GPUContext.TextureID.TEMP_BUFFER}       # Output
-	]
-	gpu.create_uniform_set("tectonic_plates", bindings)
+func _dispatch_erosion_step(step: int, params: Dictionary, groups_x: int, groups_y: int):
+	"""Dispatch une étape du shader d'érosion avec les paramètres"""
 	
-	# Push constants
-	var params = PackedByteArray()
-	params.resize(16)
-	params.encode_s32(0, step_size)
-	params.encode_s32(4, num_tectonic_plates)
-	params.encode_float(8, planet_radius)
-	params.encode_u32(12, iteration)
+	# Création du buffer de paramètres
+	var param_data = PackedFloat32Array([
+		float(step),                        # int step (casté en float)
+		params["delta_time"],
+		params["pipe_area"],
+		params["pipe_length"],
+		params["gravity"],
+		params["rain_rate"],
+		params["evaporation_rate"],
+		params["sediment_capacity_k"],
+		params["erosion_rate"],
+		params["deposition_rate"],
+		params["min_height_delta"],
+		0.0  # Padding pour alignement 16 bytes
+	])
+	
+	var param_buffer = rd.storage_buffer_create(param_data.to_byte_array().size(), param_data.to_byte_array())
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], erosion_pipeline, 1)
 	
 	# Dispatch
-	var groups_x = int(ceil(2048.0 / 16.0))
-	var groups_y = int(ceil(1024.0 / 16.0))
-	
 	var compute_list = rd.compute_list_begin()
-	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["tectonic_plates"])
-	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["tectonic_plates"], 0)
-	rd.compute_list_set_push_constant(compute_list, params, params.size())
+	rd.compute_list_bind_compute_pipeline(compute_list, erosion_pipeline)
+	rd.compute_list_bind_uniform_set(compute_list, erosion_uniform_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	# Swap buffers (ping-pong)
-	rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
-	_swap_textures(GPUContext.TextureID.PLATE_DATA, GPUContext.TextureID.TEMP_BUFFER)
+	# Cleanup
+	rd.free_rid(param_buffer)
 
-# === CALCUL VECTEURS PLAQUES ===
-func _compute_plate_vectors() -> void:
-	# TODO: Shader dédié qui calcule gradient du champ de distance
-	# Pour Phase 2, on utilise les vecteurs générés dans orogeny.glsl
-	pass
+# ============================================================================
+# FONCTIONS UTILITAIRES POUR L'EXPORT
+# ============================================================================
 
-# === CYCLE OROGÉNÈSE ===
-func _orogeny_cycle(delta_years: float) -> void:
-	var bindings = [
-		{"binding": 0, "texture": GPUContext.TextureID.PLATE_DATA},
-		{"binding": 1, "texture": GPUContext.TextureID.GEOPHYSICAL_STATE}
-	]
-	gpu.create_uniform_set("orogeny", bindings)
-	
-	var params = PackedByteArray()
-	params.resize(16)
-	params.encode_float(0, 50.0)      # mountain_strength
-	params.encode_float(4, -30.0)     # rift_strength
-	params.encode_float(8, 0.98)      # erosion_factor
-	params.encode_float(12, delta_years)
-	
-	var compute_list = rd.compute_list_begin()
-	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["orogeny"])
-	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["orogeny"], 0)
-	rd.compute_list_set_push_constant(compute_list, params, params.size())
-	rd.compute_list_dispatch(compute_list, 128, 64, 1)
-	rd.compute_list_end()
-	
-	rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
+func export_geo_state_to_image() -> Image:
+	"""Exporte la texture Géophysique vers une Image Godot"""
+	var byte_data = rd.texture_get_data(geo_state_texture, 0)
+	var img = Image.create_from_data(resolution.x, resolution.y, false, Image.FORMAT_RGBAF, byte_data)
+	return img
 
-# === SIMULATION ATMOSPHÉRIQUE ===
-func execute_atmospheric_simulation(num_steps: int = 1000) -> void:
-	print("=== PHASE ATMOSPHÉRIQUE ===")
-	
-	for step in range(num_steps):
-		_atmospheric_step()
-		
-		if step % 100 == 0:
-			print("  Step %d / %d" % [step, num_steps])
-	
-	print("✓ Atmosphère simulée: %d steps" % num_steps)
+func export_velocity_map_to_image() -> Image:
+	"""Exporte la carte de vitesse (utile pour debug)"""
+	var byte_data = rd.texture_get_data(velocity_map_texture, 0)
+	var img = Image.create_from_data(resolution.x, resolution.y, false, Image.FORMAT_RGBAF, byte_data)
+	return img
 
-func _atmospheric_step() -> void:
-	var bindings = [
-		{"binding": 0, "texture": GPUContext.TextureID.ATMOSPHERIC_STATE},
-		{"binding": 1, "texture": GPUContext.TextureID.GEOPHYSICAL_STATE},
-		{"binding": 2, "texture": GPUContext.TextureID.TEMP_BUFFER}
-	]
-	gpu.create_uniform_set("atmosphere_dynamics", bindings)
-	
-	var params = PackedByteArray()
-	params.resize(20)
-	params.encode_float(0, 1361.0)    # solar_constant
-	params.encode_float(4, 7.2921e-5) # rotation_speed (Terre)
-	params.encode_float(8, 0.01)      # diffusion_rate
-	params.encode_float(12, 0.7)      # condensation_threshold
-	params.encode_float(16, 3600.0)   # delta_time (1h)
-	
-	var compute_list = rd.compute_list_begin()
-	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["atmosphere_dynamics"])
-	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["atmosphere_dynamics"], 0)
-	rd.compute_list_set_push_constant(compute_list, params, params.size())
-	rd.compute_list_dispatch(compute_list, 128, 64, 1)
-	rd.compute_list_end()
-	
-	rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
-	_swap_textures(GPUContext.TextureID.ATMOSPHERIC_STATE, GPUContext.TextureID.TEMP_BUFFER)
+# ============================================================================
+# CLEANUP
+# ============================================================================
 
-# === HELPERS ===
-func _swap_textures(tex_a: GPUContext.TextureID, tex_b: GPUContext.TextureID) -> void:
-	var temp = gpu.textures[tex_a]
-	gpu.textures[tex_a] = gpu.textures[tex_b]
-	gpu.textures[tex_b] = temp
-
-# === EXPORT RÉSULTATS ===
-func export_all_maps(output_dir: String) -> void:
-	print("=== EXPORT CARTES ===")
-	
-	# Récupérer textures depuis GPU
-	var geo_img = gpu.readback_texture(GPUContext.TextureID.GEOPHYSICAL_STATE)
-	var atmo_img = gpu.readback_texture(GPUContext.TextureID.ATMOSPHERIC_STATE)
-	
-	# Générer les 10 cartes requises (Phase 3 - à implémenter)
-	# Pour l'instant, sauver les raw data
-	geo_img.save_png(output_dir + "/geophysical_raw.png")
-	atmo_img.save_png(output_dir + "/atmospheric_raw.png")
-	
-	print("✓ Export terminé: " + output_dir)
+func cleanup():
+	rd.free_rid(geo_state_texture)
+	rd.free_rid(atmo_state_texture)
+	rd.free_rid(flux_map_texture)
+	rd.free_rid(velocity_map_texture)
+	rd.free_rid(tectonic_pipeline)
+	rd.free_rid(atmosphere_pipeline)
+	rd.free_rid(erosion_pipeline)
+	print("[Orchestrator] Ressources GPU libérées")
