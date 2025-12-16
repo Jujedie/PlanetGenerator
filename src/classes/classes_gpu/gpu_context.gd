@@ -44,11 +44,11 @@ func _ready() -> void:
 	print("✓ GPUContext initialisé: %dx%d" % [RESOLUTION_WIDTH, RESOLUTION_HEIGHT])
 
 func get_vram_usage() -> String:
-    var total_bytes = 0
-    for tex_id in textures:
-        total_bytes += 2048 * 1024 * 16  # RGBAF32 = 16 bytes/pixel
-    
-    return "VRAM: %.2f MB" % (total_bytes / 1024.0 / 1024.0)
+	var total_bytes = 0
+	for tex_id in textures:
+		total_bytes += 2048 * 1024 * 16  # RGBAF32 = 16 bytes/pixel
+	
+	return "VRAM: %.2f MB" % (total_bytes / 1024.0 / 1024.0)
 
 # === CRÉATION DES TEXTURES ===
 func _initialize_textures() -> void:
@@ -62,9 +62,10 @@ func _initialize_textures() -> void:
 		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT  # Readback CPU
 	)
 	
+	var data : PackedByteArray
 	# Créer les 4 textures principales
 	for tex_id in TextureID.values():
-		var data := PackedByteArray()
+		data = PackedByteArray()
 		data.resize(RESOLUTION_WIDTH * RESOLUTION_HEIGHT * 16)  # 4 floats * 4 bytes
 		data.fill(0)
 		
