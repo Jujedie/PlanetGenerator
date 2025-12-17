@@ -14,8 +14,8 @@ var velocity_map_texture: RID
 var tectonic_pipeline: RID
 var atmosphere_pipeline: RID
 var erosion_pipeline: RID
-var orogeny_pipeline: RID  # 🆕 Nouveau
-var region_pipeline: RID    # 🆕 Nouveau
+var orogeny_pipeline: RID
+var region_pipeline: RID
 
 # Uniform Sets
 var tectonic_uniform_set: RID
@@ -27,49 +27,137 @@ var region_uniform_set: RID
 var resolution: Vector2i
 var dt: float = 0.016
 
-# === INITIALISATION ===
+# ============================================================================
+# INITIALISATION (CORRIGÉE)
+# ============================================================================
+
 func _init(gpu_context: GPUContext, res: Vector2i = Vector2i(2048, 1024)):
 	gpu = gpu_context
 	rd = gpu.rd
 	resolution = res
 	
+	print("[Orchestrator] 🚀 Initialisation...")
+	
+	# 1. Créer les textures
 	_init_textures()
-	_compile_all_shaders()
+	
+	# 2. Compiler et créer les pipelines
+	if not _compile_and_create_pipelines():
+		push_error("[Orchestrator] ❌ ÉCHEC CRITIQUE: Impossible de créer les pipelines")
+		return
+	
+	# 3. Créer les uniform sets
 	_init_uniform_sets()
 	
 	print("[Orchestrator] ✅ Initialisé avec résolution : ", resolution)
 
-func _init_pipelines():
-	"""Initialize compute pipelines with error checking"""
+# ============================================================================
+# CHARGEMENT ROBUSTE DES SHADERS
+# ============================================================================
+
+func _compile_and_create_pipelines() -> bool:
+	"""
+	Charge et compile tous les shaders nécessaires.
+	Retourne false si au moins un shader critique échoue.
+	"""
 	
-	# Pipeline Tectonique
-	if gpu.load_compute_shader("res://shader/compute/tectonic_shader.glsl", "tectonic"):
-		tectonic_pipeline = rd.compute_pipeline_create(gpu.shaders["tectonic"])
-		if not tectonic_pipeline.is_valid():
-			push_error("[Orchestrator] ❌ Failed to create tectonic pipeline")
-			return
-	else:
-		push_warning("[Orchestrator] ⚠️ Tectonic shader not loaded - skipping")
+	print("[Orchestrator] 📦 Compilation des shaders...")
 	
-	# Pipeline Atmosphérique
-	if gpu.load_compute_shader("res://shader/compute/atmosphere_shader.glsl", "atmosphere"):
-		atmosphere_pipeline = rd.compute_pipeline_create(gpu.shaders["atmosphere"])
-		if not atmosphere_pipeline.is_valid():
-			push_error("[Orchestrator] ❌ Failed to create atmosphere pipeline")
-			return
-	else:
-		push_warning("[Orchestrator] ⚠️ Atmosphere shader not loaded - skipping")
+	var shaders_to_load = [
+		{
+			"path": "res://shader/compute/tectonic_shader.glsl",
+			"name": "tectonic",
+			"critical": false  # Optionnel
+		},
+		{
+			"path": "res://shader/compute/atmosphere_shader.glsl",
+			"name": "atmosphere",
+			"critical": false
+		},
+		{
+			"path": "res://shader/compute/hydraulic_erosion_shader.glsl",
+			"name": "erosion",
+			"critical": true  # OBLIGATOIRE
+		},
+		{
+			"path": "res://shader/compute/orogeny_shader.glsl",
+			"name": "orogeny",
+			"critical": false
+		},
+		{
+			"path": "res://shader/compute/region_voronoi_shader.glsl",
+			"name": "region",
+			"critical": false
+		}
+	]
 	
-	# Pipeline Érosion Hydraulique
-	if gpu.load_compute_shader("res://shader/compute/hydraulic_erosion_shader.glsl", "erosion"):
-		erosion_pipeline = rd.compute_pipeline_create(gpu.shaders["erosion"])
-		if not erosion_pipeline.is_valid():
-			push_error("[Orchestrator] ❌ Failed to create erosion pipeline")
-			return
-	else:
-		push_warning("[Orchestrator] ⚠️ Erosion shader not loaded - skipping")
+	var all_critical_loaded = true
 	
-	print("[Orchestrator] ✓ Pipelines created successfully")
+	for shader_info in shaders_to_load:
+		var path = shader_info["path"]
+		var name = shader_info["name"]
+		var is_critical = shader_info["critical"]
+		
+		print("  • Chargement: ", name)
+		
+		# Vérifier existence du fichier
+		if not FileAccess.file_exists(path):
+			var msg = "[Orchestrator] ❌ Fichier shader introuvable: " + path
+			if is_critical:
+				push_error(msg)
+				all_critical_loaded = false
+			else:
+				push_warning(msg + " (non critique, ignoré)")
+			continue
+		
+		# Charger via GPUContext
+		if not gpu.load_compute_shader(path, name):
+			var msg = "[Orchestrator] ❌ Échec compilation: " + name
+			if is_critical:
+				push_error(msg)
+				all_critical_loaded = false
+			else:
+				push_warning(msg + " (non critique, ignoré)")
+			continue
+		
+		# Créer le pipeline
+		var shader_rid = gpu.shaders[name]
+		var pipeline_rid = rd.compute_pipeline_create(shader_rid)
+		
+		if not pipeline_rid.is_valid():
+			var msg = "[Orchestrator] ❌ Échec création pipeline: " + name
+			if is_critical:
+				push_error(msg)
+				all_critical_loaded = false
+			else:
+				push_warning(msg + " (non critique, ignoré)")
+			continue
+		
+		# Assigner au membre approprié
+		match name:
+			"tectonic":
+				tectonic_pipeline = pipeline_rid
+			"atmosphere":
+				atmosphere_pipeline = pipeline_rid
+			"erosion":
+				erosion_pipeline = pipeline_rid
+			"orogeny":
+				orogeny_pipeline = pipeline_rid
+			"region":
+				region_pipeline = pipeline_rid
+		
+		print("    ✅ ", name, " OK")
+	
+	if not all_critical_loaded:
+		push_error("[Orchestrator] ❌ Au moins un shader critique n'a pas pu être chargé")
+		return false
+	
+	print("[Orchestrator] ✅ Tous les shaders critiques sont prêts")
+	return true
+
+# ============================================================================
+# INITIALISATION DES TEXTURES
+# ============================================================================
 
 func _init_textures():
 	"""
@@ -102,34 +190,10 @@ func _init_textures():
 	
 	print("[Orchestrator] Textures créées (4x ", size / 1024, " KB)")
 
-func _clear_texture(texture_rid: RID):
-	var size = resolution.x * resolution.y * 16
-	var zero_data = PackedByteArray()
-	zero_data.resize(size)
-	zero_data.fill(0)
-	rd.texture_update(texture_rid, 0, zero_data)
+# ============================================================================
+# INITIALISATION DES UNIFORM SETS
+# ============================================================================
 
-# === COMPILATION DES SHADERS (CORRIGÉE) ===
-func _compile_all_shaders() -> bool:
-	"""Compile all required shaders - returns false if any fail"""
-	
-	var shaders_to_load = [
-		["res://shader/compute/hydraulic_erosion_shader.glsl", "erosion"]
-		# REMOVED: region_voronoi (not needed for GPU generation)
-	]
-	
-	var all_loaded = true
-	for shader_data in shaders_to_load:
-		var path = shader_data[0]
-		var name = shader_data[1]
-		
-		if not gpu.load_compute_shader(path, name):
-			push_error("❌ ÉCHEC CRITIQUE: Shader %s non chargé" % name)
-			all_loaded = false
-	
-	return all_loaded
-
-# === INITIALISATION DES UNIFORM SETS ===
 func _init_uniform_sets():
 	"""Initialize uniform sets with validation"""
 	
@@ -161,31 +225,55 @@ func _init_uniform_sets():
 		if not erosion_uniform_set.is_valid():
 			push_error("[Orchestrator] ❌ Failed to create erosion uniform set")
 	else:
-		push_warning("[Orchestrator] ⚠️ Skipping erosion uniform set (invalid pipeline)")
+		push_error("[Orchestrator] ❌ Erosion uniform set requis mais pipeline invalide!")
+	
+	if orogeny_pipeline.is_valid():
+		orogeny_uniform_set = rd.uniform_set_create(texture_uniforms, orogeny_pipeline, 0)
+	
+	if region_pipeline.is_valid():
+		region_uniform_set = rd.uniform_set_create(texture_uniforms, region_pipeline, 0)
 	
 	print("[Orchestrator] ✓ Uniform Sets initialized")
 
-# === SIMULATION COMPLÈTE ===
+# ============================================================================
+# SIMULATION COMPLÈTE
+# ============================================================================
+
 func run_simulation(generation_params: Dictionary) -> void:
-	print("[Orchestrator] 🌍 Démarrage simulation complète")
+	print("\n" + "=".repeat(60))
+	print("[Orchestrator] 🌍 DÉMARRAGE SIMULATION COMPLÈTE")
+	print("=".repeat(60))
 	print("  Seed: ", generation_params.get("seed", 0))
 	print("  Température: ", generation_params.get("avg_temperature", 15.0), "°C")
+	print("  Résolution: ", resolution)
 	
 	# Phase 1: Initialisation du terrain
 	_initialize_terrain(generation_params)
 	
 	# Phase 2: Érosion hydraulique (100 itérations)
-	run_hydraulic_erosion(generation_params.get("erosion_iterations", 100), generation_params)
+	var erosion_iters = generation_params.get("erosion_iterations", 100)
+	run_hydraulic_erosion(erosion_iters, generation_params)
 	
-	# Phase 3: Orogenèse (Accentuation des montagnes)
-	run_orogeny(generation_params)
+	# Phase 3: Orogenèse (si disponible)
+	if orogeny_pipeline.is_valid():
+		run_orogeny(generation_params)
+	else:
+		push_warning("[Orchestrator] ⚠️ Orogeny shader non disponible, étape ignorée")
 	
-	# Phase 4: Génération des régions (Voronoi)
-	run_region_generation(generation_params)
+	# Phase 4: Génération des régions (si disponible)
+	if region_pipeline.is_valid():
+		run_region_generation(generation_params)
+	else:
+		push_warning("[Orchestrator] ⚠️ Region shader non disponible, étape ignorée")
 	
-	print("[Orchestrator] ✅ Simulation terminée")
+	print("=".repeat(60))
+	print("[Orchestrator] ✅ SIMULATION TERMINÉE")
+	print("=".repeat(60) + "\n")
 
-# === PHASE 1: INITIALISATION ===
+# ============================================================================
+# PHASE 1: INITIALISATION DU TERRAIN
+# ============================================================================
+
 func _initialize_terrain(params: Dictionary) -> void:
 	"""
 	Initialize geophysical texture with seed-based noise
@@ -196,7 +284,7 @@ func _initialize_terrain(params: Dictionary) -> void:
 	var elevation_modifier = params.get("elevation_modifier", 0.0)
 	var sea_level = params.get("sea_level", 0.0)
 	
-	print("[Orchestrator] Initializing terrain (Seed: ", seed_value, ")")
+	print("[Orchestrator] 🏔️ Initialisation du terrain (Seed: ", seed_value, ")")
 	
 	# Generate initial data on CPU
 	var noise = FastNoiseLite.new()
@@ -235,13 +323,14 @@ func _initialize_terrain(params: Dictionary) -> void:
 	# Recreate uniform sets with new texture
 	_init_uniform_sets()
 	
-	print("[Orchestrator] Terrain initialized")
+	print("[Orchestrator] ✅ Terrain initialisé")
 
-# === PHASE 2: ÉROSION HYDRAULIQUE ===
+# ============================================================================
+# PHASE 2: ÉROSION HYDRAULIQUE
+# ============================================================================
+
 func run_hydraulic_erosion(iterations: int = 10, custom_params: Dictionary = {}):
-	"""
-	Execute hydraulic erosion cycle
-	"""
+	"""Execute hydraulic erosion cycle"""
 	
 	# CRITICAL: Check if erosion pipeline is ready
 	if not erosion_pipeline.is_valid() or not erosion_uniform_set.is_valid():
@@ -271,30 +360,18 @@ func run_hydraulic_erosion(iterations: int = 10, custom_params: Dictionary = {})
 	for i in range(iterations):
 		# Step 0: Rain
 		_dispatch_erosion_step(0, params, groups_x, groups_y)
-		if not erosion_pipeline.is_valid():  # Check after each step
-			push_error("[Orchestrator] Pipeline invalidated at iteration ", i)
-			return
 		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
 		# Step 1: Flux calculation
 		_dispatch_erosion_step(1, params, groups_x, groups_y)
-		if not erosion_pipeline.is_valid():
-			push_error("[Orchestrator] Pipeline invalidated at iteration ", i)
-			return
 		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
 		# Step 2: Water update
 		_dispatch_erosion_step(2, params, groups_x, groups_y)
-		if not erosion_pipeline.is_valid():
-			push_error("[Orchestrator] Pipeline invalidated at iteration ", i)
-			return
 		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
 		# Step 3: Erosion/Deposition
 		_dispatch_erosion_step(3, params, groups_x, groups_y)
-		if not erosion_pipeline.is_valid():
-			push_error("[Orchestrator] Pipeline invalidated at iteration ", i)
-			return
 		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
 		if i % 10 == 0:
@@ -349,13 +426,17 @@ func _dispatch_erosion_step(step: int, params: Dictionary, groups_x: int, groups
 	# Cleanup
 	rd.free_rid(param_buffer)
 
-# === PHASE 3: OROGENÈSE (NOUVEAU) ===
+# ============================================================================
+# PHASE 3: OROGENÈSE
+# ============================================================================
+
 func run_orogeny(params: Dictionary):
-	print("[Orchestrator] ⛰️ Orogenèse (accentuation des montagnes)")
+	"""Accentuation des montagnes (optionnel)"""
 	
 	if not orogeny_pipeline.is_valid():
-		push_error("❌ Pipeline Orogeny non valide")
 		return
+	
+	print("[Orchestrator] ⛰️ Orogenèse (accentuation des montagnes)")
 	
 	var groups_x = ceili(resolution.x / 8.0)
 	var groups_y = ceili(resolution.y / 8.0)
@@ -370,13 +451,17 @@ func run_orogeny(params: Dictionary):
 	rd.sync()
 	print("[Orchestrator] ✅ Orogenèse terminée")
 
-# === PHASE 4: RÉGIONS (NOUVEAU) ===
+# ============================================================================
+# PHASE 4: GÉNÉRATION DE RÉGIONS
+# ============================================================================
+
 func run_region_generation(params: Dictionary):
-	print("[Orchestrator] 🗺️ Génération des régions (Voronoi)")
+	"""Génération de régions Voronoi (optionnel)"""
 	
 	if not region_pipeline.is_valid():
-		push_error("❌ Pipeline Région non valide")
 		return
+	
+	print("[Orchestrator] 🗺️ Génération des régions (Voronoi)")
 	
 	var num_seeds = params.get("nb_avg_cases", 50)
 	var seed_value = params.get("seed", 0)
@@ -416,7 +501,10 @@ func run_region_generation(params: Dictionary):
 	
 	print("[Orchestrator] ✅ Régions générées")
 
-# === EXPORT ===
+# ============================================================================
+# EXPORT
+# ============================================================================
+
 func export_geo_state_to_image() -> Image:
 	var byte_data = rd.texture_get_data(geo_state_texture, 0)
 	return Image.create_from_data(resolution.x, resolution.y, false, Image.FORMAT_RGBAF, byte_data)
@@ -425,7 +513,10 @@ func export_velocity_map_to_image() -> Image:
 	var byte_data = rd.texture_get_data(velocity_map_texture, 0)
 	return Image.create_from_data(resolution.x, resolution.y, false, Image.FORMAT_RGBAF, byte_data)
 
-# === CLEANUP ===
+# ============================================================================
+# CLEANUP
+# ============================================================================
+
 func cleanup():
 	rd.free_rid(geo_state_texture)
 	rd.free_rid(atmo_state_texture)
