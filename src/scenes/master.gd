@@ -207,7 +207,7 @@ func _on_btn_comfirme_pressed() -> void:
 		sldNbCasesRegions.value
 	)
 
-	# Attacher le générateur de mesh 3D après création de planetGenerator
+	# Attach 3D mesh generator
 	planetGenerator.set_3d_mesh_generator(planet_mesh_gen)
 
 	var echelle = 100.0 / sldRayonPlanetaire.value
@@ -218,9 +218,12 @@ func _on_btn_comfirme_pressed() -> void:
 
 	print("Génération de la planète : " + nom.text)
 
-	# Start Thread
-	var thread = Thread.new()
-	thread.start(planetGenerator.generate_planet)
+	# ❌ OLD: Start Thread (CAUSES GPU ERRORS)
+	# var thread = Thread.new()
+	# thread.start(planetGenerator.generate_planet)
+	
+	# ✅ NEW: Call directly (GPU runs on render thread)
+	planetGenerator.generate_planet()
 
 	# Disable UI
 	_set_buttons_enabled(false)

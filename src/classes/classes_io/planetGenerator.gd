@@ -113,6 +113,12 @@ func _compile_generation_params() -> void:
 func _init_gpu_system() -> void:
 	"""Initialize GPU acceleration if available"""
 	
+	# TEMPORARY: Force CPU mode until shaders are ready
+	#push_warning("[PlanetGenerator] GPU acceleration disabled (shaders not ready)")
+	#use_gpu_acceleration = false
+	#return
+	
+	# Original code below (will be re-enabled when shaders are ready)
 	var gpu_context = GPUContext.instance
 	if not gpu_context:
 		push_warning("[PlanetGenerator] GPUContext not available, falling back to CPU")
@@ -142,18 +148,64 @@ func addProgress(value: float) -> void:
 # MAIN GENERATION ENTRY POINT
 # ============================================================================
 
+## ============================================================================
+## GPU GENERATION - RENDER THREAD SAFE VERSION
+## ============================================================================
+
 func generate_planet():
 	"""
-	Main generation function - routes to GPU or CPU path
-	Called from master.gd when Generate button is pressed
+	Entry point - routes to GPU or CPU
+	GPU path now uses call_deferred for render thread safety
 	"""
 	
 	if use_gpu_acceleration and gpu_orchestrator:
-		print("[PlanetGenerator] Starting GPU generation...")
-		generate_planet_gpu()
+		print("[PlanetGenerator] Starting GPU generation (render thread)...")
+		# Call on render thread instead of worker thread
+		call_deferred("_generate_planet_gpu_deferred")
 	else:
 		print("[PlanetGenerator] Starting CPU generation...")
 		generate_planet_cpu()
+
+func _generate_planet_gpu_deferred():
+	"""
+	GPU generation executed on render thread
+	Called via call_deferred from generate_planet()
+	"""
+	
+	print("\n" + "=".repeat(60))
+	print("GPU-ACCELERATED PLANET GENERATION (RENDER THREAD)")
+	print("=".repeat(60))
+	
+	# === PHASE 1: FULL SIMULATION ===
+	update_map_status("MAP_ELEVATION")
+	print("Phase 1/4 - Running GPU simulation...")
+	
+	# Execute simulation synchronously on render thread
+	gpu_orchestrator.run_simulation(generation_params)
+	addProgress(60)
+	
+	# === PHASE 2: EXPORT MAPS ===
+	update_map_status("MAP_FINAL")
+	print("Phase 2/4 - Exporting maps...")
+	
+	_export_gpu_maps()
+	addProgress(20)
+	
+	# === PHASE 3: UPDATE 3D ===
+	update_map_status("MAP_PREVIEW")
+	print("Phase 3/4 - Updating 3D...")
+	
+	_update_3d_mesh()
+	addProgress(10)
+	
+	# === PHASE 4: FINALIZE ===
+	addProgress(10)
+	
+	print("=".repeat(60))
+	print("GENERATION COMPLETE")
+	print("=".repeat(60) + "\n")
+	
+	emit_signal("finished")
 
 # ============================================================================
 # GPU GENERATION PIPELINE
