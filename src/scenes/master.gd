@@ -42,26 +42,26 @@ func _ready() -> void:
 
 func _on_btn_comfirme_pressed() -> void:
 	# UI Gather Data
-	var nom = $Node2D/Control/planeteName/LineEdit
-	var sldNbCasesRegions = $Node2D/Control/sldNbCasesRegions
-	var sldRayonPlanetaire = $Node2D/Control/sldRayonPlanetaire
-	var sldTempMoy = $Node2D/Control/sldTempMoy
-	var sldHautEau = $Node2D/Control/sldHautEau
+	var nom                 = $Node2D/Control/planeteName/LineEdit
+	var sldNbCasesRegions   = $Node2D/Control/sldNbCasesRegions
+	var sldRayonPlanetaire  = $Node2D/Control/sldRayonPlanetaire
+	var sldTempMoy          = $Node2D/Control/sldTempMoy
+	var sldHautEau          = $Node2D/Control/sldHautEau
 	var sldPrecipitationMoy = $Node2D/Control/sldPrecipitationMoy
-	var sldElevation = $Node2D/Control/sldElevation
-	var sldThread = $Node2D/Control/sldThread
-	var typePlanete = $Node2D/Control/typePlanete/ItemList
+	var sldElevation        = $Node2D/Control/sldElevation
+	var sldThread           = $Node2D/Control/sldThread
+	var typePlanete         = $Node2D/Control/typePlanete/ItemList
 
 	if typePlanete.get_selected_id() == -1:
 		typePlanete.select(0)
 
 	# Reset state
-	maps = []
+	maps      = []
 	map_index = 0
 	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = null
 
 	var renderProgress = $Node2D/Control/renderProgress
-	var lblMapStatus = $Node2D/Control/renderProgress/Node2D/lblMapStatus
+	var lblMapStatus   = $Node2D/Control/renderProgress/Node2D/lblMapStatus
 
 	# Initialize Generator
 	planetGenerator = PlanetGenerator.new(
@@ -86,11 +86,6 @@ func _on_btn_comfirme_pressed() -> void:
 
 	print("Génération de la planète : " + nom.text)
 
-	# ❌ OLD: Start Thread (CAUSES GPU ERRORS)
-	# var thread = Thread.new()
-	# thread.start(planetGenerator.generate_planet)
-	
-	# ✅ NEW: Call directly (GPU runs on render thread)
 	planetGenerator.generate_planet()
 
 	# Disable UI
