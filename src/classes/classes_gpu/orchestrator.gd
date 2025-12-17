@@ -258,12 +258,10 @@ func _init_uniform_sets():
 	print("[Orchestrator] ✅ Uniform Sets initialized")
 
 # ============================================================================
-# FIX B + FIX C : SIMULATION COMPLÈTE AVEC RÉSOLUTION CORRIGÉE + GARBAGE COLLECTION
-# ============================================================================
 
 func run_simulation(generation_params: Dictionary) -> void:
 	"""
-	Exécute la simulation complète avec résolution fixée et garbage collection
+	Exécute la simulation complète en respectant la résolution de l'instance.
 	"""
 	
 	print("\n" + "=".repeat(60))
@@ -272,10 +270,12 @@ func run_simulation(generation_params: Dictionary) -> void:
 	print("  Seed: ", generation_params.get("seed", 0))
 	print("  Température: ", generation_params.get("avg_temperature", 15.0), "°C")
 	
-	# ✅ FIX B: RÉSOLUTION CORRIGÉE (plus de calcul basé sur radius)
-	var w = GPUContext.RESOLUTION_WIDTH   # 2048
-	var h = GPUContext.RESOLUTION_HEIGHT  # 1024
-	print("  Résolution GPU: ", w, "x", h)
+	# ✅ CORRECTION CRITIQUE : Utilisation de la résolution de l'instance
+	# On n'utilise PLUS les constantes globales de GPUContext ici.
+	var w = resolution.x
+	var h = resolution.y
+	
+	print("  Résolution de la simulation : ", w, "x", h)
 	
 	# ✅ FIX C: GARBAGE COLLECTION (tracker tous les RIDs temporaires)
 	var _rids_to_free: Array[RID] = []
@@ -285,6 +285,7 @@ func run_simulation(generation_params: Dictionary) -> void:
 	
 	# Phase 2: Érosion hydraulique
 	var erosion_iters = generation_params.get("erosion_iterations", 100)
+	# On passe w et h qui correspondent maintenant à la taille réelle des textures
 	var erosion_garbage = _run_hydraulic_erosion_tracked(erosion_iters, generation_params, w, h)
 	_rids_to_free.append_array(erosion_garbage)
 	
@@ -301,7 +302,7 @@ func run_simulation(generation_params: Dictionary) -> void:
 	else:
 		push_warning("[Orchestrator] ⚠️ Region shader non disponible, étape ignorée")
 	
-	# ✅ FIX C: CLEANUP COMPLET (aucune fuite mémoire)
+	# ✅ FIX C: CLEANUP COMPLET
 	print("[Orchestrator] 🧹 Nettoyage de ", _rids_to_free.size(), " ressources temporaires...")
 	for rid in _rids_to_free:
 		if rid.is_valid():
@@ -309,7 +310,7 @@ func run_simulation(generation_params: Dictionary) -> void:
 	_rids_to_free.clear()
 	
 	print("=".repeat(60))
-	print("[Orchestrator] ✅ SIMULATION TERMINÉE (Pas de fuite mémoire)")
+	print("[Orchestrator] ✅ SIMULATION TERMINÉE (Clean)")
 	print("=".repeat(60) + "\n")
 
 # ============================================================================
