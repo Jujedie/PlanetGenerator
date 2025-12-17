@@ -260,12 +260,25 @@ func generate_planet_gpu():
 func _export_gpu_maps() -> void:
 	"""
 	Export GPU textures to PNG files using PlanetExporter
-	Populates legacy Image properties for backward compatibility
 	"""
 	
 	var gpu_context = GPUContext.instance
+	
+	# CRITICAL: Ensure all GPU work is complete
+	gpu_context.rd.submit()
+	gpu_context.rd.sync()
+	
 	var geo_rid = gpu_context.textures[GPUContext.TextureID.GEOPHYSICAL_STATE]
 	var atmo_rid = gpu_context.textures[GPUContext.TextureID.ATMOSPHERIC_STATE]
+	
+	# Validate texture RIDs
+	if not geo_rid.is_valid() or not atmo_rid.is_valid():
+		push_error("[PlanetGenerator] Invalid texture RIDs for export")
+		return
+	
+	print("[PlanetGenerator] Exporting textures...")
+	print("  Geo RID: ", geo_rid)
+	print("  Atmo RID: ", atmo_rid)
 	
 	# Create exporter and export all maps
 	var exporter = PlanetExporter.new()
@@ -298,9 +311,13 @@ func _export_gpu_maps() -> void:
 					self.final_map = img
 				"preview":
 					self.preview = img
+			
+			print("[PlanetGenerator] Loaded ", map_type, ": ", img.get_width(), "x", img.get_height())
+		else:
+			push_warning("[PlanetGenerator] Failed to load ", map_type, " from ", file_path)
 	
 	print("[PlanetGenerator] Maps exported to user://temp/")
-
+	
 func _update_3d_mesh() -> void:
 	"""
 	Update 3D visualization with GPU textures

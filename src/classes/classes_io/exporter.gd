@@ -18,10 +18,10 @@ func export_maps(geo_rid: RID, atmo_rid: RID, output_dir: String, generation_par
 	Export all map types from GPU textures to PNG files
 	
 	Args:
-		geo_rid: Geophysical state texture (R=Height, G=Water, B=Sediment, A=Hardness)
-		atmo_rid: Atmospheric state texture (R=Temp, G=Humidity, B=Pressure, A=Cloud)
+		geo_rid: Geophysical state texture
+		atmo_rid: Atmospheric state texture
 		output_dir: Save directory path
-		generation_params: Generation parameters (seed, sea_level, etc.)
+		generation_params: Generation parameters
 	
 	Returns:
 		Dictionary with keys: map_name -> file_path
@@ -35,17 +35,35 @@ func export_maps(geo_rid: RID, atmo_rid: RID, output_dir: String, generation_par
 	if not DirAccess.dir_exists_absolute(output_dir):
 		DirAccess.make_dir_recursive_absolute(output_dir)
 	
-	# Read GPU textures to CPU
-	var rd = RenderingServer.get_rendering_device()
+	# CRITICAL FIX: Use the correct RenderingDevice from GPUContext
+	var gpu_context = GPUContext.instance
+	if not gpu_context:
+		push_error("[Exporter] GPUContext not available!")
+		return {}
+	
+	var rd = gpu_context.rd  # ← USE GPUContext's RenderingDevice
+	
+	# Ensure GPU work is complete before reading
+	rd.submit()
+	rd.sync()
+	
+	# Read GPU textures
 	var geo_data = rd.texture_get_data(geo_rid, 0)
 	var atmo_data = rd.texture_get_data(atmo_rid, 0)
 	
-	# Get texture dimensions
-	var tex_format = rd.texture_get_format(geo_rid)
-	var width = tex_format.width
-	var height = tex_format.height
+	# Get texture dimensions from GPUContext constants (not from format)
+	var width = GPUContext.RESOLUTION_WIDTH   # 2048
+	var height = GPUContext.RESOLUTION_HEIGHT  # 1024
 	
 	print("[Exporter] Texture size: ", width, "x", height)
+	print("[Exporter] Geo data size: ", geo_data.size(), " bytes")
+	print("[Exporter] Atmo data size: ", atmo_data.size(), " bytes")
+	
+	# Validate data size
+	var expected_size = width * height * 16  # RGBAF32 = 16 bytes/pixel
+	if geo_data.size() != expected_size:
+		push_error("[Exporter] Invalid geo data size: ", geo_data.size(), " (expected ", expected_size, ")")
+		return {}
 	
 	# Create images from raw data
 	var geo_img = Image.create_from_data(width, height, false, Image.FORMAT_RGBAF, geo_data)
@@ -54,34 +72,15 @@ func export_maps(geo_rid: RID, atmo_rid: RID, output_dir: String, generation_par
 	# Export all map types
 	var exported_files = {}
 	
-	# 1. Elevation Map (Colored)
 	exported_files["elevation"] = _export_elevation_map(geo_img, output_dir, false)
-	
-	# 2. Elevation Map (Grayscale)
 	exported_files["elevation_alt"] = _export_elevation_map(geo_img, output_dir, true)
-	
-	# 3. Water Map (Binary)
 	exported_files["water"] = _export_water_map(geo_img, output_dir)
-	
-	# 4. River Map
 	exported_files["river"] = _export_river_map(geo_img, atmo_img, output_dir)
-	
-	# 5. Temperature Map
 	exported_files["temperature"] = _export_temperature_map(atmo_img, output_dir)
-	
-	# 6. Precipitation Map
 	exported_files["precipitation"] = _export_precipitation_map(atmo_img, output_dir)
-	
-	# 7. Biome Map
 	exported_files["biome"] = _export_biome_map(geo_img, atmo_img, output_dir)
-	
-	# 8. Cloud Map
 	exported_files["cloud"] = _export_cloud_map(atmo_img, output_dir)
-	
-	# 9. Final Composite Map
 	exported_files["final"] = _export_final_map(geo_img, atmo_img, output_dir)
-	
-	# 10. Preview (Sphere projection)
 	exported_files["preview"] = _export_preview_map(geo_img, atmo_img, output_dir)
 	
 	print("[Exporter] Export complete: ", exported_files.size(), " maps")

@@ -238,35 +238,72 @@ func _initialize_terrain(params: Dictionary) -> void:
 	print("[Orchestrator] Terrain initialized")
 
 # === PHASE 2: ÉROSION HYDRAULIQUE ===
-func run_hydraulic_erosion(iterations: int, custom_params: Dictionary):
+func run_hydraulic_erosion(iterations: int = 10, custom_params: Dictionary = {}):
+	"""
+	Execute hydraulic erosion cycle
+	"""
+	
+	# CRITICAL: Check if erosion pipeline is ready
+	if not erosion_pipeline.is_valid() or not erosion_uniform_set.is_valid():
+		push_error("[Orchestrator] Erosion pipeline not ready - skipping")
+		return
+	
 	print("[Orchestrator] 🌊 Érosion hydraulique: ", iterations, " itérations")
 	
+	# Default parameters
 	var params = {
 		"delta_time": custom_params.get("delta_time", 0.016),
-		"pipe_area": 1.0,
-		"pipe_length": 1.0,
-		"gravity": 9.81,
-		"rain_rate": 0.001,
-		"evaporation_rate": 0.0001,
-		"sediment_capacity_k": 0.1,
-		"erosion_rate": 0.01,
-		"deposition_rate": 0.01,
-		"min_height_delta": 0.001
+		"pipe_area": custom_params.get("pipe_area", 1.0),
+		"pipe_length": custom_params.get("pipe_length", 1.0),
+		"gravity": custom_params.get("gravity", 9.81),
+		"rain_rate": custom_params.get("rain_rate", 0.001),
+		"evaporation_rate": custom_params.get("evaporation_rate", 0.0001),
+		"sediment_capacity_k": custom_params.get("sediment_capacity_k", 0.1),
+		"erosion_rate": custom_params.get("erosion_rate", 0.01),
+		"deposition_rate": custom_params.get("deposition_rate", 0.01),
+		"min_height_delta": custom_params.get("min_height_delta", 0.001)
 	}
 	
+	# Calculate work groups (8x8 local size)
 	var groups_x = ceili(resolution.x / 8.0)
 	var groups_y = ceili(resolution.y / 8.0)
 	
 	for i in range(iterations):
-		for step in range(4):
-			_dispatch_erosion_step(step, params, groups_x, groups_y)
-			rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
+		# Step 0: Rain
+		_dispatch_erosion_step(0, params, groups_x, groups_y)
+		if not erosion_pipeline.is_valid():  # Check after each step
+			push_error("[Orchestrator] Pipeline invalidated at iteration ", i)
+			return
+		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
+		
+		# Step 1: Flux calculation
+		_dispatch_erosion_step(1, params, groups_x, groups_y)
+		if not erosion_pipeline.is_valid():
+			push_error("[Orchestrator] Pipeline invalidated at iteration ", i)
+			return
+		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
+		
+		# Step 2: Water update
+		_dispatch_erosion_step(2, params, groups_x, groups_y)
+		if not erosion_pipeline.is_valid():
+			push_error("[Orchestrator] Pipeline invalidated at iteration ", i)
+			return
+		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
+		
+		# Step 3: Erosion/Deposition
+		_dispatch_erosion_step(3, params, groups_x, groups_y)
+		if not erosion_pipeline.is_valid():
+			push_error("[Orchestrator] Pipeline invalidated at iteration ", i)
+			return
+		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
 		if i % 10 == 0:
 			print("  Itération ", i, "/", iterations)
 	
+	# Final sync
 	rd.submit()
 	rd.sync()
+	
 	print("[Orchestrator] ✅ Érosion terminée")
 
 func _dispatch_erosion_step(step: int, params: Dictionary, groups_x: int, groups_y: int):
