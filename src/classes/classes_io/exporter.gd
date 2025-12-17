@@ -26,43 +26,46 @@ func export_maps(geo_rid: RID, atmo_rid: RID, output_dir: String, generation_par
 	Returns:
 		Dictionary with keys: map_name -> file_path
 	"""
-	
 	params = generation_params
 	
 	print("[Exporter] Starting map export to: ", output_dir)
 	
-	# Ensure output directory exists
 	if not DirAccess.dir_exists_absolute(output_dir):
 		DirAccess.make_dir_recursive_absolute(output_dir)
 	
-	# CRITICAL FIX: Use the correct RenderingDevice from GPUContext
+	# Récupérer l'instance GPUContext
 	var gpu_context = GPUContext.instance
 	if not gpu_context:
 		push_error("[Exporter] GPUContext not available!")
 		return {}
 	
-	var rd = gpu_context.rd  # ← USE GPUContext's RenderingDevice
+	var rd = gpu_context.rd
 	
 	# Ensure GPU work is complete before reading
 	rd.submit()
 	rd.sync()
 	
+	# ✅ CORRECTION : Récupérer les dimensions RÉELLES de la texture
+	if not geo_rid.is_valid() or not atmo_rid.is_valid():
+		push_error("[Exporter] ❌ Invalid texture RIDs provided")
+		return {}
+
+	var geo_format = rd.texture_get_format(geo_rid)
+	var width = geo_format.width
+	var height = geo_format.height
+	
+	print("[Exporter] Detected texture size: ", width, "x", height)
+	
 	# Read GPU textures
 	var geo_data = rd.texture_get_data(geo_rid, 0)
 	var atmo_data = rd.texture_get_data(atmo_rid, 0)
 	
-	# Get texture dimensions from GPUContext constants (not from format)
-	var width = GPUContext.RESOLUTION_WIDTH   # 2048
-	var height = GPUContext.RESOLUTION_HEIGHT  # 1024
-	
-	print("[Exporter] Texture size: ", width, "x", height)
 	print("[Exporter] Geo data size: ", geo_data.size(), " bytes")
-	print("[Exporter] Atmo data size: ", atmo_data.size(), " bytes")
 	
-	# Validate data size
+	# Validate data size based on DETECTED dimensions
 	var expected_size = width * height * 16  # RGBAF32 = 16 bytes/pixel
 	if geo_data.size() != expected_size:
-		push_error("[Exporter] Invalid geo data size: ", geo_data.size(), " (expected ", expected_size, ")")
+		push_error("[Exporter] ❌ Invalid geo data size: ", geo_data.size(), " (expected ", expected_size, ")")
 		return {}
 	
 	# Create images from raw data
