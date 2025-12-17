@@ -87,29 +87,14 @@ func _load_shaders() -> void:
 	shaders["erosion_transport"] = null
 
 # === HELPER: COMPILER UN SHADER ===
-func compile_shader(glsl_path: String, shader_name: String) -> bool:
-	var file = FileAccess.open(glsl_path, FileAccess.READ)
-	if not file:
+func load_compute_shader(glsl_path: String, shader_name: String) -> bool:  # Renommé de compile_shader
+	var shader_file = load(glsl_path)
+	if not shader_file:
 		push_error("Shader introuvable: " + glsl_path)
 		return false
 	
-	var source_code = file.get_as_text()
-	file.close()
-	
-	# Godot 4 nécessite SPIR-V compilé. On suppose un .spv précompilé
-	var spirv_path = glsl_path.replace(".glsl", ".spv")
-	var spirv_file = FileAccess.open(spirv_path, FileAccess.READ)
-	if not spirv_file:
-		push_error("SPIR-V manquant: " + spirv_path)
-		return false
-	
-	var spirv_data = spirv_file.get_buffer(spirv_file.get_length())
-	spirv_file.close()
-	
-	var shader_spirv := RDShaderSPIRV.new()
-	shader_spirv.set_stage_bytecode(RenderingDevice.SHADER_STAGE_COMPUTE, spirv_data)
-	
-	var shader_rid := rd.shader_create_from_spirv(shader_spirv)
+	var shader_spirv: RDShaderSPIRV = shader_file.get_spirv()
+	var shader_rid: RID = rd.shader_create_from_spirv(shader_spirv)
 	if not shader_rid.is_valid():
 		push_error("Échec compilation: " + shader_name)
 		return false
@@ -138,6 +123,14 @@ func create_uniform_set(shader_name: String, bindings: Array[Dictionary]) -> RID
 	var set_rid := rd.uniform_set_create(uniforms, shaders[shader_name], 0)
 	uniform_sets[shader_name] = set_rid
 	return set_rid
+
+# === HELPER: CRÉER UN UNIFORM POUR TEXTURE ===
+func create_texture_uniform(binding: int, texture_rid: RID) -> RDUniform:
+	var uniform = RDUniform.new()
+	uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	uniform.binding = binding
+	uniform.add_id(texture_rid)
+	return uniform
 
 # === DISPATCH COMPUTE ===
 func dispatch_compute(shader_name: String, groups_x: int, groups_y: int = 1, groups_z: int = 1) -> void:
