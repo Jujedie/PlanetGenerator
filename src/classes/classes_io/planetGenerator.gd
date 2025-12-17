@@ -45,7 +45,6 @@ var preview: Image
 
 # GPU acceleration components
 var gpu_orchestrator: GPUOrchestrator = null
-var planet_mesh_gen: PlanetMeshGenerator = null
 var use_gpu_acceleration: bool = true
 
 # Generation parameters (compiled from UI)
@@ -191,11 +190,11 @@ func _generate_planet_gpu_deferred():
 	_export_gpu_maps()
 	addProgress(20)
 	
-	# === PHASE 3: UPDATE 3D ===
+	# === PHASE 3: UPDATE 2D ===
 	update_map_status("MAP_PREVIEW")
-	print("Phase 3/4 - Updating 3D...")
+	print("Phase 3/4 - Updating 2D...")
 	
-	_update_3d_mesh()
+	# Update 2D preview image from GPU textures
 	addProgress(10)
 	
 	# === PHASE 4: FINALIZE ===
@@ -239,11 +238,11 @@ func generate_planet_gpu():
 	_export_gpu_maps()
 	addProgress(20)
 	
-	# === PHASE 3: UPDATE 3D VISUALIZATION ===
+	# === PHASE 3: UPDATE 2D ===
 	update_map_status("MAP_PREVIEW")
-	print("Phase 3/4 - Updating 3D visualization...")
+	print("Phase 3/4 - Updating 2D preview image...")
 	
-	_update_3d_mesh()
+	# Update 2D preview image from GPU textures
 	addProgress(10)
 	
 	# === PHASE 4: FINALIZE ===
@@ -318,22 +317,6 @@ func _export_gpu_maps() -> void:
 			push_warning("[PlanetGenerator] Failed to load ", map_type, " from ", file_path)
 	
 	print("[PlanetGenerator] Maps exported to user://temp/")
-	
-func _update_3d_mesh() -> void:
-	"""
-	Update 3D visualization with GPU textures
-	Called automatically after generation
-	"""
-	
-	if not planet_mesh_gen:
-		print("[PlanetGenerator] No 3D mesh generator attached, skipping visualization update")
-		return
-	
-	var geo_rid = gpu_orchestrator.geo_state_texture
-	var atmo_rid = gpu_orchestrator.atmo_state_texture
-	
-	planet_mesh_gen.update_maps(geo_rid, atmo_rid)
-	print("[PlanetGenerator] 3D visualization updated")
 
 # ============================================================================
 # LEGACY CPU GENERATION (Fallback)
@@ -417,14 +400,6 @@ func generate_planet_cpu():
 # ============================================================================
 # PUBLIC API FOR EXTERNAL COMPONENTS
 # ============================================================================
-
-func set_3d_mesh_generator(mesh_gen: PlanetMeshGenerator) -> void:
-	"""
-	Attach 3D mesh generator for visualization
-	Called from master.gd during setup
-	"""
-	planet_mesh_gen = mesh_gen
-	print("[PlanetGenerator] 3D mesh generator attached")
 
 func get_gpu_texture_rids() -> Dictionary:
 	"""

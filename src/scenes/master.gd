@@ -1,22 +1,10 @@
 extends Node2D
 
-# ============================================================================
-# MASTER UI CONTROLLER - MERGED VERSION
-# Combines Full UI Logic with Phase 4 3D Visualization
-# ============================================================================
-
 # --- Core Variables ---
 var planetGenerator: PlanetGenerator
 var maps: Array[String]
 var map_index: int = 0
 var langue: String = "fr"
-
-# --- 3D Visualization Variables ---
-var planet_mesh_gen: PlanetMeshGenerator = null
-var camera_3d: Camera3D = null
-var viewport_3d: SubViewport = null
-var light: DirectionalLight3D = null  # Added class member
-var is_3d_mode: bool = false
 
 # --- Constants ---
 const MAP_NAME_TO_KEY = {
@@ -47,123 +35,6 @@ func _ready() -> void:
 
 	# 2. UI Initialization
 	maj_labels()
-	
-	# 3. 3D Viewport Setup (Phase 4 Integration)
-	_setup_3d_viewport()
-	_create_ui_hints()
-
-	# Créer planet_mesh ici, mais ne pas l'attacher encore (sera fait après génération)
-	planet_mesh_gen = PlanetMeshGenerator.new()
-	add_child(planet_mesh_gen)
-	planet_mesh_gen.generate_sphere(128)  # Générer la sphère une fois
-
-func _setup_3d_viewport() -> void:
-	"""
-	Creates the 3D environment inside the existing container.
-	"""
-	var viewport_container = $Node2D/Control/SubViewportContainer
-	var existing_viewport = viewport_container.get_child(0)
-	
-	# Create new 3D viewport (not added to container yet)
-	viewport_3d = SubViewport.new()
-	viewport_3d.size = existing_viewport.size
-	viewport_3d.render_target_update_mode = SubViewport.UPDATE_DISABLED
-	viewport_3d.handle_input_locally = false
-	
-	# Create 3D World
-	var world_3d = World3D.new()
-	viewport_3d.world_3d = world_3d
-	
-	# Add Planet Mesh Generator node
-	planet_mesh_gen = PlanetMeshGenerator.new()
-	viewport_3d.add_child(planet_mesh_gen)
-	planet_mesh_gen.generate_sphere(128)
-	
-	# Setup Camera
-	camera_3d = Camera3D.new()
-	viewport_3d.add_child(camera_3d)
-	camera_3d.position = Vector3(0, 0, 2.5)
-	camera_3d.fov = 45
-	
-	# Add Lighting
-	light = DirectionalLight3D.new()  # Assigned to member
-	viewport_3d.add_child(light)
-	light.position = Vector3(2, 2, 2)
-	light.light_energy = 1.2
-	
-	# Add Environment
-	var env = Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.02, 0.02, 0.05)
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.1, 0.1, 0.1)
-	
-	var world_env = WorldEnvironment.new()
-	world_env.environment = env
-	viewport_3d.add_child(world_env)
-
-func _create_ui_hints() -> void:
-	# Adds a small label explaining controls
-	var hint_lbl = Label.new()
-	hint_lbl.text = "[TAB] 2D/3D View | Mouse Drag to Rotate"
-	hint_lbl.position = Vector2(20, 20)
-	hint_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
-	$Node2D/Control.add_child(hint_lbl)
-
-# ============================================================================
-# 3D LOGIC & INPUT
-# ============================================================================
-
-func _process(delta: float) -> void:
-	# Auto-rotate planet slowly if in 3D mode
-	if is_3d_mode and planet_mesh_gen:
-		planet_mesh_gen.rotate_y(delta * 0.1)
-
-func _input(event: InputEvent) -> void:
-	# 1. Toggle 3D Mode
-	if event is InputEventKey and event.pressed and event.keycode == KEY_TAB:
-		toggle_3d_mode()
-	
-	if not is_3d_mode or not camera_3d:
-		return
-		
-	# 2. Zoom Controls
-	if event is InputEventMouseButton:
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			camera_3d.position.z = max(1.2, camera_3d.position.z - 0.1)
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			camera_3d.position.z = min(5.0, camera_3d.position.z + 0.1)
-	
-	# 3. Rotate Camera (Orbit)
-	if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-		var sensitivity = 0.005
-		camera_3d.rotate_y(-event.relative.x * sensitivity)
-		
-		# Vertical clamp
-		var new_x_rot = camera_3d.rotation.x - event.relative.y * sensitivity
-		camera_3d.rotation.x = clamp(new_x_rot, -PI/2 + 0.1, PI/2 - 0.1)
-
-func toggle_3d_mode() -> void:
-	is_3d_mode = !is_3d_mode
-	
-	var viewport_container = $Node2D/Control/SubViewportContainer
-	var viewport_2d = viewport_container.get_child(0) if viewport_container.get_child_count() > 0 else null
-	
-	if is_3d_mode:
-		if viewport_2d:
-			viewport_container.remove_child(viewport_2d)
-		viewport_container.add_child(viewport_3d)
-		viewport_3d.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-		# Added look_at calls after adding to tree
-		if camera_3d:
-			camera_3d.look_at_from_position(camera_3d.position, Vector3.ZERO)
-		if light:
-			light.look_at_from_position(light.position, Vector3.ZERO)
-	else:
-		viewport_container.remove_child(viewport_3d)
-		if viewport_2d:
-			viewport_container.add_child(viewport_2d)
-		viewport_3d.render_target_update_mode = SubViewport.UPDATE_DISABLED
 
 # ============================================================================
 # GENERATION LOGIC
@@ -207,9 +78,6 @@ func _on_btn_comfirme_pressed() -> void:
 		sldNbCasesRegions.value
 	)
 
-	# Attach 3D mesh generator
-	planetGenerator.set_3d_mesh_generator(planet_mesh_gen)
-
 	var echelle = 100.0 / sldRayonPlanetaire.value
 	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.scale = Vector2(echelle, echelle)
 	
@@ -245,25 +113,8 @@ func _on_planetGenerator_finished_main() -> void:
 	else:
 		print("Erreur lors du chargement de l'image: ", maps[map_index])
 
-	# 2. Update 3D Visualization (New Logic)
-	_update_3d_visualization()
-
-	# 3. Re-enable UI
+	# 2. Re-enable UI
 	_set_buttons_enabled(true)
-
-func _update_3d_visualization() -> void:
-	if not planet_mesh_gen or not planetGenerator:
-		return
-		
-	# Retrieve GPU Texture RIDs directly (No CPU readback needed)
-	var texture_rids = planetGenerator.get_gpu_texture_rids()
-	
-	if not texture_rids.is_empty():
-		planet_mesh_gen.update_maps(
-			texture_rids.get("geo", RID()),
-			texture_rids.get("atmo", RID())
-		)
-		print("[Master] 3D Planet updated with GPU textures")
 
 func _set_buttons_enabled(enabled: bool) -> void:
 	$Node2D/Control/btnComfirmer/btnComfirme.disabled = !enabled
