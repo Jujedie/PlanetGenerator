@@ -17,7 +17,7 @@ var erosion_pipeline: RID
 var orogeny_pipeline: RID
 var region_pipeline: RID
 
-# Uniform Sets
+# Uniform Sets (PERSISTENT - reused across simulations)
 var tectonic_uniform_set: RID
 var atmosphere_uniform_set: RID
 var erosion_uniform_set: RID
@@ -236,7 +236,7 @@ func _init_uniform_sets():
 	print("[Orchestrator] ✓ Uniform Sets initialized")
 
 # ============================================================================
-# SIMULATION COMPLÈTE
+# SIMULATION COMPLÈTE (AVEC GARBAGE COLLECTION)
 # ============================================================================
 
 func run_simulation(generation_params: Dictionary) -> void:
@@ -247,12 +247,16 @@ func run_simulation(generation_params: Dictionary) -> void:
 	print("  Température: ", generation_params.get("avg_temperature", 15.0), "°C")
 	print("  Résolution: ", resolution)
 	
+	# 🔥 GARBAGE COLLECTION: Track all temporary RIDs
+	var _rid_garbage_bin: Array[RID] = []
+	
 	# Phase 1: Initialisation du terrain
 	_initialize_terrain(generation_params)
 	
 	# Phase 2: Érosion hydraulique (100 itérations)
 	var erosion_iters = generation_params.get("erosion_iterations", 100)
-	run_hydraulic_erosion(erosion_iters, generation_params)
+	var erosion_garbage = _run_hydraulic_erosion_tracked(erosion_iters, generation_params)
+	_rid_garbage_bin.append_array(erosion_garbage)
 	
 	# Phase 3: Orogenèse (si disponible)
 	if orogeny_pipeline.is_valid():
@@ -262,12 +266,20 @@ func run_simulation(generation_params: Dictionary) -> void:
 	
 	# Phase 4: Génération des régions (si disponible)
 	if region_pipeline.is_valid():
-		run_region_generation(generation_params)
+		var region_garbage = _run_region_generation_tracked(generation_params)
+		_rid_garbage_bin.append_array(region_garbage)
 	else:
 		push_warning("[Orchestrator] ⚠️ Region shader non disponible, étape ignorée")
 	
+	# 🧹 CLEANUP: Free all temporary resources
+	print("[Orchestrator] 🧹 Nettoyage de ", _rid_garbage_bin.size(), " ressources temporaires...")
+	for rid in _rid_garbage_bin:
+		if rid.is_valid():
+			rd.free_rid(rid)
+	_rid_garbage_bin.clear()
+	
 	print("=".repeat(60))
-	print("[Orchestrator] ✅ SIMULATION TERMINÉE")
+	print("[Orchestrator] ✅ SIMULATION TERMINÉE (Pas de fuite mémoire)")
 	print("=".repeat(60) + "\n")
 
 # ============================================================================
@@ -326,16 +338,17 @@ func _initialize_terrain(params: Dictionary) -> void:
 	print("[Orchestrator] ✅ Terrain initialisé")
 
 # ============================================================================
-# PHASE 2: ÉROSION HYDRAULIQUE
+# PHASE 2: ÉROSION HYDRAULIQUE (WITH GARBAGE TRACKING)
 # ============================================================================
 
-func run_hydraulic_erosion(iterations: int = 10, custom_params: Dictionary = {}):
-	"""Execute hydraulic erosion cycle"""
+func _run_hydraulic_erosion_tracked(iterations: int, custom_params: Dictionary) -> Array[RID]:
+	"""Execute hydraulic erosion cycle - Returns temporary RIDs for cleanup"""
 	
-	# CRITICAL: Check if erosion pipeline is ready
+	var garbage_bin: Array[RID] = []
+	
 	if not erosion_pipeline.is_valid() or not erosion_uniform_set.is_valid():
 		push_error("[Orchestrator] Erosion pipeline not ready - skipping")
-		return
+		return garbage_bin
 	
 	print("[Orchestrator] 🌊 Érosion hydraulique: ", iterations, " itérations")
 	
@@ -353,25 +366,28 @@ func run_hydraulic_erosion(iterations: int = 10, custom_params: Dictionary = {})
 		"min_height_delta": custom_params.get("min_height_delta", 0.001)
 	}
 	
-	# Calculate work groups (8x8 local size)
 	var groups_x = ceili(resolution.x / 8.0)
 	var groups_y = ceili(resolution.y / 8.0)
 	
 	for i in range(iterations):
 		# Step 0: Rain
-		_dispatch_erosion_step(0, params, groups_x, groups_y)
+		var rain_rids = _dispatch_erosion_step(0, params, groups_x, groups_y)
+		garbage_bin.append_array(rain_rids)
 		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
 		# Step 1: Flux calculation
-		_dispatch_erosion_step(1, params, groups_x, groups_y)
+		var flux_rids = _dispatch_erosion_step(1, params, groups_x, groups_y)
+		garbage_bin.append_array(flux_rids)
 		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
 		# Step 2: Water update
-		_dispatch_erosion_step(2, params, groups_x, groups_y)
+		var water_rids = _dispatch_erosion_step(2, params, groups_x, groups_y)
+		garbage_bin.append_array(water_rids)
 		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
 		# Step 3: Erosion/Deposition
-		_dispatch_erosion_step(3, params, groups_x, groups_y)
+		var erosion_rids = _dispatch_erosion_step(3, params, groups_x, groups_y)
+		garbage_bin.append_array(erosion_rids)
 		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
 		if i % 10 == 0:
@@ -381,15 +397,17 @@ func run_hydraulic_erosion(iterations: int = 10, custom_params: Dictionary = {})
 	rd.submit()
 	rd.sync()
 	
-	print("[Orchestrator] ✅ Érosion terminée")
+	print("[Orchestrator] ✅ Érosion terminée (", garbage_bin.size(), " ressources à nettoyer)")
+	return garbage_bin
 
-func _dispatch_erosion_step(step: int, params: Dictionary, groups_x: int, groups_y: int):
-	"""Dispatch erosion shader with validation"""
+func _dispatch_erosion_step(step: int, params: Dictionary, groups_x: int, groups_y: int) -> Array[RID]:
+	"""Dispatch erosion shader - Returns RIDs to be freed"""
 	
-	# CRITICAL: Check if pipeline and uniform set are valid
+	var temp_rids: Array[RID] = []
+	
 	if not erosion_pipeline.is_valid() or not erosion_uniform_set.is_valid():
 		push_error("[Orchestrator] Cannot dispatch - invalid pipeline/uniform set")
-		return
+		return temp_rids
 	
 	# Create parameter buffer
 	var param_data = PackedFloat32Array([
@@ -408,12 +426,15 @@ func _dispatch_erosion_step(step: int, params: Dictionary, groups_x: int, groups
 	])
 	
 	var param_buffer = rd.storage_buffer_create(param_data.to_byte_array().size(), param_data.to_byte_array())
+	temp_rids.append(param_buffer)  # 🔥 TRACK FOR CLEANUP
+	
 	var param_uniform = RDUniform.new()
 	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
 	param_uniform.binding = 0
 	param_uniform.add_id(param_buffer)
 	
 	var param_set = rd.uniform_set_create([param_uniform], erosion_pipeline, 1)
+	temp_rids.append(param_set)  # 🔥 TRACK FOR CLEANUP
 	
 	# Dispatch
 	var compute_list = rd.compute_list_begin()
@@ -423,8 +444,7 @@ func _dispatch_erosion_step(step: int, params: Dictionary, groups_x: int, groups
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	# Cleanup
-	rd.free_rid(param_buffer)
+	return temp_rids
 
 # ============================================================================
 # PHASE 3: OROGENÈSE
@@ -452,14 +472,16 @@ func run_orogeny(params: Dictionary):
 	print("[Orchestrator] ✅ Orogenèse terminée")
 
 # ============================================================================
-# PHASE 4: GÉNÉRATION DE RÉGIONS
+# PHASE 4: GÉNÉRATION DE RÉGIONS (WITH GARBAGE TRACKING)
 # ============================================================================
 
-func run_region_generation(params: Dictionary):
-	"""Génération de régions Voronoi (optionnel)"""
+func _run_region_generation_tracked(params: Dictionary) -> Array[RID]:
+	"""Génération de régions Voronoi - Returns temporary RIDs for cleanup"""
+	
+	var temp_rids: Array[RID] = []
 	
 	if not region_pipeline.is_valid():
-		return
+		return temp_rids
 	
 	print("[Orchestrator] 🗺️ Génération des régions (Voronoi)")
 	
@@ -478,12 +500,15 @@ func run_region_generation(params: Dictionary):
 		))
 	
 	var seed_buffer = rd.storage_buffer_create(seed_data.to_byte_array().size(), seed_data.to_byte_array())
+	temp_rids.append(seed_buffer)  # 🔥 TRACK FOR CLEANUP
+	
 	var seed_uniform = RDUniform.new()
 	seed_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
 	seed_uniform.binding = 1
 	seed_uniform.add_id(seed_buffer)
 	
 	var region_set = rd.uniform_set_create([seed_uniform], region_pipeline, 1)
+	temp_rids.append(region_set)  # 🔥 TRACK FOR CLEANUP
 	
 	var groups_x = ceili(resolution.x / 8.0)
 	var groups_y = ceili(resolution.y / 8.0)
@@ -497,9 +522,9 @@ func run_region_generation(params: Dictionary):
 	
 	rd.submit()
 	rd.sync()
-	rd.free_rid(seed_buffer)
 	
-	print("[Orchestrator] ✅ Régions générées")
+	print("[Orchestrator] ✅ Régions générées (", temp_rids.size(), " ressources à nettoyer)")
+	return temp_rids
 
 # ============================================================================
 # EXPORT
@@ -514,14 +539,26 @@ func export_velocity_map_to_image() -> Image:
 	return Image.create_from_data(resolution.x, resolution.y, false, Image.FORMAT_RGBAF, byte_data)
 
 # ============================================================================
-# CLEANUP
+# CLEANUP (DESTRUCTOR)
 # ============================================================================
 
 func cleanup():
-	rd.free_rid(geo_state_texture)
-	rd.free_rid(atmo_state_texture)
-	rd.free_rid(flux_map_texture)
-	rd.free_rid(velocity_map_texture)
+	"""
+	Manual cleanup - call this before destroying the orchestrator
+	"""
+	print("[Orchestrator] 🧹 Nettoyage des ressources persistantes...")
+	
+	# Free textures
+	if geo_state_texture.is_valid():
+		rd.free_rid(geo_state_texture)
+	if atmo_state_texture.is_valid():
+		rd.free_rid(atmo_state_texture)
+	if flux_map_texture.is_valid():
+		rd.free_rid(flux_map_texture)
+	if velocity_map_texture.is_valid():
+		rd.free_rid(velocity_map_texture)
+	
+	# Free pipelines
 	if tectonic_pipeline.is_valid():
 		rd.free_rid(tectonic_pipeline)
 	if atmosphere_pipeline.is_valid():
@@ -532,4 +569,24 @@ func cleanup():
 		rd.free_rid(orogeny_pipeline)
 	if region_pipeline.is_valid():
 		rd.free_rid(region_pipeline)
+	
+	# Free uniform sets
+	if tectonic_uniform_set.is_valid():
+		rd.free_rid(tectonic_uniform_set)
+	if atmosphere_uniform_set.is_valid():
+		rd.free_rid(atmosphere_uniform_set)
+	if erosion_uniform_set.is_valid():
+		rd.free_rid(erosion_uniform_set)
+	if orogeny_uniform_set.is_valid():
+		rd.free_rid(orogeny_uniform_set)
+	if region_uniform_set.is_valid():
+		rd.free_rid(region_uniform_set)
+	
 	print("[Orchestrator] ✅ Ressources libérées")
+
+func _notification(what: int) -> void:
+	"""
+	Automatic cleanup when object is destroyed
+	"""
+	if what == NOTIFICATION_PREDELETE:
+		cleanup()
