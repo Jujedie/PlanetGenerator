@@ -8,70 +8,77 @@ signal progress_updated(value: float, status: String)
 ## ============================================================================
 ## PLANET GENERATOR - FINAL INTEGRATION
 ## ============================================================================
-## Main controller that connects UI → GPU → 3D → Export
+## Main controller that connects UI → GPU → Export
 ## Maintains backward compatibility with legacy CPU generation
 ## ============================================================================
 
+# Constants
+const BASE_EROSION_ITERATIONS = 100
+const BASE_TECTONIC_YEARS     = 100_000_000
+const BASE_ATMOSPHERE_STEPS   = 1000
+
 # Original properties (unchanged)
-var nom: String
-var circonference: int
-var renderProgress: ProgressBar
-var mapStatusLabel: Label
+var nom             : String
+var circonference   : int
+var renderProgress  : ProgressBar
+var mapStatusLabel  : Label
 var cheminSauvegarde: String
 
-var avg_temperature: float
-var water_elevation: int
-var avg_precipitation: float
+var avg_temperature   : float
+var water_elevation   : int
+var avg_precipitation : float
 var elevation_modifier: int
-var nb_thread: int
-var atmosphere_type: int
-var nb_avg_cases: int
+var nb_thread         : int
+var atmosphere_type   : int
+var nb_avg_cases      : int
 
 # Legacy images (for backward compatibility)
-var elevation_map: Image
+var elevation_map    : Image
 var elevation_map_alt: Image
 var precipitation_map: Image
-var temperature_map: Image
-var region_map: Image
-var water_map: Image
-var banquise_map: Image
-var biome_map: Image
-var oil_map: Image
-var ressource_map: Image
-var nuage_map: Image
-var river_map: Image
-var final_map: Image
-var preview: Image
+var temperature_map  : Image
+var region_map       : Image
+var water_map        : Image
+var banquise_map     : Image
+var biome_map        : Image
+var oil_map          : Image
+var ressource_map    : Image
+var nuage_map        : Image
+var river_map        : Image
+var final_map        : Image
+var preview          : Image
 
 # GPU acceleration components
 var gpu_orchestrator: GPUOrchestrator = null
-var use_gpu_acceleration: bool = true
+var use_gpu_acceleration: bool
 
 # Generation parameters (compiled from UI)
 var generation_params: Dictionary = {}
 
 var cylinder_radius: float
 
-func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, elevation_modifier_param: int = 0, nb_thread_param: int = 8, atmosphere_type_param: int = 0, renderProgress_param: ProgressBar = null, mapStatusLabel_param: Label = null, nb_avg_cases_param: int = 50, cheminSauvegarde_param: String = "user://temp/") -> void:
+func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, elevation_modifier_param: int = 0, nb_thread_param: int = 8, atmosphere_type_param: int = 0, renderProgress_param: ProgressBar = null, mapStatusLabel_param: Label = null, nb_avg_cases_param: int = 50, cheminSauvegarde_param: String = "user://temp/", use_gpu_acceleration_param: bool = true) -> void:
 	
 	# Store all parameters
-	self.nom = nom_param
-	self.circonference = int(rayon * 2 * PI)
+	self.nom            = nom_param
+	self.circonference  = int(rayon * 2 * PI)
 	self.renderProgress = renderProgress_param
 	if self.renderProgress:
 		self.renderProgress.value = 0.0
-	self.mapStatusLabel = mapStatusLabel_param
+	
+	self.mapStatusLabel   = mapStatusLabel_param
 	self.cheminSauvegarde = cheminSauvegarde_param
-	self.nb_avg_cases = nb_avg_cases_param
+	self.nb_avg_cases     = nb_avg_cases_param
 	
-	self.avg_temperature = avg_temperature_param
-	self.water_elevation = water_elevation_param
-	self.avg_precipitation = avg_precipitation_param
+	self.avg_temperature    = avg_temperature_param
+	self.water_elevation    = water_elevation_param
+	self.avg_precipitation  = avg_precipitation_param
 	self.elevation_modifier = elevation_modifier_param
-	self.nb_thread = nb_thread_param
-	self.atmosphere_type = atmosphere_type_param
+	self.nb_thread          = nb_thread_param
+	self.atmosphere_type    = atmosphere_type_param
 	
-	self.cylinder_radius = self.circonference / (2.0 * PI)
+	self.cylinder_radius      = self.circonference / (2.0 * PI)
+	self.use_gpu_acceleration = use_gpu_acceleration_param
 	
 	# Compile generation parameters
 	_compile_generation_params()
@@ -98,9 +105,9 @@ func _compile_generation_params() -> void:
 		"atmosphere_type": atmosphere_type,
 		"nb_thread": nb_thread,
 		"nb_avg_cases": nb_avg_cases,
-		"erosion_iterations": 100,
-		"tectonic_years": 100_000_000,
-		"atmosphere_steps": 1000
+		"erosion_iterations": BASE_EROSION_ITERATIONS,
+		"tectonic_years": BASE_TECTONIC_YEARS,
+		"atmosphere_steps": BASE_ATMOSPHERE_STEPS
 	}
 	
 	print("[PlanetGenerator] Parameters compiled:")
@@ -112,12 +119,6 @@ func _compile_generation_params() -> void:
 func _init_gpu_system() -> void:
 	"""Initialize GPU acceleration if available"""
 	
-	# TEMPORARY: Force CPU mode until shaders are ready
-	#push_warning("[PlanetGenerator] GPU acceleration disabled (shaders not ready)")
-	#use_gpu_acceleration = false
-	#return
-	
-	# Original code below (will be re-enabled when shaders are ready)
 	var gpu_context = GPUContext.instance
 	if not gpu_context:
 		push_warning("[PlanetGenerator] GPUContext not available, falling back to CPU")

@@ -40,9 +40,9 @@ var dt: float = 0.016
 # INITIALISATION
 # ============================================================================
 
-func _init(gpu_context: GPUContext, res: Vector2i = Vector2i(2048, 1024)):
+func _init(gpu_context: GPUContext, res: Vector2i = Vector2i(128, 64)):
 	gpu = gpu_context
-	rd = gpu.rd
+	rd  = gpu.rd
 	resolution = res
 	
 	print("[Orchestrator] 🚀 Initialisation...")
