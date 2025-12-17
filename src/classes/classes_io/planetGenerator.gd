@@ -268,8 +268,9 @@ func _export_gpu_maps() -> void:
 	gpu_context.rd.submit()
 	gpu_context.rd.sync()
 	
-	var geo_rid = gpu_context.textures[GPUContext.TextureID.GEOPHYSICAL_STATE]
-	var atmo_rid = gpu_context.textures[GPUContext.TextureID.ATMOSPHERIC_STATE]
+		
+	var geo_rid = gpu_orchestrator.geo_state_texture
+	var atmo_rid = gpu_orchestrator.atmo_state_texture
 	
 	# Validate texture RIDs
 	if not geo_rid.is_valid() or not atmo_rid.is_valid():
@@ -328,9 +329,8 @@ func _update_3d_mesh() -> void:
 		print("[PlanetGenerator] No 3D mesh generator attached, skipping visualization update")
 		return
 	
-	var gpu_context = GPUContext.instance
-	var geo_rid = gpu_context.textures[GPUContext.TextureID.GEOPHYSICAL_STATE]
-	var atmo_rid = gpu_context.textures[GPUContext.TextureID.ATMOSPHERIC_STATE]
+	var geo_rid = gpu_orchestrator.geo_state_texture
+	var atmo_rid = gpu_orchestrator.atmo_state_texture
 	
 	planet_mesh_gen.update_maps(geo_rid, atmo_rid)
 	print("[PlanetGenerator] 3D visualization updated")
@@ -452,9 +452,8 @@ func export_to_directory(output_dir: String) -> void:
 	
 	if use_gpu_acceleration and gpu_orchestrator:
 		# GPU path - use PlanetExporter
-		var gpu_context = GPUContext.instance
-		var geo_rid = gpu_context.textures[GPUContext.TextureID.GEOPHYSICAL_STATE]
-		var atmo_rid = gpu_context.textures[GPUContext.TextureID.ATMOSPHERIC_STATE]
+		var geo_rid = gpu_orchestrator.geo_state_texture
+		var atmo_rid = gpu_orchestrator.atmo_state_texture
 		
 		var exporter = PlanetExporter.new()
 		exporter.export_maps(geo_rid, atmo_rid, output_dir, generation_params)

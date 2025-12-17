@@ -2,8 +2,8 @@ extends Node
 class_name GPUContext
 
 # === CONSTANTES DE CONFIGURATION ===
-const RESOLUTION_WIDTH = 2048
-const RESOLUTION_HEIGHT = 1024
+const RESOLUTION_WIDTH = 128
+const RESOLUTION_HEIGHT = 64
 const FORMAT_STATE = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
 
 enum TextureID {
