@@ -120,8 +120,8 @@ func _init_gpu_system() -> void:
 	"""Initialize GPU acceleration if available"""
 	
 	var gpu_context = GPUContext.instance
-	if not gpu_context:
-		push_warning("[PlanetGenerator] GPUContext not available, falling back to CPU")
+	if not gpu_context or not gpu_context.rd:
+		push_warning("[PlanetGenerator] GPUContext or RD not available, falling back to CPU")
 		use_gpu_acceleration = false
 		return
 	
@@ -265,6 +265,10 @@ func _export_gpu_maps() -> void:
 	var gpu_context = GPUContext.instance
 	
 	# CRITICAL: Ensure all GPU work is complete
+	if not gpu_context or not gpu_context.rd:
+		push_error("[PlanetGenerator] GPUContext or RD not available for export")
+		return
+	
 	gpu_context.rd.submit()
 	gpu_context.rd.sync()
 	
@@ -413,6 +417,9 @@ func get_gpu_texture_rids() -> Dictionary:
 		return {}
 	
 	var gpu_context = GPUContext.instance
+	if not gpu_context or not gpu_context.rd:
+		return {}
+	
 	return {
 		"geo": gpu_context.textures[GPUContext.TextureID.GEOPHYSICAL_STATE],
 		"atmo": gpu_context.textures[GPUContext.TextureID.ATMOSPHERIC_STATE]
@@ -433,6 +440,10 @@ func export_to_directory(output_dir: String) -> void:
 		
 		var exporter = PlanetExporter.new()
 		exporter.export_maps(geo_rid, atmo_rid, output_dir, generation_params)
+		
+		# Cleanup GPU resources after export
+		gpu_orchestrator.cleanup()
+		gpu_orchestrator = null
 	else:
 		# CPU path - use legacy save
 		save_maps_to_directory(output_dir)
@@ -567,3 +578,9 @@ static func deleteImagesTemps():
 		dir.remove(file_name)
 		file_name = dir.get_next()
 	dir.list_dir_end()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		if gpu_orchestrator:
+			gpu_orchestrator.cleanup()
+			gpu_orchestrator = null

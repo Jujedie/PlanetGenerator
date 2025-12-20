@@ -8,8 +8,6 @@ class_name PlanetExporter
 ## Uses existing color palettes from enum.gd for consistency
 ## ============================================================================
 
-const Enum = preload("res://src/enum.gd")
-
 # Map generation parameters (for context-aware coloring)
 var params: Dictionary = {}
 
@@ -118,8 +116,7 @@ func _export_elevation_map(geo_img: Image, output_dir: String, grayscale: bool =
 				color = Color(0.145, 0.322, 0.541) if not grayscale else Color(0.1, 0.1, 0.1)
 			else:
 				# Land - use Enum elevation colors
-				var enum_instance = Enum.new()
-				color = enum_instance.getElevationColor(int(elevation), grayscale)
+				color = Enum.getElevationColor(int(elevation), grayscale)
 			
 			output.set_pixel(x, y, color)
 	
@@ -163,7 +160,6 @@ func _export_river_map(geo_img: Image, atmo_img: Image, output_dir: String) -> S
 	output.fill(Color(0, 0, 0, 0))  # Transparent background
 	
 	var planet_type = params.get("atmosphere_type", 0)
-	var enum_instance = Enum.new()
 	
 	for y in range(height):
 		for x in range(width):
@@ -197,7 +193,7 @@ func _export_river_map(geo_img: Image, atmo_img: Image, output_dir: String) -> S
 			
 			if is_river:
 				# Use enum.gd river biome colors
-				var river_biome = enum_instance.getRiverBiomeBySize(int(temperature - 273.0), planet_type, river_size)
+				var river_biome = Enum.getRiverBiomeBySize(int(temperature - 273.0), planet_type, river_size)
 				if river_biome:
 					output.set_pixel(x, y, river_biome.get_couleur())
 				else:
@@ -221,15 +217,13 @@ func _export_temperature_map(atmo_img: Image, output_dir: String) -> String:
 	var height = atmo_img.get_height()
 	var output = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	
-	var enum_instance = Enum.new()
-	
 	for y in range(height):
 		for x in range(width):
 			var pixel = atmo_img.get_pixel(x, y)
 			var temperature_kelvin = pixel.r
 			var temperature_celsius = temperature_kelvin - 273.15
 			
-			var color = enum_instance.getTemperatureColor(temperature_celsius)
+			var color = Enum.getTemperatureColor(temperature_celsius)
 			output.set_pixel(x, y, color)
 	
 	var path = output_dir.path_join("temperature_map.png")
@@ -246,14 +240,12 @@ func _export_precipitation_map(atmo_img: Image, output_dir: String) -> String:
 	var height = atmo_img.get_height()
 	var output = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	
-	var enum_instance = Enum.new()
-	
 	for y in range(height):
 		for x in range(width):
 			var pixel = atmo_img.get_pixel(x, y)
 			var humidity = pixel.g  # Use humidity as precipitation proxy
 			
-			var color = enum_instance.getPrecipitationColor(humidity)
+			var color = Enum.getPrecipitationColor(humidity)
 			output.set_pixel(x, y, color)
 	
 	var path = output_dir.path_join("precipitation_map.png")
@@ -272,7 +264,6 @@ func _export_biome_map(geo_img: Image, atmo_img: Image, output_dir: String) -> S
 	
 	var planet_type = params.get("atmosphere_type", 0)
 	var sea_level = params.get("sea_level", 0.0)
-	var enum_instance = Enum.new()
 	
 	for y in range(height):
 		for x in range(width):
@@ -289,7 +280,7 @@ func _export_biome_map(geo_img: Image, atmo_img: Image, output_dir: String) -> S
 			
 			# Get biome from enum.gd (using existing logic)
 			var biome_noise = (sin(x * 0.1) + cos(y * 0.1)) * 0.5 + 0.5  # Simple noise
-			var biome = enum_instance.getBiomeByNoise(
+			var biome = Enum.getBiomeByNoise(
 				planet_type,
 				int(elevation),
 				humidity,
@@ -343,7 +334,6 @@ func _export_final_map(geo_img: Image, atmo_img: Image, output_dir: String) -> S
 	var output = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	
 	var planet_type = params.get("atmosphere_type", 0)
-	var enum_instance = Enum.new()
 	
 	for y in range(height):
 		for x in range(width):
@@ -359,11 +349,11 @@ func _export_final_map(geo_img: Image, atmo_img: Image, output_dir: String) -> S
 			var temperature_celsius = int(temperature_kelvin - 273.15)
 			
 			# Get base elevation color
-			var base_color = enum_instance.getElevationColor(int(elevation), true)
+			var base_color = Enum.getElevationColor(int(elevation), true)
 			
 			# Get biome for vegetation tint
 			var biome_noise = (sin(x * 0.1) + cos(y * 0.1)) * 0.5 + 0.5
-			var biome = enum_instance.getBiomeByNoise(
+			var biome = Enum.getBiomeByNoise(
 				planet_type,
 				int(elevation),
 				humidity,
@@ -417,8 +407,7 @@ func _export_preview_map(geo_img: Image, atmo_img: Image, output_dir: String) ->
 				var atmo_pixel = atmo_img.get_pixel(nx, ny)
 				
 				var elevation = geo_pixel.r
-				var enum_instance = Enum.new()
-				var base_color = enum_instance.getElevationColor(int(elevation), true)
+				var base_color = Enum.getElevationColor(int(elevation), true)
 				
 				# Add clouds
 				var cloud_density = atmo_pixel.a

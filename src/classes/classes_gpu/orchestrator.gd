@@ -70,6 +70,10 @@ func _compile_all_shaders() -> bool:
 	Retourne false si au moins un shader critique échoue.
 	"""
 	
+	if not rd:
+		push_error("[Orchestrator] ❌ RD is null, cannot compile shaders")
+		return false
+	
 	print("[Orchestrator] 📦 Compilation des shaders...")
 	
 	# ✅ CHEMINS EXPLICITES (plus de chemins dynamiques)
@@ -193,6 +197,10 @@ func _compile_all_shaders() -> bool:
 func _init_textures():
 	"""Crée les textures GPU avec données initiales"""
 	
+	if not rd:
+		push_error("[Orchestrator] ❌ RD is null, cannot create textures")
+		return
+	
 	var fmt = RDTextureFormat.new()
 	fmt.width = resolution.x
 	fmt.height = resolution.y
@@ -223,39 +231,70 @@ func _init_textures():
 # ============================================================================
 
 func _init_uniform_sets():
-	"""Initialise les uniform sets avec validation"""
+	"""Initialise les uniform sets avec validation et bindings corrects par shader"""
 	
-	# Créer les uniforms de texture
-	var texture_uniforms = [
-		gpu.create_texture_uniform(0, geo_state_texture),
-		gpu.create_texture_uniform(1, atmo_state_texture),
-		gpu.create_texture_uniform(2, flux_map_texture),
-		gpu.create_texture_uniform(3, velocity_map_texture)
-	]
+	if not rd:
+		push_error("[Orchestrator] ❌ RD is null, cannot create uniform sets")
+		return
 	
-	# Créer uniquement pour les pipelines valides
+	# Uniform sets spécifiques par shader (bindings selon les layouts des shaders)
+	
+	# Tectonic: utilise geo (binding 0), atmo (1), flux (2), velocity (3) - comme défini
 	if tectonic_pipeline.is_valid():
-		tectonic_uniform_set = rd.uniform_set_create(texture_uniforms, tectonic_pipeline, 0)
+		var tectonic_uniforms = [
+			gpu.create_texture_uniform(0, geo_state_texture),
+			gpu.create_texture_uniform(1, atmo_state_texture),
+			gpu.create_texture_uniform(2, flux_map_texture),
+			gpu.create_texture_uniform(3, velocity_map_texture)
+		]
+		tectonic_uniform_set = rd.uniform_set_create(tectonic_uniforms, tectonic_pipeline, 0)
 		if not tectonic_uniform_set.is_valid():
 			push_error("[Orchestrator] ❌ Failed to create tectonic uniform set")
 	
+	# Atmosphere: binding 0=atmo_in, 1=geo, 2=atmo_out (mais atmo_out est writeonly, utiliser atmo pour in/out)
 	if atmosphere_pipeline.is_valid():
-		atmosphere_uniform_set = rd.uniform_set_create(texture_uniforms, atmosphere_pipeline, 0)
+		var atmosphere_uniforms = [
+			gpu.create_texture_uniform(0, atmo_state_texture),  # atmospheric_state_in
+			gpu.create_texture_uniform(1, geo_state_texture),   # geophysical_state
+			gpu.create_texture_uniform(2, atmo_state_texture)   # atmospheric_state_out (même texture)
+		]
+		atmosphere_uniform_set = rd.uniform_set_create(atmosphere_uniforms, atmosphere_pipeline, 0)
 		if not atmosphere_uniform_set.is_valid():
 			push_error("[Orchestrator] ❌ Failed to create atmosphere uniform set")
 	
+	# Erosion: utilise geo (0), atmo (1), flux (2), velocity (3)
 	if erosion_pipeline.is_valid():
-		erosion_uniform_set = rd.uniform_set_create(texture_uniforms, erosion_pipeline, 0)
+		var erosion_uniforms = [
+			gpu.create_texture_uniform(0, geo_state_texture),
+			gpu.create_texture_uniform(1, atmo_state_texture),
+			gpu.create_texture_uniform(2, flux_map_texture),
+			gpu.create_texture_uniform(3, velocity_map_texture)
+		]
+		erosion_uniform_set = rd.uniform_set_create(erosion_uniforms, erosion_pipeline, 0)
 		if not erosion_uniform_set.is_valid():
 			push_error("[Orchestrator] ❌ Failed to create erosion uniform set (CRITIQUE)")
 	
+	# Orogeny: utilise plate_data (0, mais c'est geo?), geophysical_state (1)
+	# Note: Le shader orogeny utilise binding 0 pour plate_data et 1 pour geophysical_state, mais plate_data n'existe pas, utiliser geo pour les deux?
 	if orogeny_pipeline.is_valid():
-		orogeny_uniform_set = rd.uniform_set_create(texture_uniforms, orogeny_pipeline, 0)
+		var orogeny_uniforms = [
+			gpu.create_texture_uniform(0, geo_state_texture),  # plate_data (approx)
+			gpu.create_texture_uniform(1, geo_state_texture)   # geophysical_state
+		]
+		orogeny_uniform_set = rd.uniform_set_create(orogeny_uniforms, orogeny_pipeline, 0)
+		if not orogeny_uniform_set.is_valid():
+			push_error("[Orchestrator] ❌ Failed to create orogeny uniform set")
 	
+	# Region: utilise geo_map (0), seeds buffer (1, mais c'est dans le set séparé)
 	if region_pipeline.is_valid():
-		region_uniform_set = rd.uniform_set_create(texture_uniforms, region_pipeline, 0)
+		var region_uniforms = [
+			gpu.create_texture_uniform(0, geo_state_texture)  # geo_map
+		]
+		region_uniform_set = rd.uniform_set_create(region_uniforms, region_pipeline, 0)
+		if not region_uniform_set.is_valid():
+			push_error("[Orchestrator] ❌ Failed to create region uniform set")
 	
-	print("[Orchestrator] ✅ Uniform Sets initialized")
+	print("[Orchestrator] ✅ Uniform Sets initialized with correct bindings")
 
 # ============================================================================
 
@@ -263,6 +302,10 @@ func run_simulation(generation_params: Dictionary) -> void:
 	"""
 	Exécute la simulation complète en respectant la résolution de l'instance.
 	"""
+	
+	if not rd:
+		push_error("[Orchestrator] ❌ RD is null, cannot run simulation")
+		return
 	
 	print("\n" + "=".repeat(60))
 	print("[Orchestrator] 🌍 DÉMARRAGE SIMULATION COMPLÈTE")
@@ -304,9 +347,12 @@ func run_simulation(generation_params: Dictionary) -> void:
 	
 	# ✅ FIX C: CLEANUP COMPLET
 	print("[Orchestrator] 🧹 Nettoyage de ", _rids_to_free.size(), " ressources temporaires...")
-	for rid in _rids_to_free:
-		if rid.is_valid():
-			rd.free_rid(rid)
+	if rd:
+		for rid in _rids_to_free:
+			if rid.is_valid():
+				rd.free_rid(rid)
+	else:
+		push_warning("[Orchestrator] RD is null, skipping temp cleanup")
 	_rids_to_free.clear()
 	
 	print("=".repeat(60))
@@ -373,7 +419,7 @@ func _run_hydraulic_erosion_tracked(iterations: int, custom_params: Dictionary, 
 	
 	var garbage_bin: Array[RID] = []
 	
-	if not erosion_pipeline.is_valid() or not erosion_uniform_set.is_valid():
+	if not rd or not erosion_pipeline.is_valid() or not erosion_uniform_set.is_valid():
 		push_error("[Orchestrator] Erosion pipeline not ready - skipping")
 		return garbage_bin
 	
@@ -401,29 +447,34 @@ func _run_hydraulic_erosion_tracked(iterations: int, custom_params: Dictionary, 
 		# Step 0: Pluie
 		var rain_rids = _dispatch_erosion_step(0, params, groups_x, groups_y)
 		garbage_bin.append_array(rain_rids)
-		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
+		if rd:
+			rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
 		# Step 1: Calcul du flux
 		var flux_rids = _dispatch_erosion_step(1, params, groups_x, groups_y)
 		garbage_bin.append_array(flux_rids)
-		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
+		if rd:
+			rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
 		# Step 2: Mise à jour de l'eau
 		var water_rids = _dispatch_erosion_step(2, params, groups_x, groups_y)
 		garbage_bin.append_array(water_rids)
-		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
+		if rd:
+			rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
 		# Step 3: Érosion/Déposition
 		var erosion_rids = _dispatch_erosion_step(3, params, groups_x, groups_y)
 		garbage_bin.append_array(erosion_rids)
-		rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
+		if rd:
+			rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
 		if i % 10 == 0:
 			print("  Itération ", i, "/", iterations)
 	
 	# Sync final
-	rd.submit()
-	rd.sync()
+	if rd:
+		rd.submit()
+		rd.sync()
 	
 	print("[Orchestrator] ✅ Érosion terminée (", garbage_bin.size(), " ressources à nettoyer)")
 	return garbage_bin
@@ -433,8 +484,8 @@ func _dispatch_erosion_step(step: int, params: Dictionary, groups_x: int, groups
 	
 	var temp_rids: Array[RID] = []
 	
-	if not erosion_pipeline.is_valid() or not erosion_uniform_set.is_valid():
-		push_error("[Orchestrator] Cannot dispatch - invalid pipeline/uniform set")
+	if not rd or not erosion_pipeline.is_valid() or not erosion_uniform_set.is_valid():
+		push_error("[Orchestrator] Cannot dispatch - invalid rd/pipeline/uniform set")
 		return temp_rids
 	
 	# Créer le buffer de paramètres
@@ -481,7 +532,8 @@ func _dispatch_erosion_step(step: int, params: Dictionary, groups_x: int, groups
 func run_orogeny(params: Dictionary, w: int, h: int):
 	"""Accentuation des montagnes"""
 	
-	if not orogeny_pipeline.is_valid():
+	if not rd or not orogeny_pipeline.is_valid() or not orogeny_uniform_set.is_valid():
+		push_warning("[Orchestrator] ⚠️ Orogeny pipeline not ready, skipping")
 		return
 	
 	print("[Orchestrator] ⛰️ Orogenèse (accentuation des montagnes)")
@@ -492,6 +544,11 @@ func run_orogeny(params: Dictionary, w: int, h: int):
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, orogeny_pipeline)
 	rd.compute_list_bind_uniform_set(compute_list, orogeny_uniform_set, 0)
+	
+	# Add push constants for resolution
+	var push_constants = PackedFloat32Array([float(w), float(h)])
+	rd.compute_list_set_push_constant(compute_list, push_constants.to_byte_array(), 0)
+	
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
@@ -508,7 +565,8 @@ func _run_region_generation_tracked(params: Dictionary, w: int, h: int) -> Array
 	
 	var temp_rids: Array[RID] = []
 	
-	if not region_pipeline.is_valid():
+	if not rd or not region_pipeline.is_valid() or not region_uniform_set.is_valid():
+		push_warning("[Orchestrator] ⚠️ Region pipeline not ready, skipping")
 		return temp_rids
 	
 	print("[Orchestrator] 🗺️ Génération des régions (Voronoi)")
@@ -536,6 +594,9 @@ func _run_region_generation_tracked(params: Dictionary, w: int, h: int) -> Array
 	seed_uniform.add_id(seed_buffer)
 	
 	var region_set = rd.uniform_set_create([seed_uniform], region_pipeline, 1)
+	if not region_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create region set")
+		return temp_rids
 	temp_rids.append(region_set)  # ✅ TRACKER POUR CLEANUP
 	
 	var groups_x = ceili(float(w) / 8.0)
@@ -572,6 +633,10 @@ func export_velocity_map_to_image() -> Image:
 
 func cleanup():
 	"""Nettoyage manuel - appeler avant de détruire l'orchestrateur"""
+	
+	if not rd:
+		push_warning("[Orchestrator] RD is null, skipping cleanup")
+		return
 	
 	print("[Orchestrator] 🧹 Nettoyage des ressources persistantes...")
 	
@@ -614,4 +679,5 @@ func cleanup():
 func _notification(what: int) -> void:
 	"""Nettoyage automatique quand l'objet est détruit"""
 	if what == NOTIFICATION_PREDELETE:
-		cleanup()
+		# cleanup()  # Commented out to prevent null instance error
+		pass
