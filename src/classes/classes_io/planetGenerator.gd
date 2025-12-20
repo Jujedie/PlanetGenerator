@@ -120,7 +120,7 @@ func _init_gpu_system() -> void:
 	"""Initialize GPU acceleration if available"""
 	
 	var gpu_context = GPUContext.instance
-	if not gpu_context or not gpu_context.rd:
+	if not gpu_context or not gpu_context.rd and not gpu_context.shaders:
 		push_warning("[PlanetGenerator] GPUContext or RD not available, falling back to CPU")
 		use_gpu_acceleration = false
 		return

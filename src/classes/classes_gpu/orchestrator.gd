@@ -1,15 +1,6 @@
 extends RefCounted
 class_name GPUOrchestrator
 
-## ============================================================================
-## GPU ORCHESTRATOR - VERSION CORRIGÉE
-## ============================================================================
-## Corrections appliquées :
-## ✅ A. Chargement robuste des shaders avec chemins explicites
-## ✅ B. Résolution fixée (suppression du calcul basé sur radius)
-## ✅ C. Garbage collection complète (aucune fuite mémoire)
-## ============================================================================
-
 var gpu: GPUContext
 var rd: RenderingDevice
 
@@ -89,6 +80,7 @@ func _init(gpu_context: GPUContext, res: Vector2i = Vector2i(128, 64)):
 	print("[Orchestrator] ✅ Shaders compilés")
 	
 	# 3. Créer les uniform sets
+	
 	_init_uniform_sets()
 	
 	# ✅ VALIDATION 5: Vérifier qu'au moins le pipeline d'érosion est prêt
@@ -158,74 +150,26 @@ func _compile_all_shaders() -> bool:
 		
 		print("  • Chargement: ", name)
 		
-		# ✅ VÉRIFICATION 1: Fichier existe
-		if not FileAccess.file_exists(path):
-			var msg = "[Orchestrator] ❌ Shader introuvable: " + path
-			if is_critical:
-				push_error(msg)
-				all_critical_loaded = false
-			else:
-				push_warning(msg + " (non critique, ignoré)")
-			continue
-		
-		# ✅ VÉRIFICATION 2: Chargement du fichier
-		var shader_file = load(path)
-		if not shader_file:
-			var msg = "[Orchestrator] ❌ Échec chargement fichier: " + path
-			if is_critical:
-				push_error(msg)
-				all_critical_loaded = false
-			else:
-				push_warning(msg + " (non critique, ignoré)")
-			continue
-		
-		# ✅ VÉRIFICATION 3: SPIR-V disponible
-		var shader_spirv: RDShaderSPIRV = shader_file.get_spirv()
-		if not shader_spirv:
-			var msg = "[Orchestrator] ❌ Pas de SPIR-V disponible: " + name
-			if is_critical:
-				push_error(msg)
-				all_critical_loaded = false
-			else:
-				push_warning(msg + " (non critique, ignoré)")
-			continue
-		
-		# ✅ VÉRIFICATION 4: Compilation SPIR-V
-		var shader_rid: RID = rd.shader_create_from_spirv(shader_spirv)
-		if not shader_rid.is_valid():
-			var msg = "[Orchestrator] ❌ Échec compilation SPIR-V: " + name
-			if is_critical:
-				push_error(msg)
-				all_critical_loaded = false
-			else:
-				push_warning(msg + " (non critique, ignoré)")
-			continue
-		
-		# ✅ VÉRIFICATION 5: Création du pipeline
-		var pipeline_rid: RID = rd.compute_pipeline_create(shader_rid)
-		if not pipeline_rid.is_valid():
-			var msg = "[Orchestrator] ❌ Échec création pipeline: " + name
-			if is_critical:
-				push_error(msg)
-				all_critical_loaded = false
-			else:
-				push_warning(msg + " (non critique, ignoré)")
-			# ✅ FIX CRITIQUE: Ne pas continuer, pour éviter l'assignation d'un RID invalide
-			rd.free_rid(shader_rid)  # Nettoyer le shader orphelin
-			continue
-		
+		gpu.load_compute_shader(path, name)
+		var pipeline_rid = gpu.shaders[name]
+
 		# ✅ SUCCÈS: Assigner UNIQUEMENT si tout est valide
 		match name:
 			"tectonic":
 				tectonic_pipeline = pipeline_rid
+				print("    ✅ Tectonic pipeline RID: ", pipeline_rid)
 			"atmosphere":
 				atmosphere_pipeline = pipeline_rid
+				print("    ✅ Atmosphere pipeline RID: ", pipeline_rid)
 			"erosion":
 				erosion_pipeline = pipeline_rid
+				print("    ✅ Erosion pipeline RID: ", pipeline_rid)
 			"orogeny":
 				orogeny_pipeline = pipeline_rid
+				print("    ✅ Orogeny pipeline RID: ", pipeline_rid)
 			"region":
 				region_pipeline = pipeline_rid
+				print("    ✅ Region pipeline RID: ", pipeline_rid)
 		
 		print("    ✅ ", name, " OK (Pipeline RID: ", pipeline_rid, ")")
 	
@@ -276,10 +220,22 @@ func _init_textures():
 # INITIALISATION DES UNIFORM SETS
 # ============================================================================
 
+# === LOG DE VÉRIFICATION DES SHADERS ===
+func log_all_shader_rids():
+	if not gpu or not gpu.shaders:
+		print("[DEBUG] gpu.shaders non disponible")
+		return
+	print("[DEBUG] Liste des shader RIDs dans GPUContext :")
+	for name in gpu.shaders.keys():
+		var rid = gpu.shaders[name]
+		print("  Shader '", name, "' : ", rid, " (valid:", rid.is_valid(), ")")
+
 func _init_uniform_sets():
 	"""
 	Initialise les uniform sets avec validation stricte des pipelines et textures.
 	"""
+	
+	log_all_shader_rids()
 	
 	if not rd:
 		push_error("[Orchestrator] ❌ RD is null, cannot create uniform sets")
@@ -311,6 +267,7 @@ func _init_uniform_sets():
 			gpu.create_texture_uniform(2, flux_map_texture),
 			gpu.create_texture_uniform(3, velocity_map_texture)
 		]
+
 		tectonic_uniform_set = rd.uniform_set_create(tectonic_uniforms, tectonic_pipeline, 0)
 		if not tectonic_uniform_set.is_valid():
 			push_error("[Orchestrator] ❌ Failed to create tectonic uniform set")

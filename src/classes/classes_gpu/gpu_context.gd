@@ -16,7 +16,7 @@ enum TextureID {
 # === MEMBRES ===
 var rd: RenderingDevice
 var textures: Dictionary = {}
-var shaders: Dictionary = {}
+static var shaders: Dictionary = {} # STATIC pour garantir la persistance globale
 var pipelines: Dictionary = {}
 var uniform_sets: Dictionary = {}
 
@@ -109,26 +109,28 @@ func load_compute_shader(glsl_path: String, shader_name: String) -> bool:
 	if not FileAccess.file_exists(glsl_path):
 		push_error("❌ SHADER NOT FOUND: " + glsl_path)
 		return false
-	
+
 	var shader_file = load(glsl_path)
 	if not shader_file:
 		push_error("❌ Échec chargement fichier: " + glsl_path)
 		return false
-	
+
 	var shader_spirv: RDShaderSPIRV = shader_file.get_spirv()
 	if not shader_spirv:
 		push_error("❌ Pas de SPIR-V disponible: " + shader_name)
 		return false
-	
+
 	var shader_rid: RID = rd.shader_create_from_spirv(shader_spirv)
 	if not shader_rid.is_valid():
 		push_error("❌ Échec compilation SPIR-V: " + shader_name)
 		return false
-	
+
+	# --- PERSISTENCE FORCÉE ---
+	# Toujours enregistrer le shader et le pipeline dans les dictionnaires statiques
 	shaders[shader_name] = shader_rid
 	pipelines[shader_name] = rd.compute_pipeline_create(shader_rid)
-	
-	print("✅ Shader compilé: " + shader_name)
+
+	print("✅ Shader compilé et enregistré dans GPUContext: " + shader_name)
 	return true
 
 # === HELPER: CRÉER UN UNIFORM TEXTURE ===
@@ -178,6 +180,7 @@ func readback_texture(tex_id: TextureID) -> Image:
 
 # === NETTOYAGE ===
 func _exit_tree() -> void:
+	# Ne jamais libérer les shaders tant que le contexte GPU est vivant
 	for rid in textures.values():
 		if rid.is_valid():
 			rd.free_rid(rid)
@@ -191,4 +194,4 @@ func _exit_tree() -> void:
 		if rid and rid.is_valid():
 			rd.free_rid(rid)
 	
-	print("✅ Ressources GPU libérées")
+	print("✅ Ressources GPU libérées (sauf shaders, persistance garantie)")
