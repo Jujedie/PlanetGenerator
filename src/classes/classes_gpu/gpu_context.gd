@@ -30,13 +30,40 @@ func _init() -> void:
 	instance = self
 	
 func _ready() -> void:
-	# 🔥 FIX CRITIQUE : Utilisation d'un RenderingDevice LOCAL (thread-safe)
+	# 🔥 FIX CRITIQUE : Création du RenderingDevice avec validation
 	rd = RenderingServer.create_local_rendering_device()
 	
 	if not rd:
-		push_error("❌ Impossible de créer le RenderingDevice local")
+		push_error("❌ FATAL: Impossible de créer le RenderingDevice local")
+		push_error("  Causes possibles:")
+		push_error("    - GPU ne supporte pas Vulkan/Metal")
+		push_error("    - Drivers graphiques obsolètes")
+		push_error("    - Godot lancé en mode headless sans GPU")
 		return
 	
+	# ✅ VALIDATION: Tester que le RD fonctionne
+	var test_format = RDTextureFormat.new()
+	test_format.width = 16
+	test_format.height = 16
+	test_format.format = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
+	test_format.usage_bits = RenderingDevice.TEXTURE_USAGE_STORAGE_BIT
+	
+	var test_data = PackedByteArray()
+	test_data.resize(16 * 16 * 16)
+	test_data.fill(0)
+	
+	var test_texture = rd.texture_create(test_format, RDTextureView.new(), [test_data])
+	if not test_texture.is_valid():
+		push_error("❌ FATAL: RenderingDevice créé mais incapable de créer des textures")
+		rd = null  # Invalider pour éviter les crashs
+		return
+	
+	# Nettoyer la texture de test
+	rd.free_rid(test_texture)
+	
+	print("✅ RenderingDevice validé et fonctionnel")
+	
+	# Créer les textures de travail
 	_initialize_textures()
 	print("✅ GPUContext initialisé (LOCAL RD): %dx%d" % [RESOLUTION_WIDTH, RESOLUTION_HEIGHT])
 

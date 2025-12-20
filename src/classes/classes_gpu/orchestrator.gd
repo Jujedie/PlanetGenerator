@@ -42,23 +42,68 @@ var dt: float = 0.016
 
 func _init(gpu_context: GPUContext, res: Vector2i = Vector2i(128, 64)):
 	gpu = gpu_context
-	rd  = gpu.rd
 	resolution = res
 	
 	print("[Orchestrator] 🚀 Initialisation...")
 	
+	# ✅ VALIDATION 1: GPUContext existe
+	if not gpu:
+		push_error("[Orchestrator] ❌ FATAL: GPUContext is null")
+		return
+	
+	# ✅ VALIDATION 2: RenderingDevice est valide
+	rd = gpu.rd
+	if not rd:
+		push_error("[Orchestrator] ❌ FATAL: RenderingDevice is null")
+		push_error("  Le GPUContext n'a pas pu initialiser le GPU")
+		return
+	
+	print("[Orchestrator] ✅ RenderingDevice valide")
+	
+	# ✅ VALIDATION 3: Tester la résolution
+	if resolution.x <= 0 or resolution.y <= 0:
+		push_error("[Orchestrator] ❌ FATAL: Résolution invalide: ", resolution)
+		return
+	
+	if resolution.x > 8192 or resolution.y > 8192:
+		push_warning("[Orchestrator] ⚠️ Résolution très élevée: ", resolution, " (risque VRAM)")
+	
+	print("[Orchestrator] ✅ Résolution: ", resolution)
+	
 	# 1. Créer les textures
 	_init_textures()
 	
-	# 2. Compiler et créer les pipelines (FIX A)
-	if not _compile_all_shaders():
-		push_error("[Orchestrator] ❌ ÉCHEC CRITIQUE: Impossible de compiler les shaders")
+	# ✅ VALIDATION 4: Vérifier que les textures sont créées
+	if not geo_state_texture.is_valid() or not atmo_state_texture.is_valid():
+		push_error("[Orchestrator] ❌ FATAL: Échec création des textures")
 		return
+	
+	print("[Orchestrator] ✅ Textures créées")
+	
+	# 2. Compiler et créer les pipelines
+	var shaders_ok = _compile_all_shaders()
+	if not shaders_ok:
+		push_error("[Orchestrator] ❌ FATAL: Impossible de compiler les shaders critiques")
+		return
+	
+	print("[Orchestrator] ✅ Shaders compilés")
 	
 	# 3. Créer les uniform sets
 	_init_uniform_sets()
 	
-	print("[Orchestrator] ✅ Initialisé avec résolution : ", resolution)
+	# ✅ VALIDATION 5: Vérifier qu'au moins le pipeline d'érosion est prêt
+	if not erosion_pipeline.is_valid() or not erosion_uniform_set.is_valid():
+		push_error("[Orchestrator] ❌ FATAL: Pipeline d'érosion (critique) non opérationnel")
+		return
+	
+	print("[Orchestrator] ✅ Orchestrator initialisé avec succès")
+	print("  - Résolution: ", resolution)
+	print("  - Pipelines actifs:")
+	if tectonic_pipeline.is_valid(): print("    • Tectonic")
+	if atmosphere_pipeline.is_valid(): print("    • Atmosphere")
+	if erosion_pipeline.is_valid(): print("    • Erosion")
+	if orogeny_pipeline.is_valid(): print("    • Orogeny")
+	if region_pipeline.is_valid(): print("    • Region")
 
 # ============================================================================
 # FIX A : CHARGEMENT ROBUSTE DES SHADERS
@@ -66,7 +111,7 @@ func _init(gpu_context: GPUContext, res: Vector2i = Vector2i(128, 64)):
 
 func _compile_all_shaders() -> bool:
 	"""
-	Charge et compile tous les shaders avec chemins explicites vérifiés.
+	Charge et compile tous les shaders avec validation stricte.
 	Retourne false si au moins un shader critique échoue.
 	"""
 	
@@ -76,7 +121,6 @@ func _compile_all_shaders() -> bool:
 	
 	print("[Orchestrator] 📦 Compilation des shaders...")
 	
-	# ✅ CHEMINS EXPLICITES (plus de chemins dynamiques)
 	var shaders_to_load = [
 		{
 			"path": "res://shader/compute/tectonic_shader.glsl",
@@ -91,7 +135,7 @@ func _compile_all_shaders() -> bool:
 		{
 			"path": "res://shader/compute/hydraulic_erosion_shader.glsl",
 			"name": "erosion",
-			"critical": true  # ⚠️ OBLIGATOIRE
+			"critical": true
 		},
 		{
 			"path": "res://shader/compute/orogeny_shader.glsl",
@@ -166,9 +210,11 @@ func _compile_all_shaders() -> bool:
 				all_critical_loaded = false
 			else:
 				push_warning(msg + " (non critique, ignoré)")
+			# ✅ FIX CRITIQUE: Ne pas continuer, pour éviter l'assignation d'un RID invalide
+			rd.free_rid(shader_rid)  # Nettoyer le shader orphelin
 			continue
 		
-		# ✅ SUCCÈS: Assigner au membre approprié
+		# ✅ SUCCÈS: Assigner UNIQUEMENT si tout est valide
 		match name:
 			"tectonic":
 				tectonic_pipeline = pipeline_rid
@@ -181,7 +227,7 @@ func _compile_all_shaders() -> bool:
 			"region":
 				region_pipeline = pipeline_rid
 		
-		print("    ✅ ", name, " OK")
+		print("    ✅ ", name, " OK (Pipeline RID: ", pipeline_rid, ")")
 	
 	if not all_critical_loaded:
 		push_error("[Orchestrator] ❌ Au moins un shader critique n'a pas pu être chargé")
@@ -231,16 +277,34 @@ func _init_textures():
 # ============================================================================
 
 func _init_uniform_sets():
-	"""Initialise les uniform sets avec validation et bindings corrects par shader"""
+	"""
+	Initialise les uniform sets avec validation stricte des pipelines et textures.
+	"""
 	
 	if not rd:
 		push_error("[Orchestrator] ❌ RD is null, cannot create uniform sets")
 		return
 	
-	# Uniform sets spécifiques par shader (bindings selon les layouts des shaders)
+	print("[Orchestrator] 🔧 Création des uniform sets...")
 	
-	# Tectonic: utilise geo (binding 0), atmo (1), flux (2), velocity (3) - comme défini
+	# ✅ VALIDATION PRÉALABLE: Vérifier que toutes les textures sont valides
+	var required_textures = [
+		{"name": "geo_state", "rid": geo_state_texture},
+		{"name": "atmo_state", "rid": atmo_state_texture},
+		{"name": "flux_map", "rid": flux_map_texture},
+		{"name": "velocity_map", "rid": velocity_map_texture}
+	]
+	
+	for tex_info in required_textures:
+		if not tex_info["rid"].is_valid():
+			push_error("[Orchestrator] ❌ Texture invalide: ", tex_info["name"])
+			return
+	
+	print("  ✅ Toutes les textures sont valides")
+	
+	# === TECTONIC UNIFORM SET ===
 	if tectonic_pipeline.is_valid():
+		print("  • Création uniform set: tectonic")
 		var tectonic_uniforms = [
 			gpu.create_texture_uniform(0, geo_state_texture),
 			gpu.create_texture_uniform(1, atmo_state_texture),
@@ -250,9 +314,16 @@ func _init_uniform_sets():
 		tectonic_uniform_set = rd.uniform_set_create(tectonic_uniforms, tectonic_pipeline, 0)
 		if not tectonic_uniform_set.is_valid():
 			push_error("[Orchestrator] ❌ Failed to create tectonic uniform set")
+			push_error("  Pipeline RID: ", tectonic_pipeline)
+			push_error("  Bindings: 0-3, Textures: ", geo_state_texture, atmo_state_texture, flux_map_texture, velocity_map_texture)
+		else:
+			print("    ✅ Tectonic uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ Tectonic pipeline invalide, uniform set ignoré")
 	
-	# Atmosphere: binding 0=atmo_in, 1=geo, 2=atmo_out (mais atmo_out est writeonly, utiliser atmo pour in/out)
+	# === ATMOSPHERE UNIFORM SET ===
 	if atmosphere_pipeline.is_valid():
+		print("  • Création uniform set: atmosphere")
 		var atmosphere_uniforms = [
 			gpu.create_texture_uniform(0, atmo_state_texture),  # atmospheric_state_in
 			gpu.create_texture_uniform(1, geo_state_texture),   # geophysical_state
@@ -261,9 +332,16 @@ func _init_uniform_sets():
 		atmosphere_uniform_set = rd.uniform_set_create(atmosphere_uniforms, atmosphere_pipeline, 0)
 		if not atmosphere_uniform_set.is_valid():
 			push_error("[Orchestrator] ❌ Failed to create atmosphere uniform set")
+			push_error("  Pipeline RID: ", atmosphere_pipeline)
+			push_error("  Bindings: 0-2, Textures: ", atmo_state_texture, geo_state_texture)
+		else:
+			print("    ✅ Atmosphere uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ Atmosphere pipeline invalide, uniform set ignoré")
 	
-	# Erosion: utilise geo (0), atmo (1), flux (2), velocity (3)
+	# === EROSION UNIFORM SET ===
 	if erosion_pipeline.is_valid():
+		print("  • Création uniform set: erosion")
 		var erosion_uniforms = [
 			gpu.create_texture_uniform(0, geo_state_texture),
 			gpu.create_texture_uniform(1, atmo_state_texture),
@@ -272,11 +350,17 @@ func _init_uniform_sets():
 		]
 		erosion_uniform_set = rd.uniform_set_create(erosion_uniforms, erosion_pipeline, 0)
 		if not erosion_uniform_set.is_valid():
-			push_error("[Orchestrator] ❌ Failed to create erosion uniform set (CRITIQUE)")
+			push_error("[Orchestrator] ❌ CRITIQUE: Failed to create erosion uniform set")
+			push_error("  Pipeline RID: ", erosion_pipeline)
+			push_error("  Bindings: 0-3, Textures: ", geo_state_texture, atmo_state_texture, flux_map_texture, velocity_map_texture)
+		else:
+			print("    ✅ Erosion uniform set créé")
+	else:
+		push_error("[Orchestrator] ❌ CRITIQUE: Erosion pipeline invalide")
 	
-	# Orogeny: utilise plate_data (0, mais c'est geo?), geophysical_state (1)
-	# Note: Le shader orogeny utilise binding 0 pour plate_data et 1 pour geophysical_state, mais plate_data n'existe pas, utiliser geo pour les deux?
+	# === OROGENY UNIFORM SET ===
 	if orogeny_pipeline.is_valid():
+		print("  • Création uniform set: orogeny")
 		var orogeny_uniforms = [
 			gpu.create_texture_uniform(0, geo_state_texture),  # plate_data (approx)
 			gpu.create_texture_uniform(1, geo_state_texture)   # geophysical_state
@@ -284,17 +368,26 @@ func _init_uniform_sets():
 		orogeny_uniform_set = rd.uniform_set_create(orogeny_uniforms, orogeny_pipeline, 0)
 		if not orogeny_uniform_set.is_valid():
 			push_error("[Orchestrator] ❌ Failed to create orogeny uniform set")
+		else:
+			print("    ✅ Orogeny uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ Orogeny pipeline invalide, uniform set ignoré")
 	
-	# Region: utilise geo_map (0), seeds buffer (1, mais c'est dans le set séparé)
+	# === REGION UNIFORM SET ===
 	if region_pipeline.is_valid():
+		print("  • Création uniform set: region")
 		var region_uniforms = [
 			gpu.create_texture_uniform(0, geo_state_texture)  # geo_map
 		]
 		region_uniform_set = rd.uniform_set_create(region_uniforms, region_pipeline, 0)
 		if not region_uniform_set.is_valid():
 			push_error("[Orchestrator] ❌ Failed to create region uniform set")
+		else:
+			print("    ✅ Region uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ Region pipeline invalide, uniform set ignoré")
 	
-	print("[Orchestrator] ✅ Uniform Sets initialized with correct bindings")
+	print("[Orchestrator] ✅ Uniform Sets initialization complete")
 
 # ============================================================================
 
