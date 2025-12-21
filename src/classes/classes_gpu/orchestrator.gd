@@ -517,53 +517,40 @@ func _dispatch_erosion_step(step: int, params: Dictionary, groups_x: int, groups
 	
 	var temp_rids: Array[RID] = []
 	
-	# Sécurité accrue : on vérifie tout avant de commencer
 	if not rd or not erosion_pipeline.is_valid() or not erosion_uniform_set.is_valid():
 		push_error("[Orchestrator] Cannot dispatch - invalid rd/pipeline/uniform set")
 		return temp_rids
 	
-	# Créer le buffer de paramètres
-	# NOTE: Le padding est important pour l'alignement std140 des UBOs, 
-	# mais ton shader semble utiliser des scalaires simples alignés sur 4 bytes, 
-	# donc ton Array actuel devrait passer.
 	var param_data = PackedFloat32Array([
-		float(step),
-		params["delta_time"],
-		params["pipe_area"],
-		params["pipe_length"],
-		params["gravity"],
-		params["rain_rate"],
-		params["evaporation_rate"],
-		params["sediment_capacity_k"],
-		params["erosion_rate"],
-		params["deposition_rate"],
-		params["min_height_delta"],
-		0.0  # Padding (alignement 16 bytes souvent préféré, mais ici 48 bytes total c'est ok)
+		float(step), params["delta_time"], params["pipe_area"], params["pipe_length"],
+		params["gravity"], params["rain_rate"], params["evaporation_rate"],
+		params["sediment_capacity_k"], params["erosion_rate"], params["deposition_rate"],
+		params["min_height_delta"], 0.0
 	])
 	
 	var param_bytes = param_data.to_byte_array()
 	
-	# --- CORRECTION MAJEURE ICI ---
-	# 1. Utiliser uniform_buffer_create au lieu de storage_buffer_create
-	# Cela assigne le flag VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
+	# 1. Création du Buffer
 	var param_buffer = rd.uniform_buffer_create(param_bytes.size(), param_bytes)
-	temp_rids.append(param_buffer)
+	# NOTE : On ne l'ajoute pas tout de suite à temp_rids !
 	
 	var param_uniform = RDUniform.new()
-	# 2. Changer le type pour correspondre au GLSL "uniform Parameters {...}"
 	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER 
 	param_uniform.binding = 0
 	param_uniform.add_id(param_buffer)
 	
-	# Création du set
+	# 2. Création du Set (avec le Shader RID)
 	var param_set = rd.uniform_set_create([param_uniform], erosion_shader, 1)
 	
-	# Validation critique : si le set a échoué (ex: mismatch type), on arrête tout
 	if not param_set.is_valid():
-		push_error("[Orchestrator] ❌ Failed to create param uniform set (Check Type Mismatch)")
+		push_error("[Orchestrator] ❌ Failed to create param uniform set")
 		return temp_rids 
-		
-	temp_rids.append(param_set)
+	
+	# --- CORRECTION DE L'ORDRE DE NETTOYAGE ---
+	# On doit libérer le Set (qui utilise le buffer) AVANT de libérer le Buffer.
+	# La boucle de nettoyage lit le tableau dans l'ordre (index 0, puis 1...).
+	temp_rids.append(param_set)    # Index 0 : Sera libéré en PREMIER
+	temp_rids.append(param_buffer) # Index 1 : Sera libéré en SECOND
 	
 	# Dispatch
 	var compute_list = rd.compute_list_begin()
@@ -595,11 +582,16 @@ func run_orogeny(params: Dictionary, w: int, h: int):
 	rd.compute_list_bind_compute_pipeline(compute_list, orogeny_pipeline)
 	rd.compute_list_bind_uniform_set(compute_list, orogeny_uniform_set, 0)
 	
-	# --- CORRECTION ---
-	# Le shader attend un bloc aligné sur 16 bytes (vec4), même pour 2 floats.
-	# On ajoute du padding (0.0, 0.0) pour atteindre 4 floats (4 * 4 = 16 bytes).
-	var push_constants = PackedFloat32Array([float(w), float(h), 0.0, 0.0])
-	rd.compute_list_set_push_constant(compute_list, push_constants.to_byte_array(), 0)
+	# --- CORRECTION DE L'ALIGNEMENT ---
+	# On force la création d'un tableau de 16 octets (4 floats) manuellement
+	var push_data = PackedByteArray()
+	push_data.resize(16) # 16 bytes requis par le shader (vec4)
+	push_data.encode_float(0, float(w))   # Bytes 0-3 : width
+	push_data.encode_float(4, float(h))   # Bytes 4-7 : height
+	push_data.encode_float(8, 0.0)        # Bytes 8-11: Padding
+	push_data.encode_float(12, 0.0)       # Bytes 12-15: Padding
+	
+	rd.compute_list_set_push_constant(compute_list, push_data, 0)
 	
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
@@ -637,19 +629,24 @@ func _run_region_generation_tracked(params: Dictionary, w: int, h: int) -> Array
 			rng.randf_range(0.0, float(h))
 		))
 	
+	# 1. Création du Buffer
 	var seed_buffer = rd.storage_buffer_create(seed_data.to_byte_array().size(), seed_data.to_byte_array())
-	temp_rids.append(seed_buffer)  # ✅ TRACKER POUR CLEANUP
+	# NOTE : On ne l'ajoute pas tout de suite
 	
 	var seed_uniform = RDUniform.new()
 	seed_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
 	seed_uniform.binding = 1
 	seed_uniform.add_id(seed_buffer)
 	
+	# 2. Création du Set (avec le Shader RID)
 	var region_set = rd.uniform_set_create([seed_uniform], region_shader, 1)
 	if not region_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create region set")
 		return temp_rids
-	temp_rids.append(region_set)  # ✅ TRACKER POUR CLEANUP
+	
+	# --- CORRECTION DE L'ORDRE DE NETTOYAGE ---
+	temp_rids.append(region_set)   # Index 0 : Sera libéré en PREMIER
+	temp_rids.append(seed_buffer)  # Index 1 : Sera libéré en SECOND
 	
 	var groups_x = ceili(float(w) / 8.0)
 	var groups_y = ceili(float(h) / 8.0)
