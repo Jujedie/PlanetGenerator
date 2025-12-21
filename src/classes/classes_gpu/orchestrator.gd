@@ -595,8 +595,10 @@ func run_orogeny(params: Dictionary, w: int, h: int):
 	rd.compute_list_bind_compute_pipeline(compute_list, orogeny_pipeline)
 	rd.compute_list_bind_uniform_set(compute_list, orogeny_uniform_set, 0)
 	
-	# Add push constants for resolution
-	var push_constants = PackedFloat32Array([float(w), float(h)])
+	# --- CORRECTION ---
+	# Le shader attend un bloc aligné sur 16 bytes (vec4), même pour 2 floats.
+	# On ajoute du padding (0.0, 0.0) pour atteindre 4 floats (4 * 4 = 16 bytes).
+	var push_constants = PackedFloat32Array([float(w), float(h), 0.0, 0.0])
 	rd.compute_list_set_push_constant(compute_list, push_constants.to_byte_array(), 0)
 	
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
