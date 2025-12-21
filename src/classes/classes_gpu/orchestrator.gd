@@ -569,45 +569,46 @@ func _dispatch_erosion_step(step: int, params: Dictionary, groups_x: int, groups
 func run_orogeny(params: Dictionary, w: int, h: int):
 	"""Accentuation des montagnes (Orogenèse)"""
 	
+	# Sécurité : Vérifier que tout est prêt
 	if not rd or not orogeny_pipeline.is_valid() or not orogeny_uniform_set.is_valid():
 		push_warning("[Orchestrator] ⚠️ Orogeny pipeline not ready, skipping")
 		return
 	
 	print("[Orchestrator] ⛰️ Orogenèse (accentuation des montagnes)")
 	
-	var groups_x = ceili(float(w) / 16.0) # Attention : le shader a un local_size_x = 16
-	var groups_y = ceili(float(h) / 16.0) # et local_size_y = 16
+	# Calcul des groupes (Le shader utilise local_size = 16x16)
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
 	
+	# Récupération des valeurs avec valeurs par défaut de sécurité
+	var m_strength = float(params.get("mountain_strength", 50.0))
+	var r_strength = float(params.get("rift_strength", -30.0))
+	var erosion = float(params.get("orogeny_erosion", 0.98))
+	var dt = float(params.get("delta_time", 0.016))
+	
+	# --- FIX "SUPPLIED: (0)" ---
+	# Construction manuelle du buffer binaire (Force brute)
+	# On évite PackedFloat32Array.to_byte_array() qui semble échouer ici
+	var push_bytes = PackedByteArray()
+	push_bytes.resize(16) # On alloue EXPLICITEMENT 16 octets (remplis de 0)
+	
+	# Encodage manuel des 4 floats (4 octets chacun) aux bonnes positions
+	push_bytes.encode_float(0, m_strength)  # Bytes 0-3
+	push_bytes.encode_float(4, r_strength)  # Bytes 4-7
+	push_bytes.encode_float(8, erosion)     # Bytes 8-11
+	push_bytes.encode_float(12, dt)         # Bytes 12-15
+	
+	# Vérification ultime (ne devrait jamais arriver avec le resize ci-dessus)
+	if push_bytes.size() != 16:
+		push_error("[Orchestrator] ❌ CRITIQUE : Taille Push Constant incorrecte (" + str(push_bytes.size()) + ")")
+		return
+
+	# Exécution
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, orogeny_pipeline)
 	rd.compute_list_bind_uniform_set(compute_list, orogeny_uniform_set, 0)
 	
-	# --- CORRECTION FINALE : Paramètres Physiques & Construction Robuste ---
-	# Le shader attend :
-	# float mountain_strength; (offset 0)
-	# float rift_strength;     (offset 4)
-	# float erosion_factor;    (offset 8)
-	# float delta_time;        (offset 12)
-	
-	var m_strength = params.get("mountain_strength", 50.0)
-	var r_strength = params.get("rift_strength", -30.0)
-	var erosion = params.get("orogeny_erosion", 0.98) # Nom distinct pour éviter conflit
-	var dt = params.get("delta_time", 0.016)
-	
-	# Construction atomique des 16 octets
-	var push_constants = PackedFloat32Array([
-		float(m_strength),
-		float(r_strength),
-		float(erosion),
-		float(dt)
-	])
-	
-	var push_bytes = push_constants.to_byte_array()
-	
-	# Debug de sécurité (optionnel, vérifiera la taille dans la console)
-	if push_bytes.size() != 16:
-		push_error("[Orchestrator] ❌ Erreur taille Push Constant: " + str(push_bytes.size()))
-	
+	# Envoi des données (qui font maintenant GARANTI 16 octets)
 	rd.compute_list_set_push_constant(compute_list, push_bytes, 0)
 	
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
