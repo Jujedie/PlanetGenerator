@@ -567,7 +567,7 @@ func _dispatch_erosion_step(step: int, params: Dictionary, groups_x: int, groups
 # ============================================================================
 
 func run_orogeny(params: Dictionary, w: int, h: int):
-	"""Accentuation des montagnes"""
+	"""Accentuation des montagnes (Orogenèse)"""
 	
 	if not rd or not orogeny_pipeline.is_valid() or not orogeny_uniform_set.is_valid():
 		push_warning("[Orchestrator] ⚠️ Orogeny pipeline not ready, skipping")
@@ -575,23 +575,40 @@ func run_orogeny(params: Dictionary, w: int, h: int):
 	
 	print("[Orchestrator] ⛰️ Orogenèse (accentuation des montagnes)")
 	
-	var groups_x = ceili(float(w) / 8.0)
-	var groups_y = ceili(float(h) / 8.0)
+	var groups_x = ceili(float(w) / 16.0) # Attention : le shader a un local_size_x = 16
+	var groups_y = ceili(float(h) / 16.0) # et local_size_y = 16
 	
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, orogeny_pipeline)
 	rd.compute_list_bind_uniform_set(compute_list, orogeny_uniform_set, 0)
 	
-	# --- CORRECTION DE L'ALIGNEMENT ---
-	# On force la création d'un tableau de 16 octets (4 floats) manuellement
-	var push_data = PackedByteArray()
-	push_data.resize(16) # 16 bytes requis par le shader (vec4)
-	push_data.encode_float(0, float(w))   # Bytes 0-3 : width
-	push_data.encode_float(4, float(h))   # Bytes 4-7 : height
-	push_data.encode_float(8, 0.0)        # Bytes 8-11: Padding
-	push_data.encode_float(12, 0.0)       # Bytes 12-15: Padding
+	# --- CORRECTION FINALE : Paramètres Physiques & Construction Robuste ---
+	# Le shader attend :
+	# float mountain_strength; (offset 0)
+	# float rift_strength;     (offset 4)
+	# float erosion_factor;    (offset 8)
+	# float delta_time;        (offset 12)
 	
-	rd.compute_list_set_push_constant(compute_list, push_data, 0)
+	var m_strength = params.get("mountain_strength", 50.0)
+	var r_strength = params.get("rift_strength", -30.0)
+	var erosion = params.get("orogeny_erosion", 0.98) # Nom distinct pour éviter conflit
+	var dt = params.get("delta_time", 0.016)
+	
+	# Construction atomique des 16 octets
+	var push_constants = PackedFloat32Array([
+		float(m_strength),
+		float(r_strength),
+		float(erosion),
+		float(dt)
+	])
+	
+	var push_bytes = push_constants.to_byte_array()
+	
+	# Debug de sécurité (optionnel, vérifiera la taille dans la console)
+	if push_bytes.size() != 16:
+		push_error("[Orchestrator] ❌ Erreur taille Push Constant: " + str(push_bytes.size()))
+	
+	rd.compute_list_set_push_constant(compute_list, push_bytes, 0)
 	
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
