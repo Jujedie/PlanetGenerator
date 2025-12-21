@@ -46,21 +46,21 @@ func get_type_planete() -> Array:
 func get_river_lake_only() -> bool:
 	return self.river_lake_only
 
-func set_interval_elevation(interval_elevation: Array[int]):
-	self.interval_elevation = interval_elevation
-func set_interval_temp(interval_temp: Array[int]):
-	self.interval_temp = interval_temp
-func set_interval_precipitation(interval_precipitation: Array[float]):
-	self.interval_precipitation = interval_precipitation
-func set_water_need(water_need: bool):
-	self.water_need = water_need
-func set_nom(nom: String):
-	self.nom = nom
-func set_couleur(couleur: Color):
-	self.couleur = couleur
-func set_couleur_vegetation(couleur_vegetation: Color):
-	self.couleur_vegetation = couleur_vegetation
-func set_type_planete(type_planete: Array):
-	self.type_planete = type_planete
-func set_river_lake_only(river_lake_only: bool):
-	self.river_lake_only = river_lake_only
+func set_interval_elevation(interval_elevation_param: Array[int]):
+	self.interval_elevation = interval_elevation_param
+func set_interval_temp(interval_temp_param: Array[int]):
+	self.interval_temp = interval_temp_param
+func set_interval_precipitation(interval_precipitation_param: Array[float]):
+	self.interval_precipitation = interval_precipitation_param
+func set_water_need(water_need_param: bool):
+	self.water_need = water_need_param
+func set_nom(nom_param: String):
+	self.nom = nom_param
+func set_couleur(couleur_param: Color):
+	self.couleur = couleur_param
+func set_couleur_vegetation(couleur_vegetation_param: Color):
+	self.couleur_vegetation = couleur_vegetation_param
+func set_type_planete(type_planete_param: Array):
+	self.type_planete = type_planete_param
+func set_river_lake_only(river_lake_only_param: bool):
+	self.river_lake_only = river_lake_only_param

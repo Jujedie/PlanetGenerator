@@ -181,7 +181,7 @@ func _generate_planet_gpu_deferred():
 	print("Phase 1/4 - Running GPU simulation...")
 	
 	# Execute simulation synchronously on render thread
-	gpu_orchestrator.run_simulation(generation_params)
+	gpu_orchestrator.run_simulation()
 	addProgress(60)
 	
 	# === PHASE 2: EXPORT MAPS ===
@@ -229,7 +229,7 @@ func generate_planet_gpu():
 	update_map_status("MAP_ELEVATION")
 	print("Phase 1/4 - Running full GPU simulation...")
 	
-	gpu_orchestrator.run_simulation(generation_params)
+	gpu_orchestrator.run_simulation()
 	addProgress(60)
 	
 	# === PHASE 2: EXPORT MAPS ===
