@@ -243,7 +243,7 @@ var COULEURS_ELEVATIONS_GREY = {
 	1500: Color.hex(0x8f8f8fFF),
 	1750: Color.hex(0xaeaeaeFF),
 	2000: Color.hex(0xb0b0b0FF),
-	3000: Color.hex(0xb3b3b3bFF),
+	3000: Color.hex(0xb3b3b3FF),
 	4000: Color.hex(0xb8b8b8FF),
 	6000: Color.hex(0xbdbdbdFF),
 	8000: Color.hex(0xc2c2c2FF),

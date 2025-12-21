@@ -8,11 +8,11 @@ layout(local_size_x = 16, local_size_y = 16) in;
 layout(rgba32f, set = 0, binding = 0) uniform readonly image2D plate_data;      // PlateID + Vecteurs
 layout(rgba32f, set = 0, binding = 1) uniform image2D geophysical_state;  // R=Lithosphère (modifié)
 
-layout(push_constant) uniform Params {
-    float mountain_strength;  // Multiplicateur convergence (ex: 50.0)
-    float rift_strength;      // Multiplicateur divergence (ex: -30.0)
-    float erosion_factor;     // Atténuation altitude extrême (0.98)
-    float delta_time;         // Pas de simulation (années)
+layout(set = 1, binding = 0, std140) uniform Params {
+    float mountain_strength;
+    float rift_strength;
+    float erosion_factor;
+    float delta_time;
 } params;
 
 const ivec2 RESOLUTION = ivec2(2048, 1024);
