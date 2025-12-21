@@ -94,20 +94,20 @@ func _compile_generation_params() -> void:
 	
 	randomize()
 	generation_params = {
-		"seed": randi(),
-		"planet_name": nom,
-		"planet_radius": circonference / (2.0 * PI),
-		"resolution": Vector2i(circonference, circonference / 2),
-		"avg_temperature": avg_temperature,
-		"sea_level": float(water_elevation),
-		"avg_precipitation": avg_precipitation,
+		"seed"              : randi(),
+		"planet_name"       : nom,
+		"planet_radius"     : circonference / (2.0 * PI),
+		"resolution"        : Vector2i(circonference, circonference / 2),
+		"avg_temperature"   : avg_temperature,
+		"sea_level"         : float(water_elevation),
+		"avg_precipitation" : avg_precipitation,
 		"elevation_modifier": float(elevation_modifier),
-		"atmosphere_type": atmosphere_type,
-		"nb_thread": nb_thread,
-		"nb_avg_cases": nb_avg_cases,
+		"atmosphere_type"   : atmosphere_type,
+		"nb_thread"         : nb_thread,
+		"nb_avg_cases"      : nb_avg_cases,
 		"erosion_iterations": BASE_EROSION_ITERATIONS,
-		"tectonic_years": BASE_TECTONIC_YEARS,
-		"atmosphere_steps": BASE_ATMOSPHERE_STEPS
+		"tectonic_years"    : BASE_TECTONIC_YEARS,
+		"atmosphere_steps"  : BASE_ATMOSPHERE_STEPS
 	}
 	
 	print("[PlanetGenerator] Parameters compiled:")
@@ -126,7 +126,7 @@ func _init_gpu_system() -> void:
 		return
 	
 	var resolution = Vector2i(self.circonference, self.circonference / 2)
-	gpu_orchestrator = GPUOrchestrator.new(gpu_context, resolution)
+	gpu_orchestrator = GPUOrchestrator.new(gpu_context, resolution, generation_params)
 	
 	print("[PlanetGenerator] GPU acceleration enabled: ", resolution)
 

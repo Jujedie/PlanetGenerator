@@ -25,15 +25,17 @@ var orogeny_uniform_set: RID
 var region_uniform_set: RID
 
 var resolution: Vector2i
+var generation_params: Dictionary
 var dt: float = 0.016
 
 # ============================================================================
 # INITIALISATION
 # ============================================================================
 
-func _init(gpu_context: GPUContext, res: Vector2i = Vector2i(128, 64)):
+func _init(gpu_context: GPUContext, res: Vector2i = Vector2i(128, 64), gen_params: Dictionary = {}) -> void:
 	gpu = gpu_context
 	resolution = res
+	generation_params = gen_params
 	
 	print("[Orchestrator] 🚀 Initialisation...")
 	
@@ -472,9 +474,20 @@ func _run_hydraulic_erosion_tracked(iterations: int, custom_params: Dictionary, 
 	if not rd or not erosion_pipeline.is_valid() or not erosion_uniform_set.is_valid():
 		push_error("[Orchestrator] Erosion pipeline not ready - skipping")
 		return garbage_bin
+
+	for pipeline in [erosion_pipeline, erosion_uniform_set]:
+		if pipeline == null or not pipeline.is_valid():
+			push_error("[Orchestrator] Erosion pipeline/uniform set invalid - skipping")
+			return garbage_bin
 	
 	print("[Orchestrator] 🌊 Érosion hydraulique: ", iterations, " itérations")
 	
+	# Calcul gravité
+	var rayon_planete = generation_params.get("planet_radius")  # Terre par défaut
+	var densite_planete = 5514    # Terre en kg/m³
+	var gravite = compute_gravity(rayon_planete, densite_planete)
+	print("Gravité = ", gravite, " m/s²")
+
 	# Paramètres par défaut
 	var params = {
 		"delta_time": custom_params.get("delta_time", 0.016),
@@ -497,26 +510,18 @@ func _run_hydraulic_erosion_tracked(iterations: int, custom_params: Dictionary, 
 		# Step 0: Pluie
 		var rain_rids = _dispatch_erosion_step(0, params, groups_x, groups_y)
 		garbage_bin.append_array(rain_rids)
-		if rd:
-			rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
 		# Step 1: Calcul du flux
 		var flux_rids = _dispatch_erosion_step(1, params, groups_x, groups_y)
 		garbage_bin.append_array(flux_rids)
-		if rd:
-			rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
 		# Step 2: Mise à jour de l'eau
 		var water_rids = _dispatch_erosion_step(2, params, groups_x, groups_y)
 		garbage_bin.append_array(water_rids)
-		if rd:
-			rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
 		# Step 3: Érosion/Déposition
 		var erosion_rids = _dispatch_erosion_step(3, params, groups_x, groups_y)
 		garbage_bin.append_array(erosion_rids)
-		if rd:
-			rd.barrier(RenderingDevice.BARRIER_MASK_COMPUTE)
 		
 		if i % 10 == 0:
 			print("  Itération ", i, "/", iterations)
@@ -534,11 +539,15 @@ func _dispatch_erosion_step(step: int, params: Dictionary, groups_x: int, groups
 	
 	var temp_rids: Array[RID] = []
 	
+	# Sécurité accrue : on vérifie tout avant de commencer
 	if not rd or not erosion_pipeline.is_valid() or not erosion_uniform_set.is_valid():
 		push_error("[Orchestrator] Cannot dispatch - invalid rd/pipeline/uniform set")
 		return temp_rids
 	
 	# Créer le buffer de paramètres
+	# NOTE: Le padding est important pour l'alignement std140 des UBOs, 
+	# mais ton shader semble utiliser des scalaires simples alignés sur 4 bytes, 
+	# donc ton Array actuel devrait passer.
 	var param_data = PackedFloat32Array([
 		float(step),
 		params["delta_time"],
@@ -551,19 +560,32 @@ func _dispatch_erosion_step(step: int, params: Dictionary, groups_x: int, groups
 		params["erosion_rate"],
 		params["deposition_rate"],
 		params["min_height_delta"],
-		0.0  # Padding
+		0.0  # Padding (alignement 16 bytes souvent préféré, mais ici 48 bytes total c'est ok)
 	])
 	
-	var param_buffer = rd.storage_buffer_create(param_data.to_byte_array().size(), param_data.to_byte_array())
-	temp_rids.append(param_buffer)  # ✅ TRACKER POUR CLEANUP
+	var param_bytes = param_data.to_byte_array()
+	
+	# --- CORRECTION MAJEURE ICI ---
+	# 1. Utiliser uniform_buffer_create au lieu de storage_buffer_create
+	# Cela assigne le flag VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
+	var param_buffer = rd.uniform_buffer_create(param_bytes.size(), param_bytes)
+	temp_rids.append(param_buffer)
 	
 	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	# 2. Changer le type pour correspondre au GLSL "uniform Parameters {...}"
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER 
 	param_uniform.binding = 0
 	param_uniform.add_id(param_buffer)
 	
+	# Création du set
 	var param_set = rd.uniform_set_create([param_uniform], erosion_pipeline, 1)
-	temp_rids.append(param_set)  # ✅ TRACKER POUR CLEANUP
+	
+	# Validation critique : si le set a échoué (ex: mismatch type), on arrête tout
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create param uniform set (Check Type Mismatch)")
+		return temp_rids 
+		
+	temp_rids.append(param_set)
 	
 	# Dispatch
 	var compute_list = rd.compute_list_begin()
@@ -731,3 +753,7 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE:
 		# cleanup()  # Commented out to prevent null instance error
 		pass
+
+func compute_gravity(radius: float, density: float) -> float:
+	const G = 6.67430e-11 # constante gravitationnelle en m^3·kg^-1·s^-2
+	return (4.0 / 3.0) * PI * G * density * radius

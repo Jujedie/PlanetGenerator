@@ -158,10 +158,6 @@ func dispatch_compute(shader_name: String, groups_x: int, groups_y: int = 1, gro
 	rd.submit()
 	rd.sync()
 
-# === BARRIÈRE ===
-func barrier(mask: int = RenderingDevice.BARRIER_MASK_ALL_BARRIERS) -> void:
-	rd.barrier(mask)
-
 # === READBACK TEXTURE ===
 func readback_texture(tex_id: TextureID) -> Image:
 	if not textures.has(tex_id):
