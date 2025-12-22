@@ -1,4 +1,13 @@
 extends RefCounted
+
+## Orchestrateur de Simulation Géophysique sur GPU.
+##
+## Cette classe agit comme le chef d'orchestre de la pipeline de génération.
+## Elle est responsable de :
+## 1. L'allocation des ressources mémoire (VRAM) pour les cartes d'état (GeoMap, AtmoMap).
+## 2. La compilation et la liaison des Compute Shaders (Tectonique, Érosion, Atmosphère).
+## 3. L'exécution séquentielle des simulations physiques avec synchronisation (Barriers).
+## 4. La gestion des données globales (Uniform Buffers) partagées entre les shaders.
 class_name GPUOrchestrator
 
 var gpu: GPUContext
@@ -38,6 +47,14 @@ var generation_params: Dictionary
 # INITIALISATION
 # ============================================================================
 
+## Constructeur de l'orchestrateur.
+##
+## Initialise le contexte, valide les paramètres de génération et lance la séquence de préparation :
+## compilation des shaders, allocation des textures et création des sets d'uniformes.
+##
+## @param gpu_context: Référence vers le gestionnaire de bas niveau [GPUContext].
+## @param res: Résolution de la simulation (ex: 2048x1024).
+## @param gen_params: Dictionnaire contenant les constantes physiques (gravité, niveau de la mer, seed...).
 func _init(gpu_context: GPUContext, res: Vector2i = Vector2i(128, 64), gen_params: Dictionary = {}) -> void:
 	gpu = gpu_context
 	resolution = res
@@ -109,6 +126,11 @@ func _init(gpu_context: GPUContext, res: Vector2i = Vector2i(128, 64), gen_param
 # FIX A : CHARGEMENT ROBUSTE DES SHADERS
 # ============================================================================
 
+## Compile tous les shaders de calcul nécessaires à la simulation.
+##
+## Charge les fichiers `.glsl` depuis le disque (res://shaders/) et les compile en bytecode SPIR-V via le [GPUContext].
+## Initialise les variables membres `tectonic_shader`, `erosion_shader`, `atmosphere_shader`, etc.
+## En cas d'erreur de compilation, arrête l'initialisation et log l'erreur.
 func _compile_all_shaders() -> bool:
 	"""
 	Charge les shaders et crée les pipelines correspondants.
@@ -163,6 +185,12 @@ func _compile_all_shaders() -> bool:
 # INITIALISATION DES TEXTURES
 # ============================================================================
 
+## Alloue les textures d'état (State Maps) en mémoire vidéo.
+##
+## Crée les textures RGBA32F (128 bits par pixel) qui stockeront les données physiques :
+## - `geo_state_texture` : Hauteur (R), Eau (G), Sédiment (B), Dureté (A).
+## - `atmo_state_texture` : Température (R), Humidité (G), Pression (B), Vent (A).
+## - `velocity_map_texture` : Vecteurs de flux (RG) pour l'hydrologie.
 func _init_textures():
 	"""Crée les textures GPU avec données initiales"""
 	
@@ -199,7 +227,10 @@ func _init_textures():
 # INITIALISATION DES UNIFORM SETS
 # ============================================================================
 
-# === LOG DE VÉRIFICATION DES SHADERS ===
+## Affiche les identifiants (RID) des shaders compilés dans la console.
+##
+## Méthode de débogage pour vérifier que tous les shaders ont été correctement chargés par le RenderingDevice
+## et possèdent un RID valide.
 func log_all_shader_rids():
 	if not gpu or not gpu.shaders:
 		print("[DEBUG] gpu.shaders non disponible")
@@ -209,6 +240,11 @@ func log_all_shader_rids():
 		var rid = gpu.shaders[name]
 		print("  Shader '", name, "' : ", rid, " (valid:", rid.is_valid(), ")")
 
+## Crée et lie les ensembles d'uniformes (Uniform Sets) pour chaque pipeline.
+##
+## Configure les descripteurs qui relient les textures allouées (`geo_state_texture`) aux bindings GLSL
+## (ex: `layout(set = 0, binding = 1) uniform image2D`).
+## Prépare également le Buffer Uniforme Global contenant les constantes physiques.
 func _init_uniform_sets():
 	"""
 	Initialise les uniform sets avec validation stricte des pipelines et textures.
@@ -327,6 +363,16 @@ func _init_uniform_sets():
 
 # ============================================================================
 
+## Lance la séquence complète de simulation planétaire.
+##
+## Exécute les étapes dans l'ordre chronologique géologique :
+## 1. Initialisation du terrain (Tectonique/Bruit de base).
+## 2. Orogenèse (Formation des montagnes).
+## 3. Érosion hydraulique (Cycle de l'eau et transport de sédiments).
+## 4. Simulation atmosphérique (optionnelle à ce stade).
+## 5. Génération des régions politiques/Voronoi.
+##
+## Émet des signaux de progression pour mettre à jour l'UI.
 func run_simulation() -> void:
 	"""
 	Exécute la simulation complète en respectant la résolution de l'instance.
@@ -392,6 +438,10 @@ func run_simulation() -> void:
 # PHASE 1: INITIALISATION DU TERRAIN
 # ============================================================================
 
+## Exécute la première passe de génération de terrain (Tectonique).
+##
+## Dispatch le shader de tectonique pour générer les plaques, les failles et l'élévation initiale.
+## Initialise la hauteur du socle rocheux (Bedrock) dans le canal R de `geo_state_texture`.
 func _initialize_terrain(params: Dictionary) -> void:
 	"""Initialise la texture géophysique avec du bruit basé sur la seed"""
 	
@@ -443,6 +493,11 @@ func _initialize_terrain(params: Dictionary) -> void:
 # PHASE 2: ÉROSION HYDRAULIQUE (AVEC GARBAGE TRACKING)
 # ============================================================================
 
+## Gère la boucle de simulation de l'érosion hydraulique.
+##
+## Exécute [method _dispatch_erosion_step] un nombre défini de fois (`erosion_iterations`).
+## Gère la synchronisation (Barriers) entre chaque itération pour éviter les "Race Conditions" (lecture/écriture concurrentes).
+## Met à jour la barre de progression périodiquement.
 func _run_hydraulic_erosion_tracked(iterations: int, custom_params: Dictionary, w: int, h: int) -> Array[RID]:
 	"""Exécute le cycle d'érosion hydraulique - Retourne les RIDs temporaires"""
 	
@@ -460,9 +515,7 @@ func _run_hydraulic_erosion_tracked(iterations: int, custom_params: Dictionary, 
 	print("[Orchestrator] 🌊 Érosion hydraulique: ", iterations, " itérations")
 	
 	# Calcul gravité
-	var rayon_planete = generation_params.get("planet_radius")  # Terre par défaut
-	var densite_planete = 5514    # Terre en kg/m³
-	var gravite = compute_gravity(rayon_planete, densite_planete)
+	var gravite = compute_gravity(generation_params.get("planet_radius"), generation_params.get("densite_planete"))
 	print("Gravité = ", gravite, " m/s²")
 
 	# Paramètres par défaut
@@ -511,6 +564,11 @@ func _run_hydraulic_erosion_tracked(iterations: int, custom_params: Dictionary, 
 	print("[Orchestrator] ✅ Érosion terminée (", garbage_bin.size(), " ressources à nettoyer)")
 	return garbage_bin
 
+## Exécute une seule itération du shader d'érosion.
+##
+## Calcule l'accumulation d'eau, le transport de sédiments, l'érosion du sol et l'évaporation
+## pour un pas de temps `dt`.
+## Utilise `erosion_pipeline`.
 func _dispatch_erosion_step(step: int, params: Dictionary, groups_x: int, groups_y: int) -> Array[RID]:
 	"""Dispatch d'un step d'érosion - Retourne les RIDs à libérer"""
 	
@@ -565,6 +623,10 @@ func _dispatch_erosion_step(step: int, params: Dictionary, groups_x: int, groups
 # PHASE 3: OROGENÈSE
 # ============================================================================
 
+## Lance la simulation de l'orogenèse (Formation des montagnes).
+##
+## Applique des forces de soulèvement tectonique ou des modificateurs de relief
+## basés sur la carte de densité ou les masques de collision des plaques.
 func run_orogeny(params: Dictionary, w: int, h: int):
 	"""Accentuation des montagnes (Orogenèse) - Version UBO (Uniform Buffer)"""
 	
@@ -633,6 +695,11 @@ func run_orogeny(params: Dictionary, w: int, h: int):
 # PHASE 4: GÉNÉRATION DE RÉGIONS (AVEC GARBAGE TRACKING)
 # ============================================================================
 
+## Génère la carte des régions (Voronoi) et des frontières.
+##
+## Utilise un shader (Seed Flooding ou Jump Flood Algorithm) pour partitionner la planète
+## en régions distinctes basées sur des germes aléatoires.
+## Le résultat est stocké dans une texture dédiée ou un canal libre.
 func _run_region_generation_tracked(params: Dictionary, w: int, h: int) -> Array[RID]:
 	"""Génération de régions Voronoi - Retourne les RIDs temporaires"""
 	
@@ -697,10 +764,22 @@ func _run_region_generation_tracked(params: Dictionary, w: int, h: int) -> Array
 # EXPORT
 # ============================================================================
 
+## Extrait la carte géologique finale vers une Image CPU.
+##
+## Récupère les données de `geo_state_texture` (Hauteur + Eau).
+## Convertit les données brutes (Float32) en format image pour l'affichage ou la sauvegarde.
+##
+## @return Image: L'image composite de l'état géologique.
 func export_geo_state_to_image() -> Image:
 	var byte_data = rd.texture_get_data(geo_state_texture, 0)
 	return Image.create_from_data(resolution.x, resolution.y, false, Image.FORMAT_RGBAF, byte_data)
 
+## Extrait la carte des vélocités (Rivières) vers une Image CPU.
+##
+## Récupère les vecteurs de flux hydraulique générés par l'érosion.
+## Utile pour visualiser le réseau hydrographique et dessiner les rivières.
+##
+## @return Image: L'image représentant la direction et la force des courants.
 func export_velocity_map_to_image() -> Image:
 	var byte_data = rd.texture_get_data(velocity_map_texture, 0)
 	return Image.create_from_data(resolution.x, resolution.y, false, Image.FORMAT_RGBAF, byte_data)
@@ -709,6 +788,10 @@ func export_velocity_map_to_image() -> Image:
 # CLEANUP (DESTRUCTOR)
 # ============================================================================
 
+## Libère toutes les ressources GPU allouées par l'orchestrateur.
+##
+## Détruit manuellement les RIDs des textures, pipelines, shaders et uniform sets
+## via [method RenderingDevice.free_rid] pour éviter les fuites de VRAM.
 func cleanup():
 	"""Nettoyage manuel - appeler avant de détruire l'orchestrateur"""
 	
@@ -754,12 +837,23 @@ func cleanup():
 	
 	print("[Orchestrator] ✅ Ressources libérées")
 
+## Intercepte la suppression de l'objet pour forcer le nettoyage.
+##
+## Garantit que [method cleanup] est appelée même si le script est libéré brusquement.
+##
+## @param what: Type de notification Godot.
 func _notification(what: int) -> void:
 	"""Nettoyage automatique quand l'objet est détruit"""
 	if what == NOTIFICATION_PREDELETE:
 		# cleanup()  # Commented out to prevent null instance error
 		pass
 
+## Calcule la gravité de surface basée sur les paramètres physiques.
+##
+## Utilise la formule : g ~ Densité * Rayon (approximation pour une planète sphérique homogène).
+## Cette valeur est passée aux shaders pour influencer la vitesse d'écoulement de l'eau.
+##
+## @return float: La gravité en m/s² (ou unités sim).
 func compute_gravity(radius: float, density: float) -> float:
 	const G = 6.67430e-11 # constante gravitationnelle en m^3·kg^-1·s^-2
 	return (4.0 / 3.0) * PI * G * density * radius
