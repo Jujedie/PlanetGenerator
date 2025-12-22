@@ -31,6 +31,7 @@ var elevation_modifier: int
 var nb_thread         : int
 var atmosphere_type   : int
 var nb_avg_cases      : int
+var densite_planete   : float
 
 # Legacy images (for backward compatibility)
 var elevation_map    : Image
@@ -49,44 +50,48 @@ var final_map        : Image
 var preview          : Image
 
 # GPU acceleration components
-var gpu_orchestrator: GPUOrchestrator = null
+var gpu_orchestrator    : GPUOrchestrator = null
 var use_gpu_acceleration: bool
 
 # Generation parameters (compiled from UI)
 var generation_params: Dictionary = {}
 
-var cylinder_radius: float
+func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, 
+	elevation_modifier_param: int = 0, nb_thread_param: int = 8, atmosphere_type_param: int = 0, renderProgress_param: ProgressBar = null, mapStatusLabel_param: Label = null, 
+	nb_avg_cases_param: int = 50, cheminSauvegarde_param: String = "user://temp/", use_gpu_acceleration_param: bool = true, densite_planete: float = 5.51, seed_param: int = 0) -> void:
 
-func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, elevation_modifier_param: int = 0, nb_thread_param: int = 8, atmosphere_type_param: int = 0, renderProgress_param: ProgressBar = null, mapStatusLabel_param: Label = null, nb_avg_cases_param: int = 50, cheminSauvegarde_param: String = "user://temp/", use_gpu_acceleration_param: bool = true) -> void:
-	
 	# Store all parameters
-	self.nom            = nom_param
-	self.circonference  = int(rayon * 2 * PI)
-	self.renderProgress = renderProgress_param
+	self.nom                  = nom_param
+	self.circonference        = int(rayon * 2 * PI)
+	self.renderProgress       = renderProgress_param
+
 	if self.renderProgress:
 		self.renderProgress.value = 0.0
+
+	self.mapStatusLabel       = mapStatusLabel_param
+	self.cheminSauvegarde     = cheminSauvegarde_param
+	self.nb_avg_cases         = nb_avg_cases_param
+	self.densite_planete      = densite_planete
+	self.avg_temperature      = avg_temperature_param
+	self.water_elevation      = water_elevation_param
+	self.avg_precipitation    = avg_precipitation_param
+	self.elevation_modifier   = elevation_modifier_param
+	self.nb_thread            = nb_thread_param
+	self.atmosphere_type      = atmosphere_type_param
 	
-	self.mapStatusLabel   = mapStatusLabel_param
-	self.cheminSauvegarde = cheminSauvegarde_param
-	self.nb_avg_cases     = nb_avg_cases_param
-	
-	self.avg_temperature    = avg_temperature_param
-	self.water_elevation    = water_elevation_param
-	self.avg_precipitation  = avg_precipitation_param
-	self.elevation_modifier = elevation_modifier_param
-	self.nb_thread          = nb_thread_param
-	self.atmosphere_type    = atmosphere_type_param
-	
-	self.cylinder_radius      = self.circonference / (2.0 * PI)
 	self.use_gpu_acceleration = use_gpu_acceleration_param
-	
+
+	if seed_param == 0:
+		randomize()
+		seed_param = randi()
+
 	# Compile generation parameters
-	_compile_generation_params()
+	_compile_generation_params(seed_param)
 	
 	# Initialize GPU system
 	_init_gpu_system()
 
-func _compile_generation_params() -> void:
+func _compile_generation_params(seed_param: int) -> void:
 	"""
 	Compile all generation parameters into a single dictionary
 	This is passed to the GPU orchestrator and shaders
@@ -94,17 +99,17 @@ func _compile_generation_params() -> void:
 	
 	randomize()
 	generation_params = {
-		"seed"              : randi(),
+		"seed"              : seed_param,
 		"planet_name"       : nom,
 		"planet_radius"     : circonference / (2.0 * PI),
+		"planet_density"    : densite_planete, # Earth-like density in g/cm³
+		"planet_type"       : atmosphere_type,
 		"resolution"        : Vector2i(circonference, circonference / 2),
-		"avg_temperature"   : avg_temperature,
+		"base_temp"         : avg_temperature,
 		"sea_level"         : float(water_elevation),
-		"avg_precipitation" : avg_precipitation,
-		"elevation_modifier": float(elevation_modifier),
-		"atmosphere_type"   : atmosphere_type,
-		"nb_thread"         : nb_thread,
-		"nb_avg_cases"      : nb_avg_cases,
+		"global_humidity"   : avg_precipitation,
+		"terrain_scale"     : float(elevation_modifier),
+		"nb_cases_regions"  : nb_avg_cases,
 		"erosion_iterations": BASE_EROSION_ITERATIONS,
 		"tectonic_years"    : BASE_TECTONIC_YEARS,
 		"atmosphere_steps"  : BASE_ATMOSPHERE_STEPS
@@ -112,9 +117,6 @@ func _compile_generation_params() -> void:
 	
 	print("[PlanetGenerator] Parameters compiled:")
 	print("  Seed: ", generation_params["seed"])
-	print("  Temperature: ", generation_params["avg_temperature"], "°C")
-	print("  Sea Level: ", generation_params["sea_level"], "m")
-	print("  Precipitation: ", generation_params["avg_precipitation"])
 
 func _init_gpu_system() -> void:
 	"""Initialize GPU acceleration if available"""
@@ -125,10 +127,9 @@ func _init_gpu_system() -> void:
 		use_gpu_acceleration = false
 		return
 	
-	var resolution = Vector2i(self.circonference, self.circonference / 2)
-	gpu_orchestrator = GPUOrchestrator.new(gpu_context, resolution, generation_params)
+	gpu_orchestrator = GPUOrchestrator.new(gpu_context, generation_params["resolution"], generation_params)
 	
-	print("[PlanetGenerator] GPU acceleration enabled: ", resolution)
+	print("[PlanetGenerator] GPU acceleration enabled: ", generation_params["resolution"])
 
 func update_map_status(map_key: String) -> void:
 	"""Update UI status label"""
