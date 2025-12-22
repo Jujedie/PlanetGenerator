@@ -14,7 +14,7 @@ layout(rgba32f, set = 0, binding = 1) uniform writeonly image2D output_plates;
 layout(push_constant) uniform Params {
     int step_size;      // Distance de jump (512 -> 256 -> 128... -> 1)
     int num_plates;     // Nombre de plaques (20-30 recommandé)
-    float planet_radius; // Rayon planète pour métriques sphériques
+    float planet_radius;// Rayon planète pour métriques sphériques
     uint iteration;     // Itération actuelle (pour debug)
 } params;
 
@@ -32,20 +32,21 @@ ivec2 wrap_coords(ivec2 coord) {
 // === DISTANCE GÉODÉSIQUE (GREAT CIRCLE) ===
 // Convertit UV équirectangulaire en coordonnées sphériques et calcule la vraie distance
 float geodesic_distance(vec2 uv1, vec2 uv2) {
-    // UV -> Lat/Lon
-    float lon1 = (uv1.x - 0.5) * 2.0 * PI;
-    float lat1 = (uv1.y - 0.5) * PI;
-    float lon2 = (uv2.x - 0.5) * 2.0 * PI;
-    float lat2 = (uv2.y - 0.5) * PI;
+    vec2 duv = uv2 - uv1;
     
-    // Formule Haversine
-    float dlat = lat2 - lat1;
-    float dlon = lon2 - lon1;
-    float a = sin(dlat * 0.5) * sin(dlat * 0.5) +
-              cos(lat1) * cos(lat2) * sin(dlon * 0.5) * sin(dlon * 0.5);
-    float c = 2.0 * atan(sqrt(a), sqrt(1.0 - a));
+    // Correction du wrapping X (plus court chemin sur le cylindre)
+    if (abs(duv.x) > 0.5) duv.x = 1.0 - abs(duv.x);
     
-    return params.planet_radius * c;  // Distance en mètres
+    // Latitude moyenne pour l'échelle métrique
+    float avg_y = (uv1.y + uv2.y) * 0.5;
+    float phi = (avg_y - 0.5) * PI;
+    float scale_x = cos(phi);
+    
+    // Distance approximée (Pythagore corrigé)
+    // Plus rapide que Great Circle (acos/sin) et suffisant pour Voronoi local
+    vec2 dist_m = vec2(duv.x * scale_x, duv.y) * params.planet_radius * 2.0 * PI;
+    
+    return length(dist_m);
 }
 
 void main() {

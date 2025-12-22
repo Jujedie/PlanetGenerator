@@ -451,32 +451,32 @@ func _initialize_terrain(params: Dictionary) -> void:
 	
 	print("[Orchestrator] 🏔️ Initialisation du terrain (Seed: ", seed_value, ")")
 	
-	# Générer les données initiales sur CPU
+	# Générer les données initiales sur CPU avec bruit 3D et coordonnées cylindriques
 	var noise = FastNoiseLite.new()
 	noise.seed = seed_value
-	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	noise.frequency = 2.0 / float(resolution.x)
 	noise.fractal_octaves = 8
-	
+
+	var cylinder_radius = generation_params.get("planet_radius")
 	var init_data = PackedFloat32Array()
+
 	init_data.resize(resolution.x * resolution.y * 4)
-	
 	for y in range(resolution.y):
+		var cy = float(y)
 		for x in range(resolution.x):
+			var u = float(x) / float(resolution.x)
+			var angle = u * 2.0 * PI
+			var cx = cos(angle) * cylinder_radius
+			var cz = sin(angle) * cylinder_radius
 			var idx = (y * resolution.x + x) * 4
-			
-			# Générer la hauteur via noise
-			var nx = float(x) / float(resolution.x)
-			var ny = float(y) / float(resolution.y)
-			var height = noise.get_noise_2d(nx * 100, ny * 100) * 5000.0 + elevation_modifier
-			
-			# Packer dans RGBA
-			init_data[idx + 0] = height                          # R = Lithosphère
+			var height = noise.get_noise_3d(cx, cy, cz) * 5000.0 + elevation_modifier
+			init_data[idx + 0] = height                         # R = Lithosphère
 			init_data[idx + 1] = max(0.0, sea_level - height)   # G = Eau
-			init_data[idx + 2] = 0.0                             # B = Sédiment
-			init_data[idx + 3] = 0.5                             # A = Dureté
-	
-	# Créer nouvelle texture avec données
+			init_data[idx + 2] = 0.0                            # B = Sédiment
+			init_data[idx + 3] = 0.5                            # A = Dureté
+
+	# éer nouvelle texture avec données
 	var fmt = rd.texture_get_format(geo_state_texture)
 	var new_texture = rd.texture_create(fmt, RDTextureView.new(), [init_data.to_byte_array()])
 	
@@ -515,21 +515,20 @@ func _run_hydraulic_erosion_tracked(iterations: int, custom_params: Dictionary, 
 	print("[Orchestrator] 🌊 Érosion hydraulique: ", iterations, " itérations")
 	
 	# Calcul gravité
-	var gravite = compute_gravity(generation_params.get("planet_radius"), generation_params.get("densite_planete"))
+	var gravite = compute_gravity(generation_params.get("planet_radius"), generation_params.get("planet_density"))
 	print("Gravité = ", gravite, " m/s²")
 
-	# Paramètres par défaut
+	# Paramètres adaptés au shader corrigé (voir hydraulic_erosion_shader.glsl)
 	var params = {
+		"step": 0, # sera écrasé à chaque appel
 		"delta_time": custom_params.get("delta_time", 0.016),
-		"pipe_area": custom_params.get("pipe_area", 1.0),
-		"pipe_length": custom_params.get("pipe_length", 1.0),
-		"gravity": custom_params.get("gravity", 9.81),
-		"rain_rate": custom_params.get("rain_rate", 0.001),
-		"evaporation_rate": custom_params.get("evaporation_rate", 0.0001),
-		"sediment_capacity_k": custom_params.get("sediment_capacity_k", 0.1),
-		"erosion_rate": custom_params.get("erosion_rate", 0.01),
-		"deposition_rate": custom_params.get("deposition_rate", 0.01),
-		"min_height_delta": custom_params.get("min_height_delta", 0.001)
+		"planet_radius": generation_params.get("planet_radius", 6371000.0),
+		"gravity": gravite,
+		"rain_intensity": custom_params.get("rain_intensity", 0.001),
+		"Kc": custom_params.get("Kc", 0.1),
+		"Ks": custom_params.get("Ks", 0.01),
+		"Kd": custom_params.get("Kd", 0.01),
+		"Ke": custom_params.get("Ke", 0.0001)
 	}
 	
 	# ✅ FIX B: GROUPES DE TRAVAIL BASÉS SUR LA VRAIE RÉSOLUTION
@@ -578,11 +577,18 @@ func _dispatch_erosion_step(step: int, params: Dictionary, groups_x: int, groups
 		push_error("[Orchestrator] Cannot dispatch - invalid rd/pipeline/uniform set")
 		return temp_rids
 	
+	# Respecte l'alignement std140 : 1 int, 3 floats de padding, puis 8 floats (total 12 floats = 48 octets)
 	var param_data = PackedFloat32Array([
-		float(step), params["delta_time"], params["pipe_area"], params["pipe_length"],
-		params["gravity"], params["rain_rate"], params["evaporation_rate"],
-		params["sediment_capacity_k"], params["erosion_rate"], params["deposition_rate"],
-		params["min_height_delta"], 0.0
+		float(step),      # int step (sera casté côté shader)
+		0.0, 0.0, 0.0,    # padding std140 (3 floats)
+		params["delta_time"],
+		params["planet_radius"],
+		params["gravity"],
+		params["rain_intensity"],
+		params["Kc"],
+		params["Ks"],
+		params["Kd"],
+		params["Ke"]
 	])
 	
 	var param_bytes = param_data.to_byte_array()
