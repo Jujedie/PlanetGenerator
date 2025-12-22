@@ -16,7 +16,7 @@ enum TextureID {
 # === MEMBRES ===
 var rd: RenderingDevice
 var textures: Dictionary = {}
-static var shaders: Dictionary = {} # STATIC pour garantir la persistance globale
+var shaders: Dictionary = {}
 var pipelines: Dictionary = {}
 var uniform_sets: Dictionary = {}
 
@@ -30,7 +30,6 @@ func _init() -> void:
 	instance = self
 	
 func _ready() -> void:
-	# 🔥 FIX CRITIQUE : Création du RenderingDevice avec validation
 	rd = RenderingServer.create_local_rendering_device()
 	
 	if not rd:
@@ -55,7 +54,7 @@ func _ready() -> void:
 	var test_texture = rd.texture_create(test_format, RDTextureView.new(), [test_data])
 	if not test_texture.is_valid():
 		push_error("❌ FATAL: RenderingDevice créé mais incapable de créer des textures")
-		rd = null  # Invalider pour éviter les crashs
+		rd = null
 		return
 	
 	# Nettoyer la texture de test
@@ -105,7 +104,6 @@ func _initialize_textures() -> void:
 
 # === CHARGEMENT DES SHADERS (SÉCURISÉ) ===
 func load_compute_shader(glsl_path: String, shader_name: String) -> bool:
-	# 🔥 VALIDATION DU FICHIER
 	if not FileAccess.file_exists(glsl_path):
 		push_error("❌ SHADER NOT FOUND: " + glsl_path)
 		return false
@@ -126,7 +124,6 @@ func load_compute_shader(glsl_path: String, shader_name: String) -> bool:
 		return false
 
 	# --- PERSISTENCE FORCÉE ---
-	# Toujours enregistrer le shader et le pipeline dans les dictionnaires statiques
 	shaders[shader_name] = shader_rid
 	pipelines[shader_name] = rd.compute_pipeline_create(shader_rid)
 
@@ -190,4 +187,5 @@ func _exit_tree() -> void:
 		if rid and rid.is_valid():
 			rd.free_rid(rid)
 	
+	self.instance = null
 	print("✅ Ressources GPU libérées (sauf shaders, persistance garantie)")
