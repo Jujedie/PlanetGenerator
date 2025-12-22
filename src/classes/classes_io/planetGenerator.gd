@@ -56,6 +56,23 @@ var use_gpu_acceleration: bool
 # Generation parameters (compiled from UI)
 var generation_params: Dictionary = {}
 
+## Constructeur de la classe PlanetGenerator.
+##
+## Initialise les paramètres de simulation et lie les références de l'interface utilisateur.
+## Ne lance pas la génération (voir [method generate_planet]).
+##
+## @param nom_param: Le nom de la planète (utilisé pour les fichiers de sauvegarde).
+## @param rayon: Rayon de la texture en pixels (ex: 1024). Définit la circonférence (2*PI*R).
+## @param avg_temperature_param: Température moyenne globale en degrés (base pour le climat).
+## @param water_elevation_param: Niveau de la mer (offset ou niveau absolu).
+## @param avg_precipitation_param: Facteur global d'humidité (0.0 à 1.0).
+## @param elevation_modifier_param: Multiplicateur d'altitude pour le relief (Terrain Scale).
+## @param nb_thread_param: Nombre de threads pour la génération CPU (Obsolète pour GPU).
+## @param atmosphere_type_param: Enum (0=Terre, 1=Lune, etc.) définissant la densité atmosphérique.
+## @param renderProgress_param: Référence à la barre de progression de l'UI.
+## @param mapStatusLabel_param: Référence au label de statut de l'UI.
+## @param nb_avg_cases_param: Nombre de sites de Voronoi pour les plaques tectoniques/régions.
+## @param cheminSauvegarde_param: Dossier racine pour la sauvegarde temporaire.
 func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, 
 	elevation_modifier_param: int = 0, nb_thread_param: int = 8, atmosphere_type_param: int = 0, renderProgress_param: ProgressBar = null, mapStatusLabel_param: Label = null, 
 	nb_avg_cases_param: int = 50, cheminSauvegarde_param: String = "user://temp/", use_gpu_acceleration_param: bool = true, densite_planete: float = 5.51, seed_param: int = 0) -> void:
@@ -91,13 +108,19 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 	# Initialize GPU system
 	_init_gpu_system()
 
+## Compile et normalise les paramètres de génération pour le GPU.
+##
+## Cette méthode transforme les entrées utilisateur (UI) en un dictionnaire de constantes physiques
+## strictes utilisables par le [GPUOrchestrator].
+## Elle calcule notamment la densité de l'atmosphère, la gravité de surface et le rayon planétaire.
+##
+## @return Dictionary: Un dictionnaire contenant 'seed', 'planet_radius', 'atmo_density', 'gravity', etc.
 func _compile_generation_params(seed_param: int) -> void:
 	"""
 	Compile all generation parameters into a single dictionary
 	This is passed to the GPU orchestrator and shaders
 	"""
 	
-	randomize()
 	generation_params = {
 		"seed"              : seed_param,
 		"planet_name"       : nom,
@@ -118,6 +141,12 @@ func _compile_generation_params(seed_param: int) -> void:
 	print("[PlanetGenerator] Parameters compiled:")
 	print("  Seed: ", generation_params["seed"])
 
+## Initialise le sous-système de rendu GPU.
+##
+## Instancie le [GPUContext] (si nécessaire) et configure le [GPUOrchestrator]
+## avec les paramètres compilés. Prépare les textures (VRAM) et les pipelines de shaders.
+##
+## @return bool: `true` si l'initialisation Vulkan/RenderingDevice a réussi, `false` sinon.
 func _init_gpu_system() -> void:
 	"""Initialize GPU acceleration if available"""
 	
@@ -131,6 +160,12 @@ func _init_gpu_system() -> void:
 	
 	print("[PlanetGenerator] GPU acceleration enabled: ", generation_params["resolution"])
 
+## Met à jour le label de statut dans l'interface utilisateur.
+##
+## Cette méthode est thread-safe et utilise [method Object.call_deferred] pour
+## manipuler l'UI depuis un thread de génération.
+##
+## @param map_key: La clé de traduction correspondant à l'étape actuelle (ex: "MAP_TECTONIC").
 func update_map_status(map_key: String) -> void:
 	"""Update UI status label"""
 	if mapStatusLabel != null:
@@ -140,6 +175,11 @@ func update_map_status(map_key: String) -> void:
 	
 	emit_signal("progress_updated", renderProgress.value if renderProgress else 0.0, map_key)
 
+## Incrémente la barre de progression.
+##
+## Ajoute une valeur au pourcentage actuel de génération. Thread-safe.
+##
+## @param value: La valeur à ajouter (ex: 10.0 pour 10%).
 func addProgress(value: float) -> void:
 	"""Update progress bar"""
 	if self.renderProgress != null:
@@ -153,6 +193,11 @@ func addProgress(value: float) -> void:
 ## GPU GENERATION - RENDER THREAD SAFE VERSION
 ## ============================================================================
 
+## Point d'entrée principal de la génération.
+##
+## Démarre le processus de génération. Selon la configuration interne, cette méthode
+## lance soit un Thread pour la génération CPU ([method generate_planet_cpu]),
+## soit initie la séquence GPU ([method generate_planet_gpu]).
 func generate_planet():
 	"""
 	Entry point - routes to GPU or CPU
@@ -167,6 +212,11 @@ func generate_planet():
 		print("[PlanetGenerator] Starting CPU generation...")
 		generate_planet_cpu()
 
+## Wrapper pour l'exécution différée de la génération GPU.
+##
+## Permet d'appeler [method generate_planet_gpu] via [method call_deferred]
+## pour s'assurer que certaines initialisations contextuelles se font sur le thread principal
+## avant de basculer sur le RenderingDevice.
 func _generate_planet_gpu_deferred():
 	"""
 	GPU generation executed on render thread
@@ -212,6 +262,15 @@ func _generate_planet_gpu_deferred():
 # GPU GENERATION PIPELINE
 # ============================================================================
 
+## Exécute la pipeline de génération complète sur GPU (Compute Shaders).
+##
+## C'est le coeur du nouveau système. Elle exécute séquentiellement :
+## 1. Tectonique des plaques (Voronoi + Drift).
+## 2. Érosion hydraulique et thermique (Simulation itérative).
+## 3. Simulation atmosphérique (Pression, Température).
+## 4. Rapatriement des données (Readback).
+##
+## Émet le signal [signal finished] une fois terminé.
 func generate_planet_gpu():
 	"""
 	GPU-accelerated generation pipeline
@@ -258,6 +317,11 @@ func generate_planet_gpu():
 	
 	emit_signal("finished")
 
+## Récupère les textures depuis la VRAM et les convertit en Images CPU.
+##
+## Appelle [method GPUOrchestrator.get_final_heightmap] et autres getters
+## pour extraire les données brutes (PackedByteArray) du GPU et remplir les variables
+## membres (elevation_map, water_map, etc.) de cette classe.
 func _export_gpu_maps() -> void:
 	"""
 	Export GPU textures to PNG files using PlanetExporter
@@ -328,6 +392,11 @@ func _export_gpu_maps() -> void:
 # LEGACY CPU GENERATION (Fallback)
 # ============================================================================
 
+## Exécute la pipeline de génération historique sur CPU (Legacy).
+##
+## Instancie séquentiellement les différents [MapGenerator] (Elevation, Water, Biome...)
+## et exécute leurs algorithmes pixel par pixel.
+## Utilisé comme fallback ou pour comparer les résultats.
 func generate_planet_cpu():
 	"""
 	Original CPU-based generation pipeline
@@ -407,6 +476,12 @@ func generate_planet_cpu():
 # PUBLIC API FOR EXTERNAL COMPONENTS
 # ============================================================================
 
+## Récupère les identifiants de texture (RID) du GPU.
+##
+## Utile pour le débogage ou pour afficher les textures directement dans un Viewport
+## sans repasser par le CPU (via Texture2DRD).
+##
+## @return Dictionary: Un dictionnaire { "geo": RID, "atmo": RID, ... }.
 func get_gpu_texture_rids() -> Dictionary:
 	"""
 	Get GPU texture RIDs for direct 3D binding
@@ -426,6 +501,10 @@ func get_gpu_texture_rids() -> Dictionary:
 		"atmo": gpu_context.textures[GPUContext.TextureID.ATMOSPHERIC_STATE]
 	}
 
+## Exporte toutes les cartes générées vers un dossier spécifique.
+##
+## @param directory_path: Le chemin absolu ou relatif (user://) du dossier de destination.
+## @return bool: `true` si toutes les sauvegardes ont réussi.
 func export_to_directory(output_dir: String) -> void:
 	"""
 	Export all maps to specified directory
@@ -451,6 +530,12 @@ func export_to_directory(output_dir: String) -> void:
 	
 	print("[PlanetGenerator] Export complete")
 
+## Méthode helper interne pour sauvegarder les images.
+##
+## Itère sur toutes les cartes valides (elevation, biome, etc.) et les enregistre
+## au format PNG dans le répertoire cible.
+##
+## @param path: Chemin du répertoire.
 func save_maps_to_directory(output_dir: String) -> void:
 	"""Legacy save function for CPU-generated maps"""
 	
@@ -491,6 +576,11 @@ func save_maps_to_directory(output_dir: String) -> void:
 # LEGACY FUNCTIONS (Unchanged for backward compatibility)
 # ============================================================================
 
+## Génère l'image de prévisualisation finale (Composite).
+##
+## Combine la carte d'élévation, les océans, les biomes et les nuages
+## en une seule image pour l'affichage dans le menu de sélection.
+## Applique un masque circulaire pour simuler une vue "planète" (si en mode 2D).
 func generate_preview() -> void:
 	"""Generate circular preview (CPU method)"""
 	self.preview = Image.create(self.circonference / 2, self.circonference / 2, false, Image.FORMAT_RGBA8)
@@ -514,10 +604,20 @@ func generate_preview() -> void:
 			else:
 				self.preview.set_pixel(x, y, Color.TRANSPARENT)
 
+## Sauvegarde les cartes générées dans le dossier temporaire par défaut.
+##
+## Utilise [member cheminSauvegarde] (par défaut "user://temp/").
+## Appelé typiquement à la fin de la génération avant l'affichage.
 func save_maps():
 	"""Legacy save to default directory"""
 	save_maps_to_directory(cheminSauvegarde)
 
+## Retourne la liste des chemins de fichiers des cartes générées.
+##
+## Nettoie d'abord les fichiers temporaires existants, sauvegarde les nouvelles cartes,
+## et retourne les chemins. Utilisé par le [Master] node pour charger les textures.
+##
+## @return Array[String]: Liste des chemins complets vers les fichiers PNG générés.
 func getMaps() -> Array[String]:
 	"""Get temporary map file paths for UI preview"""
 	deleteImagesTemps()
@@ -539,6 +639,12 @@ func getMaps() -> Array[String]:
 		save_image_temp(self.preview, "preview.png", temp_dir)
 	]
 
+## Vérifie si la génération est complète et valide.
+##
+## Contrôle que toutes les images critiques (Elevation, Water, Biome, Preview)
+## ne sont pas nulles.
+##
+## @return bool: `true` si la planète est prête à être utilisée/affichée.
 func is_ready() -> bool:
 	"""Check if all maps are generated"""
 	return (self.elevation_map != null and 
@@ -554,6 +660,14 @@ func is_ready() -> bool:
 			self.banquise_map != null and 
 			self.preview != null)
 
+## Sauvegarde une image unique dans le dossier temporaire.
+##
+## Méthode statique utilitaire. Crée le dossier si nécessaire.
+##
+## @param image: L'objet Image à sauvegarder.
+## @param file_name: Le nom du fichier (ex: "heightmap.png").
+## @param temp_dir: Le répertoire de destination.
+## @return String: Le chemin complet du fichier sauvegardé, ou une chaîne vide en cas d'erreur.
 static func save_image_temp(image: Image, file_name: String, temp_dir: String) -> String:
 	"""Save image to temporary directory"""
 	if not image:
@@ -566,6 +680,10 @@ static func save_image_temp(image: Image, file_name: String, temp_dir: String) -
 	image.save_png(path)
 	return path
 
+## Vide le dossier temporaire.
+##
+## Supprime tous les fichiers présents dans "user://temp/" pour éviter l'accumulation
+## de données inutiles entre deux générations.
 static func deleteImagesTemps():
 	"""Clear temporary directory"""
 	var dir = DirAccess.open("user://temp/")
@@ -580,6 +698,12 @@ static func deleteImagesTemps():
 		file_name = dir.get_next()
 	dir.list_dir_end()
 
+## Gestionnaire de notifications système Godot.
+##
+## Intercepte [constant Node.NOTIFICATION_PREDELETE] pour assurer le nettoyage
+## propre des ressources GPU (via [method GPUOrchestrator.cleanup]) lors de la destruction de l'objet.
+##
+## @param what: L'identifiant de la notification.
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE:
 		if gpu_orchestrator:
