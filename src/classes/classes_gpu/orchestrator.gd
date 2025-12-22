@@ -13,12 +13,6 @@ class_name GPUOrchestrator
 var gpu: GPUContext
 var rd: RenderingDevice
 
-# Textures principales
-var geo_state_texture: RID
-var atmo_state_texture: RID
-var flux_map_texture: RID
-var velocity_map_texture: RID
-
 var resolution: Vector2i
 var generation_params: Dictionary
 
