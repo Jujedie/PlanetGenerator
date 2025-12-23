@@ -111,13 +111,11 @@ func _compile_all_shaders() -> bool:
 	]
 	
 	for s in shaders_to_load:
-		gpu.load_compute_shader(s["path"], s["name"])
-		var shader_rid = gpu.shaders[s["name"]]
-		
-		if not shader_rid.is_valid():
+		var ok = gpu.load_compute_shader(s["path"], s["name"])
+		if not ok or not gpu.shaders.has(s["name"]) or not gpu.shaders[s["name"]].is_valid():
 			push_error("  ❌ Échec chargement shader: ", s["name"])
 			return false
-		print("    ✅ ", s["name"], " : Shader=", shader_rid, " | Pipeline=", gpu.pipelines[s["name"]])
+		print("    ✅ ", s["name"], " : Shader=", gpu.shaders[s["name"]], " | Pipeline=", gpu.pipelines[s["name"]])
 	
 	return true
 
@@ -213,8 +211,8 @@ func _init_uniform_sets():
 	if gpu.shaders["tectonic"].is_valid():
 		print("  • Création uniform set: tectonic")
 		var uniforms = [
-			gpu.create_texture_uniform(0, gpu.textures[GPUContext.TextureID.GEOPHYSICAL_STATE]),
-			gpu.create_texture_uniform(1, gpu.textures[GPUContext.TextureID.PLATE_DATA])
+			gpu.create_texture_uniform(0, gpu.textures[GPUContext.TextureID[0]]),
+			gpu.create_texture_uniform(1, gpu.textures[GPUContext.TextureID[1]])
 		]
 		gpu.uniform_sets["tectonic"] = rd.uniform_set_create(uniforms, gpu.shaders["tectonic"], 0)
 		if not gpu.uniform_sets["tectonic"].is_valid():
@@ -228,8 +226,8 @@ func _init_uniform_sets():
 	if gpu.shaders["orogeny"].is_valid():
 		print("  • Création uniform set: orogeny")
 		var uniforms = [
-			gpu.create_texture_uniform(0, gpu.textures[GPUContext.TextureID.GEOPHYSICAL_STATE]),
-			gpu.create_texture_uniform(1, gpu.textures[GPUContext.TextureID.PLATE_DATA])
+			gpu.create_texture_uniform(0, gpu.textures[GPUContext.TextureID[0]]),
+			gpu.create_texture_uniform(1, gpu.textures[GPUContext.TextureID[1]])
 		]
 		gpu.uniform_sets["orogeny"] = rd.uniform_set_create(uniforms, gpu.shaders["orogeny"], 0)
 		if not gpu.uniform_sets["orogeny"].is_valid():
@@ -243,7 +241,7 @@ func _init_uniform_sets():
 	if gpu.shaders["erosion"].is_valid():
 		print("  • Création uniform set: erosion")
 		var uniforms = [
-			gpu.create_texture_uniform(0, gpu.textures[GPUContext.TextureID.GEOPHYSICAL_STATE])
+			gpu.create_texture_uniform(0, gpu.textures[GPUContext.TextureID[0]]),
 		]
 		gpu.uniform_sets["erosion"] = rd.uniform_set_create(uniforms, gpu.shaders["erosion"], 0)
 		if not gpu.uniform_sets["erosion"].is_valid():
@@ -255,6 +253,8 @@ func _init_uniform_sets():
 
 	print("[Orchestrator] ✅ Uniform Sets initialization complete")
 
+# ============================================================================
+# SEQUENCE DE SIMULATION COMPLÈTE
 # ============================================================================
 
 ## Lance la séquence complète de simulation planétaire.
@@ -321,133 +321,131 @@ func run_simulation() -> void:
 # PHASES DE SIMULATION - TECTONIQUE, OROGENÈSE, ÉROSION (TOPOGRAPHIE)
 # ============================================================================
 
-func run_tectonic_phase(params: Dictionary, w: int, h: int, rids_to_free: Array) -> void:
-	"""
-	PHASE 1: TECTONIC PLATES GENERATION
-	Génère le diagramme de Voronoi des plaques tectoniques avec leurs vecteurs de mouvement
-	"""
-	
-	if not rd or not gpu.pipelines["tectonic"].is_valid() or not gpu.uniform_sets["tectonic"].is_valid():
+func run_tectonic_phase(params: Dictionary, w: int, h: int, rids_to_free: Array[RID]) -> void:
+	if not rd or not gpu.pipelines["tectonic"].is_valid():
 		push_warning("[Orchestrator] ⚠️ Tectonic pipeline not ready, skipping")
 		return
 	
-	print("[Orchestrator] ═══ PHASE 1: TECTONIC PLATES GENERATION ═══")
+	print("[Orchestrator] Phase 1/3 - Tectonic Plates Generation")
 	
-	# 1. Préparation des paramètres
-	var num_plates = int(params.get("nb_cases_regions", 30))
-	var plate_strength = 10.0  # Vitesse de mouvement des plaques
-	var friction_coef = 0.8
-	var convergence_uplift = 3000.0  # Soulèvement aux zones de convergence (m)
-	var divergence_subsidence = 1500.0  # Affaissement aux zones de divergence (m)
+	var seed_val = int(params.get("seed", 0))
+	var num_plates = int(params.get("nb_cases_regions", 50))
+	var plate_strength = 50.0
+	var friction = 0.3
+	var convergence = 3000.0
+	var divergence = -1500.0
+	var res_x = int(w)
+	var res_y = int(h)
 	var time_val = 0.0
 	
-	# 2. Création du buffer de paramètres
-	var buffer_data = PackedFloat32Array([
-		float(params.get("seed", 0)),
-		float(num_plates),
-		plate_strength,
-		friction_coef,
-		convergence_uplift,
-		divergence_subsidence,
-		float(w),
-		float(h),
-		time_val
-	])
-	var buffer_bytes = buffer_data.to_byte_array()
+	# CRITICAL FIX: std140 alignment requires 48 bytes total
+	# Structure layout with padding:
+	# 0-3:   seed (uint)
+	# 4-7:   num_plates (uint)
+	# 8-11:  plate_strength (float)
+	# 12-15: friction_coefficient (float)
+	# 16-19: convergence_uplift (float)
+	# 20-23: divergence_subsidence (float)
+	# 24-31: resolution (uvec2 = 2x uint)
+	# 32-35: time (float)
+	# 36-47: PADDING (12 bytes to reach 48)
 	
-	# 3. Création du Uniform Buffer
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var buffer_data = PackedByteArray()
+	buffer_data.resize(48)  # Must be 48 bytes for std140
+	
+	buffer_data.encode_u32(0, seed_val)
+	buffer_data.encode_u32(4, num_plates)
+	buffer_data.encode_float(8, plate_strength)
+	buffer_data.encode_float(12, friction)
+	buffer_data.encode_float(16, convergence)
+	buffer_data.encode_float(20, divergence)
+	buffer_data.encode_u32(24, res_x)
+	buffer_data.encode_u32(28, res_y)
+	buffer_data.encode_float(32, time_val)
+	# bytes 36-47 are automatic padding (already zero from resize)
+	
+	var param_buffer = rd.uniform_buffer_create(48, buffer_data)
 	rids_to_free.append(param_buffer)
 	
-	# 4. Création de l'Uniform
 	var param_uniform = RDUniform.new()
 	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
 	param_uniform.binding = 0
 	param_uniform.add_id(param_buffer)
 	
-	# 5. Création du Set (Set Index 1)
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["tectonic"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create Tectonic Param Set")
 		return
 	rids_to_free.append(param_set)
 	
-	# 6. Calcul des groupes de travail (16x16 threads par groupe)
 	var groups_x = ceili(float(w) / 16.0)
 	var groups_y = ceili(float(h) / 16.0)
 	
-	print("  • Dispatch: ", groups_x, "x", groups_y, " groupes (", groups_x * groups_y * 256, " threads)")
-	print("  • Plaques tectoniques: ", num_plates)
-	
-	# 7. Dispatch du Compute Shader
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["tectonic"])
-	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["tectonic"], 0)  # Textures
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)  # Paramètres
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["tectonic"], 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	# 8. Synchronisation
 	rd.submit()
 	rd.sync()
-	
-	print("  ✅ Tectonique des plaques terminée")
+	print("[Orchestrator] ✅ Tectonic phase complete")
 
-func run_orogeny_phase(params: Dictionary, w: int, h: int, rids_to_free: Array) -> void:
-	"""
-	PHASE 2: OROGENIC DETAIL INJECTION
-	Ajoute des détails orographiques (montagnes) aux zones de friction tectonique
-	"""
-	
-	if not rd or not gpu.pipelines["orogeny"].is_valid() or not gpu.uniform_sets["orogeny"].is_valid():
+func run_orogeny_phase(params: Dictionary, w: int, h: int, rids_to_free: Array[RID]) -> void:
+	if not rd or not gpu.pipelines["orogeny"].is_valid():
 		push_warning("[Orchestrator] ⚠️ Orogeny pipeline not ready, skipping")
 		return
 	
-	print("[Orchestrator] ═══ PHASE 2: OROGENIC DETAIL INJECTION ═══")
+	print("[Orchestrator] Phase 2/3 - Orogenic Detail Injection")
 	
-	# 1. Préparation des paramètres
-	var detail_scale = 0.01  # Échelle du bruit fractal
-	var mountain_intensity = float(params.get("terrain_scale", 5000.0))  # UI: "Élévation additionnelle"
-	var erosion_factor = 0.02  # Lissage naturel léger
+	var seed_val = int(params.get("seed", 0))
+	var detail_scale = 0.005
+	var mountain_intensity = 2000.0
+	var erosion_factor = 0.02
+	var res_x = int(w)
+	var res_y = int(h)
 	var time_val = 0.0
 	
-	# 2. Création du buffer de paramètres
-	var buffer_data = PackedFloat32Array([
-		float(params.get("seed", 0)),
-		detail_scale,
-		mountain_intensity,
-		erosion_factor,
-		float(w),
-		float(h),
-		time_val
-	])
-	var buffer_bytes = buffer_data.to_byte_array()
+	# CRITICAL FIX: std140 alignment requires 32 bytes total
+	# Structure layout:
+	# 0-3:   seed (uint)
+	# 4-7:   detail_scale (float)
+	# 8-11:  mountain_intensity (float)
+	# 12-15: erosion_factor (float)
+	# 16-23: resolution (uvec2)
+	# 24-27: time (float)
+	# 28-31: PADDING (4 bytes)
 	
-	# 3. Création du Uniform Buffer
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var buffer_data = PackedByteArray()
+	buffer_data.resize(32)  # Must be 32 bytes for std140
+	
+	buffer_data.encode_u32(0, seed_val)
+	buffer_data.encode_float(4, detail_scale)
+	buffer_data.encode_float(8, mountain_intensity)
+	buffer_data.encode_float(12, erosion_factor)
+	buffer_data.encode_u32(16, res_x)
+	buffer_data.encode_u32(20, res_y)
+	buffer_data.encode_float(24, time_val)
+	# bytes 28-31 are padding
+	
+	var param_buffer = rd.uniform_buffer_create(32, buffer_data)
 	rids_to_free.append(param_buffer)
 	
-	# 4. Création de l'Uniform
 	var param_uniform = RDUniform.new()
 	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
 	param_uniform.binding = 0
 	param_uniform.add_id(param_buffer)
 	
-	# 5. Création du Set (Set Index 1)
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["orogeny"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create Orogeny Param Set")
 		return
 	rids_to_free.append(param_set)
 	
-	# 6. Calcul des groupes de travail
 	var groups_x = ceili(float(w) / 16.0)
 	var groups_y = ceili(float(h) / 16.0)
 	
-	print("  • Dispatch: ", groups_x, "x", groups_y, " groupes")
-	print("  • Intensité montagneuse: ", mountain_intensity, "m")
-	
-	# 7. Dispatch du Compute Shader
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["orogeny"])
 	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["orogeny"], 0)
@@ -455,83 +453,76 @@ func run_orogeny_phase(params: Dictionary, w: int, h: int, rids_to_free: Array) 
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	# 8. Synchronisation
 	rd.submit()
 	rd.sync()
-	
-	print("  ✅ Détails orographiques ajoutés")
+	print("[Orchestrator] ✅ Orogeny phase complete")
 
-func run_erosion_phase(params: Dictionary, w: int, h: int, rids_to_free: Array) -> void:
-	"""
-	PHASE 3: HYDRAULIC EROSION (ITERATIVE)
-	Simulation itérative de pluie, érosion et transport de sédiments
-	"""
-	
-	if not rd or not gpu.pipelines["erosion"].is_valid() or not gpu.uniform_sets["erosion"].is_valid():
+func run_erosion_phase(params: Dictionary, w: int, h: int, rids_to_free: Array[RID]) -> void:
+	if not rd or not gpu.pipelines["erosion"].is_valid():
 		push_warning("[Orchestrator] ⚠️ Erosion pipeline not ready, skipping")
 		return
 	
-	print("[Orchestrator] ═══ PHASE 3: HYDRAULIC EROSION (ITERATIVE) ═══")
+	print("[Orchestrator] Phase 3/3 - Hydraulic Erosion (Iterative)")
 	
-	# 1. Paramètres de base
-	var iterations = int(params.get("erosion_iterations"))
-	var rain_amount = 0.005 * params.get("global_humidity", 0.5)
-	var evaporation_rate = 0.01
-	var sediment_capacity = 0.1
-	var erosion_strength = 0.05
-	var deposition_strength = 0.03
-	var gravity = compute_gravity(
-		params.get("planet_radius", 6371000.0), 
-		params.get("planet_density", 5.51)
-	)
+	var num_iterations = int(params.get("erosion_iterations", 100))
+	var seed_val = int(params.get("seed", 0))
+	var rain = 0.01
+	var evaporation = 0.05
+	var sediment_cap = 4.0
+	var erosion_str = 0.3
+	var deposition_str = 0.3
+	var gravity = 9.81
+	var res_x = int(w)
+	var res_y = int(h)
 	var time_val = 0.0
 	
-	print("  • Itérations: ", iterations)
-	print("  • Quantité de pluie: ", rain_amount)
+	# CRITICAL FIX: std140 alignment requires 48 bytes total
+	# Structure layout:
+	# 0-3:   seed (uint)
+	# 4-7:   iteration (uint)
+	# 8-11:  rain_amount (float)
+	# 12-15: evaporation_rate (float)
+	# 16-19: sediment_capacity (float)
+	# 20-23: erosion_strength (float)
+	# 24-27: deposition_strength (float)
+	# 28-31: gravity (float)
+	# 32-39: resolution (uvec2)
+	# 40-43: time (float)
+	# 44-47: PADDING (4 bytes)
 	
-	# 2. Calcul des groupes de travail
-	var groups_x = ceili(float(w) / 16.0)
-	var groups_y = ceili(float(h) / 16.0)
-	
-	# 3. Boucle itérative
-	for iter in range(iterations):
-		# Afficher la progression tous les 20%
-		if iter % max(1, iterations / 5) == 0:
-			print("    Itération ", iter, "/", iterations)
+	for i in range(num_iterations):
+		var buffer_data = PackedByteArray()
+		buffer_data.resize(48)  # Must be 48 bytes for std140
 		
-		# 3a. Créer le buffer avec le numéro d'itération actuel
-		var buffer_data = PackedFloat32Array([
-			float(params.get("seed", 0)),
-			float(iter),  # Numéro d'itération (change le bruit aléatoire)
-			rain_amount,
-			evaporation_rate,
-			sediment_capacity,
-			erosion_strength,
-			deposition_strength,
-			gravity,
-			float(w),
-			float(h),
-			time_val
-		])
-		var buffer_bytes = buffer_data.to_byte_array()
+		buffer_data.encode_u32(0, seed_val)
+		buffer_data.encode_u32(4, i)
+		buffer_data.encode_float(8, rain)
+		buffer_data.encode_float(12, evaporation)
+		buffer_data.encode_float(16, sediment_cap)
+		buffer_data.encode_float(20, erosion_str)
+		buffer_data.encode_float(24, deposition_str)
+		buffer_data.encode_float(28, gravity)
+		buffer_data.encode_u32(32, res_x)
+		buffer_data.encode_u32(36, res_y)
+		buffer_data.encode_float(40, time_val)
+		# bytes 44-47 are padding
 		
-		# 3b. Créer le Uniform Buffer
-		var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+		var param_buffer = rd.uniform_buffer_create(48, buffer_data)
 		
-		# 3c. Créer l'Uniform
 		var param_uniform = RDUniform.new()
 		param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
 		param_uniform.binding = 0
 		param_uniform.add_id(param_buffer)
 		
-		# 3d. Créer le Set (Set Index 1)
 		var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["erosion"], 1)
 		if not param_set.is_valid():
-			push_error("[Orchestrator] ❌ Failed to create Erosion Param Set at iteration ", iter)
+			push_error("[Orchestrator] ❌ Failed to create Erosion Param Set")
 			rd.free_rid(param_buffer)
-			break
+			return
 		
-		# 3e. Dispatch
+		var groups_x = ceili(float(w) / 16.0)
+		var groups_y = ceili(float(h) / 16.0)
+		
 		var compute_list = rd.compute_list_begin()
 		rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["erosion"])
 		rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["erosion"], 0)
@@ -539,15 +530,17 @@ func run_erosion_phase(params: Dictionary, w: int, h: int, rids_to_free: Array) 
 		rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 		rd.compute_list_end()
 		
-		# 3f. Synchronisation (critique pour itérations successives)
 		rd.submit()
 		rd.sync()
 		
-		# 3g. Nettoyage immédiat de cette itération
+		# Clean up this iteration's resources
 		rd.free_rid(param_set)
 		rd.free_rid(param_buffer)
+		
+		if i % 10 == 0:
+			print("  Iteration ", i, "/", num_iterations)
 	
-	print("  ✅ Érosion hydraulique terminée (", iterations, " cycles)")
+	print("[Orchestrator] ✅ Erosion phase complete")
 
 # ============================================================================
 # EXEMPLE PHASES DE SIMULATION
@@ -616,9 +609,9 @@ func run_erosion_phase(params: Dictionary, w: int, h: int, rids_to_free: Array) 
 # ============================================================================
 
 ## Example d'exportation de carte
-func export_example_to_image() -> Image:
-	var byte_data = rd.texture_get_data(gpu.textures["example"], 0)
-	return Image.create_from_data(resolution.x, resolution.y, false, Image.FORMAT_RGBAF, byte_data)
+#func export_example_to_image() -> Image:
+#	var byte_data = rd.texture_get_data(gpu.textures["example"], 0)
+#	return Image.create_from_data(resolution.x, resolution.y, false, Image.FORMAT_RGBAF, byte_data)
 
 
 # ============================================================================

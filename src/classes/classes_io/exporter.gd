@@ -18,7 +18,7 @@ var params: Dictionary = {}
 ## pour transformer les buffers de données brutes du GPU (VRAM) en objets [Image] manipulables par le CPU.
 ## Elle assure la cohérence des données entre les différentes couches (ex: s'assurer que la carte
 ## des biomes utilise bien les données d'élévation fraîchement extraites).
-func export_maps(rids: Dictionary[String,RID], output_dir: String, generation_params: Dictionary) -> Dictionary:
+func export_maps(gpu_context: GPUContext, rids: Dictionary[String,RID], output_dir: String, generation_params: Dictionary) -> Dictionary:
 	"""
 	Export all map types from GPU textures to PNG files
 	
@@ -38,7 +38,6 @@ func export_maps(rids: Dictionary[String,RID], output_dir: String, generation_pa
 		DirAccess.make_dir_recursive_absolute(output_dir)
 	
 	# Récupérer l'instance GPUContext
-	var gpu_context = GPUContext.instance
 	if not gpu_context:
 		push_error("[Exporter] GPUContext not available!")
 		return {}
@@ -54,7 +53,7 @@ func export_maps(rids: Dictionary[String,RID], output_dir: String, generation_pa
 			push_error("[Exporter] ❌ Missing RID for map type: ", map_type)
 			return {}
 
-	var geo_format = rd.texture_get_format(rids["geo"])
+	var geo_format = rd.texture_get_format(rids[GPUContext.TextureID[0]])
 	var width = geo_format.width
 	var height = geo_format.height
 	
@@ -84,8 +83,8 @@ func export_maps(rids: Dictionary[String,RID], output_dir: String, generation_pa
 	# Export all map types
 	var exported_files = {}
 	
-	exported_files["elevation"] = _export_elevation_map(imgs["geo"], output_dir, false)
-	exported_files["elevation_alt"] = _export_elevation_map(imgs["geo"], output_dir, true)
+	exported_files["elevation"] = _export_elevation_map(imgs[GPUContext.TextureID[0]], output_dir, false)
+	exported_files["elevation_alt"] = _export_elevation_map(imgs[GPUContext.TextureID[0]], output_dir, true)
 	
 	print("[Exporter] Export complete: ", exported_files.size(), " maps")
 	return exported_files

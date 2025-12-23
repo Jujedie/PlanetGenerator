@@ -150,7 +150,7 @@ func _compile_generation_params(seed_param: int) -> void:
 func _init_gpu_system() -> void:
 	"""Initialize GPU acceleration if available"""
 	
-	var gpu_context = GPUContext.instance
+	var gpu_context = GPUContext.new(generation_params["resolution"])
 	if not gpu_context or not gpu_context.rd and not gpu_context.shaders:
 		push_warning("[PlanetGenerator] GPUContext or RD not available, falling back to CPU")
 		use_gpu_acceleration = false
@@ -307,7 +307,7 @@ func _export_gpu_maps() -> void:
 	Export GPU textures to PNG files using PlanetExporter
 	"""
 	
-	var gpu_context = GPUContext.instance
+	var gpu_context = gpu_orchestrator.gpu
 	
 	# CRITICAL: Ensure all GPU work is complete
 	if not gpu_context or not gpu_context.rd:
@@ -329,7 +329,7 @@ func _export_gpu_maps() -> void:
 	
 	# Create exporter and export all maps
 	var exporter = PlanetExporter.new()
-	var exported_files = exporter.export_maps(gpu_context.textures, "user://temp/", generation_params)
+	var exported_files = exporter.export_maps(gpu_context, gpu_context.textures, "user://temp/", generation_params)
 	
 	# Load exported images into legacy properties
 	for map_type in exported_files:
@@ -369,14 +369,15 @@ func get_gpu_texture_rids() -> Dictionary:
 	if not gpu_orchestrator:
 		return {}
 	
-	var gpu_context = GPUContext.instance
+	var gpu_context = gpu_orchestrator.gpu
 	if not gpu_context or not gpu_context.rd:
 		return {}
 	
-	return {
-		"geo": gpu_context.textures[GPUContext.TextureID.GEOPHYSICAL_STATE],
-		"atmo": gpu_context.textures[GPUContext.TextureID.ATMOSPHERIC_STATE]
-	}
+	var returning = {}
+	for tex_id in gpu_context.Textures:
+		returning[tex_id] = gpu_context.textures[tex_id]
+
+	return returning
 
 ## Exporte toutes les cartes générées vers un dossier spécifique.
 ##
@@ -392,9 +393,9 @@ func export_to_directory(output_dir: String) -> void:
 	
 	if use_gpu_acceleration and gpu_orchestrator:
 		# GPU path - use PlanetExporter
-		
+
 		var exporter = PlanetExporter.new()
-		exporter.export_maps(gpu_orchestrator.gpu.textures, output_dir, generation_params)
+		exporter.export_maps(gpu_orchestrator.gpu, gpu_orchestrator.gpu.textures, output_dir, generation_params)
 		
 		# Cleanup GPU resources after export
 		gpu_orchestrator.cleanup()
@@ -414,15 +415,15 @@ func save_maps():
 ##
 ## @return Array[String]: Liste des chemins complets vers les fichiers PNG générés.
 func getMaps() -> Array[String]:
-	"""Get temporary map file paths for UI preview"""
 	deleteImagesTemps()
 	
 	var temp_dir = "user://temp/"
+	var exported_files = PlanetExporter.new().export_maps(gpu_orchestrator.gpu, gpu_orchestrator.gpu.textures, temp_dir, generation_params)
 	var lstChemin: Array[String] = []
-	for image_nom in gpu_orchestrator.gpu.textures.keys():
-		lstChemin.append(temp_dir+image_nom+".png")
-
+	for file_path in exported_files.values():
+		lstChemin.append(file_path)
 	return lstChemin
+
 
 ## Sauvegarde une image unique dans le dossier temporaire.
 ##

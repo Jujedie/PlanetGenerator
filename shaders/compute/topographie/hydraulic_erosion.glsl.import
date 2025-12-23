@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://1ipglxtuct68"
+path="res://.godot/imported/hydraulic_erosion.glsl-1f11a2b3563a8f346482ec15f70dac85.res"
+
+[deps]
+
+source_file="res://shaders/compute/topographie/hydraulic_erosion.glsl"
+dest_files=["res://.godot/imported/hydraulic_erosion.glsl-1f11a2b3563a8f346482ec15f70dac85.res"]
+
+[params]
+
