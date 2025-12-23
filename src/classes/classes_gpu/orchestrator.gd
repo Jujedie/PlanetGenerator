@@ -303,20 +303,6 @@ func run_simulation() -> void:
 	# PHASE 3: HYDRAULIC EROSION (ITERATIVE)
 	# ============================================================================
 	run_erosion_phase(generation_params, w, h, _rids_to_free)
-		# ============================================================================
-	# PHASE 1: TECTONIC PLATES GENERATION
-	# ============================================================================
-	run_tectonic_phase(generation_params, w, h, _rids_to_free)
-
-	# ============================================================================
-	# PHASE 2: OROGENIC DETAIL INJECTION
-	# ============================================================================
-	run_orogeny_phase(generation_params, w, h, _rids_to_free)
-
-	# ============================================================================
-	# PHASE 3: HYDRAULIC EROSION (ITERATIVE)
-	# ============================================================================
-	run_erosion_phase(generation_params, w, h, _rids_to_free)
 	
 	print("[Orchestrator] 🧹 Nettoyage de ", _rids_to_free.size(), " ressources temporaires...")
 	if rd:
@@ -335,67 +321,295 @@ func run_simulation() -> void:
 # PHASES DE SIMULATION - TECTONIQUE, OROGENÈSE, ÉROSION (TOPOGRAPHIE)
 # ============================================================================
 
+func run_tectonic_phase(params: Dictionary, w: int, h: int, rids_to_free: Array) -> void:
+	"""
+	PHASE 1: TECTONIC PLATES GENERATION
+	Génère le diagramme de Voronoi des plaques tectoniques avec leurs vecteurs de mouvement
+	"""
+	
+	if not rd or not gpu.pipelines["tectonic"].is_valid() or not gpu.uniform_sets["tectonic"].is_valid():
+		push_warning("[Orchestrator] ⚠️ Tectonic pipeline not ready, skipping")
+		return
+	
+	print("[Orchestrator] ═══ PHASE 1: TECTONIC PLATES GENERATION ═══")
+	
+	# 1. Préparation des paramètres
+	var num_plates = int(params.get("nb_cases_regions", 30))
+	var plate_strength = 10.0  # Vitesse de mouvement des plaques
+	var friction_coef = 0.8
+	var convergence_uplift = 3000.0  # Soulèvement aux zones de convergence (m)
+	var divergence_subsidence = 1500.0  # Affaissement aux zones de divergence (m)
+	var time_val = 0.0
+	
+	# 2. Création du buffer de paramètres
+	var buffer_data = PackedFloat32Array([
+		float(params.get("seed", 0)),
+		float(num_plates),
+		plate_strength,
+		friction_coef,
+		convergence_uplift,
+		divergence_subsidence,
+		float(w),
+		float(h),
+		time_val
+	])
+	var buffer_bytes = buffer_data.to_byte_array()
+	
+	# 3. Création du Uniform Buffer
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	rids_to_free.append(param_buffer)
+	
+	# 4. Création de l'Uniform
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	# 5. Création du Set (Set Index 1)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["tectonic"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create Tectonic Param Set")
+		return
+	rids_to_free.append(param_set)
+	
+	# 6. Calcul des groupes de travail (16x16 threads par groupe)
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+	
+	print("  • Dispatch: ", groups_x, "x", groups_y, " groupes (", groups_x * groups_y * 256, " threads)")
+	print("  • Plaques tectoniques: ", num_plates)
+	
+	# 7. Dispatch du Compute Shader
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["tectonic"])
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["tectonic"], 0)  # Textures
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)  # Paramètres
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	# 8. Synchronisation
+	rd.submit()
+	rd.sync()
+	
+	print("  ✅ Tectonique des plaques terminée")
+
+func run_orogeny_phase(params: Dictionary, w: int, h: int, rids_to_free: Array) -> void:
+	"""
+	PHASE 2: OROGENIC DETAIL INJECTION
+	Ajoute des détails orographiques (montagnes) aux zones de friction tectonique
+	"""
+	
+	if not rd or not gpu.pipelines["orogeny"].is_valid() or not gpu.uniform_sets["orogeny"].is_valid():
+		push_warning("[Orchestrator] ⚠️ Orogeny pipeline not ready, skipping")
+		return
+	
+	print("[Orchestrator] ═══ PHASE 2: OROGENIC DETAIL INJECTION ═══")
+	
+	# 1. Préparation des paramètres
+	var detail_scale = 0.01  # Échelle du bruit fractal
+	var mountain_intensity = float(params.get("terrain_scale", 5000.0))  # UI: "Élévation additionnelle"
+	var erosion_factor = 0.02  # Lissage naturel léger
+	var time_val = 0.0
+	
+	# 2. Création du buffer de paramètres
+	var buffer_data = PackedFloat32Array([
+		float(params.get("seed", 0)),
+		detail_scale,
+		mountain_intensity,
+		erosion_factor,
+		float(w),
+		float(h),
+		time_val
+	])
+	var buffer_bytes = buffer_data.to_byte_array()
+	
+	# 3. Création du Uniform Buffer
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	rids_to_free.append(param_buffer)
+	
+	# 4. Création de l'Uniform
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	# 5. Création du Set (Set Index 1)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["orogeny"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create Orogeny Param Set")
+		return
+	rids_to_free.append(param_set)
+	
+	# 6. Calcul des groupes de travail
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+	
+	print("  • Dispatch: ", groups_x, "x", groups_y, " groupes")
+	print("  • Intensité montagneuse: ", mountain_intensity, "m")
+	
+	# 7. Dispatch du Compute Shader
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["orogeny"])
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["orogeny"], 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	# 8. Synchronisation
+	rd.submit()
+	rd.sync()
+	
+	print("  ✅ Détails orographiques ajoutés")
+
+func run_erosion_phase(params: Dictionary, w: int, h: int, rids_to_free: Array) -> void:
+	"""
+	PHASE 3: HYDRAULIC EROSION (ITERATIVE)
+	Simulation itérative de pluie, érosion et transport de sédiments
+	"""
+	
+	if not rd or not gpu.pipelines["erosion"].is_valid() or not gpu.uniform_sets["erosion"].is_valid():
+		push_warning("[Orchestrator] ⚠️ Erosion pipeline not ready, skipping")
+		return
+	
+	print("[Orchestrator] ═══ PHASE 3: HYDRAULIC EROSION (ITERATIVE) ═══")
+	
+	# 1. Paramètres de base
+	var iterations = int(params.get("erosion_iterations"))
+	var rain_amount = 0.005 * params.get("global_humidity", 0.5)
+	var evaporation_rate = 0.01
+	var sediment_capacity = 0.1
+	var erosion_strength = 0.05
+	var deposition_strength = 0.03
+	var gravity = compute_gravity(
+		params.get("planet_radius", 6371000.0), 
+		params.get("planet_density", 5.51)
+	)
+	var time_val = 0.0
+	
+	print("  • Itérations: ", iterations)
+	print("  • Quantité de pluie: ", rain_amount)
+	
+	# 2. Calcul des groupes de travail
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+	
+	# 3. Boucle itérative
+	for iter in range(iterations):
+		# Afficher la progression tous les 20%
+		if iter % max(1, iterations / 5) == 0:
+			print("    Itération ", iter, "/", iterations)
+		
+		# 3a. Créer le buffer avec le numéro d'itération actuel
+		var buffer_data = PackedFloat32Array([
+			float(params.get("seed", 0)),
+			float(iter),  # Numéro d'itération (change le bruit aléatoire)
+			rain_amount,
+			evaporation_rate,
+			sediment_capacity,
+			erosion_strength,
+			deposition_strength,
+			gravity,
+			float(w),
+			float(h),
+			time_val
+		])
+		var buffer_bytes = buffer_data.to_byte_array()
+		
+		# 3b. Créer le Uniform Buffer
+		var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+		
+		# 3c. Créer l'Uniform
+		var param_uniform = RDUniform.new()
+		param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+		param_uniform.binding = 0
+		param_uniform.add_id(param_buffer)
+		
+		# 3d. Créer le Set (Set Index 1)
+		var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["erosion"], 1)
+		if not param_set.is_valid():
+			push_error("[Orchestrator] ❌ Failed to create Erosion Param Set at iteration ", iter)
+			rd.free_rid(param_buffer)
+			break
+		
+		# 3e. Dispatch
+		var compute_list = rd.compute_list_begin()
+		rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["erosion"])
+		rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["erosion"], 0)
+		rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+		rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+		rd.compute_list_end()
+		
+		# 3f. Synchronisation (critique pour itérations successives)
+		rd.submit()
+		rd.sync()
+		
+		# 3g. Nettoyage immédiat de cette itération
+		rd.free_rid(param_set)
+		rd.free_rid(param_buffer)
+	
+	print("  ✅ Érosion hydraulique terminée (", iterations, " cycles)")
+
 # ============================================================================
 # EXEMPLE PHASES DE SIMULATION
 # ============================================================================
 
-func run_example(params: Dictionary, w: int, h: int):	
-	if not rd or not gpu.pipelines["example"].is_valid() or not orogeny_uniform_set.is_valid():
-		push_warning("[Orchestrator] ⚠️ Orogeny pipeline not ready, skipping")
-		return
-	
-	print("[Orchestrator] Example Phase")
-	
-	# 1. Préparation des données des paramètres
-	var m_strength = float(params.get("mountain_strength", 50.0))
-	var r_strength = float(params.get("rift_strength", -30.0))
-	var erosion    = float(params.get("orogeny_erosion", 0.98))
-	var dt         = float(params.get("delta_time", 0.016))
-	
-	var buffer_data = PackedFloat32Array([m_strength, r_strength, erosion, dt])
-	var buffer_bytes = buffer_data.to_byte_array()
-	
-	# 2. Création du Buffer (Uniform Buffer)
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	
-	# 3. Création de l'Uniform
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0 # Binding 0 dans le Set 1
-	param_uniform.add_id(param_buffer)
-	
-	# 4. Création du Set (Set Index 1)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["example"], 1)
-	
-	if not param_set.is_valid():
-		push_error("[Orchestrator] ❌ Failed to create Example Param Set")
-		return
-		
-	# Calcul des groupes
-	var groups_x = ceili(float(w) / 16.0)
-	var groups_y = ceili(float(h) / 16.0)
-	
-	# 5. Dispatch
-	var compute_list = rd.compute_list_begin()
-	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["example"])
-	
-	# Bind du Set 0 (Textures)
-	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["example"], 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
-	
-	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
-	rd.compute_list_end()
-	
-	# 6. Nettoyage immédiat (Optimisation)
-	# On libère les ressources temporaires après l'exécution de la commande (rd.submit n'est pas bloquant mais free_rid l'est pour la ressource)
-	# Note : Pour être 100% safe avec Vulkan, on devrait les garder jusqu'à la fin de la frame, 
-	# mais Godot gère souvent ça. Si ça crash, on les mettra dans une liste 'garbage_bin'.
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	
-	rd.submit()
-	rd.sync()
-	print("[Orchestrator] ✅ Orogenèse terminée")
+#func run_example(params: Dictionary, w: int, h: int):	
+#	if not rd or not gpu.pipelines["example"].is_valid() or not orogeny_uniform_set.is_valid():
+#		push_warning("[Orchestrator] ⚠️ Orogeny pipeline not ready, skipping")
+#		return
+#	
+#	print("[Orchestrator] Example Phase")
+#	
+#	# 1. Préparation des données des paramètres
+#	var m_strength = float(params.get("mountain_strength", 50.0))
+#	var r_strength = float(params.get("rift_strength", -30.0))
+#	var erosion    = float(params.get("orogeny_erosion", 0.98))
+#	var dt         = float(params.get("delta_time", 0.016))
+#	
+#	var buffer_data = PackedFloat32Array([m_strength, r_strength, erosion, dt])
+#	var buffer_bytes = buffer_data.to_byte_array()
+#	
+#	# 2. Création du Buffer (Uniform Buffer)
+#	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+#	
+#	# 3. Création de l'Uniform
+#	var param_uniform = RDUniform.new()
+#	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+#	param_uniform.binding = 0 # Binding 0 dans le Set 1
+#	param_uniform.add_id(param_buffer)
+#	
+#	# 4. Création du Set (Set Index 1)
+#	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["example"], 1)
+#	
+#	if not param_set.is_valid():
+#		push_error("[Orchestrator] ❌ Failed to create Example Param Set")
+#		return
+#		
+#	# Calcul des groupes
+#	var groups_x = ceili(float(w) / 16.0)
+#	var groups_y = ceili(float(h) / 16.0)
+#	
+#	# 5. Dispatch
+#	var compute_list = rd.compute_list_begin()
+#	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["example"])
+#	
+#	# Bind du Set 0 (Textures)
+#	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["example"], 0)
+#	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+#	
+#	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+#	rd.compute_list_end()
+#	
+#	# 6. Nettoyage immédiat (Optimisation)
+#	# On libère les ressources temporaires après l'exécution de la commande (rd.submit n'est pas bloquant mais free_rid l'est pour la ressource)
+#	# Note : Pour être 100% safe avec Vulkan, on devrait les garder jusqu'à la fin de la frame, 
+#	# mais Godot gère souvent ça. Si ça crash, on les mettra dans une liste 'garbage_bin'.
+#	rd.free_rid(param_set)
+#	rd.free_rid(param_buffer)
+#	
+#	rd.submit()
+#	rd.sync()
+#	print("[Orchestrator] ✅ Orogenèse terminée")
 
 # ============================================================================
 # EXPORT
