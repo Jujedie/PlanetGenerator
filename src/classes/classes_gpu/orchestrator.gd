@@ -104,23 +104,22 @@ func _compile_all_shaders() -> bool:
 	if not rd: return false
 	print("[Orchestrator] 📦 Compilation des shaders et création des pipelines...")
 	
-	var shaders_to_load = [	
+	var shaders_to_load = [
+		{"path": "res://shaders/compute/topographie/tectonic_plates.glsl", "name": "tectonic"},
+		{"path": "res://shaders/compute/topographie/orogeny.glsl", "name": "orogeny"},
+		{"path": "res://shaders/compute/topographie/hydraulic_erosion.glsl", "name": "erosion"}
 	]
-	
-	var all_critical_loaded = true
 	
 	for s in shaders_to_load:
 		gpu.load_compute_shader(s["path"], s["name"])
 		var shader_rid = gpu.shaders[s["name"]]
 		
 		if not shader_rid.is_valid():
-			print("  ❌ Échec chargement shader: ", s["name"])
-			if s["critical"]: all_critical_loaded = false
-			continue
-		
-		print("    ✅ ", s["name"], " : Shader=", shader_rid, " | Pipeline=", pipeline_rid)
+			push_error("  ❌ Échec chargement shader: ", s["name"])
+			return false
+		print("    ✅ ", s["name"], " : Shader=", shader_rid, " | Pipeline=", gpu.pipelines[s["name"]])
 	
-	return all_critical_loaded
+	return true
 
 # ============================================================================
 # INITIALISATION DES TEXTURES
@@ -210,24 +209,50 @@ func _init_uniform_sets():
 	print("  ✅ Toutes les textures sont valides")
 	
 	# FOR EACH PIPELINE: Créer les uniform sets
-	if gpu.shaders[NOM_SHADER].is_valid():
-		print("  • Création uniform set: gpu.shaders[NOM_SHADER]")
+	# === TECTONIC PLATES SHADER ===
+	if gpu.shaders["tectonic"].is_valid():
+		print("  • Création uniform set: tectonic")
 		var uniforms = [
-			gpu.create_texture_uniform(0, gpu.textures[NOM_TEXTURE1]),
-			gpu.create_texture_uniform(1, gpu.textures[NOM_TEXTURE2]),
-			...
+			gpu.create_texture_uniform(0, gpu.textures[GPUContext.TextureID.GEOPHYSICAL_STATE]),
+			gpu.create_texture_uniform(1, gpu.textures[GPUContext.TextureID.PLATE_DATA])
 		]
-
-		gpu.uniform_sets[NOM_SHADER] = rd.uniform_set_create(uniforms, gpu.shaders[NOM_SHADER], 0)
-		if not gpu.uniform_sets[NOM_SHADER].is_valid():
+		gpu.uniform_sets["tectonic"] = rd.uniform_set_create(uniforms, gpu.shaders["tectonic"], 0)
+		if not gpu.uniform_sets["tectonic"].is_valid():
 			push_error("[Orchestrator] ❌ Failed to create tectonic uniform set")
-			push_error("  Pipeline RID: ", gpu.shaders[NOM_SHADER])
-			push_error("  Bindings: 0-3, Textures: ", gpu.textures[NOM_TEXTURE1], gpu.textures[NOM_TEXTURE2], gpu.textures[NOM_TEXTURE3], gpu.textures[NOM_TEXTURE4])
 		else:
-			print("    ✅", NOM_SHADER,"uniform set créé")
+			print("    ✅ tectonic uniform set créé")
 	else:
-		push_warning("[Orchestrator] ⚠️",  NOM_SHADER,"pipeline invalide, uniform set ignoré")
-	
+		push_warning("[Orchestrator] ⚠️",  "tectonic"," pipeline invalide, uniform set ignoré")
+
+	# === OROGENY SHADER ===
+	if gpu.shaders["orogeny"].is_valid():
+		print("  • Création uniform set: orogeny")
+		var uniforms = [
+			gpu.create_texture_uniform(0, gpu.textures[GPUContext.TextureID.GEOPHYSICAL_STATE]),
+			gpu.create_texture_uniform(1, gpu.textures[GPUContext.TextureID.PLATE_DATA])
+		]
+		gpu.uniform_sets["orogeny"] = rd.uniform_set_create(uniforms, gpu.shaders["orogeny"], 0)
+		if not gpu.uniform_sets["orogeny"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create orogeny uniform set")
+		else:
+			print("    ✅ orogeny uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️",  "orogeny"," pipeline invalide, uniform set ignoré")
+
+	# === EROSION SHADER ===
+	if gpu.shaders["erosion"].is_valid():
+		print("  • Création uniform set: erosion")
+		var uniforms = [
+			gpu.create_texture_uniform(0, gpu.textures[GPUContext.TextureID.GEOPHYSICAL_STATE])
+		]
+		gpu.uniform_sets["erosion"] = rd.uniform_set_create(uniforms, gpu.shaders["erosion"], 0)
+		if not gpu.uniform_sets["erosion"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create erosion uniform set")
+		else:
+			print("    ✅ erosion uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️",  "erosion"," pipeline invalide, uniform set ignoré")
+
 	print("[Orchestrator] ✅ Uniform Sets initialization complete")
 
 # ============================================================================
@@ -264,8 +289,34 @@ func run_simulation() -> void:
 	
 	var _rids_to_free: Array[RID] = []
 
-	# FOR EACH PHASE
-	# run_xxx_phase(params, w, h)
+	# ============================================================================
+	# PHASE 1: TECTONIC PLATES GENERATION
+	# ============================================================================
+	run_tectonic_phase(generation_params, w, h, _rids_to_free)
+
+	# ============================================================================
+	# PHASE 2: OROGENIC DETAIL INJECTION
+	# ============================================================================
+	run_orogeny_phase(generation_params, w, h, _rids_to_free)
+
+	# ============================================================================
+	# PHASE 3: HYDRAULIC EROSION (ITERATIVE)
+	# ============================================================================
+	run_erosion_phase(generation_params, w, h, _rids_to_free)
+		# ============================================================================
+	# PHASE 1: TECTONIC PLATES GENERATION
+	# ============================================================================
+	run_tectonic_phase(generation_params, w, h, _rids_to_free)
+
+	# ============================================================================
+	# PHASE 2: OROGENIC DETAIL INJECTION
+	# ============================================================================
+	run_orogeny_phase(generation_params, w, h, _rids_to_free)
+
+	# ============================================================================
+	# PHASE 3: HYDRAULIC EROSION (ITERATIVE)
+	# ============================================================================
+	run_erosion_phase(generation_params, w, h, _rids_to_free)
 	
 	print("[Orchestrator] 🧹 Nettoyage de ", _rids_to_free.size(), " ressources temporaires...")
 	if rd:
@@ -279,6 +330,10 @@ func run_simulation() -> void:
 	print("=".repeat(60))
 	print("[Orchestrator] ✅ SIMULATION TERMINÉE (Clean)")
 	print("=".repeat(60) + "\n")
+
+# ============================================================================
+# PHASES DE SIMULATION - TECTONIQUE, OROGENÈSE, ÉROSION (TOPOGRAPHIE)
+# ============================================================================
 
 # ============================================================================
 # EXEMPLE PHASES DE SIMULATION

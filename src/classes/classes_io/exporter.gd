@@ -112,11 +112,12 @@ func _export_elevation_map(geo_img: Image, output_dir: String, grayscale: bool =
 	for y in range(height):
 		for x in range(width):
 			var pixel = geo_img.get_pixel(x, y)
-			# Récupérer l'élévation
-			var elevation = -1 # Placeholder
+			# geo_state: R = elevation, G = water, B = sediment, A = plate_id
+			var elevation = pixel.r
 			
 			var color: Color
 			
+			# Utiliser la fonction Enum pour obtenir la couleur
 			color = Enum.getElevationColor(int(elevation), grayscale)
 			
 			output.set_pixel(x, y, color)
