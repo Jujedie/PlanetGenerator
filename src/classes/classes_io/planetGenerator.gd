@@ -32,22 +32,9 @@ var nb_thread         : int
 var atmosphere_type   : int
 var nb_avg_cases      : int
 var densite_planete   : float
-
-# Legacy images (for backward compatibility)
-var elevation_map    : Image
-var elevation_map_alt: Image
-var precipitation_map: Image
-var temperature_map  : Image
-var region_map       : Image
-var water_map        : Image
-var banquise_map     : Image
-var biome_map        : Image
-var oil_map          : Image
-var ressource_map    : Image
-var nuage_map        : Image
-var river_map        : Image
-var final_map        : Image
-var preview          : Image
+var erosion_iterations : int = BASE_EROSION_ITERATIONS
+var tectonic_nb_years  : int = BASE_TECTONIC_YEARS
+var atmosphere_steps   : int = BASE_ATMOSPHERE_STEPS
 
 # GPU acceleration components
 var gpu_orchestrator    : GPUOrchestrator = null
@@ -73,9 +60,9 @@ var generation_params: Dictionary = {}
 ## @param mapStatusLabel_param: Référence au label de statut de l'UI.
 ## @param nb_avg_cases_param: Nombre de sites de Voronoi pour les plaques tectoniques/régions.
 ## @param cheminSauvegarde_param: Dossier racine pour la sauvegarde temporaire.
-func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, 
-	elevation_modifier_param: int = 0, nb_thread_param: int = 8, atmosphere_type_param: int = 0, renderProgress_param: ProgressBar = null, mapStatusLabel_param: Label = null, 
-	nb_avg_cases_param: int = 50, cheminSauvegarde_param: String = "user://temp/", use_gpu_acceleration_param: bool = true, densite_planete: float = 5.51, seed_param: int = 0) -> void:
+func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, erosion_iterations: int = BASE_EROSION_ITERATIONS,
+ 	tectonic_nb_years: int = BASE_TECTONIC_YEARS, atmosphere_steps: int = BASE_ATMOSPHERE_STEPS, elevation_modifier_param: int = 0, nb_thread_param: int = 8, atmosphere_type_param: int = 0, 
+	renderProgress_param: ProgressBar = null, mapStatusLabel_param: Label = null, nb_avg_cases_param: int = 50, cheminSauvegarde_param: String = "user://temp/", use_gpu_acceleration_param: bool = true, densite_planete: float = 5.51, seed_param: int = 0) -> void:
 
 	# Store all parameters
 	self.nom                  = nom_param
@@ -133,9 +120,9 @@ func _compile_generation_params(seed_param: int) -> void:
 		"global_humidity"   : avg_precipitation,
 		"terrain_scale"     : float(elevation_modifier),
 		"nb_cases_regions"  : nb_avg_cases,
-		"erosion_iterations": BASE_EROSION_ITERATIONS,
-		"tectonic_years"    : BASE_TECTONIC_YEARS,
-		"atmosphere_steps"  : BASE_ATMOSPHERE_STEPS
+		"erosion_iterations": erosion_iterations,
+		"tectonic_years"    : tectonic_nb_years,
+		"atmosphere_steps"  : atmosphere_steps
 	}
 	
 	print("[PlanetGenerator] Parameters compiled:")
@@ -150,13 +137,13 @@ func _compile_generation_params(seed_param: int) -> void:
 func _init_gpu_system() -> void:
 	"""Initialize GPU acceleration if available"""
 	
-	var gpu_context = GPUContext.instance
+	var gpu_context = GPUContext.new(generation_params["resolution"])
 	if not gpu_context or not gpu_context.rd and not gpu_context.shaders:
 		push_warning("[PlanetGenerator] GPUContext or RD not available, falling back to CPU")
 		use_gpu_acceleration = false
 		return
 	
-	gpu_orchestrator = GPUOrchestrator.new(gpu_context, generation_params["resolution"], generation_params)
+	gpu_orchestrator = GPUOrchestrator.new(gpu_context, generation_params)
 	
 	print("[PlanetGenerator] GPU acceleration enabled: ", generation_params["resolution"])
 
@@ -307,7 +294,7 @@ func _export_gpu_maps() -> void:
 	Export GPU textures to PNG files using PlanetExporter
 	"""
 	
-	var gpu_context = GPUContext.instance
+	var gpu_context = gpu_orchestrator.gpu
 	
 	# CRITICAL: Ensure all GPU work is complete
 	if not gpu_context or not gpu_context.rd:
@@ -369,14 +356,17 @@ func get_gpu_texture_rids() -> Dictionary:
 	if not gpu_orchestrator:
 		return {}
 	
-	var gpu_context = GPUContext.instance
+	var gpu_context = gpu_orchestrator.gpu
 	if not gpu_context or not gpu_context.rd:
 		return {}
 	
-	return {
-		"geo": gpu_context.textures[GPUContext.TextureID.GEOPHYSICAL_STATE],
-		"atmo": gpu_context.textures[GPUContext.TextureID.ATMOSPHERIC_STATE]
-	}
+	# Return texture RIDs from GPU context texturesID
+
+	var texture_rids = {}
+	for tex_id in gpu_context.textures.keys():
+		texture_rids[tex_id] = gpu_context.textures[tex_id]
+
+	return texture_rids
 
 ## Exporte toutes les cartes générées vers un dossier spécifique.
 ##

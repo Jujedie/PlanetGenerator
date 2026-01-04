@@ -2,15 +2,10 @@ extends Node
 class_name GPUContext
 
 # === CONSTANTES DE CONFIGURATION ===
-const RESOLUTION_WIDTH = 128
-const RESOLUTION_HEIGHT = 64
 const FORMAT_STATE = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
 
 enum TextureID {
-	GEOPHYSICAL_STATE,
-	ATMOSPHERIC_STATE,
-	PLATE_DATA,
-	TEMP_BUFFER
+	# Ajouter les IDs selon les besoins
 }
 
 # === MEMBRES ===
@@ -19,17 +14,10 @@ var textures: Dictionary = {}
 var shaders: Dictionary = {}
 var pipelines: Dictionary = {}
 var uniform_sets: Dictionary = {}
+var resolution: Vector2i
 
-static var instance: GPUContext = null
-
-# === INITIALISATION CORRIGÉE ===
-func _init() -> void:
-	if instance != null:
-		push_error("GPUContext doit être un singleton unique")
-		return
-	instance = self
-	
-func _ready() -> void:
+func _init(resolution: Vector2i) -> void:
+	self.resolution = resolution
 	rd = RenderingServer.create_local_rendering_device()
 	
 	if not rd:
@@ -64,19 +52,18 @@ func _ready() -> void:
 	
 	# Créer les textures de travail
 	_initialize_textures()
-	print("✅ GPUContext initialisé (LOCAL RD): %dx%d" % [RESOLUTION_WIDTH, RESOLUTION_HEIGHT])
 
 func get_vram_usage() -> String:
 	var total_bytes = 0
 	for tex_id in textures:
-		total_bytes += RESOLUTION_WIDTH * RESOLUTION_HEIGHT * 16
+		total_bytes += resolution.x * resolution.y * 16
 	return "VRAM: %.2f MB" % (total_bytes / 1024.0 / 1024.0)
 
 # === CRÉATION DES TEXTURES ===
 func _initialize_textures() -> void:
 	var format := RDTextureFormat.new()
-	format.width = RESOLUTION_WIDTH
-	format.height = RESOLUTION_HEIGHT
+	format.width = resolution.x
+	format.height = resolution.y
 	format.format = FORMAT_STATE
 	format.usage_bits = (
 		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
@@ -88,7 +75,7 @@ func _initialize_textures() -> void:
 	# Créer les 4 textures
 	for tex_id in TextureID.values():
 		var data = PackedByteArray()
-		data.resize(RESOLUTION_WIDTH * RESOLUTION_HEIGHT * 16)
+		data.resize(resolution.x * resolution.y * 16)
 		data.fill(0)
 		
 		var view := RDTextureView.new()
@@ -100,7 +87,7 @@ func _initialize_textures() -> void:
 			
 		textures[tex_id] = rid
 	
-	print("✅ Textures GPU créées (4x %d KB)" % (RESOLUTION_WIDTH * RESOLUTION_HEIGHT * 16 / 1024))
+	print("✅ Textures GPU créées (4x %d KB)" % (resolution.x * resolution.y * 16 / 1024))
 
 # === CHARGEMENT DES SHADERS (SÉCURISÉ) ===
 func load_compute_shader(glsl_path: String, shader_name: String) -> bool:
@@ -163,8 +150,8 @@ func readback_texture(tex_id: TextureID) -> Image:
 	
 	var data := rd.texture_get_data(textures[tex_id], 0)
 	var img := Image.create_from_data(
-		RESOLUTION_WIDTH,
-		RESOLUTION_HEIGHT,
+		resolution.x,
+		resolution.y,
 		false,
 		Image.FORMAT_RGBAF,
 		data
@@ -187,5 +174,4 @@ func _exit_tree() -> void:
 		if rid and rid.is_valid():
 			rd.free_rid(rid)
 	
-	self.instance = null
 	print("✅ Ressources GPU libérées (sauf shaders, persistance garantie)")
