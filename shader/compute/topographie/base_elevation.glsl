@@ -106,7 +106,7 @@ float fade(float t) {
     return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
 }
 
-// Value Noise 3D
+// Value Noise 3D - Version corrigée pour coordonnées négatives
 float valueNoise3D(vec3 p, uint seed_offset) {
     vec3 i = floor(p);
     vec3 f = fract(p);
@@ -114,17 +114,23 @@ float valueNoise3D(vec3 p, uint seed_offset) {
     // Utiliser fade pour le lissage
     vec3 u = vec3(fade(f.x), fade(f.y), fade(f.z));
     
-    uvec3 i0 = uvec3(i) + uvec3(seed_offset);
+    // CORRECTION: Utiliser mod pour éviter les coordonnées négatives
+    // On ajoute un grand offset pour garantir des valeurs positives
+    const float BIG_OFFSET = 10000.0;
+    ivec3 ii = ivec3(i + BIG_OFFSET);
+    uint ix = uint(ii.x) + seed_offset;
+    uint iy = uint(ii.y);
+    uint iz = uint(ii.z);
     
-    // Échantillonner 8 coins du cube
-    float c000 = rand(hash3(i0 + uvec3(0, 0, 0)));
-    float c100 = rand(hash3(i0 + uvec3(1, 0, 0)));
-    float c010 = rand(hash3(i0 + uvec3(0, 1, 0)));
-    float c110 = rand(hash3(i0 + uvec3(1, 1, 0)));
-    float c001 = rand(hash3(i0 + uvec3(0, 0, 1)));
-    float c101 = rand(hash3(i0 + uvec3(1, 0, 1)));
-    float c011 = rand(hash3(i0 + uvec3(0, 1, 1)));
-    float c111 = rand(hash3(i0 + uvec3(1, 1, 1)));
+    // Échantillonner 8 coins du cube avec hash robuste
+    float c000 = rand(hash(ix ^ hash(iy ^ hash(iz))));
+    float c100 = rand(hash((ix+1u) ^ hash(iy ^ hash(iz))));
+    float c010 = rand(hash(ix ^ hash((iy+1u) ^ hash(iz))));
+    float c110 = rand(hash((ix+1u) ^ hash((iy+1u) ^ hash(iz))));
+    float c001 = rand(hash(ix ^ hash(iy ^ hash(iz+1u))));
+    float c101 = rand(hash((ix+1u) ^ hash(iy ^ hash(iz+1u))));
+    float c011 = rand(hash(ix ^ hash((iy+1u) ^ hash(iz+1u))));
+    float c111 = rand(hash((ix+1u) ^ hash((iy+1u) ^ hash(iz+1u))));
     
     // Interpolation trilinéaire
     float x00 = mix(c000, c100, u.x);
@@ -160,8 +166,12 @@ float simplexNoise3D(vec3 p, uint seed_offset) {
     vec3 x2 = x0 - i2 + 2.0 * G3;
     vec3 x3 = x0 - 1.0 + 3.0 * G3;
     
-    // Contributions des 4 coins
-    uvec3 ii = uvec3(i) + uvec3(seed_offset);
+    // CORRECTION: Offset pour éviter les négatifs
+    const float BIG_OFFSET = 10000.0;
+    ivec3 ii = ivec3(i + BIG_OFFSET);
+    uint ix = uint(ii.x) + seed_offset;
+    uint iy = uint(ii.y);
+    uint iz = uint(ii.z);
     
     vec4 w;
     w.x = 0.6 - dot(x0, x0);
@@ -172,11 +182,14 @@ float simplexNoise3D(vec3 p, uint seed_offset) {
     w = max(w, 0.0);
     vec4 w4 = w * w * w * w;
     
-    // Gradients
-    vec3 g0 = grad3(hash3(ii));
-    vec3 g1 = grad3(hash3(uvec3(i + i1) + uvec3(seed_offset)));
-    vec3 g2 = grad3(hash3(uvec3(i + i2) + uvec3(seed_offset)));
-    vec3 g3 = grad3(hash3(uvec3(i + vec3(1.0)) + uvec3(seed_offset)));
+    // Gradients avec hash corrigé
+    vec3 g0 = grad3(hash(ix ^ hash(iy ^ hash(iz))));
+    ivec3 ii1 = ivec3(i + i1 + BIG_OFFSET);
+    vec3 g1 = grad3(hash(uint(ii1.x) + seed_offset ^ hash(uint(ii1.y) ^ hash(uint(ii1.z)))));
+    ivec3 ii2 = ivec3(i + i2 + BIG_OFFSET);
+    vec3 g2 = grad3(hash(uint(ii2.x) + seed_offset ^ hash(uint(ii2.y) ^ hash(uint(ii2.z)))));
+    ivec3 ii3 = ivec3(i + vec3(1.0) + BIG_OFFSET);
+    vec3 g3 = grad3(hash(uint(ii3.x) + seed_offset ^ hash(uint(ii3.y) ^ hash(uint(ii3.z)))));
     
     vec4 n = vec4(dot(g0, x0), dot(g1, x1), dot(g2, x2), dot(g3, x3));
     
@@ -248,15 +261,15 @@ float ridgedMultifractal(vec3 p, int octaves, float gain, float lacunarity, uint
 // ============================================================================
 
 // Convertit les coordonnées pixel (x, y) en coordonnées 3D cylindriques
-// IDENTIQUE AU LEGACY : cy = float(y) SANS normalisation !
-vec3 getCylindricalCoords(ivec2 pixel, uint w, uint h, float cylinder_radius) {
+// IDENTIQUE AU LEGACY MapGenerator.gd
+vec3 getCylindricalCoords(ivec2 pixel, uint w, float cylinder_radius) {
     // Angle de longitude [0, 2π]
     float angle = (float(pixel.x) / float(w)) * TAU;
     
-    // Coordonnées cylindriques (comme le legacy MapGenerator.gd)
+    // Coordonnées cylindriques EXACTEMENT comme le legacy
     float cx = cos(angle) * cylinder_radius;
     float cz = sin(angle) * cylinder_radius;
-    float cy = float(pixel.y);  // Y brut, NON normalisé - clé pour l'aspect ratio
+    float cy = float(pixel.y);  // Y brut, NON normalisé - IDENTIQUE AU LEGACY
     
     return vec3(cx, cy, cz);
 }
@@ -299,9 +312,64 @@ float cyclicDistanceX(float x1, float x2, float width) {
     return min(dx, width - dx);
 }
 
+// Bruit 2D simple pour perturber les coordonnées Voronoi
+// Version corrigée avec offset pour éviter les négatifs
+vec2 noise2D(vec2 p, uint seed) {
+    // Offset pour garantir des valeurs positives
+    vec2 pp = p + vec2(1000.0);
+    vec2 i = floor(pp);
+    vec2 f = fract(pp);
+    
+    // Smoothstep pour interpolation
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    
+    // Convertir en uint de façon sûre
+    uint ix = uint(i.x);
+    uint iy = uint(i.y);
+    
+    // 4 coins avec hash robuste
+    float a = rand(hash(ix + seed ^ hash(iy)));
+    float b = rand(hash(ix + 1u + seed ^ hash(iy)));
+    float c = rand(hash(ix + seed ^ hash(iy + 1u)));
+    float d = rand(hash(ix + 1u + seed ^ hash(iy + 1u)));
+    
+    float nx = mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+    
+    // Deuxième composante avec offset
+    uint seed2 = seed + 1000u;
+    float a2 = rand(hash(ix + seed2 ^ hash(iy)));
+    float b2 = rand(hash(ix + 1u + seed2 ^ hash(iy)));
+    float c2 = rand(hash(ix + seed2 ^ hash(iy + 1u)));
+    float d2 = rand(hash(ix + 1u + seed2 ^ hash(iy + 1u)));
+    
+    float ny = mix(mix(a2, b2, u.x), mix(c2, d2, u.x), u.y);
+    
+    return vec2(nx, ny) * 2.0 - 1.0;  // [-1, 1]
+}
+
+// Perturbation multi-octaves pour les bordures de plaques
+// AMPLITUDE AUGMENTÉE pour des bordures très organiques
+vec2 perturbUV(vec2 uv, uint seed) {
+    vec2 offset = vec2(0.0);
+    float amplitude = 0.06;  // Force de la perturbation (doublée)
+    float frequency = 3.0;   // Fréquence de base (réduite pour plus de courbes)
+    
+    // 4 octaves de bruit pour plus de détails
+    for (int i = 0; i < 4; i++) {
+        offset += noise2D(uv * frequency, seed + uint(i) * 5000u) * amplitude;
+        amplitude *= 0.5;
+        frequency *= 2.0;
+    }
+    
+    return uv + offset;
+}
+
 // Trouve la plaque la plus proche et calcule la distance au bord
 // Retourne : vec4(plate_id, distance_to_border, second_plate_id, border_strength)
 vec4 findClosestPlate(vec2 uv, uint seed) {
+    // PERTURBATION DES UV pour des bordures organiques (non rectilignes)
+    vec2 perturbedUV = perturbUV(uv, seed);
+    
     float minDist = 1e10;
     float secondDist = 1e10;
     int closestPlate = 0;
@@ -310,9 +378,9 @@ vec4 findClosestPlate(vec2 uv, uint seed) {
     for (int i = 0; i < NUM_PLATES; i++) {
         vec2 center = getPlateCenter(i, seed);
         
-        // Distance avec wrap sur X
-        float dx = cyclicDistanceX(uv.x, center.x, 1.0);
-        float dy = uv.y - center.y;
+        // Distance avec wrap sur X (utilise UV perturbés)
+        float dx = cyclicDistanceX(perturbedUV.x, center.x, 1.0);
+        float dy = perturbedUV.y - center.y;
         float dist = sqrt(dx * dx + dy * dy);
         
         if (dist < minDist) {
@@ -329,9 +397,8 @@ vec4 findClosestPlate(vec2 uv, uint seed) {
     // Distance au bord = différence entre les deux plus proches
     float borderDist = secondDist - minDist;
     
-    // Force du bord (plus c'est proche du bord, plus c'est fort)
-    // Bordures ÉTROITES : smoothstep de 0 à 0.025 (était 0.15)
-    float borderStrength = 1.0 - smoothstep(0.0, 0.025, borderDist);
+    // Bordure ULTRA-FINE : 0.002 pour une ligne visible mais très mince
+    float borderStrength = 1.0 - smoothstep(0.0, 0.002, borderDist);
     
     return vec4(float(closestPlate), borderDist, float(secondPlate), borderStrength);
 }
@@ -352,10 +419,10 @@ void main() {
     vec2 uv = vec2(float(pixel.x) / float(params.width), 
                    float(pixel.y) / float(params.height));
     
-    // Coordonnées cylindriques pour le bruit (comme legacy MapGenerator)
-    vec3 coords = getCylindricalCoords(pixel, params.width, params.height, params.cylinder_radius);
+    // Coordonnées cylindriques LEGACY pour le bruit
+    vec3 coords = getCylindricalCoords(pixel, params.width, params.cylinder_radius);
     
-    // === PLAQUES TECTONIQUES ===
+    // === PLAQUES TECTONIQUES (pour visualisation seulement) ===
     vec4 plateInfo = findClosestPlate(uv, params.seed);
     int plateId = int(plateInfo.x);
     float borderDist = plateInfo.y;
@@ -363,88 +430,51 @@ void main() {
     float borderStrength = plateInfo.w;
     
     bool isOceanic = isPlateOceanic(plateId, params.seed);
-    bool isSecondOceanic = isPlateOceanic(secondPlateId, params.seed);
     
-    // Élévation de base de la plaque (plateau continental ou plancher océanique)
-    float plateElevation = getPlateBaseElevation(plateId, params.seed, isOceanic);
+    // === FRÉQUENCES LEGACY ===
+    // Circonférence = width, donc frequency = 2.0 / width
+    float base_freq = 2.0 / float(params.width);
+    float detail_freq = 1.504 / float(params.width);
+    float tectonic_freq = 0.4 / float(params.width);
     
-    // === FROTTEMENT AUX FRONTIÈRES DE PLAQUES ===
-    // Valeurs RÉDUITES pour un effet plus subtil
-    float tectonicUplift = 0.0;
+    // === BRUIT PRINCIPAL (Relief général) - EXACTEMENT COMME LEGACY ===
+    float noise1 = fbm(coords * base_freq, 8, 0.75, 2.0, params.seed);
+    float noise2 = fbm(coords * base_freq, 8, 0.75, 2.0, params.seed + 10000u);
     
-    if (borderStrength > 0.01) {
-        // Type de frontière basé sur les types de plaques
-        if (!isOceanic && !isSecondOceanic) {
-            // Collision continent-continent : MONTAGNES (Himalaya-like)
-            tectonicUplift = borderStrength * 1500.0;
-        } else if (isOceanic && !isSecondOceanic) {
-            // Subduction océan sous continent : Cordillère
-            tectonicUplift = borderStrength * 1000.0;
-        } else if (!isOceanic && isSecondOceanic) {
-            // Subduction (de l'autre côté)
-            tectonicUplift = borderStrength * 800.0;
-        } else {
-            // Océan-océan : dorsale océanique ou fosse
-            uint boundaryHash = hash(uint(plateId * 13 + secondPlateId * 17) + params.seed);
-            if (rand(boundaryHash) > 0.5) {
-                tectonicUplift = borderStrength * 500.0;  // Dorsale
-            } else {
-                tectonicUplift = -borderStrength * 600.0; // Fosse
-            }
-        }
-    }
+    // Élévation de base (comme legacy)
+    float elevation = noise1 * (3500.0 + clamp(noise2, 0.0, 1.0) * params.elevation_modifier);
     
-    // === PARAMÈTRES DE BRUIT ===
-    // Fréquences FIXES pour cohérence (indépendantes de la résolution)
-    float base_freq = 0.008;
-    float detail_freq = 0.02;
-    float tectonic_freq = 0.003;
-    
-    // === BRUIT PRINCIPAL (Relief général) ===
-    // Le bruit doit DOMINER l'élévation, pas les plaques
-    float noise1 = fbm(coords * base_freq, 8, 0.65, 2.0, params.seed);
-    float noise2 = fbm(coords * base_freq * 0.5, 6, 0.55, 2.0, params.seed + 10000u);
-    
-    // Élévation de bruit : -3000 à +3000m (centre sur 0)
-    float noiseElevation = noise1 * 3000.0 + noise2 * 1500.0 + clamp(noise2, 0.0, 1.0) * params.elevation_modifier;
-    
-    // === STRUCTURES TECTONIQUES LEGACY (Chaînes de montagnes additionnelles) ===
+    // === STRUCTURES TECTONIQUES LEGACY (Chaînes de montagnes) ===
     float tectonic_mountain = abs(fbmSimplex(coords * tectonic_freq, 10, 0.55, 2.0, params.seed + 20000u));
     
-    float legacyMountains = 0.0;
     if (tectonic_mountain > 0.45 && tectonic_mountain < 0.55) {
         float band_strength = 1.0 - abs(tectonic_mountain - 0.5) * 20.0;
-        legacyMountains = 1200.0 * band_strength;  // Réduit de 2500 à 1200
+        elevation += 2500.0 * band_strength;
     }
     
     // === STRUCTURES TECTONIQUES LEGACY (Canyons/Rifts) ===
     float tectonic_canyon = abs(fbmSimplex(coords * tectonic_freq, 4, 0.55, 2.0, params.seed + 30000u));
     
-    float legacyCanyons = 0.0;
     if (tectonic_canyon > 0.45 && tectonic_canyon < 0.55) {
         float band_strength = 1.0 - abs(tectonic_canyon - 0.5) * 20.0;
-        legacyCanyons = -800.0 * band_strength;  // Réduit de 1500 à 800
+        elevation -= 1500.0 * band_strength;
     }
     
-    // === ÉLÉVATION FINALE ===
-    float elevation = plateElevation + noiseElevation + tectonicUplift + legacyMountains + legacyCanyons;
-    
-    // === DÉTAILS ADDITIONNELS (Montagnes hautes / Fosses profondes) ===
-    // Détails plus subtils pour ne pas créer d'extrêmes
-    if (elevation > 500.0) {
-        float detail = clamp(fbm(coords * detail_freq, 6, 0.75, 2.5, params.seed + 40000u), 0.0, 1.0);
-        elevation += detail * 1500.0;  // Réduit de 5000 à 1500
-    } else if (elevation <= -500.0) {
-        float detail = clamp(fbm(coords * detail_freq, 6, 0.75, 2.5, params.seed + 40000u), -1.0, 0.0);
-        elevation += detail * 1000.0;  // Réduit de 5000 à 1000
+    // === DÉTAILS ADDITIONNELS (comme legacy) ===
+    if (elevation > 800.0) {
+        float detail = clamp(fbm(coords * detail_freq, 6, 0.85, 3.0, params.seed + 40000u), 0.0, 1.0);
+        elevation += detail * 5000.0;
+    } else if (elevation <= -800.0) {
+        float detail = clamp(fbm(coords * detail_freq, 6, 0.85, 3.0, params.seed + 40000u), -1.0, 0.0);
+        elevation += detail * 5000.0;
     }
     
     // === CALCUL DES COMPOSANTS GeoTexture ===
     float height = elevation;
     
-    // Bedrock : résistance basée sur altitude + bruit + frontières (plus dur aux frontières)
-    float bedrock_noise = fbm(coords * 4.0, 4, 0.5, 2.0, params.seed + 50000u) * 0.3;
-    float bedrock = clamp(0.5 + height / 10000.0 + bedrock_noise + borderStrength * 0.3, 0.0, 1.0);
+    // Bedrock : résistance basée sur altitude + bruit
+    float bedrock_noise = fbm(coords * 0.01, 4, 0.5, 2.0, params.seed + 50000u) * 0.3;
+    float bedrock = clamp(0.5 + height / 10000.0 + bedrock_noise, 0.0, 1.0);
     
     // Sediment : zéro au départ (sera rempli par l'érosion)
     float sediment = 0.0;
@@ -457,6 +487,7 @@ void main() {
     imageStore(geo_texture, pixel, geo_data);
     
     // PlatesTexture : plate_id, border_dist, plate_elevation, is_oceanic
+    float plateElevation = getPlateBaseElevation(plateId, params.seed, isOceanic);
     vec4 plate_data = vec4(float(plateId), borderDist, plateElevation, isOceanic ? 1.0 : 0.0);
     imageStore(plates_texture, pixel, plate_data);
 }

@@ -236,9 +236,10 @@ func _export_plates_map(plates_img: Image, output_dir: String, width: int, heigh
 			
 			plates_colored.set_pixel(x, y, color)
 			
-			# Carte des bordures : plus clair = plus proche du bord
-			var border_intensity = 1.0 - clamp(border_dist * 10.0, 0.0, 1.0)
-			if border_intensity > 0.1:
+			# Carte des bordures : VRAIE LIGNE FINE
+			# border_dist < 0.005 = bordure visible (ligne très fine)
+			if border_dist < 0.005:
+				var border_intensity = 1.0 - (border_dist / 0.005)
 				plates_borders.set_pixel(x, y, Color(border_intensity, border_intensity * 0.5, 0.0, 1.0))
 			else:
 				plates_borders.set_pixel(x, y, Color(0.0, 0.0, 0.0, 0.0))
