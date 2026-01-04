@@ -4,9 +4,12 @@ class_name GPUContext
 # === CONSTANTES DE CONFIGURATION ===
 const FORMAT_STATE = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
 
-enum TextureID {
-	# Ajouter les IDs selon les besoins
-}
+# IDs des textures GPU utilisées dans la pipeline
+# geo : GeoTexture (RGBA32F) - R=height, G=bedrock, B=sediment, A=water_height
+# climate : ClimateTexture (RGBA32F) - R=temperature, G=humidity, B=windX, A=windY
+# temp_buffer : Buffer temporaire pour ping-pong
+# plates : PlateTexture (RGBA32F) - R=plate_id, G=velocity_x, B=velocity_y, A=age
+static var TextureID : Array[String] = ["geo", "climate", "temp_buffer", "plates"]
 
 # === MEMBRES ===
 var rd: RenderingDevice
@@ -24,6 +27,7 @@ func _init(resolution: Vector2i) -> void:
 		push_error("❌ FATAL: Impossible de créer le RenderingDevice local")
 		push_error("  Causes possibles:")
 		push_error("    - GPU ne supporte pas Vulkan/Metal")
+
 		push_error("    - Drivers graphiques obsolètes")
 		push_error("    - Godot lancé en mode headless sans GPU")
 		return
@@ -73,7 +77,7 @@ func _initialize_textures() -> void:
 	)
 	
 	# Créer les 4 textures
-	for tex_id in TextureID.values():
+	for tex_id in TextureID:
 		var data = PackedByteArray()
 		data.resize(resolution.x * resolution.y * 16)
 		data.fill(0)
@@ -143,7 +147,7 @@ func dispatch_compute(shader_name: String, groups_x: int, groups_y: int = 1, gro
 	rd.sync()
 
 # === READBACK TEXTURE ===
-func readback_texture(tex_id: TextureID) -> Image:
+func readback_texture(tex_id: String) -> Image:
 	if not textures.has(tex_id):
 		push_error("❌ Texture introuvable: ", tex_id)
 		return null
@@ -160,18 +164,34 @@ func readback_texture(tex_id: TextureID) -> Image:
 
 # === NETTOYAGE ===
 func _exit_tree() -> void:
-	# Ne jamais libérer les shaders tant que le contexte GPU est vivant
-	for rid in textures.values():
-		if rid.is_valid():
-			rd.free_rid(rid)
-	for rid in shaders.values():
-		if rid and rid.is_valid():
-			rd.free_rid(rid)
-	for rid in pipelines.values():
-		if rid and rid.is_valid():
-			rd.free_rid(rid)
+	# Vérifier que le RenderingDevice est toujours valide
+	if not rd:
+		print("⚠️ RenderingDevice déjà libéré, skip cleanup")
+		return
+	
+	# Libérer les ressources dans l'ordre inverse de création
+	# 1. Uniform sets (dépendent des shaders et textures)
 	for rid in uniform_sets.values():
 		if rid and rid.is_valid():
 			rd.free_rid(rid)
+	uniform_sets.clear()
 	
-	print("✅ Ressources GPU libérées (sauf shaders, persistance garantie)")
+	# 2. Pipelines (dépendent des shaders)
+	for rid in pipelines.values():
+		if rid and rid.is_valid():
+			rd.free_rid(rid)
+	pipelines.clear()
+	
+	# 3. Shaders
+	for rid in shaders.values():
+		if rid and rid.is_valid():
+			rd.free_rid(rid)
+	shaders.clear()
+	
+	# 4. Textures (indépendantes)
+	for rid in textures.values():
+		if rid and rid.is_valid():
+			rd.free_rid(rid)
+	textures.clear()
+	
+	print("✅ Ressources GPU libérées proprement")

@@ -104,20 +104,22 @@ func _compile_all_shaders() -> bool:
 	if not rd: return false
 	print("[Orchestrator] 📦 Compilation des shaders et création des pipelines...")
 	
-	var shaders_to_load = [	
+	var shaders_to_load = [
+		# Shader de génération topographique de base (Étape 0)
+		{"path": "res://shader/compute/topographie/base_elevation.glsl", "name": "base_elevation", "critical": true},
 	]
 	
 	var all_critical_loaded = true
 	
 	for s in shaders_to_load:
-		gpu.load_compute_shader(s["path"], s["name"])
-		var shader_rid = gpu.shaders[s["name"]]
-		
-		if not shader_rid.is_valid():
+		var success = gpu.load_compute_shader(s["path"], s["name"])
+		if not success or not gpu.shaders.has(s["name"]) or not gpu.shaders[s["name"]].is_valid():
 			print("  ❌ Échec chargement shader: ", s["name"])
 			if s["critical"]: all_critical_loaded = false
 			continue
 		
+		var shader_rid = gpu.shaders[s["name"]]
+		var pipeline_rid = gpu.pipelines[s["name"]]
 		print("    ✅ ", s["name"], " : Shader=", shader_rid, " | Pipeline=", pipeline_rid)
 	
 	return all_critical_loaded
@@ -198,8 +200,11 @@ func _init_uniform_sets():
 	
 	print("[Orchestrator] 🔧 Création des uniform sets...")
 	
-	# ✅ VALIDATION PRÉALABLE: Vérifier que toutes les textures sont valides
+	# ✅ VALIDATION PRÉALABLE: Vérifier que les textures nécessaires à l'étape 0 sont valides
+	# Note: À l'étape 0 (topographie de base), les textures "geo" et "plates" sont requises
 	var required_textures = [
+		{"name": "geo", "rid": gpu.textures.get("geo", RID())},
+		{"name": "plates", "rid": gpu.textures.get("plates", RID())},
 	]
 	
 	for tex_info in required_textures:
@@ -209,24 +214,23 @@ func _init_uniform_sets():
 	
 	print("  ✅ Toutes les textures sont valides")
 	
-	# FOR EACH PIPELINE: Créer les uniform sets
-	if gpu.shaders[NOM_SHADER].is_valid():
-		print("  • Création uniform set: gpu.shaders[NOM_SHADER]")
-		var uniforms = [
-			gpu.create_texture_uniform(0, gpu.textures[NOM_TEXTURE1]),
-			gpu.create_texture_uniform(1, gpu.textures[NOM_TEXTURE2]),
-			...
+	# === BASE ELEVATION SHADER (Topographie Step 0) ===
+	if gpu.shaders.has("base_elevation") and gpu.shaders["base_elevation"].is_valid():
+		print("  • Création uniform set: base_elevation")
+		
+		# Set 0 : Textures (geo_texture + plates_texture en écriture)
+		var uniforms_set0 = [
+			gpu.create_texture_uniform(0, gpu.textures["geo"]),
+			gpu.create_texture_uniform(1, gpu.textures["plates"]),
 		]
-
-		gpu.uniform_sets[NOM_SHADER] = rd.uniform_set_create(uniforms, gpu.shaders[NOM_SHADER], 0)
-		if not gpu.uniform_sets[NOM_SHADER].is_valid():
-			push_error("[Orchestrator] ❌ Failed to create tectonic uniform set")
-			push_error("  Pipeline RID: ", gpu.shaders[NOM_SHADER])
-			push_error("  Bindings: 0-3, Textures: ", gpu.textures[NOM_TEXTURE1], gpu.textures[NOM_TEXTURE2], gpu.textures[NOM_TEXTURE3], gpu.textures[NOM_TEXTURE4])
+		
+		gpu.uniform_sets["base_elevation_textures"] = rd.uniform_set_create(uniforms_set0, gpu.shaders["base_elevation"], 0)
+		if not gpu.uniform_sets["base_elevation_textures"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create base_elevation textures uniform set")
 		else:
-			print("    ✅", NOM_SHADER,"uniform set créé")
+			print("    ✅ base_elevation textures uniform set créé (geo + plates)")
 	else:
-		push_warning("[Orchestrator] ⚠️",  NOM_SHADER,"pipeline invalide, uniform set ignoré")
+		push_warning("[Orchestrator] ⚠️ base_elevation shader invalide, uniform set ignoré")
 	
 	print("[Orchestrator] ✅ Uniform Sets initialization complete")
 
@@ -264,8 +268,11 @@ func run_simulation() -> void:
 	
 	var _rids_to_free: Array[RID] = []
 
-	# FOR EACH PHASE
-	# run_xxx_phase(params, w, h)
+	# === ÉTAPE 0 : GÉNÉRATION TOPOGRAPHIQUE DE BASE ===
+	run_base_elevation_phase(generation_params, w, h)
+	
+	# === ÉTAPE 1 : ÉROSION HYDRAULIQUE (À implémenter) ===
+	# run_erosion_phase(generation_params, w, h)
 	
 	print("[Orchestrator] 🧹 Nettoyage de ", _rids_to_free.size(), " ressources temporaires...")
 	if rd:
@@ -281,11 +288,120 @@ func run_simulation() -> void:
 	print("=".repeat(60) + "\n")
 
 # ============================================================================
+# ÉTAPE 0 : GÉNÉRATION TOPOGRAPHIQUE DE BASE
+# ============================================================================
+
+## Génère la heightmap de base avec bruit fBm et structures tectoniques.
+##
+## Cette phase remplace conceptuellement ElevationMapGenerator.gd (version CPU).
+## Écrit dans GeoTexture (RGBA32F) :
+## - R = height (élévation en mètres)
+## - G = bedrock (résistance de la roche)
+## - B = sediment (0 au départ, rempli par l'érosion)
+## - A = water_height (colonne d'eau si sous niveau mer)
+##
+## @param params: Dictionnaire contenant seed, terrain_scale, sea_level, etc.
+## @param w: Largeur de la texture
+## @param h: Hauteur de la texture
+func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
+	if not rd or not gpu.pipelines.has("base_elevation") or not gpu.pipelines["base_elevation"].is_valid():
+		push_warning("[Orchestrator] ⚠️ base_elevation pipeline not ready, skipping")
+		return
+	
+	if not gpu.uniform_sets.has("base_elevation_textures") or not gpu.uniform_sets["base_elevation_textures"].is_valid():
+		push_warning("[Orchestrator] ⚠️ base_elevation uniform set not ready, skipping")
+		return
+	
+	print("[Orchestrator] 🏔️ Phase 0 : Génération Topographique de Base")
+	
+	# 1. Préparation des données UBO (Uniform Buffer Object)
+	# Structure alignée std140 :
+	# - uint seed (4 bytes)
+	# - uint width (4 bytes)
+	# - uint height (4 bytes)
+	# - float elevation_modifier (4 bytes)
+	# - float sea_level (4 bytes)
+	# - float cylinder_radius (4 bytes)
+	# - float padding2 (4 bytes)
+	# - float padding3 (4 bytes)
+	# Total : 32 bytes (aligné sur 16 bytes pour std140)
+	
+	var seed_val = int(params.get("seed", 12345))
+	var elevation_modifier = float(params.get("terrain_scale", 0.0))
+	var sea_level = float(params.get("sea_level", 0.0))
+	var cylinder_radius = float(w) / (2.0 * PI)  # Rayon du cylindre pour le bruit seamless
+	
+	# Créer le buffer de données (PackedByteArray)
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	# Écrire les données (little-endian)
+	buffer_bytes.encode_u32(0, seed_val)           # seed
+	buffer_bytes.encode_u32(4, w)                   # width
+	buffer_bytes.encode_u32(8, h)                   # height
+	buffer_bytes.encode_float(12, elevation_modifier) # elevation_modifier
+	buffer_bytes.encode_float(16, sea_level)        # sea_level
+	buffer_bytes.encode_float(20, cylinder_radius)  # cylinder_radius
+	buffer_bytes.encode_float(24, 0.0)              # padding2
+	buffer_bytes.encode_float(28, 0.0)              # padding3
+	
+	# 2. Création du Buffer Uniforme
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create base_elevation param buffer")
+		return
+	
+	# 3. Création de l'Uniform pour le buffer
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	# 4. Création du Set 1 (paramètres)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["base_elevation"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create base_elevation param set")
+		rd.free_rid(param_buffer)
+		return
+	
+	# 5. Calcul des groupes de travail (16x16 threads par groupe)
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+	
+	print("  Seed: ", seed_val)
+	print("  Elevation Modifier: ", elevation_modifier)
+	print("  Sea Level: ", sea_level)
+	print("  Cylinder Radius: ", cylinder_radius)
+	print("  Dispatch: ", groups_x, "x", groups_y, " groupes (", w, "x", h, " pixels)")
+	
+	# 6. Dispatch du compute shader
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["base_elevation"])
+	
+	# Bind Set 0 (Textures)
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["base_elevation_textures"], 0)
+	# Bind Set 1 (Paramètres)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	# 7. Soumettre et synchroniser
+	rd.submit()
+	rd.sync()
+	
+	# 8. Nettoyage des ressources temporaires
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	
+	print("[Orchestrator] ✅ Phase 0 : Topographie de base générée")
+
+# ============================================================================
 # EXEMPLE PHASES DE SIMULATION
 # ============================================================================
 
 func run_example(params: Dictionary, w: int, h: int):	
-	if not rd or not gpu.pipelines["example"].is_valid() or not orogeny_uniform_set.is_valid():
+	if not rd or not gpu.pipelines["example"].is_valid():
 		push_warning("[Orchestrator] ⚠️ Orogeny pipeline not ready, skipping")
 		return
 	
@@ -345,6 +461,29 @@ func run_example(params: Dictionary, w: int, h: int):
 # ============================================================================
 # EXPORT
 # ============================================================================
+
+## Exporte la carte d'élévation brute (GeoTexture) en Image
+## Retourne les données float brutes pour traitement ultérieur
+func export_geo_texture_to_image() -> Image:
+	if not rd or not gpu.textures.has("geo") or not gpu.textures["geo"].is_valid():
+		push_error("[Orchestrator] ❌ Cannot export geo texture - invalid RID")
+		return null
+	
+	rd.submit()
+	rd.sync()
+	
+	var byte_data = rd.texture_get_data(gpu.textures["geo"], 0)
+	return Image.create_from_data(resolution.x, resolution.y, false, Image.FORMAT_RGBAF, byte_data)
+
+## Exporte toutes les cartes générées via PlanetExporter
+## 
+## @param output_dir: Dossier de sortie pour les fichiers PNG
+## @return Dictionary: Chemins des fichiers exportés
+func export_all_maps(output_dir: String) -> Dictionary:
+	print("[Orchestrator] 📤 Exporting all maps to: ", output_dir)
+	
+	var exporter = PlanetExporter.new()
+	return exporter.export_maps(gpu, output_dir, generation_params)
 
 ## Example d'exportation de carte
 func export_example_to_image() -> Image:

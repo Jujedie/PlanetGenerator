@@ -6,10 +6,7 @@ signal finished
 signal progress_updated(value: float, status: String)
 
 ## ============================================================================
-## PLANET GENERATOR - FINAL INTEGRATION
-## ============================================================================
-## Main controller that connects UI → GPU → Export
-## Maintains backward compatibility with legacy CPU generation
+## PLANET GENERATOR
 ## ============================================================================
 
 # Constants
@@ -139,11 +136,11 @@ func _init_gpu_system() -> void:
 	
 	var gpu_context = GPUContext.new(generation_params["resolution"])
 	if not gpu_context or not gpu_context.rd and not gpu_context.shaders:
-		push_warning("[PlanetGenerator] GPUContext or RD not available, falling back to CPU")
+		push_warning("[PlanetGenerator] GPUContext or RD not available")
 		use_gpu_acceleration = false
 		return
 	
-	gpu_orchestrator = GPUOrchestrator.new(gpu_context, generation_params)
+	gpu_orchestrator = GPUOrchestrator.new(gpu_context, generation_params["resolution"], generation_params)
 	
 	print("[PlanetGenerator] GPU acceleration enabled: ", generation_params["resolution"])
 
@@ -182,9 +179,8 @@ func addProgress(value: float) -> void:
 
 ## Point d'entrée principal de la génération.
 ##
-## Démarre le processus de génération. Selon la configuration interne, cette méthode
-## lance soit un Thread pour la génération CPU ([method generate_planet_cpu]),
-## soit initie la séquence GPU ([method generate_planet_gpu]).
+## Démarre le processus de génération. Selon la configuration interne, 
+## cette méthode initie la séquence GPU ([method generate_planet_gpu]).
 func generate_planet():
 	"""
 	Entry point - routes to GPU or CPU
@@ -209,35 +205,16 @@ func _generate_planet_gpu_deferred():
 	Called via call_deferred from generate_planet()
 	"""
 	
+	# === INITIAL LOGGING ===
 	print("\n" + "=".repeat(60))
 	print("GPU-ACCELERATED PLANET GENERATION (RENDER THREAD)")
 	print("=".repeat(60))
 	
-	# === PHASE 1: FULL SIMULATION ===
-	update_map_status("MAP_ELEVATION")
-	print("Phase 1/4 - Running GPU simulation...")
-	
+	# === FULL SIMULATION ===
 	# Execute simulation synchronously on render thread
 	gpu_orchestrator.run_simulation()
-	addProgress(60)
 	
-	# === PHASE 2: EXPORT MAPS ===
-	update_map_status("MAP_FINAL")
-	print("Phase 2/4 - Exporting maps...")
-	
-	_export_gpu_maps()
-	addProgress(20)
-	
-	# === PHASE 3: UPDATE 2D ===
-	update_map_status("MAP_PREVIEW")
-	print("Phase 3/4 - Updating 2D...")
-	
-	# Update 2D preview image from GPU textures
-	addProgress(10)
-	
-	# === PHASE 4: FINALIZE ===
-	addProgress(10)
-	
+	# === EXPORT ===
 	print("=".repeat(60))
 	print("GENERATION COMPLETE")
 	print("=".repeat(60) + "\n")
@@ -263,6 +240,7 @@ func generate_planet_gpu():
 	Phase 1: Initialize → Phase 2: Simulate → Phase 3: Export → Phase 4: Visualize
 	"""
 	
+	# === INITIAL LOGGING ===
 	print("\n" + "=".repeat(60))
 	print("GPU-ACCELERATED PLANET GENERATION")
 	print("=".repeat(60))
@@ -271,12 +249,12 @@ func generate_planet_gpu():
 	print("Seed: ", generation_params["seed"])
 	print("=".repeat(60) + "\n")
 	
-	# === PHASE 1: FULL SIMULATION ===
-	print("Phase 1/4 - Running full GPU simulation...")
+	# === FULL SIMULATION ===
+	print("Running full GPU simulation...")
 	
 	gpu_orchestrator.run_simulation()
-	addProgress(60)
 	
+	# === EXPORT MAPS ===
 	print("\n" + "=".repeat(60))
 	print("GENERATION COMPLETE")
 	print("Total time: ", Time.get_ticks_msec() / 1000.0, " seconds")
@@ -384,7 +362,7 @@ func export_to_directory(output_dir: String) -> void:
 		# GPU path - use PlanetExporter
 		
 		var exporter = PlanetExporter.new()
-		exporter.export_maps(gpu_orchestrator.gpu.textures, output_dir, generation_params)
+		exporter.export_maps(gpu_orchestrator.gpu, output_dir, generation_params)
 		
 		# Cleanup GPU resources after export
 		gpu_orchestrator.cleanup()
@@ -408,10 +386,15 @@ func getMaps() -> Array[String]:
 	deleteImagesTemps()
 	
 	var temp_dir = "user://temp/"
+	
+	# Exporter les cartes GPU vers des fichiers PNG
+	var exported_files = gpu_orchestrator.export_all_maps(temp_dir)
+	
+	# Convertir le dictionnaire en tableau de chemins
 	var lstChemin: Array[String] = []
-	for image_nom in gpu_orchestrator.gpu.textures.keys():
-		lstChemin.append(temp_dir+image_nom+".png")
-
+	for file_path in exported_files.values():
+		lstChemin.append(file_path)
+	
 	return lstChemin
 
 ## Sauvegarde une image unique dans le dossier temporaire.

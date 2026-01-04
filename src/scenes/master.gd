@@ -8,8 +8,11 @@ var langue: String = "fr"
 
 # --- Constants ---
 const MAP_NAME_TO_KEY = {
-	"elevation_map.png": "MAP_ELEVATION",
-	"elevation_map_alt.png": "MAP_ELEVATION_ALT",
+	"topographie_map.png": "MAP_TOPOGRAPHIE",
+	"topographie_map_grey.png": "MAP_TOPOGRAPHIE_GREY",
+	"eaux_map.png": "MAP_EAUX",
+	"plaques_map.png": "MAP_PLAQUES",
+	"plaques_bordures_map.png": "MAP_PLAQUES_BORDURES",
 	"nuage_map.png": "MAP_CLOUDS",
 	"oil_map.png": "MAP_OIL",
 	"ressource_map.png": "MAP_RESOURCES",
@@ -51,6 +54,10 @@ func _on_btn_comfirme_pressed() -> void:
 	var sldElevation        = $Node2D/Control/sldElevation
 	var sldThread           = $Node2D/Control/sldThread
 	var typePlanete         = $Node2D/Control/typePlanete/ItemList
+	
+	var sldErosionIterations = $Node2D/Control/sldErosionIterations
+	var sldTectonicYears     = $Node2D/Control/sldTectonicYears
+	var sldAtmosphereSteps   = $Node2D/Control/sldAtmosphereSteps
 
 	if typePlanete.get_selected_id() == -1:
 		typePlanete.select(0)
@@ -70,6 +77,10 @@ func _on_btn_comfirme_pressed() -> void:
 		sldTempMoy.value, 
 		sldHautEau.value, 
 		sldPrecipitationMoy.value, 
+		# Placeholders until sld are created
+		100, 
+		100_000_000, 
+		1000,
 		sldElevation.value, 
 		sldThread.value, 
 		typePlanete.get_selected_id(), 
