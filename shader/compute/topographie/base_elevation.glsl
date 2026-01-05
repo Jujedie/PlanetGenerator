@@ -35,9 +35,9 @@ layout(set = 0, binding = 0, rgba32f) uniform writeonly image2D geo_texture;
 
 // Texture de sortie : PlatesTexture (plaques tectoniques)
 // R = plate_id (numéro de plaque 0-11)
-// G = border_dist (distance au bord de plaque)
-// B = plate_elevation (élévation de base du plateau)
-// A = is_oceanic (1.0 si océanique, 0.0 si continental)
+// G = velocity_x (composante X de la vélocité de la plaque)
+// B = velocity_y (composante Y de la vélocité de la plaque)  
+// A = convergence_type (-1=divergence, 0=transformante, +1=convergence)
 layout(set = 0, binding = 1, rgba32f) uniform writeonly image2D plates_texture;
 
 // Uniform Buffer : Paramètres globaux de génération
@@ -261,49 +261,75 @@ float ridgedMultifractal(vec3 p, int octaves, float gain, float lacunarity, uint
 // ============================================================================
 
 // Convertit les coordonnées pixel (x, y) en coordonnées 3D cylindriques
-// IDENTIQUE AU LEGACY MapGenerator.gd
-vec3 getCylindricalCoords(ivec2 pixel, uint w, float cylinder_radius) {
+// CORRIGÉ : Y normalisé pour bruit isotrope (même échelle que X/Z)
+vec3 getCylindricalCoords(ivec2 pixel, uint w, uint h, float cylinder_radius) {
     // Angle de longitude [0, 2π]
     float angle = (float(pixel.x) / float(w)) * TAU;
     
-    // Coordonnées cylindriques EXACTEMENT comme le legacy
+    // Coordonnées cylindriques avec Y NORMALISÉ
     float cx = cos(angle) * cylinder_radius;
     float cz = sin(angle) * cylinder_radius;
-    float cy = float(pixel.y);  // Y brut, NON normalisé - IDENTIQUE AU LEGACY
+    // Y centré [-radius, +radius] pour isotropie du bruit
+    float cy = (float(pixel.y) / float(h) - 0.5) * cylinder_radius * 2.0;
     
     return vec3(cx, cy, cz);
 }
 
 // ============================================================================
-// PLAQUES TECTONIQUES (Voronoi)
+// CONVERSION COORDONNÉES - UV vers Sphère (pour Voronoi cohérent)
 // ============================================================================
 
-// Génère les centres des plaques tectoniques
+// Convertit des coordonnées UV [0,1]x[0,1] en point 3D sur sphère unitaire
+vec3 uvToSphere(vec2 uv) {
+    float lon = uv.x * TAU;              // Longitude [0, 2π]
+    float lat = (uv.y - 0.5) * PI;       // Latitude [-π/2, π/2]
+    
+    return vec3(
+        cos(lat) * cos(lon),
+        sin(lat),
+        cos(lat) * sin(lon)
+    );
+}
+
+// Distance géodésique (arc de grand cercle) entre deux points sur la sphère
+float geodesicDistance(vec3 p1, vec3 p2) {
+    float cosAngle = clamp(dot(p1, p2), -1.0, 1.0);
+    return acos(cosAngle);  // Retourne angle en radians [0, π]
+}
+
+// ============================================================================
+// PLAQUES TECTONIQUES (Voronoi Sphérique avec Domain Warping)
+// ============================================================================
+
+// Génère les centres des plaques tectoniques en coordonnées UV [0,1]
 vec2 getPlateCenter(int plateId, uint seed) {
     uint h = hash(uint(plateId) + seed * 7919u);
     vec2 center = rand2(h);
-    return center;  // Position normalisée [0, 1]
+    return center;
 }
 
-// Vérifie si une plaque est océanique (~70% océanique)
-bool isPlateOceanic(int plateId, uint seed) {
-    uint h = hash(uint(plateId) + seed * 3571u);
-    return rand(h) < 0.7;
-}
-
-// Obtient l'élévation de base d'une plaque (plateaux)
-// Valeurs RÉDUITES pour laisser le bruit dominer
-float getPlateBaseElevation(int plateId, uint seed, bool isOceanic) {
-    uint h = hash(uint(plateId) + seed * 8831u);
-    float r = rand(h);
+// Génère la vélocité d'une plaque (direction + magnitude)
+// Retourne vec2 en coordonnées tangentielles (vx, vy) normalisé
+vec2 getPlateVelocity(int plateId, uint seed) {
+    uint h1 = hash(uint(plateId) + seed * 4421u);
+    uint h2 = hash(uint(plateId) + seed * 6619u);
     
-    if (isOceanic) {
-        // Plaques océaniques : -800 à -200m (influence légère)
-        return -800.0 + r * 600.0;
-    } else {
-        // Plaques continentales : plateaux entre 50 et 400m
-        return 50.0 + r * 350.0;
-    }
+    // Angle de mouvement [0, 2π]
+    float angle = rand(h1) * TAU;
+    // Vitesse normalisée [0.3, 1.0] - évite les plaques immobiles
+    float speed = 0.3 + rand(h2) * 0.7;
+    
+    return vec2(cos(angle), sin(angle)) * speed;
+}
+
+// Détermine si un point est océanique basé sur le bruit continental
+// Indépendant des plaques - permet zones mixtes dans une même plaque
+bool isLocallyOceanic(vec3 coords, float cylinder_radius, uint seed) {
+    // Bruit continental à grande échelle
+    float continental_freq = 0.8 / cylinder_radius;
+    float continentalNoise = fbm(coords * continental_freq, 6, 0.6, 2.0, seed + 77777u);
+    // Seuil : ~60% océan, ~40% continent
+    return continentalNoise < 0.1;
 }
 
 // Distance cyclique sur X (wrap horizontal pour continuité)
@@ -347,60 +373,184 @@ vec2 noise2D(vec2 p, uint seed) {
     return vec2(nx, ny) * 2.0 - 1.0;  // [-1, 1]
 }
 
-// Perturbation multi-octaves pour les bordures de plaques
-// AMPLITUDE AUGMENTÉE pour des bordures très organiques
-vec2 perturbUV(vec2 uv, uint seed) {
+// Perturbation multi-octaves pour les bordures de plaques (Domain Warping)
+// Appliqué en espace sphérique pour cohérence avec la projection
+vec2 domainWarp(vec2 uv, uint seed) {
     vec2 offset = vec2(0.0);
-    float amplitude = 0.06;  // Force de la perturbation (doublée)
-    float frequency = 3.0;   // Fréquence de base (réduite pour plus de courbes)
+    float amplitude = 0.05;   // Force de la perturbation
+    float frequency = 4.0;    // Fréquence de base
     
-    // 4 octaves de bruit pour plus de détails
+    // 4 octaves pour bordures organiques et fractales
     for (int i = 0; i < 4; i++) {
         offset += noise2D(uv * frequency, seed + uint(i) * 5000u) * amplitude;
         amplitude *= 0.5;
         frequency *= 2.0;
     }
     
-    return uv + offset;
+    return offset;
 }
 
-// Trouve la plaque la plus proche et calcule la distance au bord
-// Retourne : vec4(plate_id, distance_to_border, second_plate_id, border_strength)
-vec4 findClosestPlate(vec2 uv, uint seed) {
-    // PERTURBATION DES UV pour des bordures organiques (non rectilignes)
-    vec2 perturbedUV = perturbUV(uv, seed);
+// Structure pour stocker les infos de frontière
+struct PlateInfo {
+    int plateId;
+    int secondPlateId;
+    float borderDist;
+    float borderStrength;
+    vec2 velocity1;
+    vec2 velocity2;
+    float convergence;  // >0 = convergence, <0 = divergence
+};
+
+// Trouve la plaque la plus proche avec Voronoi SPHÉRIQUE + domain warping
+PlateInfo findClosestPlate(vec2 uv, uint seed) {
+    PlateInfo info;
+    
+    // Domain warping pour bordures organiques
+    vec2 warpOffset = domainWarp(uv, seed);
+    vec2 warpedUV = uv + warpOffset;
+    
+    // Wrap X, clamp Y
+    warpedUV.x = fract(warpedUV.x);
+    warpedUV.y = clamp(warpedUV.y, 0.001, 0.999);
+    
+    // Convertir en point 3D sur sphère
+    vec3 pointOnSphere = uvToSphere(warpedUV);
     
     float minDist = 1e10;
     float secondDist = 1e10;
     int closestPlate = 0;
     int secondPlate = 0;
+    vec2 closestCenter = vec2(0.0);
+    vec2 secondCenter = vec2(0.0);
     
     for (int i = 0; i < NUM_PLATES; i++) {
-        vec2 center = getPlateCenter(i, seed);
+        vec2 centerUV = getPlateCenter(i, seed);
+        vec3 centerOnSphere = uvToSphere(centerUV);
         
-        // Distance avec wrap sur X (utilise UV perturbés)
-        float dx = cyclicDistanceX(perturbedUV.x, center.x, 1.0);
-        float dy = perturbedUV.y - center.y;
-        float dist = sqrt(dx * dx + dy * dy);
+        // Distance GÉODÉSIQUE (correcte sur la sphère)
+        float dist = geodesicDistance(pointOnSphere, centerOnSphere);
         
         if (dist < minDist) {
             secondDist = minDist;
             secondPlate = closestPlate;
+            secondCenter = closestCenter;
             minDist = dist;
             closestPlate = i;
+            closestCenter = centerUV;
         } else if (dist < secondDist) {
             secondDist = dist;
             secondPlate = i;
+            secondCenter = centerUV;
         }
     }
     
-    // Distance au bord = différence entre les deux plus proches
+    // Distance au bord (en radians, typiquement 0 à ~0.5)
     float borderDist = secondDist - minDist;
     
-    // Bordure ULTRA-FINE : 0.002 pour une ligne visible mais très mince
-    float borderStrength = 1.0 - smoothstep(0.0, 0.002, borderDist);
+    // Décroissance exponentielle pour effet localisé aux bordures
+    // Facteur 100 : effet significatif jusqu'à ~0.02 rad (~1.1°)
+    float borderStrength = exp(-borderDist * 100.0);
+    borderStrength = clamp(borderStrength, 0.0, 1.0);
     
-    return vec4(float(closestPlate), borderDist, float(secondPlate), borderStrength);
+    // Vélocités des deux plaques
+    vec2 vel1 = getPlateVelocity(closestPlate, seed);
+    vec2 vel2 = getPlateVelocity(secondPlate, seed);
+    
+    // Calcul de la convergence
+    // Direction de la frontière (du centre1 vers centre2)
+    vec2 toSecond = secondCenter - closestCenter;
+    // Gérer le wrap X
+    if (toSecond.x > 0.5) toSecond.x -= 1.0;
+    if (toSecond.x < -0.5) toSecond.x += 1.0;
+    vec2 borderNormal = normalize(toSecond);
+    
+    // Vélocité relative projetée sur la normale
+    vec2 relVel = vel1 - vel2;
+    float convergence = -dot(relVel, borderNormal);  // Positif = les plaques se rapprochent
+    
+    info.plateId = closestPlate;
+    info.secondPlateId = secondPlate;
+    info.borderDist = borderDist;
+    info.borderStrength = borderStrength;
+    info.velocity1 = vel1;
+    info.velocity2 = vel2;
+    info.convergence = convergence;
+    
+    return info;
+}
+
+// Calcule l'uplift tectonique basé sur le type de frontière
+float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, vec3 coords, uint seed) {
+    if (info.borderStrength < 0.05) {
+        return 0.0;  // Trop loin de la bordure
+    }
+    
+    float uplift = 0.0;
+    float convergence = info.convergence;
+    float strength = info.borderStrength;
+    
+    // Bruit local pour variation le long de la frontière
+    float localNoise = fbm(coords * 0.02, 4, 0.6, 2.0, seed + 88888u);
+    float variation = 0.7 + 0.6 * localNoise;  // [0.7, 1.3]
+    
+    if (convergence > 0.2) {
+        // === CONVERGENCE ===
+        float conv_strength = min(convergence, 1.0);
+        
+        if (!isOceanic1 && !isOceanic2) {
+            // Continent-Continent : Hautes montagnes (Himalaya)
+            uplift = strength * 4000.0 * conv_strength;
+        } else if (isOceanic1 && isOceanic2) {
+            // Océan-Océan : Fosse + Arc insulaire
+            // Position relative pour asymétrie
+            float side = sign(dot(info.velocity1, vec2(1.0, 0.0)));
+            if (info.borderDist < 0.01) {
+                // Fosse profonde
+                uplift = -strength * 5000.0 * conv_strength;
+            } else if (info.borderDist < 0.03) {
+                // Arc insulaire (50-100km en arrière de la fosse)
+                float arcFactor = smoothstep(0.01, 0.015, info.borderDist) * 
+                                  smoothstep(0.03, 0.025, info.borderDist);
+                uplift = arcFactor * 1500.0 * conv_strength;
+            }
+        } else {
+            // Océan-Continent : Subduction asymétrique
+            if (isOceanic1) {
+                // Ce côté est océanique - FOSSE
+                uplift = -strength * 4000.0 * conv_strength;
+            } else {
+                // Ce côté est continental - CORDILLÈRE
+                uplift = strength * 3000.0 * conv_strength;
+            }
+        }
+    } else if (convergence < -0.2) {
+        // === DIVERGENCE ===
+        float div_strength = min(-convergence, 1.0);
+        
+        if (isOceanic1 && isOceanic2) {
+            // Dorsale médio-océanique
+            uplift = strength * 2500.0 * div_strength;
+        } else if (!isOceanic1 && !isOceanic2) {
+            // Rift continental (Vallée du Rift)
+            // Vallée centrale + épaules surélevées
+            if (info.borderDist < 0.008) {
+                uplift = -strength * 800.0 * div_strength;  // Vallée
+            } else if (info.borderDist < 0.02) {
+                float shoulderFactor = smoothstep(0.008, 0.012, info.borderDist) *
+                                       smoothstep(0.02, 0.016, info.borderDist);
+                uplift = shoulderFactor * 500.0 * div_strength;  // Épaules
+            }
+        } else {
+            // Rift mixte
+            uplift = -strength * 400.0 * div_strength;
+        }
+    } else {
+        // === TRANSFORMANTE ===
+        // Effet minimal, légère déformation
+        uplift = strength * 100.0 * (localNoise - 0.5) * 2.0;
+    }
+    
+    return uplift * variation;
 }
 
 // ============================================================================
@@ -415,50 +565,74 @@ void main() {
         return;
     }
     
-    // Coordonnées normalisées pour Voronoi (plaques tectoniques)
+    // Coordonnées normalisées UV [0,1] pour Voronoi
     vec2 uv = vec2(float(pixel.x) / float(params.width), 
                    float(pixel.y) / float(params.height));
     
-    // Coordonnées cylindriques LEGACY pour le bruit
-    vec3 coords = getCylindricalCoords(pixel, params.width, params.cylinder_radius);
+    // Coordonnées cylindriques 3D pour le bruit (NORMALISÉES)
+    vec3 coords = getCylindricalCoords(pixel, params.width, params.height, params.cylinder_radius);
     
-    // === PLAQUES TECTONIQUES (pour visualisation seulement) ===
-    vec4 plateInfo = findClosestPlate(uv, params.seed);
-    int plateId = int(plateInfo.x);
-    float borderDist = plateInfo.y;
-    int secondPlateId = int(plateInfo.z);
-    float borderStrength = plateInfo.w;
+    // === FRÉQUENCES BASÉES SUR CYLINDER_RADIUS (cohérence avec legacy) ===
+    float base_freq = 2.0 / params.cylinder_radius;
+    float detail_freq = 1.504 / params.cylinder_radius;
+    float tectonic_freq = 0.4 / params.cylinder_radius;
+    float continental_freq = 0.8 / params.cylinder_radius;
     
-    bool isOceanic = isPlateOceanic(plateId, params.seed);
+    // === MASQUE CONTINENTAL (indépendant des plaques) ===
+    // Crée la dichotomie océan/continent de façon naturelle
+    float continentalNoise = fbm(coords * continental_freq, 6, 0.6, 2.0, params.seed + 77777u);
+    bool isOceanic = continentalNoise < 0.1;  // ~60% océan
     
-    // === FRÉQUENCES LEGACY ===
-    // Circonférence = width, donc frequency = 2.0 / width
-    float base_freq = 2.0 / float(params.width);
-    float detail_freq = 1.504 / float(params.width);
-    float tectonic_freq = 0.4 / float(params.width);
+    // Élévation de base continent/océan
+    float baseElevation = isOceanic ? -2500.0 : 200.0;
+    // Transition douce entre océan et continent
+    float oceanContBlend = smoothstep(-0.1, 0.3, continentalNoise);
+    baseElevation = mix(-2500.0, 200.0, oceanContBlend);
     
-    // === BRUIT PRINCIPAL (Relief général) - EXACTEMENT COMME LEGACY ===
+    // === PLAQUES TECTONIQUES (Voronoi sphérique) ===
+    PlateInfo plateInfo = findClosestPlate(uv, params.seed);
+    
+    // Déterminer si chaque côté de la frontière est océanique
+    // Utiliser le bruit continental aux centres des plaques pour cohérence
+    vec2 center1 = getPlateCenter(plateInfo.plateId, params.seed);
+    vec2 center2 = getPlateCenter(plateInfo.secondPlateId, params.seed);
+    vec3 coords1 = getCylindricalCoords(ivec2(center1 * vec2(params.width, params.height)), 
+                                         params.width, params.height, params.cylinder_radius);
+    vec3 coords2 = getCylindricalCoords(ivec2(center2 * vec2(params.width, params.height)), 
+                                         params.width, params.height, params.cylinder_radius);
+    bool isOceanic1 = fbm(coords1 * continental_freq, 6, 0.6, 2.0, params.seed + 77777u) < 0.1;
+    bool isOceanic2 = fbm(coords2 * continental_freq, 6, 0.6, 2.0, params.seed + 77777u) < 0.1;
+    
+    // === UPLIFT TECTONIQUE AUX FRONTIÈRES ===
+    float tectonicUplift = calculateTectonicUplift(plateInfo, isOceanic1, isOceanic2, coords, params.seed);
+    
+    // === BRUIT PRINCIPAL (Relief général) ===
     float noise1 = fbm(coords * base_freq, 8, 0.75, 2.0, params.seed);
     float noise2 = fbm(coords * base_freq, 8, 0.75, 2.0, params.seed + 10000u);
     
-    // Élévation de base (comme legacy)
-    float elevation = noise1 * (3500.0 + clamp(noise2, 0.0, 1.0) * params.elevation_modifier);
+    // Relief de bruit
+    float noiseElevation = noise1 * 3500.0 + clamp(noise2, 0.0, 1.0) * params.elevation_modifier;
     
-    // === STRUCTURES TECTONIQUES LEGACY (Chaînes de montagnes) ===
+    // === STRUCTURES TECTONIQUES LEGACY (Chaînes de montagnes supplémentaires) ===
     float tectonic_mountain = abs(fbmSimplex(coords * tectonic_freq, 10, 0.55, 2.0, params.seed + 20000u));
     
+    float legacyMountains = 0.0;
     if (tectonic_mountain > 0.45 && tectonic_mountain < 0.55) {
         float band_strength = 1.0 - abs(tectonic_mountain - 0.5) * 20.0;
-        elevation += 2500.0 * band_strength;
+        legacyMountains = 2500.0 * band_strength;
     }
     
     // === STRUCTURES TECTONIQUES LEGACY (Canyons/Rifts) ===
     float tectonic_canyon = abs(fbmSimplex(coords * tectonic_freq, 4, 0.55, 2.0, params.seed + 30000u));
     
+    float legacyCanyons = 0.0;
     if (tectonic_canyon > 0.45 && tectonic_canyon < 0.55) {
         float band_strength = 1.0 - abs(tectonic_canyon - 0.5) * 20.0;
-        elevation -= 1500.0 * band_strength;
+        legacyCanyons = -1500.0 * band_strength;
     }
+    
+    // === ÉLÉVATION FINALE ===
+    float elevation = baseElevation + noiseElevation + tectonicUplift + legacyMountains + legacyCanyons;
     
     // === DÉTAILS ADDITIONNELS (comme legacy) ===
     if (elevation > 800.0) {
@@ -472,9 +646,9 @@ void main() {
     // === CALCUL DES COMPOSANTS GeoTexture ===
     float height = elevation;
     
-    // Bedrock : résistance basée sur altitude + bruit
+    // Bedrock : résistance basée sur altitude + bruit + proximité frontière
     float bedrock_noise = fbm(coords * 0.01, 4, 0.5, 2.0, params.seed + 50000u) * 0.3;
-    float bedrock = clamp(0.5 + height / 10000.0 + bedrock_noise, 0.0, 1.0);
+    float bedrock = clamp(0.5 + height / 10000.0 + bedrock_noise + plateInfo.borderStrength * 0.2, 0.0, 1.0);
     
     // Sediment : zéro au départ (sera rempli par l'érosion)
     float sediment = 0.0;
@@ -486,8 +660,16 @@ void main() {
     vec4 geo_data = vec4(height, bedrock, sediment, water_height);
     imageStore(geo_texture, pixel, geo_data);
     
-    // PlatesTexture : plate_id, border_dist, plate_elevation, is_oceanic
-    float plateElevation = getPlateBaseElevation(plateId, params.seed, isOceanic);
-    vec4 plate_data = vec4(float(plateId), borderDist, plateElevation, isOceanic ? 1.0 : 0.0);
+    // PlatesTexture : plate_id, velocity_x, velocity_y, convergence_type
+    float convergenceType = 0.0;
+    if (plateInfo.convergence > 0.2) convergenceType = 1.0;
+    else if (plateInfo.convergence < -0.2) convergenceType = -1.0;
+    
+    vec4 plate_data = vec4(
+        float(plateInfo.plateId), 
+        plateInfo.velocity1.x, 
+        plateInfo.velocity1.y, 
+        convergenceType
+    );
     imageStore(plates_texture, pixel, plate_data);
 }

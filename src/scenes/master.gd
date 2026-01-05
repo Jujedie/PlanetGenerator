@@ -55,10 +55,12 @@ func _on_btn_comfirme_pressed() -> void:
 	var sldThread           = $Node2D/Control/sldThread
 	var typePlanete         = $Node2D/Control/typePlanete/ItemList
 	
-	var sldErosionIterations = $Node2D/Control/sldErosionIterations
-	var sldTectonicYears     = $Node2D/Control/sldTectonicYears
-	var sldAtmosphereSteps   = $Node2D/Control/sldAtmosphereSteps
-
+	#var sldErosionIterations = $Node2D/Control/sldErosionIterations
+	#var sldTectonicYears     = $Node2D/Control/sldTectonicYears
+	#var sldAtmosphereSteps   = $Node2D/Control/sldAtmosphereSteps
+	#var sldDensitePlanetes   = $Node2D/Control/sldDensitePlanetes
+	#var sldSeed			  = $Node2D/Control/sldSeed
+ 
 	if typePlanete.get_selected_id() == -1:
 		typePlanete.select(0)
 
@@ -78,15 +80,18 @@ func _on_btn_comfirme_pressed() -> void:
 		sldHautEau.value, 
 		sldPrecipitationMoy.value, 
 		# Placeholders until sld are created
-		100, 
-		100_000_000, 
-		1000,
+		100, # sldErosionIterations.value,
+		100_000_000, # sldTectonicYears.value,
+		1000, # sldAtmosphereSteps.value,
 		sldElevation.value, 
 		sldThread.value, 
 		typePlanete.get_selected_id(), 
 		renderProgress, 
 		lblMapStatus, 
-		sldNbCasesRegions.value
+		sldNbCasesRegions.value,
+		"user://temp/",
+		5.51, # Default gravity (Earth-like)
+		0 # Random seed by default
 	)
 
 	var echelle = 100.0 / sldRayonPlanetaire.value

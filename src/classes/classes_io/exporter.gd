@@ -186,9 +186,9 @@ func _export_topographie_maps(geo_img: Image, output_dir: String, width: int, he
 ##
 ## La PlatesTexture contient :
 ## - R = plate_id (numéro de plaque 0-11)
-## - G = border_dist (distance au bord de plaque)
-## - B = plate_elevation (élévation de base du plateau)
-## - A = is_oceanic (1.0 si océanique, 0.0 si continental)
+## - G = velocity_x (composante X de la vélocité)
+## - B = velocity_y (composante Y de la vélocité)
+## - A = convergence_type (-1=divergence, 0=transformante, +1=convergence)
 ##
 ## @param plates_img: Image RGBAF provenant de la texture GPU "plates"
 ## @param output_dir: Dossier de sortie
@@ -224,23 +224,48 @@ func _export_plates_map(plates_img: Image, output_dir: String, width: int, heigh
 		for x in range(width):
 			var plate_pixel = plates_img.get_pixel(x, y)
 			var plate_id = int(round(plate_pixel.r))
-			var border_dist = plate_pixel.g
-			var is_oceanic = plate_pixel.a > 0.5
+			var _velocity_x = plate_pixel.g  # Pour usage futur (flèches de direction)
+			var _velocity_y = plate_pixel.b
+			var convergence_type = plate_pixel.a  # -1, 0, ou +1
 			
 			# Couleur de la plaque
 			var color = plate_colors[plate_id % plate_colors.size()]
 			
-			# Assombrir les plaques océaniques
-			if is_oceanic:
-				color = color.darkened(0.3)
+			# Modifier la couleur selon le type de frontière
+			# Convergence = plus saturé, Divergence = plus clair
+			if abs(convergence_type) > 0.5:
+				if convergence_type > 0:
+					color = color.darkened(0.2)  # Convergence = plus foncé
+				else:
+					color = color.lightened(0.2)  # Divergence = plus clair
 			
 			plates_colored.set_pixel(x, y, color)
 			
-			# Carte des bordures : VRAIE LIGNE FINE
-			# border_dist < 0.005 = bordure visible (ligne très fine)
-			if border_dist < 0.005:
-				var border_intensity = 1.0 - (border_dist / 0.005)
-				plates_borders.set_pixel(x, y, Color(border_intensity, border_intensity * 0.5, 0.0, 1.0))
+			# Carte des bordures : détecter les transitions de plate_id
+			# Comparer avec les voisins pour trouver les bordures
+			var is_border = false
+			for dx in range(-1, 2):
+				for dy in range(-1, 2):
+					if dx == 0 and dy == 0:
+						continue
+					var nx = (x + dx + width) % width  # Wrap X
+					var ny = clamp(y + dy, 0, height - 1)
+					var neighbor = plates_img.get_pixel(nx, ny)
+					var neighbor_id = int(round(neighbor.r))
+					if neighbor_id != plate_id:
+						is_border = true
+						break
+				if is_border:
+					break
+			
+			if is_border:
+				# Colorer selon le type de convergence
+				var border_color = Color(1.0, 0.5, 0.0, 1.0)  # Orange par défaut
+				if convergence_type > 0.5:
+					border_color = Color(1.0, 0.0, 0.0, 1.0)  # Rouge = convergence
+				elif convergence_type < -0.5:
+					border_color = Color(0.0, 0.5, 1.0, 1.0)  # Bleu = divergence
+				plates_borders.set_pixel(x, y, border_color)
 			else:
 				plates_borders.set_pixel(x, y, Color(0.0, 0.0, 0.0, 0.0))
 	
