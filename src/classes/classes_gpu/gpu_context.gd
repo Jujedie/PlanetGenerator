@@ -8,8 +8,9 @@ const FORMAT_STATE = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
 # geo : GeoTexture (RGBA32F) - R=height, G=bedrock, B=sediment, A=water_height
 # climate : ClimateTexture (RGBA32F) - R=temperature, G=humidity, B=windX, A=windY
 # temp_buffer : Buffer temporaire pour ping-pong
-# plates : PlateTexture (RGBA32F) - R=plate_id, G=velocity_x, B=velocity_y, A=age
-static var TextureID : Array[String] = ["geo", "climate", "temp_buffer", "plates"]
+# plates : PlateTexture (RGBA32F) - R=plate_id, G=velocity_x, B=velocity_y, A=convergence_type
+# crust_age : CrustAgeTexture (RGBA32F) - R=distance_km, G=age_ma, B=subsidence, A=valid
+static var TextureID : Array[String] = ["geo", "climate", "temp_buffer", "plates", "crust_age"]
 
 # === MEMBRES ===
 var rd: RenderingDevice

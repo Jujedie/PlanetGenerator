@@ -107,6 +107,9 @@ func _compile_all_shaders() -> bool:
 	var shaders_to_load = [
 		# Shader de génération topographique de base (Étape 0)
 		{"path": "res://shader/compute/topographie/base_elevation.glsl", "name": "base_elevation", "critical": true},
+		# Shaders d'âge de croûte (JFA + Finalisation)
+		{"path": "res://shader/compute/topographie/crust_age_jfa.glsl", "name": "crust_age_jfa", "critical": false},
+		{"path": "res://shader/compute/topographie/crust_age_finalize.glsl", "name": "crust_age_finalize", "critical": false},
 	]
 	
 	var all_critical_loaded = true
@@ -232,6 +235,43 @@ func _init_uniform_sets():
 	else:
 		push_warning("[Orchestrator] ⚠️ base_elevation shader invalide, uniform set ignoré")
 	
+	# === CRUST AGE JFA SHADER ===
+	if gpu.shaders.has("crust_age_jfa") and gpu.shaders["crust_age_jfa"].is_valid():
+		print("  • Création uniform set: crust_age_jfa")
+		
+		# Set 0 : Textures (plates en lecture, crust_age en lecture/écriture)
+		var uniforms_jfa = [
+			gpu.create_texture_uniform(0, gpu.textures["plates"]),
+			gpu.create_texture_uniform(1, gpu.textures["crust_age"]),
+		]
+		
+		gpu.uniform_sets["crust_age_jfa_textures"] = rd.uniform_set_create(uniforms_jfa, gpu.shaders["crust_age_jfa"], 0)
+		if not gpu.uniform_sets["crust_age_jfa_textures"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create crust_age_jfa textures uniform set")
+		else:
+			print("    ✅ crust_age_jfa textures uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ crust_age_jfa shader invalide, uniform set ignoré")
+	
+	# === CRUST AGE FINALIZE SHADER ===
+	if gpu.shaders.has("crust_age_finalize") and gpu.shaders["crust_age_finalize"].is_valid():
+		print("  • Création uniform set: crust_age_finalize")
+		
+		# Set 0 : Textures (plates, crust_age, geo)
+		var uniforms_finalize = [
+			gpu.create_texture_uniform(0, gpu.textures["plates"]),
+			gpu.create_texture_uniform(1, gpu.textures["crust_age"]),
+			gpu.create_texture_uniform(2, gpu.textures["geo"]),
+		]
+		
+		gpu.uniform_sets["crust_age_finalize_textures"] = rd.uniform_set_create(uniforms_finalize, gpu.shaders["crust_age_finalize"], 0)
+		if not gpu.uniform_sets["crust_age_finalize_textures"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create crust_age_finalize textures uniform set")
+		else:
+			print("    ✅ crust_age_finalize textures uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ crust_age_finalize shader invalide, uniform set ignoré")
+	
 	print("[Orchestrator] ✅ Uniform Sets initialization complete")
 
 # ============================================================================
@@ -270,6 +310,9 @@ func run_simulation() -> void:
 
 	# === ÉTAPE 0 : GÉNÉRATION TOPOGRAPHIQUE DE BASE ===
 	run_base_elevation_phase(generation_params, w, h)
+	
+	# === ÉTAPE 0.5 : ÂGE DE CROÛTE OCÉANIQUE (JFA) ===
+	run_crust_age_phase(generation_params, w, h)
 	
 	# === ÉTAPE 1 : ÉROSION HYDRAULIQUE (À implémenter) ===
 	# run_erosion_phase(generation_params, w, h)
@@ -395,6 +438,164 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	rd.free_rid(param_buffer)
 	
 	print("[Orchestrator] ✅ Phase 0 : Topographie de base générée")
+
+# ============================================================================
+# ÉTAPE 0.5 : ÂGE DE CROÛTE OCÉANIQUE (JFA)
+# ============================================================================
+
+## Calcule l'âge de la croûte océanique via Jump Flooding Algorithm.
+##
+## Le JFA propage la distance depuis les dorsales (frontières divergentes).
+## L'âge est ensuite calculé à partir de cette distance et du taux d'expansion.
+## La subsidence thermique est appliquée au plancher océanique.
+##
+## @param params: Dictionnaire contenant les paramètres de simulation
+## @param w: Largeur de la texture
+## @param h: Hauteur de la texture
+func run_crust_age_phase(params: Dictionary, w: int, h: int) -> void:
+	# Vérifier que les shaders sont disponibles
+	if not gpu.shaders.has("crust_age_jfa") or not gpu.shaders["crust_age_jfa"].is_valid():
+		push_warning("[Orchestrator] ⚠️ crust_age_jfa shader non disponible, phase ignorée")
+		return
+	if not gpu.shaders.has("crust_age_finalize") or not gpu.shaders["crust_age_finalize"].is_valid():
+		push_warning("[Orchestrator] ⚠️ crust_age_finalize shader non disponible, phase ignorée")
+		return
+	if not gpu.uniform_sets.has("crust_age_jfa_textures") or not gpu.uniform_sets["crust_age_jfa_textures"].is_valid():
+		push_warning("[Orchestrator] ⚠️ crust_age_jfa uniform set non disponible, phase ignorée")
+		return
+	
+	print("[Orchestrator] 🌊 Phase 0.5 : Âge de Croûte Océanique (JFA)")
+	
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+	
+	# Paramètres de simulation
+	var spreading_rate = float(params.get("spreading_rate", 50.0))  # km/Ma
+	var planet_radius = float(params.get("planet_radius", 6371.0))  # km
+	var max_age = float(params.get("max_crust_age", 200.0))  # Ma
+	var subsidence_coeff = float(params.get("subsidence_coeff", 2800.0))  # m
+	
+	# Calculer le nombre de passes JFA
+	var max_dim = max(w, h)
+	var num_passes = int(ceil(log(float(max_dim)) / log(2.0))) + 1
+	
+	print("  Spreading Rate: ", spreading_rate, " km/Ma")
+	print("  Planet Radius: ", planet_radius, " km")
+	print("  JFA Passes: ", num_passes)
+	
+	# === PASSE 0 : INITIALISATION ===
+	_dispatch_jfa_pass(w, h, groups_x, groups_y, 0, max_dim, spreading_rate)
+	
+	# === PASSES 1+ : PROPAGATION JFA ===
+	var step_size = max_dim / 2
+	var pass_idx = 1
+	while step_size >= 1:
+		_dispatch_jfa_pass(w, h, groups_x, groups_y, pass_idx, step_size, spreading_rate)
+		step_size = step_size / 2
+		pass_idx += 1
+	
+	print("  JFA terminé après ", pass_idx, " passes")
+	
+	# === PASSE FINALE : CALCUL ÂGE ET SUBSIDENCE ===
+	_dispatch_crust_age_finalize(w, h, groups_x, groups_y, spreading_rate, planet_radius, max_age, subsidence_coeff)
+	
+	print("[Orchestrator] ✅ Phase 0.5 : Âge de croûte calculé")
+
+## Dispatch une passe JFA
+func _dispatch_jfa_pass(w: int, h: int, groups_x: int, groups_y: int, pass_index: int, step_size: int, spreading_rate: float) -> void:
+	# Structure UBO pour crust_age_jfa:
+	# uint width, height, pass_index, step_size (16 bytes)
+	# float spreading_rate, padding1, padding2, padding3 (16 bytes)
+	# Total: 32 bytes
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, w)              # width
+	buffer_bytes.encode_u32(4, h)              # height
+	buffer_bytes.encode_u32(8, pass_index)     # pass_index
+	buffer_bytes.encode_u32(12, step_size)     # step_size
+	buffer_bytes.encode_float(16, spreading_rate)  # spreading_rate
+	buffer_bytes.encode_float(20, 0.0)         # padding1
+	buffer_bytes.encode_float(24, 0.0)         # padding2
+	buffer_bytes.encode_float(28, 0.0)         # padding3
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create JFA param buffer")
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["crust_age_jfa"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create JFA param set")
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["crust_age_jfa"])
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["crust_age_jfa_textures"], 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+
+## Dispatch la passe de finalisation (calcul âge + subsidence)
+func _dispatch_crust_age_finalize(w: int, h: int, groups_x: int, groups_y: int, spreading_rate: float, planet_radius: float, max_age: float, subsidence_coeff: float) -> void:
+	# Structure UBO pour crust_age_finalize:
+	# uint width, height (8 bytes)
+	# float spreading_rate, planet_radius, max_age, subsidence_coeff, padding1, padding2 (24 bytes)
+	# Total: 32 bytes
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, w)                    # width
+	buffer_bytes.encode_u32(4, h)                    # height
+	buffer_bytes.encode_float(8, spreading_rate)    # spreading_rate
+	buffer_bytes.encode_float(12, planet_radius)    # planet_radius
+	buffer_bytes.encode_float(16, max_age)          # max_age
+	buffer_bytes.encode_float(20, subsidence_coeff) # subsidence_coeff
+	buffer_bytes.encode_float(24, 0.0)              # padding1
+	buffer_bytes.encode_float(28, 0.0)              # padding2
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create finalize param buffer")
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["crust_age_finalize"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create finalize param set")
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["crust_age_finalize"])
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["crust_age_finalize_textures"], 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
 
 # ============================================================================
 # EXEMPLE PHASES DE SIMULATION
