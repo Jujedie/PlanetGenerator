@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://dh55xhnlcy38x"
+path="res://.godot/imported/ice_caps.glsl-fd2ac19f86cb99f251a0505c67d7aee4.res"
+
+[deps]
+
+source_file="res://shader/compute/atmosphere_climat/ice_caps.glsl"
+dest_files=["res://.godot/imported/ice_caps.glsl-fd2ac19f86cb99f251a0505c67d7aee4.res"]
+
+[params]
+

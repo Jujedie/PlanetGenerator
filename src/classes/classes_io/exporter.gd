@@ -49,8 +49,11 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	rd.submit()
 	rd.sync()
 	
-	for map_type in gpu.textures.keys():
-		if not gpu.textures[map_type]:
+	# Liste des textures RGBA32F (16 bytes/pixel) - exclure les textures climat
+	var rgba32f_textures = ["geo", "climate", "temp_buffer", "plates", "crust_age"]
+	
+	for map_type in rgba32f_textures:
+		if not gpu.textures.has(map_type) or not gpu.textures[map_type]:
 			push_error("[Exporter] ❌ Missing texture for map type: ", map_type)
 			return {}
 
@@ -61,14 +64,15 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	print("[Exporter] Detected texture size: ", width, "x", height)
 	
 	var maps : Dictionary[String, PackedByteArray] = {}
-	# Read GPU textures
-	for map in gpu.textures.keys():
-		print("[Exporter] Reading texture for map type: ", map)
-		var data = rd.texture_get_data(gpu.textures[map], 0)
-		maps[map] = data
+	# Read GPU textures (only RGBA32F textures)
+	for map in rgba32f_textures:
+		if gpu.textures.has(map):
+			print("[Exporter] Reading texture for map type: ", map)
+			var data = rd.texture_get_data(gpu.textures[map], 0)
+			maps[map] = data
 	
-	# Validate data size based on DETECTED dimensions
-	var expected_size = width * height * 16  # RGBAF32 = 16 bytes/pixel
+	# Validate data size based on DETECTED dimensions (RGBA32F = 16 bytes/pixel)
+	var expected_size = width * height * 16
 	for map in maps.keys():
 		if maps[map].size() != expected_size:
 			push_error("[Exporter] ❌ Data size mismatch for map type: ", map, 
@@ -95,6 +99,11 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		var plates_result = _export_plates_map(imgs["plates"], output_dir, width, height)
 		for key in plates_result.keys():
 			exported_files[key] = plates_result[key]
+	
+	# === EXPORT CLIMAT (Step 3) - Optimisé RGBA8 Direct ===
+	var climate_result = _export_climate_maps_optimized(gpu, output_dir)
+	for key in climate_result.keys():
+		exported_files[key] = climate_result[key]
 	
 	print("[Exporter] Export complete: ", exported_files.size(), " maps")
 	return exported_files
@@ -336,3 +345,88 @@ func _export_raw_heightmap(geo_img: Image, output_dir: String, width: int, heigh
 	else:
 		push_error("[Exporter] ❌ Failed to save raw heightmap: ", err)
 		return ""
+
+# ============================================================================
+# ÉTAPE 3 : EXPORT CLIMAT OPTIMISÉ (RGBA8 DIRECT)
+# ============================================================================
+
+## Exporte les cartes climatiques de l'étape 3 de manière optimisée.
+##
+## Les textures temperature_colored, precipitation_colored, clouds, ice_caps
+## sont déjà en format RGBA8 dans le GPU, donc on peut les exporter directement
+## sans conversion pixel par pixel (bypass du parcours individuel).
+##
+## Cette méthode est 10-100x plus rapide que le parcours pixel par pixel car :
+## - Lecture directe depuis VRAM via rd.texture_get_data()
+## - Création d'image via Image.create_from_data() (mémoire mappée)
+## - Pas de boucle for x/y
+##
+## @param gpu: Instance GPUContext avec les textures climat
+## @param output_dir: Dossier de sortie
+## @return Dictionary: Chemins des fichiers exportés
+func _export_climate_maps_optimized(gpu: GPUContext, output_dir: String) -> Dictionary:
+	print("[Exporter] 🌡️ Exporting climate maps (optimized RGBA8 direct)...")
+	
+	var result = {}
+	var rd = gpu.rd
+	
+	if not rd:
+		push_error("[Exporter] ❌ RenderingDevice not available")
+		return result
+	
+	# Synchroniser le GPU avant lecture
+	rd.submit()
+	rd.sync()
+	
+	# Liste des textures climat à exporter (RGBA8)
+	var climate_textures = {
+		"temperature_colored": "temperature_map.png",
+		"precipitation_colored": "precipitation_map.png",
+		"clouds": "clouds_map.png",
+		"ice_caps": "ice_caps_map.png"
+	}
+	
+	for tex_id in climate_textures.keys():
+		if not gpu.textures.has(tex_id) or not gpu.textures[tex_id].is_valid():
+			print("  ⚠️ Texture '", tex_id, "' non disponible, skip")
+			continue
+		
+		# Lecture directe des données RGBA8 depuis le GPU
+		var data = rd.texture_get_data(gpu.textures[tex_id], 0)
+		
+		if data.size() == 0:
+			push_error("[Exporter] ❌ Empty data for texture: ", tex_id)
+			continue
+		
+		# Récupérer les dimensions depuis le format de texture
+		var tex_format = rd.texture_get_format(gpu.textures[tex_id])
+		var width = tex_format.width
+		var height = tex_format.height
+		
+		# Vérifier la taille des données (RGBA8 = 4 bytes par pixel)
+		var expected_size = width * height * 4
+		if data.size() != expected_size:
+			push_error("[Exporter] ❌ Data size mismatch for ", tex_id, 
+				": expected ", expected_size, ", got ", data.size())
+			continue
+		
+		# Créer l'image directement à partir des données (pas de boucle!)
+		var img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, data)
+		
+		if not img:
+			push_error("[Exporter] ❌ Failed to create image from ", tex_id)
+			continue
+		
+		# Sauvegarder en PNG
+		var filename = climate_textures[tex_id]
+		var filepath = output_dir + "/" + filename
+		var err = img.save_png(filepath)
+		
+		if err == OK:
+			result[tex_id] = filepath
+			print("  ✅ Saved: ", filepath, " (", width, "x", height, ", direct RGBA8)")
+		else:
+			push_error("[Exporter] ❌ Failed to save ", filename, ": ", err)
+	
+	print("[Exporter] ✅ Climate export complete: ", result.size(), " maps")
+	return result

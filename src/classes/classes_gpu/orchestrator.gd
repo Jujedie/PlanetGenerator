@@ -110,6 +110,13 @@ func _compile_all_shaders() -> bool:
 		# Shaders d'âge de croûte (JFA + Finalisation)
 		{"path": "res://shader/compute/topographie/crust_age_jfa.glsl", "name": "crust_age_jfa", "critical": false},
 		{"path": "res://shader/compute/topographie/crust_age_finalize.glsl", "name": "crust_age_finalize", "critical": false},
+		# Shaders Atmosphère & Climat (Étape 3)
+		{"path": "res://shader/compute/atmosphere_climat/temperature.glsl", "name": "temperature", "critical": false},
+		{"path": "res://shader/compute/atmosphere_climat/precipitation.glsl", "name": "precipitation", "critical": false},
+		{"path": "res://shader/compute/atmosphere_climat/clouds_init.glsl", "name": "clouds_init", "critical": false},
+		{"path": "res://shader/compute/atmosphere_climat/clouds_advection.glsl", "name": "clouds_advection", "critical": false},
+		{"path": "res://shader/compute/atmosphere_climat/clouds_render.glsl", "name": "clouds_render", "critical": false},
+		{"path": "res://shader/compute/atmosphere_climat/ice_caps.glsl", "name": "ice_caps", "critical": false},
 	]
 	
 	var all_critical_loaded = true
@@ -272,6 +279,134 @@ func _init_uniform_sets():
 	else:
 		push_warning("[Orchestrator] ⚠️ crust_age_finalize shader invalide, uniform set ignoré")
 	
+	# === ÉTAPE 3 : ATMOSPHÈRE & CLIMAT ===
+	# Initialiser les textures climat avant de créer les uniform sets
+	gpu.initialize_climate_textures()
+	
+	# === TEMPERATURE SHADER ===
+	if gpu.shaders.has("temperature") and gpu.shaders["temperature"].is_valid():
+		print("  • Création uniform set: temperature")
+		
+		# Set 0 : Textures (geo en lecture, climate en écriture, temperature_colored en écriture)
+		var uniforms_temperature = [
+			gpu.create_texture_uniform(0, gpu.textures["geo"]),
+			gpu.create_texture_uniform(1, gpu.textures["climate"]),
+			gpu.create_texture_uniform(2, gpu.textures["temperature_colored"]),
+		]
+		
+		gpu.uniform_sets["temperature_textures"] = rd.uniform_set_create(uniforms_temperature, gpu.shaders["temperature"], 0)
+		if not gpu.uniform_sets["temperature_textures"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create temperature textures uniform set")
+		else:
+			print("    ✅ temperature textures uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ temperature shader invalide, uniform set ignoré")
+	
+	# === PRECIPITATION SHADER ===
+	if gpu.shaders.has("precipitation") and gpu.shaders["precipitation"].is_valid():
+		print("  • Création uniform set: precipitation")
+		
+		# Set 0 : Textures (climate en lecture/écriture, precipitation_colored en écriture)
+		var uniforms_precipitation = [
+			gpu.create_texture_uniform(0, gpu.textures["climate"]),
+			gpu.create_texture_uniform(1, gpu.textures["precipitation_colored"]),
+		]
+		
+		gpu.uniform_sets["precipitation_textures"] = rd.uniform_set_create(uniforms_precipitation, gpu.shaders["precipitation"], 0)
+		if not gpu.uniform_sets["precipitation_textures"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create precipitation textures uniform set")
+		else:
+			print("    ✅ precipitation textures uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ precipitation shader invalide, uniform set ignoré")
+	
+	# === CLOUDS INIT SHADER ===
+	if gpu.shaders.has("clouds_init") and gpu.shaders["clouds_init"].is_valid():
+		print("  • Création uniform set: clouds_init")
+		
+		# Set 0 : Textures (vapor en écriture, climate en écriture pour vent)
+		var uniforms_clouds_init = [
+			gpu.create_texture_uniform(0, gpu.textures["vapor"]),
+			gpu.create_texture_uniform(1, gpu.textures["climate"]),
+		]
+		
+		gpu.uniform_sets["clouds_init_textures"] = rd.uniform_set_create(uniforms_clouds_init, gpu.shaders["clouds_init"], 0)
+		if not gpu.uniform_sets["clouds_init_textures"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create clouds_init textures uniform set")
+		else:
+			print("    ✅ clouds_init textures uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ clouds_init shader invalide, uniform set ignoré")
+	
+	# === CLOUDS ADVECTION SHADER ===
+	if gpu.shaders.has("clouds_advection") and gpu.shaders["clouds_advection"].is_valid():
+		print("  • Création uniform set: clouds_advection")
+		
+		# Set 0 : Textures (vapor en lecture, vapor_temp en écriture, climate en lecture pour vent)
+		var uniforms_advection = [
+			gpu.create_texture_uniform(0, gpu.textures["vapor"]),
+			gpu.create_texture_uniform(1, gpu.textures["vapor_temp"]),
+			gpu.create_texture_uniform(2, gpu.textures["climate"]),
+		]
+		
+		gpu.uniform_sets["clouds_advection_textures"] = rd.uniform_set_create(uniforms_advection, gpu.shaders["clouds_advection"], 0)
+		if not gpu.uniform_sets["clouds_advection_textures"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create clouds_advection textures uniform set")
+		else:
+			print("    ✅ clouds_advection textures uniform set créé")
+		
+		# Créer aussi l'uniform set inverse pour le ping-pong
+		var uniforms_advection_swap = [
+			gpu.create_texture_uniform(0, gpu.textures["vapor_temp"]),
+			gpu.create_texture_uniform(1, gpu.textures["vapor"]),
+			gpu.create_texture_uniform(2, gpu.textures["climate"]),
+		]
+		
+		gpu.uniform_sets["clouds_advection_textures_swap"] = rd.uniform_set_create(uniforms_advection_swap, gpu.shaders["clouds_advection"], 0)
+		if not gpu.uniform_sets["clouds_advection_textures_swap"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create clouds_advection swap textures uniform set")
+		else:
+			print("    ✅ clouds_advection swap textures uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ clouds_advection shader invalide, uniform set ignoré")
+	
+	# === CLOUDS RENDER SHADER ===
+	if gpu.shaders.has("clouds_render") and gpu.shaders["clouds_render"].is_valid():
+		print("  • Création uniform set: clouds_render")
+		
+		# Set 0 : Textures (vapor en lecture, clouds en écriture)
+		var uniforms_render = [
+			gpu.create_texture_uniform(0, gpu.textures["vapor"]),
+			gpu.create_texture_uniform(1, gpu.textures["clouds"]),
+		]
+		
+		gpu.uniform_sets["clouds_render_textures"] = rd.uniform_set_create(uniforms_render, gpu.shaders["clouds_render"], 0)
+		if not gpu.uniform_sets["clouds_render_textures"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create clouds_render textures uniform set")
+		else:
+			print("    ✅ clouds_render textures uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ clouds_render shader invalide, uniform set ignoré")
+	
+	# === ICE CAPS SHADER ===
+	if gpu.shaders.has("ice_caps") and gpu.shaders["ice_caps"].is_valid():
+		print("  • Création uniform set: ice_caps")
+		
+		# Set 0 : Textures (geo en lecture pour water_height, climate en lecture pour température, ice_caps en écriture)
+		var uniforms_ice = [
+			gpu.create_texture_uniform(0, gpu.textures["geo"]),
+			gpu.create_texture_uniform(1, gpu.textures["climate"]),
+			gpu.create_texture_uniform(2, gpu.textures["ice_caps"]),
+		]
+		
+		gpu.uniform_sets["ice_caps_textures"] = rd.uniform_set_create(uniforms_ice, gpu.shaders["ice_caps"], 0)
+		if not gpu.uniform_sets["ice_caps_textures"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create ice_caps textures uniform set")
+		else:
+			print("    ✅ ice_caps textures uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ ice_caps shader invalide, uniform set ignoré")
+	
 	print("[Orchestrator] ✅ Uniform Sets initialization complete")
 
 # ============================================================================
@@ -316,6 +451,9 @@ func run_simulation() -> void:
 	
 	# === ÉTAPE 1 : ÉROSION HYDRAULIQUE (À implémenter) ===
 	# run_erosion_phase(generation_params, w, h)
+	
+	# === ÉTAPE 3 : ATMOSPHÈRE & CLIMAT ===
+	run_atmosphere_phase(generation_params, w, h)
 	
 	print("[Orchestrator] 🧹 Nettoyage de ", _rids_to_free.size(), " ressources temporaires...")
 	if rd:
@@ -587,6 +725,421 @@ func _dispatch_crust_age_finalize(w: int, h: int, groups_x: int, groups_y: int, 
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["crust_age_finalize"])
 	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["crust_age_finalize_textures"], 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+
+# ============================================================================
+# ÉTAPE 3 : ATMOSPHÈRE & CLIMAT
+# ============================================================================
+
+## Génère les cartes climatiques : température, précipitation, nuages, banquise.
+##
+## Cette phase exécute :
+## 1. Température : basée sur latitude, altitude, bruit fBm
+## 2. Précipitation : basée sur 3 types de bruit + influence latitude
+## 3. Nuages : simulation fluide (init, advection x N, render)
+## 4. Banquise : eau + température < 0 avec probabilité
+##
+## Écrit dans ClimateTexture (RGBA32F) :
+## - R = temperature (°C)
+## - G = humidity/precipitation (0-1)
+## - B = wind_x
+## - A = wind_y
+##
+## Écrit aussi dans les textures colorées (RGBA8) pour export direct.
+##
+## @param params: Dictionnaire contenant seed, avg_temperature, avg_precipitation, etc.
+## @param w: Largeur de la texture
+## @param h: Hauteur de la texture
+func run_atmosphere_phase(params: Dictionary, w: int, h: int) -> void:
+	print("[Orchestrator] 🌡️ Phase 3 : Atmosphère & Climat")
+	
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+	
+	var seed_val = int(params.get("seed", 12345))
+	var avg_temperature = float(params.get("avg_temperature", 15.0))
+	var avg_precipitation = float(params.get("avg_precipitation", 0.5))
+	var sea_level = float(params.get("sea_level", 0.0))
+	var atmosphere_type = int(params.get("atmosphere_type", 0))
+	var cylinder_radius = float(w) / (2.0 * PI)
+	
+	# === PASSE 1 : TEMPÉRATURE ===
+	_dispatch_temperature(w, h, groups_x, groups_y, seed_val, avg_temperature, sea_level, cylinder_radius, atmosphere_type)
+	
+	# === PASSE 2 : PRÉCIPITATION ===
+	_dispatch_precipitation(w, h, groups_x, groups_y, seed_val, avg_precipitation, cylinder_radius, atmosphere_type)
+	
+	# === PASSE 3 : NUAGES (SIMULATION FLUIDE) ===
+	var wind_base_speed = float(params.get("wind_base_speed", 10.0))
+	var cloud_iterations = int(params.get("cloud_iterations", 50))
+	var condensation_threshold = float(params.get("condensation_threshold", 0.4))
+	
+	# 3.1 : Initialisation du champ de vapeur et du vent
+	_dispatch_clouds_init(w, h, groups_x, groups_y, seed_val, wind_base_speed, cylinder_radius, atmosphere_type)
+	
+	# 3.2 : Advection (boucle ping-pong)
+	for i in range(cloud_iterations):
+		var use_swap = (i % 2 == 1)
+		_dispatch_clouds_advection(w, h, groups_x, groups_y, i, use_swap)
+	
+	# 3.3 : Rendu des nuages
+	_dispatch_clouds_render(w, h, groups_x, groups_y, seed_val, condensation_threshold, cylinder_radius, atmosphere_type)
+	
+	# === PASSE 4 : BANQUISE ===
+	var ice_probability = float(params.get("ice_probability", 0.9))
+	_dispatch_ice_caps(w, h, groups_x, groups_y, seed_val, ice_probability, atmosphere_type)
+	
+	print("[Orchestrator] ✅ Phase 3 : Atmosphère & Climat terminée")
+
+## Dispatch le shader de température
+func _dispatch_temperature(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, avg_temperature: float, sea_level: float, cylinder_radius: float, atmosphere_type: int) -> void:
+	if not gpu.shaders.has("temperature") or not gpu.shaders["temperature"].is_valid():
+		push_warning("[Orchestrator] ⚠️ temperature shader non disponible")
+		return
+	if not gpu.uniform_sets.has("temperature_textures") or not gpu.uniform_sets["temperature_textures"].is_valid():
+		push_warning("[Orchestrator] ⚠️ temperature uniform set non disponible")
+		return
+	
+	print("  • Température (avg: ", avg_temperature, "°C)")
+	
+	# Structure UBO (std140, 32 bytes):
+	# uint seed, width, height (12 bytes)
+	# float avg_temperature, sea_level, cylinder_radius (12 bytes)
+	# uint atmosphere_type (4 bytes)
+	# padding (4 bytes)
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, seed_val)
+	buffer_bytes.encode_u32(4, w)
+	buffer_bytes.encode_u32(8, h)
+	buffer_bytes.encode_float(12, avg_temperature)
+	buffer_bytes.encode_float(16, sea_level)
+	buffer_bytes.encode_float(20, cylinder_radius)
+	buffer_bytes.encode_u32(24, atmosphere_type)
+	buffer_bytes.encode_u32(28, 0)  # padding
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create temperature param buffer")
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["temperature"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create temperature param set")
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["temperature"])
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["temperature_textures"], 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+
+## Dispatch le shader de précipitation
+func _dispatch_precipitation(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, avg_precipitation: float, cylinder_radius: float, atmosphere_type: int) -> void:
+	if not gpu.shaders.has("precipitation") or not gpu.shaders["precipitation"].is_valid():
+		push_warning("[Orchestrator] ⚠️ precipitation shader non disponible")
+		return
+	if not gpu.uniform_sets.has("precipitation_textures") or not gpu.uniform_sets["precipitation_textures"].is_valid():
+		push_warning("[Orchestrator] ⚠️ precipitation uniform set non disponible")
+		return
+	
+	print("  • Précipitation (avg: ", avg_precipitation, ")")
+	
+	# Structure UBO (std140, 32 bytes):
+	# uint seed, width, height (12 bytes)
+	# float avg_precipitation, cylinder_radius (8 bytes)
+	# uint atmosphere_type (4 bytes)
+	# padding (8 bytes)
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, seed_val)
+	buffer_bytes.encode_u32(4, w)
+	buffer_bytes.encode_u32(8, h)
+	buffer_bytes.encode_float(12, avg_precipitation)
+	buffer_bytes.encode_float(16, cylinder_radius)
+	buffer_bytes.encode_u32(20, atmosphere_type)
+	buffer_bytes.encode_u32(24, 0)  # padding
+	buffer_bytes.encode_u32(28, 0)  # padding
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create precipitation param buffer")
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["precipitation"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create precipitation param set")
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["precipitation"])
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["precipitation_textures"], 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+
+## Dispatch le shader d'initialisation des nuages
+func _dispatch_clouds_init(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, wind_base_speed: float, cylinder_radius: float, atmosphere_type: int) -> void:
+	if not gpu.shaders.has("clouds_init") or not gpu.shaders["clouds_init"].is_valid():
+		push_warning("[Orchestrator] ⚠️ clouds_init shader non disponible")
+		return
+	if not gpu.uniform_sets.has("clouds_init_textures") or not gpu.uniform_sets["clouds_init_textures"].is_valid():
+		push_warning("[Orchestrator] ⚠️ clouds_init uniform set non disponible")
+		return
+	
+	print("  • Nuages - Initialisation (wind speed: ", wind_base_speed, ")")
+	
+	# Structure UBO (std140, 32 bytes):
+	# uint seed, width, height (12 bytes)
+	# float wind_base_speed, cylinder_radius (8 bytes)
+	# uint atmosphere_type (4 bytes)
+	# padding (8 bytes)
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, seed_val)
+	buffer_bytes.encode_u32(4, w)
+	buffer_bytes.encode_u32(8, h)
+	buffer_bytes.encode_float(12, wind_base_speed)
+	buffer_bytes.encode_float(16, cylinder_radius)
+	buffer_bytes.encode_u32(20, atmosphere_type)
+	buffer_bytes.encode_u32(24, 0)  # padding
+	buffer_bytes.encode_u32(28, 0)  # padding
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create clouds_init param buffer")
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["clouds_init"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create clouds_init param set")
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["clouds_init"])
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["clouds_init_textures"], 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+
+## Dispatch le shader d'advection des nuages (une itération)
+func _dispatch_clouds_advection(w: int, h: int, groups_x: int, groups_y: int, iteration: int, use_swap: bool) -> void:
+	if not gpu.shaders.has("clouds_advection") or not gpu.shaders["clouds_advection"].is_valid():
+		push_warning("[Orchestrator] ⚠️ clouds_advection shader non disponible")
+		return
+	
+	var uniform_set_name = "clouds_advection_textures_swap" if use_swap else "clouds_advection_textures"
+	if not gpu.uniform_sets.has(uniform_set_name) or not gpu.uniform_sets[uniform_set_name].is_valid():
+		push_warning("[Orchestrator] ⚠️ clouds_advection uniform set non disponible")
+		return
+	
+	# Structure UBO (std140, 32 bytes):
+	# uint width, height (8 bytes)
+	# float dt, dissipation (8 bytes)
+	# uint iteration (4 bytes)
+	# padding (12 bytes)
+	
+	var dt = 0.016  # 60 FPS equivalent
+	var dissipation = 0.995  # Légère dissipation
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_float(8, dt)
+	buffer_bytes.encode_float(12, dissipation)
+	buffer_bytes.encode_u32(16, iteration)
+	buffer_bytes.encode_u32(20, 0)  # padding
+	buffer_bytes.encode_u32(24, 0)  # padding
+	buffer_bytes.encode_u32(28, 0)  # padding
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create clouds_advection param buffer")
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["clouds_advection"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create clouds_advection param set")
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["clouds_advection"])
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets[uniform_set_name], 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+
+## Dispatch le shader de rendu des nuages
+func _dispatch_clouds_render(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, condensation_threshold: float, cylinder_radius: float, atmosphere_type: int) -> void:
+	if not gpu.shaders.has("clouds_render") or not gpu.shaders["clouds_render"].is_valid():
+		push_warning("[Orchestrator] ⚠️ clouds_render shader non disponible")
+		return
+	if not gpu.uniform_sets.has("clouds_render_textures") or not gpu.uniform_sets["clouds_render_textures"].is_valid():
+		push_warning("[Orchestrator] ⚠️ clouds_render uniform set non disponible")
+		return
+	
+	print("  • Nuages - Rendu (condensation: ", condensation_threshold, ")")
+	
+	# Structure UBO (std140, 32 bytes):
+	# uint seed, width, height (12 bytes)
+	# float condensation_threshold, cylinder_radius (8 bytes)
+	# uint atmosphere_type (4 bytes)
+	# padding (8 bytes)
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, seed_val)
+	buffer_bytes.encode_u32(4, w)
+	buffer_bytes.encode_u32(8, h)
+	buffer_bytes.encode_float(12, condensation_threshold)
+	buffer_bytes.encode_float(16, cylinder_radius)
+	buffer_bytes.encode_u32(20, atmosphere_type)
+	buffer_bytes.encode_u32(24, 0)  # padding
+	buffer_bytes.encode_u32(28, 0)  # padding
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create clouds_render param buffer")
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["clouds_render"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create clouds_render param set")
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["clouds_render"])
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["clouds_render_textures"], 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+
+## Dispatch le shader de banquise
+func _dispatch_ice_caps(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, ice_probability: float, atmosphere_type: int) -> void:
+	if not gpu.shaders.has("ice_caps") or not gpu.shaders["ice_caps"].is_valid():
+		push_warning("[Orchestrator] ⚠️ ice_caps shader non disponible")
+		return
+	if not gpu.uniform_sets.has("ice_caps_textures") or not gpu.uniform_sets["ice_caps_textures"].is_valid():
+		push_warning("[Orchestrator] ⚠️ ice_caps uniform set non disponible")
+		return
+	
+	print("  • Banquise (probabilité: ", ice_probability, ")")
+	
+	# Structure UBO (std140, 32 bytes):
+	# uint seed, width, height (12 bytes)
+	# float ice_probability (4 bytes)
+	# uint atmosphere_type (4 bytes)
+	# padding (12 bytes)
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, seed_val)
+	buffer_bytes.encode_u32(4, w)
+	buffer_bytes.encode_u32(8, h)
+	buffer_bytes.encode_float(12, ice_probability)
+	buffer_bytes.encode_u32(16, atmosphere_type)
+	buffer_bytes.encode_u32(20, 0)  # padding
+	buffer_bytes.encode_u32(24, 0)  # padding
+	buffer_bytes.encode_u32(28, 0)  # padding
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create ice_caps param buffer")
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["ice_caps"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create ice_caps param set")
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["ice_caps"])
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["ice_caps_textures"], 0)
 	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()

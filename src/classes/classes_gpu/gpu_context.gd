@@ -3,6 +3,8 @@ class_name GPUContext
 
 # === CONSTANTES DE CONFIGURATION ===
 const FORMAT_STATE = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
+const FORMAT_RGBA8 = RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM
+const FORMAT_R32F = RenderingDevice.DATA_FORMAT_R32_SFLOAT
 
 # IDs des textures GPU utilisées dans la pipeline
 # geo : GeoTexture (RGBA32F) - R=height, G=bedrock, B=sediment, A=water_height
@@ -11,6 +13,15 @@ const FORMAT_STATE = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
 # plates : PlateTexture (RGBA32F) - R=plate_id, G=velocity_x, B=velocity_y, A=convergence_type
 # crust_age : CrustAgeTexture (RGBA32F) - R=distance_km, G=age_ma, B=subsidence, A=valid
 static var TextureID : Array[String] = ["geo", "climate", "temp_buffer", "plates", "crust_age"]
+
+# Textures Étape 3 - Atmosphère & Climat
+# vapor : VaporTexture (R32F) - densité de vapeur d'eau pour simulation fluide
+# vapor_temp : VaporTempTexture (R32F) - buffer ping-pong pour advection
+# temperature_colored : (RGBA8) - couleur température pour export direct
+# precipitation_colored : (RGBA8) - couleur précipitation pour export direct
+# clouds : (RGBA8) - nuages blanc/transparent
+# ice_caps : (RGBA8) - banquise blanc/transparent
+static var TextureID_Climat : Array[String] = ["vapor", "vapor_temp", "temperature_colored", "precipitation_colored", "clouds", "ice_caps"]
 
 # === MEMBRES ===
 var rd: RenderingDevice
@@ -66,6 +77,7 @@ func get_vram_usage() -> String:
 
 # === CRÉATION DES TEXTURES ===
 func _initialize_textures() -> void:
+	# Format RGBA32F pour textures d'état
 	var format := RDTextureFormat.new()
 	format.width = resolution.x
 	format.height = resolution.y
@@ -77,10 +89,10 @@ func _initialize_textures() -> void:
 		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
 	)
 	
-	# Créer les 4 textures
+	# Créer les textures d'état (RGBA32F)
 	for tex_id in TextureID:
 		var data = PackedByteArray()
-		data.resize(resolution.x * resolution.y * 16)
+		data.resize(resolution.x * resolution.y * 16)  # 16 bytes per pixel (RGBA32F)
 		data.fill(0)
 		
 		var view := RDTextureView.new()
@@ -92,7 +104,76 @@ func _initialize_textures() -> void:
 			
 		textures[tex_id] = rid
 	
-	print("✅ Textures GPU créées (4x %d KB)" % (resolution.x * resolution.y * 16 / 1024))
+	print("✅ Textures GPU d'état créées (%d x %d KB)" % [TextureID.size(), resolution.x * resolution.y * 16 / 1024])
+
+# === CRÉATION DES TEXTURES CLIMAT (Étape 3) ===
+func initialize_climate_textures() -> void:
+	"""
+	Initialise les textures spécifiques à l'étape 3 (Atmosphère & Climat).
+	Appelé par l'orchestrateur avant la phase atmosphérique.
+	"""
+	
+	# Format R32F pour textures de vapeur (ping-pong)
+	var format_r32f := RDTextureFormat.new()
+	format_r32f.width = resolution.x
+	format_r32f.height = resolution.y
+	format_r32f.format = FORMAT_R32F
+	format_r32f.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Format RGBA8 pour textures colorées (export direct)
+	var format_rgba8 := RDTextureFormat.new()
+	format_rgba8.width = resolution.x
+	format_rgba8.height = resolution.y
+	format_rgba8.format = FORMAT_RGBA8
+	format_rgba8.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Créer les textures de vapeur (R32F - 4 bytes par pixel)
+	for tex_id in ["vapor", "vapor_temp"]:
+		if textures.has(tex_id):
+			continue  # Déjà créée
+		
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 4)  # 4 bytes per pixel (R32F)
+		data.fill(0)
+		
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_r32f, view, [data])
+		
+		if not rid.is_valid():
+			push_error("❌ Échec création texture vapeur:", tex_id)
+			continue
+			
+		textures[tex_id] = rid
+	
+	# Créer les textures colorées (RGBA8 - 4 bytes par pixel)
+	for tex_id in ["temperature_colored", "precipitation_colored", "clouds", "ice_caps"]:
+		if textures.has(tex_id):
+			continue  # Déjà créée
+		
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 4)  # 4 bytes per pixel (RGBA8)
+		data.fill(0)
+		
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_rgba8, view, [data])
+		
+		if not rid.is_valid():
+			push_error("❌ Échec création texture colorée:", tex_id)
+			continue
+			
+		textures[tex_id] = rid
+	
+	print("✅ Textures climat créées (2x R32F + 4x RGBA8)")
 
 # === CHARGEMENT DES SHADERS (SÉCURISÉ) ===
 func load_compute_shader(glsl_path: String, shader_name: String) -> bool:
@@ -154,11 +235,23 @@ func readback_texture(tex_id: String) -> Image:
 		return null
 	
 	var data := rd.texture_get_data(textures[tex_id], 0)
+	
+	# Déterminer le format de l'image selon le type de texture
+	var img_format = Image.FORMAT_RGBAF
+	
+	# Textures RGBA8 (colorées)
+	if tex_id in ["temperature_colored", "precipitation_colored", "clouds", "ice_caps"]:
+		img_format = Image.FORMAT_RGBA8
+	# Textures R32F (vapeur)
+	elif tex_id in ["vapor", "vapor_temp"]:
+		img_format = Image.FORMAT_RF
+	# Textures RGBA32F (par défaut)
+	
 	var img := Image.create_from_data(
 		resolution.x,
 		resolution.y,
 		false,
-		Image.FORMAT_RGBAF,
+		img_format,
 		data
 	)
 	return img

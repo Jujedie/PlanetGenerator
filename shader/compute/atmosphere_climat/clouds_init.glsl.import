@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://c048naej5eaxn"
+path="res://.godot/imported/clouds_init.glsl-312a200bbd413bf46afffddc89deb079.res"
+
+[deps]
+
+source_file="res://shader/compute/atmosphere_climat/clouds_init.glsl"
+dest_files=["res://.godot/imported/clouds_init.glsl-312a200bbd413bf46afffddc89deb079.res"]
+
+[params]
+
