@@ -324,12 +324,13 @@ vec2 getPlateVelocity(int plateId, uint seed) {
 
 // Détermine si un point est océanique basé sur le bruit continental
 // Indépendant des plaques - permet zones mixtes dans une même plaque
+// CORRECTION: Seuil ajusté pour plus de terres émergées (~55% océan)
 bool isLocallyOceanic(vec3 coords, float cylinder_radius, uint seed) {
     // Bruit continental à grande échelle
     float continental_freq = 0.8 / cylinder_radius;
     float continentalNoise = fbm(coords * continental_freq, 6, 0.6, 2.0, seed + 77777u);
-    // Seuil : ~60% océan, ~40% continent
-    return continentalNoise < 0.1;
+    // Seuil : ~55% océan, ~45% continent (changé de 0.1 à 0.05)
+    return continentalNoise < 0.05;
 }
 
 // Distance cyclique sur X (wrap horizontal pour continuité)
@@ -374,14 +375,14 @@ vec2 noise2D(vec2 p, uint seed) {
 }
 
 // Perturbation multi-octaves pour les bordures de plaques (Domain Warping)
-// Appliqué en espace sphérique pour cohérence avec la projection
+// CORRECTION: Amplitude réduite pour éviter les archipels ovaux
 vec2 domainWarp(vec2 uv, uint seed) {
     vec2 offset = vec2(0.0);
-    float amplitude = 0.05;   // Force de la perturbation
-    float frequency = 4.0;    // Fréquence de base
+    float amplitude = 0.025;  // Réduit de 0.05 à 0.025 - moins de déformation
+    float frequency = 6.0;    // Augmenté pour plus de détails fins
     
-    // 4 octaves pour bordures organiques et fractales
-    for (int i = 0; i < 4; i++) {
+    // 3 octaves suffisent (réduit de 4 à 3)
+    for (int i = 0; i < 3; i++) {
         offset += noise2D(uv * frequency, seed + uint(i) * 5000u) * amplitude;
         amplitude *= 0.5;
         frequency *= 2.0;
@@ -480,7 +481,8 @@ PlateInfo findClosestPlate(vec2 uv, uint seed) {
 }
 
 // Calcule l'uplift tectonique basé sur le type de frontière
-float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, vec3 coords, uint seed) {
+// CORRECTION: Ajout paramètre currentElevation pour atténuer effets sous l'eau
+float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, vec3 coords, uint seed, float currentElevation) {
     if (info.borderStrength < 0.05) {
         return 0.0;  // Trop loin de la bordure
     }
@@ -488,6 +490,14 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
     float uplift = 0.0;
     float convergence = info.convergence;
     float strength = info.borderStrength;
+    
+    // CORRECTION: Atténuer les effets tectoniques négatifs sous l'eau profonde
+    // Pour éviter les bordures de plaques trop visibles sur la heightmap
+    float underwaterDamping = 1.0;
+    if (currentElevation < -500.0) {
+        // Plus on est profond, moins les fosses sont marquées
+        underwaterDamping = max(0.3, 1.0 + currentElevation / 4000.0);
+    }
     
     // Bruit local pour variation le long de la frontière
     float localNoise = fbm(coords * 0.02, 4, 0.6, 2.0, seed + 88888u);
@@ -505,8 +515,8 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
             // Position relative pour asymétrie
             float side = sign(dot(info.velocity1, vec2(1.0, 0.0)));
             if (info.borderDist < 0.01) {
-                // Fosse profonde
-                uplift = -strength * 5000.0 * conv_strength;
+                // Fosse profonde (atténuée sous l'eau)
+                uplift = -strength * 5000.0 * conv_strength * underwaterDamping;
             } else if (info.borderDist < 0.03) {
                 // Arc insulaire (50-100km en arrière de la fosse)
                 float arcFactor = smoothstep(0.01, 0.015, info.borderDist) * 
@@ -516,8 +526,8 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
         } else {
             // Océan-Continent : Subduction asymétrique
             if (isOceanic1) {
-                // Ce côté est océanique - FOSSE
-                uplift = -strength * 4000.0 * conv_strength;
+                // Ce côté est océanique - FOSSE (atténuée sous l'eau)
+                uplift = -strength * 4000.0 * conv_strength * underwaterDamping;
             } else {
                 // Ce côté est continental - CORDILLÈRE
                 uplift = strength * 3000.0 * conv_strength;
@@ -686,14 +696,25 @@ void main() {
     
     // === MASQUE CONTINENTAL (indépendant des plaques) ===
     // Crée la dichotomie océan/continent de façon naturelle
+    // CORRECTION: Seuil ajusté + élévations pour plus de terres
     float continentalNoise = fbm(coords * continental_freq, 6, 0.6, 2.0, params.seed + 77777u);
-    bool isOceanic = continentalNoise < 0.1;  // ~60% océan
+    bool isOceanic = continentalNoise < 0.05;  // ~55% océan (changé de 0.1)
     
-    // Élévation de base continent/océan
-    float baseElevation = isOceanic ? -2500.0 : 200.0;
+    // Élévation de base continent/océan (valeurs augmentées pour les continents)
+    // CORRECTION: Continent plus haut (+400 au lieu de +200)
+    float oceanElev = -2200.0;   // Océan moins profond
+    float continentElev = 400.0; // Continent plus élevé
     // Transition douce entre océan et continent
-    float oceanContBlend = smoothstep(-0.1, 0.3, continentalNoise);
-    baseElevation = mix(-2500.0, 200.0, oceanContBlend);
+    float oceanContBlend = smoothstep(-0.15, 0.25, continentalNoise);
+    float baseElevation = mix(oceanElev, continentElev, oceanContBlend);
+    
+    // === BRUIT PRINCIPAL (Relief général) ===
+    // Calculé en premier car utilisé pour l'atténuation tectonique sous l'eau
+    float noise1 = fbm(coords * base_freq, 8, 0.75, 2.0, params.seed);
+    float noise2 = fbm(coords * base_freq, 8, 0.75, 2.0, params.seed + 10000u);
+    
+    // Relief de bruit (avec biais positif de +200m pour plus de terres)
+    float noiseElevation = noise1 * 3500.0 + 200.0 + clamp(noise2, 0.0, 1.0) * params.elevation_modifier;
     
     // === PLAQUES TECTONIQUES (Voronoi sphérique) ===
     PlateInfo plateInfo = findClosestPlate(uv, params.seed);
@@ -710,7 +731,8 @@ void main() {
     bool isOceanic2 = fbm(coords2 * continental_freq, 6, 0.6, 2.0, params.seed + 77777u) < 0.1;
     
     // === UPLIFT TECTONIQUE AUX FRONTIÈRES ===
-    float tectonicUplift = calculateTectonicUplift(plateInfo, isOceanic1, isOceanic2, coords, params.seed);
+    // CORRECTION: Passer l'élévation de base pour atténuer sous l'eau
+    float tectonicUplift = calculateTectonicUplift(plateInfo, isOceanic1, isOceanic2, coords, params.seed, baseElevation + noiseElevation);
     
     // === TRIPLE JUNCTIONS (là où 3+ plaques se rencontrent) ===
     float tripleJunctionUplift = calculateTripleJunctionUplift(uv, coords, params.seed, continental_freq);
@@ -721,13 +743,6 @@ void main() {
     
     // Plafonner l'uplift total (réalisme géologique)
     tectonicUplift = clamp(tectonicUplift, -8000.0, 6000.0);
-    
-    // === BRUIT PRINCIPAL (Relief général) ===
-    float noise1 = fbm(coords * base_freq, 8, 0.75, 2.0, params.seed);
-    float noise2 = fbm(coords * base_freq, 8, 0.75, 2.0, params.seed + 10000u);
-    
-    // Relief de bruit
-    float noiseElevation = noise1 * 3500.0 + clamp(noise2, 0.0, 1.0) * params.elevation_modifier;
     
     // === STRUCTURES TECTONIQUES LEGACY (Chaînes de montagnes supplémentaires) ===
     float tectonic_mountain = abs(fbmSimplex(coords * tectonic_freq, 10, 0.55, 2.0, params.seed + 20000u));

@@ -145,10 +145,13 @@ func _export_topographie_maps(geo_img: Image, output_dir: String, width: int, he
 			var elevation_meters = geo_pixel.r  # Élévation en mètres (float)
 			var water_height = geo_pixel.a       # Colonne d'eau
 			
-			# Convertir l'élévation float en entier (arrondi)
-			var elevation_int = int(round(elevation_meters))
+			# CORRECTION: Utiliser l'altitude RELATIVE au niveau de l'eau
+			# Les couleurs représentent maintenant la hauteur par rapport à l'eau
+			var sea_level = params.get("sea_level", 0.0)
+			var relative_elevation = elevation_meters - sea_level
+			var elevation_int = int(round(relative_elevation))
 			
-			# Obtenir les couleurs via Enum.gd
+			# Obtenir les couleurs via Enum.gd (altitude relative)
 			var color_colored = Enum.getElevationColor(elevation_int, false)
 			var color_grey = Enum.getElevationColor(elevation_int, true)
 			

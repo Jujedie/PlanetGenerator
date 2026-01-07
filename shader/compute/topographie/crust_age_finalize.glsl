@@ -151,16 +151,18 @@ void main() {
     vec4 geo = imageLoad(geo_texture, pixel);
     float height = geo.r;
     
-    // Ne modifier que les pixels océaniques (élévation négative ou proche de 0)
-    // et avec un âge valide
-    if (height < 500.0 && age_ma > 0.0) {
-        // Appliquer la subsidence (enfoncement)
-        height -= subsidence;
+    // CORRECTION : Ne modifier QUE les zones océaniques profondes avec croûte jeune
+    // Condition stricte : (1) sous le niveau de la mer ET (2) âge valide ET (3) pas trop vieux
+    if (height < -100.0 && age_ma > 0.0 && age_ma < 150.0) {
+        // Appliquer une subsidence MODÉRÉE (éviter sur-enfoncement)
+        // Coefficient réduit pour équilibrer avec les autres effets
+        float effective_subsidence = subsidence * 0.8;
+        height -= effective_subsidence;
         
-        // Mettre à jour la colonne d'eau si nécessaire
-        float sea_level = 0.0;  // On suppose sea_level = 0 pour simplifier
+        // Mettre à jour la colonne d'eau
+        float sea_level = 0.0;
         if (height < sea_level) {
-            geo.a = sea_level - height;  // Colonne d'eau
+            geo.a = sea_level - height;
         }
         
         geo.r = height;
