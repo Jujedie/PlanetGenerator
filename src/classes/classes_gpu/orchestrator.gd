@@ -779,9 +779,9 @@ func run_atmosphere_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# === PASSE 3 : NUAGES (SIMULATION FLUIDE) ===
 	var wind_base_speed = float(params.get("wind_base_speed", 10.0))
-	# Plus d'itérations = structures atmosphériques plus détaillées (cyclones, fronts)
-	var cloud_iterations = int(params.get("cloud_iterations", 150))
-	var condensation_threshold = float(params.get("condensation_threshold", 0.4))
+	# Itérations pour cohérence temporelle (le réalisme est dans clouds_render)
+	var cloud_iterations = int(params.get("cloud_iterations", 100))
+	var condensation_threshold = float(params.get("condensation_threshold", 0.35))
 	
 	# 3.1 : Initialisation du champ de vapeur et du vent
 	_dispatch_clouds_init(w, h, groups_x, groups_y, seed_val, wind_base_speed, cylinder_radius, atmosphere_type)
@@ -991,8 +991,8 @@ func _dispatch_clouds_advection(w: int, h: int, groups_x: int, groups_y: int, it
 	# uint iteration (4 bytes)
 	# padding (12 bytes)
 	
-	var dt = 0.016  # 60 FPS equivalent
-	var dissipation = 0.995  # Légère dissipation
+	var dt = 0.5  # Pas de temps plus grand pour stabilité
+	var dissipation = 0.998  # Dissipation réduite pour préserver les structures
 	
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(32)
