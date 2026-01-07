@@ -118,21 +118,25 @@ void main() {
     
     // === CALCUL DE LA SUBSIDENCE THERMIQUE ===
     
-    // Modèle de Parsons & Sclater (1977):
-    // La subsidence représente l'enfoncement du plancher océanique
-    // par rapport à la crête (dorsale) due au refroidissement
+    // Modèle de Parsons & Sclater (1977) - Formule GÉOLOGIQUE CORRECTE:
+    // depth(t) = 2600 + 365 * sqrt(t)  où t est en Ma
     //
-    // depth(t) = depth_ridge + c * sqrt(t)
-    // où c ≈ 350 m/Ma^0.5 (empirique)
+    // À la dorsale (t=0): depth = 2600m (reference)
+    // À 100 Ma: depth = 2600 + 365*10 = 6250m
+    // 
+    // La subsidence est la différence par rapport à la dorsale
+    // subsidence = 365 * sqrt(t)
     
     float subsidence = 0.0;
     if (age_ma > 0.0) {
-        // Modèle racine carrée simplifié
-        // subsidence = coeff * sqrt(age / 100) pour normaliser
-        subsidence = params.subsidence_coeff * sqrt(age_ma / 100.0);
+        // Formule de Parsons & Sclater exacte
+        // 365 m/Ma^0.5 est le coefficient empirique vérifié
+        subsidence = 365.0 * sqrt(age_ma);
         
-        // Plafond de subsidence (~3400m pour croûte de 125 Ma)
-        float max_subsidence = params.subsidence_coeff * sqrt(1.25);
+        // Plafond de subsidence réaliste
+        // Croûte de 180 Ma: 365 * sqrt(180) ≈ 4900m de subsidence
+        // Depth max: 2600 + 4900 = 7500m (fosses océaniques)
+        float max_subsidence = 365.0 * sqrt(180.0);  // ~4900m
         subsidence = min(subsidence, max_subsidence);
     }
     
@@ -151,13 +155,30 @@ void main() {
     vec4 geo = imageLoad(geo_texture, pixel);
     float height = geo.r;
     
-    // CORRECTION : Ne modifier QUE les zones océaniques profondes avec croûte jeune
-    // Condition stricte : (1) sous le niveau de la mer ET (2) âge valide ET (3) pas trop vieux
-    if (height < -100.0 && age_ma > 0.0 && age_ma < 150.0) {
-        // Appliquer une subsidence MODÉRÉE (éviter sur-enfoncement)
-        // Coefficient réduit pour équilibrer avec les autres effets
-        float effective_subsidence = subsidence * 0.8;
-        height -= effective_subsidence;
+    // CORRECTION MAJEURE: Application de la subsidence aux zones océaniques
+    // Conditions élargies pour créer correctement les bassins océaniques:
+    // (1) Zone océanique (sous le niveau de la mer OU faible altitude)
+    // (2) Âge valide
+    // (3) Âge < 180 Ma (croûte plus vieille est subduite)
+    if (height < 200.0 && age_ma > 0.0 && age_ma < 180.0) {
+        // La subsidence REMPLACE l'élévation de base pour les zones océaniques
+        // Référence: dorsale à -2600m, puis subsidence ajoute de la profondeur
+        float ridge_depth = -2600.0;
+        
+        // Pour les zones vraiment océaniques (sous le niveau de la mer)
+        if (height < 0.0) {
+            // Calcul de la profondeur totale selon Parsons & Sclater
+            float ocean_depth = ridge_depth - subsidence;
+            
+            // Mélanger avec la hauteur existante pour lisser la transition
+            // Plus l'âge est grand, plus on fait confiance au modèle de subsidence
+            float age_factor = smoothstep(0.0, 50.0, age_ma);
+            height = mix(height, ocean_depth, age_factor * 0.7);
+        } else {
+            // Zones côtières/shelf: subsidence atténuée
+            float shelf_subsidence = subsidence * 0.3 * (1.0 - height / 200.0);
+            height -= shelf_subsidence;
+        }
         
         // Mettre à jour la colonne d'eau
         float sea_level = 0.0;

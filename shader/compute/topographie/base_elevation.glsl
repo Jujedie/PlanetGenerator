@@ -375,14 +375,19 @@ vec2 noise2D(vec2 p, uint seed) {
 }
 
 // Perturbation multi-octaves pour les bordures de plaques (Domain Warping)
-// CORRECTION: Amplitude réduite pour éviter les archipels ovaux
+// Amplitude ajustée pour masquer les artefacts de wrapping tout en évitant les ovales
 vec2 domainWarp(vec2 uv, uint seed) {
     vec2 offset = vec2(0.0);
-    float amplitude = 0.025;  // Réduit de 0.05 à 0.025 - moins de déformation
-    float frequency = 6.0;    // Augmenté pour plus de détails fins
     
-    // 3 octaves suffisent (réduit de 4 à 3)
-    for (int i = 0; i < 3; i++) {
+    // Amplitude de base augmentée près des bords X pour masquer les lignes droites
+    float edgeDistance = min(uv.x, 1.0 - uv.x);  // Distance au bord le plus proche
+    float edgeBoost = smoothstep(0.15, 0.0, edgeDistance);  // Boost près des bords
+    
+    float amplitude = 0.035 + edgeBoost * 0.02;  // 0.035 base, jusqu'à 0.055 aux bords
+    float frequency = 5.0;
+    
+    // 4 octaves pour plus de variété organique
+    for (int i = 0; i < 4; i++) {
         offset += noise2D(uv * frequency, seed + uint(i) * 5000u) * amplitude;
         amplitude *= 0.5;
         frequency *= 2.0;
@@ -449,8 +454,9 @@ PlateInfo findClosestPlate(vec2 uv, uint seed) {
     float borderDist = secondDist - minDist;
     
     // Décroissance exponentielle pour effet localisé aux bordures
-    // Facteur 100 : effet significatif jusqu'à ~0.02 rad (~1.1°)
-    float borderStrength = exp(-borderDist * 100.0);
+    // Facteur 20 : effet significatif jusqu'à ~0.1 rad (~6°, ~400km)
+    // Cela crée des chaînes de montagnes réalistes de 200-400km de large
+    float borderStrength = exp(-borderDist * 20.0);
     borderStrength = clamp(borderStrength, 0.0, 1.0);
     
     // Vélocités des deux plaques
@@ -698,23 +704,69 @@ void main() {
     // Crée la dichotomie océan/continent de façon naturelle
     // CORRECTION: Seuil ajusté + élévations pour plus de terres
     float continentalNoise = fbm(coords * continental_freq, 6, 0.6, 2.0, params.seed + 77777u);
-    bool isOceanic = continentalNoise < 0.05;  // ~55% océan (changé de 0.1)
+    bool isOceanic = continentalNoise < 0.05;  // ~55% océan
     
-    // Élévation de base continent/océan (valeurs augmentées pour les continents)
-    // CORRECTION: Continent plus haut (+400 au lieu de +200)
-    float oceanElev = -2200.0;   // Océan moins profond
-    float continentElev = 400.0; // Continent plus élevé
-    // Transition douce entre océan et continent
-    float oceanContBlend = smoothstep(-0.15, 0.25, continentalNoise);
-    float baseElevation = mix(oceanElev, continentElev, oceanContBlend);
+    // === SYSTÈME D'ÉLÉVATION À 5 NIVEAUX ===
+    // Basé sur la courbe hypsométrique terrestre réelle
+    // Niveau 1: Océan profond (dorsale de référence) = -2600m
+    // Niveau 2: Plateau continental (shelf) = -100m à 0m
+    // Niveau 3: Plaines côtières = 0m à 150m
+    // Niveau 4: Plaines intérieures/bassins = 50m à 300m
+    // Niveau 5: Hauts plateaux = 500m à 1000m
+    
+    float oceanElev = -2600.0;     // Dorsale médio-océanique (référence)
+    float shelfElev = -50.0;       // Plateau continental
+    float coastalElev = 50.0;      // Plaines côtières
+    float plainsElev = 150.0;      // Plaines intérieures
+    float plateauElev = 600.0;     // Hauts plateaux (rares)
+    
+    // Bruit secondaire pour varier les types de terrain continental
+    float basinNoise = fbm(coords * continental_freq * 0.5, 4, 0.5, 2.0, params.seed + 88888u);
+    
+    float baseElevation;
+    if (continentalNoise < -0.15) {
+        // Océan profond
+        baseElevation = oceanElev;
+    } else if (continentalNoise < 0.0) {
+        // Transition océan → plateau continental
+        float t = smoothstep(-0.15, 0.0, continentalNoise);
+        baseElevation = mix(oceanElev, shelfElev, t);
+    } else if (continentalNoise < 0.1) {
+        // Plateau continental → plaines côtières
+        float t = smoothstep(0.0, 0.1, continentalNoise);
+        baseElevation = mix(shelfElev, coastalElev, t);
+    } else if (continentalNoise < 0.25) {
+        // Plaines côtières → plaines intérieures
+        // Avec possibilité de bassins sédimentaires (zones basses)
+        float t = smoothstep(0.1, 0.25, continentalNoise);
+        float targetElev = plainsElev;
+        // Bassins sédimentaires : zones déprimées à l'intérieur des continents
+        if (basinNoise < -0.2) {
+            targetElev = mix(0.0, 100.0, (basinNoise + 0.5) / 0.3);  // Bassin: 0-100m
+        }
+        baseElevation = mix(coastalElev, targetElev, t);
+    } else {
+        // Intérieur continental : plaines ou plateaux selon basinNoise
+        if (basinNoise > 0.3) {
+            // Hauts plateaux (zones élevées stables type Tibet, Altiplano)
+            baseElevation = mix(plainsElev, plateauElev, smoothstep(0.3, 0.5, basinNoise));
+        } else if (basinNoise < -0.1) {
+            // Bassins intracontinentaux (type Bassin parisien)
+            baseElevation = mix(50.0, plainsElev, (basinNoise + 0.3) / 0.2);
+        } else {
+            // Plaines standards
+            baseElevation = plainsElev;
+        }
+    }
     
     // === BRUIT PRINCIPAL (Relief général) ===
-    // Calculé en premier car utilisé pour l'atténuation tectonique sous l'eau
+    // Amplitude réduite pour permettre plus de plaines
     float noise1 = fbm(coords * base_freq, 8, 0.75, 2.0, params.seed);
     float noise2 = fbm(coords * base_freq, 8, 0.75, 2.0, params.seed + 10000u);
     
-    // Relief de bruit (avec biais positif de +200m pour plus de terres)
-    float noiseElevation = noise1 * 3500.0 + 200.0 + clamp(noise2, 0.0, 1.0) * params.elevation_modifier;
+    // Relief de bruit : amplitude 2000m (réduit de 3500m), SANS biais positif
+    // Le biais était responsable de l'absence de plaines
+    float noiseElevation = noise1 * 2000.0 + clamp(noise2, 0.0, 1.0) * params.elevation_modifier;
     
     // === PLAQUES TECTONIQUES (Voronoi sphérique) ===
     PlateInfo plateInfo = findClosestPlate(uv, params.seed);
@@ -745,12 +797,13 @@ void main() {
     tectonicUplift = clamp(tectonicUplift, -8000.0, 6000.0);
     
     // === STRUCTURES TECTONIQUES LEGACY (Chaînes de montagnes supplémentaires) ===
+    // Amplitude réduite de 2500m à 1500m, seuil élargi pour chaînes plus douces
     float tectonic_mountain = abs(fbmSimplex(coords * tectonic_freq, 10, 0.55, 2.0, params.seed + 20000u));
     
     float legacyMountains = 0.0;
-    if (tectonic_mountain > 0.45 && tectonic_mountain < 0.55) {
-        float band_strength = 1.0 - abs(tectonic_mountain - 0.5) * 20.0;
-        legacyMountains = 2500.0 * band_strength;
+    if (tectonic_mountain > 0.42 && tectonic_mountain < 0.58) {
+        float band_strength = 1.0 - abs(tectonic_mountain - 0.5) * 12.5;  // Plus doux
+        legacyMountains = 1500.0 * band_strength;
     }
     
     // === STRUCTURES TECTONIQUES LEGACY (Canyons/Rifts) ===
@@ -765,13 +818,19 @@ void main() {
     // === ÉLÉVATION FINALE ===
     float elevation = baseElevation + noiseElevation + tectonicUplift + legacyMountains + legacyCanyons;
     
-    // === DÉTAILS ADDITIONNELS (comme legacy) ===
-    if (elevation > 800.0) {
+    // === DÉTAILS ADDITIONNELS (limités pour préserver les plaines) ===
+    // Seuil augmenté à 1500m et amplitude réduite à 800m
+    // Évite la rétroaction positive qui créait des montagnes partout
+    if (elevation > 1500.0) {
         float detail = clamp(fbm(coords * detail_freq, 6, 0.85, 3.0, params.seed + 40000u), 0.0, 1.0);
-        elevation += detail * 5000.0;
-    } else if (elevation <= -800.0) {
+        // Détails proportionnels à l'altitude (plus haut = plus de détails)
+        float detailFactor = smoothstep(1500.0, 4000.0, elevation);
+        elevation += detail * 800.0 * detailFactor;
+    } else if (elevation <= -2000.0) {
         float detail = clamp(fbm(coords * detail_freq, 6, 0.85, 3.0, params.seed + 40000u), -1.0, 0.0);
-        elevation += detail * 5000.0;
+        // Détails limités dans les abysses
+        float detailFactor = smoothstep(-2000.0, -4000.0, elevation);
+        elevation += detail * 600.0 * detailFactor;
     }
     
     // === CALCUL DES COMPOSANTS GeoTexture ===
