@@ -779,7 +779,8 @@ func run_atmosphere_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# === PASSE 3 : NUAGES (SIMULATION FLUIDE) ===
 	var wind_base_speed = float(params.get("wind_base_speed", 10.0))
-	var cloud_iterations = int(params.get("cloud_iterations", 50))
+	# Plus d'itérations = structures atmosphériques plus détaillées (cyclones, fronts)
+	var cloud_iterations = int(params.get("cloud_iterations", 150))
 	var condensation_threshold = float(params.get("condensation_threshold", 0.4))
 	
 	# 3.1 : Initialisation du champ de vapeur et du vent
