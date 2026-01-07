@@ -90,7 +90,7 @@ func _on_btn_comfirme_pressed() -> void:
 		lblMapStatus, 
 		sldNbCasesRegions.value,
 		"user://temp/",
-		5.51, # Default gravity (Earth-like)
+		5.51, # Default density (Earth-like)
 		0 # Random seed by default
 	)
 

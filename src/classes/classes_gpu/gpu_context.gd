@@ -14,6 +14,12 @@ const FORMAT_R32F = RenderingDevice.DATA_FORMAT_R32_SFLOAT
 # crust_age : CrustAgeTexture (RGBA32F) - R=distance_km, G=age_ma, B=subsidence, A=valid
 static var TextureID : Array[String] = ["geo", "climate", "temp_buffer", "plates", "crust_age"]
 
+# Textures Étape 2 - Érosion Hydraulique
+# geo_temp : Buffer ping-pong pour GeoTexture pendant l'érosion (RGBA32F)
+# river_flux : Carte de flux pour détection des rivières (R32F)
+# flux_temp : Buffer ping-pong pour flux_accumulation (R32F)
+static var TextureID_Erosion : Array[String] = ["geo_temp", "river_flux", "flux_temp"]
+
 # Textures Étape 3 - Atmosphère & Climat
 # vapor : VaporTexture (R32F) - densité de vapeur d'eau pour simulation fluide
 # vapor_temp : VaporTempTexture (R32F) - buffer ping-pong pour advection
@@ -31,8 +37,8 @@ var pipelines: Dictionary = {}
 var uniform_sets: Dictionary = {}
 var resolution: Vector2i
 
-func _init(resolution: Vector2i) -> void:
-	self.resolution = resolution
+func _init(resolution_param: Vector2i) -> void:
+	self.resolution = resolution_param
 	rd = RenderingServer.create_local_rendering_device()
 	
 	if not rd:
@@ -105,6 +111,71 @@ func _initialize_textures() -> void:
 		textures[tex_id] = rid
 	
 	print("✅ Textures GPU d'état créées (%d x %d KB)" % [TextureID.size(), resolution.x * resolution.y * 16 / 1024])
+
+# === CRÉATION DES TEXTURES ÉROSION (Étape 2) ===
+func initialize_erosion_textures() -> void:
+	"""
+	Initialise les textures spécifiques à l'étape 2 (Érosion Hydraulique).
+	Appelé par l'orchestrateur avant la phase d'érosion.
+	"""
+	
+	# Format RGBA32F pour geo_temp (ping-pong de GeoTexture)
+	var format_rgba32f := RDTextureFormat.new()
+	format_rgba32f.width = resolution.x
+	format_rgba32f.height = resolution.y
+	format_rgba32f.format = FORMAT_STATE  # RGBA32F
+	format_rgba32f.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Format R32F pour textures de flux
+	var format_r32f := RDTextureFormat.new()
+	format_r32f.width = resolution.x
+	format_r32f.height = resolution.y
+	format_r32f.format = FORMAT_R32F
+	format_r32f.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Créer geo_temp (RGBA32F - 16 bytes par pixel)
+	if not textures.has("geo_temp"):
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 16)  # 16 bytes per pixel (RGBA32F)
+		data.fill(0)
+		
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_rgba32f, view, [data])
+		
+		if not rid.is_valid():
+			push_error("❌ Échec création texture geo_temp")
+		else:
+			textures["geo_temp"] = rid
+	
+	# Créer les textures de flux (R32F - 4 bytes par pixel)
+	for tex_id in ["river_flux", "flux_temp"]:
+		if textures.has(tex_id):
+			continue  # Déjà créée
+		
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 4)  # 4 bytes per pixel (R32F)
+		data.fill(0)
+		
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_r32f, view, [data])
+		
+		if not rid.is_valid():
+			push_error("❌ Échec création texture flux:", tex_id)
+			continue
+			
+		textures[tex_id] = rid
+	
+	print("✅ Textures érosion créées (1x RGBA32F + 2x R32F)")
 
 # === CRÉATION DES TEXTURES CLIMAT (Étape 3) ===
 func initialize_climate_textures() -> void:
@@ -242,8 +313,8 @@ func readback_texture(tex_id: String) -> Image:
 	# Textures RGBA8 (colorées)
 	if tex_id in ["temperature_colored", "precipitation_colored", "clouds", "ice_caps"]:
 		img_format = Image.FORMAT_RGBA8
-	# Textures R32F (vapeur)
-	elif tex_id in ["vapor", "vapor_temp"]:
+	# Textures R32F (vapeur, flux)
+	elif tex_id in ["vapor", "vapor_temp", "river_flux", "flux_temp"]:
 		img_format = Image.FORMAT_RF
 	# Textures RGBA32F (par défaut)
 	

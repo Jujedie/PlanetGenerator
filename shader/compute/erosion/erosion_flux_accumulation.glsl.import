@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://cloaxixj46610"
+path="res://.godot/imported/erosion_flux_accumulation.glsl-d042da159001ac812ac0e890ae2d00e4.res"
+
+[deps]
+
+source_file="res://shader/compute/erosion/erosion_flux_accumulation.glsl"
+dest_files=["res://.godot/imported/erosion_flux_accumulation.glsl-d042da159001ac812ac0e890ae2d00e4.res"]
+
+[params]
+

@@ -29,13 +29,23 @@ var nb_thread         : int
 var atmosphere_type   : int
 var nb_avg_cases      : int
 var densite_planete   : float
-var erosion_iterations : int = BASE_EROSION_ITERATIONS
-var tectonic_nb_years  : int = BASE_TECTONIC_YEARS
-var atmosphere_steps   : int = BASE_ATMOSPHERE_STEPS
+var erosion_iterations: int
+var tectonic_nb_years : int
+var atmosphere_steps  : int
+
+var erosion_rate : float
+var rain_rate    : float
+var evap_rate    : float
+var flow_rate    : float
+var deposition_rate    : float
+var capacity_multiplier: float
+var flux_iterations    : int
+var base_flux          : float
+var propagation_rate   : float
 
 # GPU acceleration components
 var gpu_orchestrator    : GPUOrchestrator = null
-var use_gpu_acceleration: bool
+var use_gpu_acceleration: bool            = true
 
 # Generation parameters (compiled from UI)
 var generation_params: Dictionary = {}
@@ -57,9 +67,16 @@ var generation_params: Dictionary = {}
 ## @param mapStatusLabel_param: Référence au label de statut de l'UI.
 ## @param nb_avg_cases_param: Nombre de sites de Voronoi pour les plaques tectoniques/régions.
 ## @param cheminSauvegarde_param: Dossier racine pour la sauvegarde temporaire.
-func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, erosion_iterations: int = BASE_EROSION_ITERATIONS,
- 	tectonic_nb_years: int = BASE_TECTONIC_YEARS, atmosphere_steps: int = BASE_ATMOSPHERE_STEPS, elevation_modifier_param: int = 0, nb_thread_param: int = 8, atmosphere_type_param: int = 0, 
-	renderProgress_param: ProgressBar = null, mapStatusLabel_param: Label = null, nb_avg_cases_param: int = 50, cheminSauvegarde_param: String = "user://temp/", use_gpu_acceleration_param: bool = true, densite_planete: float = 5.51, seed_param: int = 0) -> void:
+func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, erosion_iterations_param: int = BASE_EROSION_ITERATIONS,
+ 	tectonic_nb_years_param: int = BASE_TECTONIC_YEARS, atmosphere_steps_param: int = BASE_ATMOSPHERE_STEPS, elevation_modifier_param: int = 0, nb_thread_param: int = 8, atmosphere_type_param: int = 0, renderProgress_param: ProgressBar = null, 
+	mapStatusLabel_param: Label = null, nb_avg_cases_param: int = 50, cheminSauvegarde_param: String = "user://temp/", densite_planete_param: float = 5.51, seed_param: int = 0,
+	erosion_rate_param: float = 0.05, rain_rate_param: float = 0.005, evap_rate_param: float = 0.02, flow_rate_param: float = 0.25, deposition_rate_param: float = 0.05, capacity_multiplier_param: float = 1.0,
+	flux_iterations_param: int = 10, base_flux_param: float = 1.0, propagation_rate_param: float = 0.8) -> void:
+	"""
+	PlanetGenerator constructor
+	Initializes all parameters and references
+	Does NOT start generation (see generate_planet)
+	"""
 
 	# Store all parameters
 	self.nom                  = nom_param
@@ -72,15 +89,27 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 	self.mapStatusLabel       = mapStatusLabel_param
 	self.cheminSauvegarde     = cheminSauvegarde_param
 	self.nb_avg_cases         = nb_avg_cases_param
-	self.densite_planete      = densite_planete
+	self.densite_planete      = densite_planete_param
 	self.avg_temperature      = avg_temperature_param
 	self.water_elevation      = water_elevation_param
 	self.avg_precipitation    = avg_precipitation_param
 	self.elevation_modifier   = elevation_modifier_param
 	self.nb_thread            = nb_thread_param
 	self.atmosphere_type      = atmosphere_type_param
-	
-	self.use_gpu_acceleration = use_gpu_acceleration_param
+
+	self.erosion_iterations   = erosion_iterations_param
+	self.tectonic_nb_years    = tectonic_nb_years_param
+	self.atmosphere_steps     = atmosphere_steps_param
+
+	self.erosion_rate         = erosion_rate_param
+	self.rain_rate            = rain_rate_param
+	self.evap_rate            = evap_rate_param
+	self.flow_rate            = flow_rate_param
+	self.deposition_rate      = deposition_rate_param
+	self.capacity_multiplier  = capacity_multiplier_param
+	self.flux_iterations      = flux_iterations_param
+	self.base_flux            = base_flux_param
+	self.propagation_rate     = propagation_rate_param
 
 	if seed_param == 0:
 		randomize()
@@ -107,6 +136,8 @@ func _compile_generation_params(seed_param: int) -> void:
 	
 	generation_params = {
 		"seed"              : seed_param,
+
+		# Planet properties
 		"planet_name"       : nom,
 		"planet_radius"     : circonference / (2.0 * PI),
 		"planet_density"    : densite_planete, # Earth-like density in g/cm³
@@ -117,7 +148,19 @@ func _compile_generation_params(seed_param: int) -> void:
 		"global_humidity"   : avg_precipitation,
 		"terrain_scale"     : float(elevation_modifier),
 		"nb_cases_regions"  : nb_avg_cases,
-		"erosion_iterations": erosion_iterations,
+
+		# Erosion and tectonics
+		"erosion_iterations" : erosion_iterations,
+		"erosion_rate"       : erosion_rate,
+		"rain_rate"          : rain_rate,
+		"evap_rate"          : evap_rate,
+		"flow_rate"          : flow_rate,
+		"deposition_rate"    : deposition_rate,
+		"capacity_multiplier": capacity_multiplier,
+		"flux_iterations"    : flux_iterations,
+		"base_flux"          : base_flux,
+		"propagation_rate"   : propagation_rate,
+ 
 		"tectonic_years"    : tectonic_nb_years,
 		"atmosphere_steps"  : atmosphere_steps
 	}

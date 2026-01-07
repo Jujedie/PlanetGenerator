@@ -110,6 +110,11 @@ func _compile_all_shaders() -> bool:
 		# Shaders d'âge de croûte (JFA + Finalisation)
 		{"path": "res://shader/compute/topographie/crust_age_jfa.glsl", "name": "crust_age_jfa", "critical": false},
 		{"path": "res://shader/compute/topographie/crust_age_finalize.glsl", "name": "crust_age_finalize", "critical": false},
+		# Shaders Érosion Hydraulique (Étape 2)
+		{"path": "res://shader/compute/erosion/erosion_rainfall.glsl", "name": "erosion_rainfall", "critical": false},
+		{"path": "res://shader/compute/erosion/erosion_flow.glsl", "name": "erosion_flow", "critical": false},
+		{"path": "res://shader/compute/erosion/erosion_sediment.glsl", "name": "erosion_sediment", "critical": false},
+		{"path": "res://shader/compute/erosion/erosion_flux_accumulation.glsl", "name": "erosion_flux_accumulation", "critical": false},
 		# Shaders Atmosphère & Climat (Étape 3)
 		{"path": "res://shader/compute/atmosphere_climat/temperature.glsl", "name": "temperature", "critical": false},
 		{"path": "res://shader/compute/atmosphere_climat/precipitation.glsl", "name": "precipitation", "critical": false},
@@ -278,6 +283,124 @@ func _init_uniform_sets():
 			print("    ✅ crust_age_finalize textures uniform set créé")
 	else:
 		push_warning("[Orchestrator] ⚠️ crust_age_finalize shader invalide, uniform set ignoré")
+	
+	# === ÉTAPE 2 : ÉROSION HYDRAULIQUE ===
+	# Initialiser les textures érosion avant de créer les uniform sets
+	gpu.initialize_erosion_textures()
+	
+	# === EROSION RAINFALL SHADER ===
+	if gpu.shaders.has("erosion_rainfall") and gpu.shaders["erosion_rainfall"].is_valid():
+		print("  • Création uniform set: erosion_rainfall")
+		
+		# Set 0 : Textures (geo en lecture/écriture, climate en lecture)
+		var uniforms_rainfall = [
+			gpu.create_texture_uniform(0, gpu.textures["geo"]),
+			gpu.create_texture_uniform(1, gpu.textures["climate"]),
+		]
+		
+		gpu.uniform_sets["erosion_rainfall_textures"] = rd.uniform_set_create(uniforms_rainfall, gpu.shaders["erosion_rainfall"], 0)
+		if not gpu.uniform_sets["erosion_rainfall_textures"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create erosion_rainfall textures uniform set")
+		else:
+			print("    ✅ erosion_rainfall textures uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ erosion_rainfall shader invalide, uniform set ignoré")
+	
+	# === EROSION FLOW SHADER (avec ping-pong) ===
+	if gpu.shaders.has("erosion_flow") and gpu.shaders["erosion_flow"].is_valid():
+		print("  • Création uniform set: erosion_flow")
+		
+		# Set 0 (A->B) : geo en lecture, geo_temp en écriture, river_flux en rw
+		var uniforms_flow_ab = [
+			gpu.create_texture_uniform(0, gpu.textures["geo"]),
+			gpu.create_texture_uniform(1, gpu.textures["geo_temp"]),
+			gpu.create_texture_uniform(2, gpu.textures["river_flux"]),
+		]
+		
+		gpu.uniform_sets["erosion_flow_textures"] = rd.uniform_set_create(uniforms_flow_ab, gpu.shaders["erosion_flow"], 0)
+		if not gpu.uniform_sets["erosion_flow_textures"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create erosion_flow textures uniform set")
+		else:
+			print("    ✅ erosion_flow textures uniform set créé")
+		
+		# Set 0 (B->A) : geo_temp en lecture, geo en écriture, river_flux en rw
+		var uniforms_flow_ba = [
+			gpu.create_texture_uniform(0, gpu.textures["geo_temp"]),
+			gpu.create_texture_uniform(1, gpu.textures["geo"]),
+			gpu.create_texture_uniform(2, gpu.textures["river_flux"]),
+		]
+		
+		gpu.uniform_sets["erosion_flow_textures_swap"] = rd.uniform_set_create(uniforms_flow_ba, gpu.shaders["erosion_flow"], 0)
+		if not gpu.uniform_sets["erosion_flow_textures_swap"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create erosion_flow swap textures uniform set")
+		else:
+			print("    ✅ erosion_flow swap textures uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ erosion_flow shader invalide, uniform set ignoré")
+	
+	# === EROSION SEDIMENT SHADER (avec ping-pong) ===
+	if gpu.shaders.has("erosion_sediment") and gpu.shaders["erosion_sediment"].is_valid():
+		print("  • Création uniform set: erosion_sediment")
+		
+		# Set 0 (A->B) : geo en lecture, geo_temp en écriture, river_flux en lecture
+		var uniforms_sed_ab = [
+			gpu.create_texture_uniform(0, gpu.textures["geo"]),
+			gpu.create_texture_uniform(1, gpu.textures["geo_temp"]),
+			gpu.create_texture_uniform(2, gpu.textures["river_flux"]),
+		]
+		
+		gpu.uniform_sets["erosion_sediment_textures"] = rd.uniform_set_create(uniforms_sed_ab, gpu.shaders["erosion_sediment"], 0)
+		if not gpu.uniform_sets["erosion_sediment_textures"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create erosion_sediment textures uniform set")
+		else:
+			print("    ✅ erosion_sediment textures uniform set créé")
+		
+		# Set 0 (B->A) : geo_temp en lecture, geo en écriture, river_flux en lecture
+		var uniforms_sed_ba = [
+			gpu.create_texture_uniform(0, gpu.textures["geo_temp"]),
+			gpu.create_texture_uniform(1, gpu.textures["geo"]),
+			gpu.create_texture_uniform(2, gpu.textures["river_flux"]),
+		]
+		
+		gpu.uniform_sets["erosion_sediment_textures_swap"] = rd.uniform_set_create(uniforms_sed_ba, gpu.shaders["erosion_sediment"], 0)
+		if not gpu.uniform_sets["erosion_sediment_textures_swap"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create erosion_sediment swap textures uniform set")
+		else:
+			print("    ✅ erosion_sediment swap textures uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ erosion_sediment shader invalide, uniform set ignoré")
+	
+	# === EROSION FLUX ACCUMULATION SHADER (avec ping-pong sur flux) ===
+	if gpu.shaders.has("erosion_flux_accumulation") and gpu.shaders["erosion_flux_accumulation"].is_valid():
+		print("  • Création uniform set: erosion_flux_accumulation")
+		
+		# Set 0 (A->B) : geo en lecture, river_flux en lecture, flux_temp en écriture
+		var uniforms_acc_ab = [
+			gpu.create_texture_uniform(0, gpu.textures["geo"]),
+			gpu.create_texture_uniform(1, gpu.textures["river_flux"]),
+			gpu.create_texture_uniform(2, gpu.textures["flux_temp"]),
+		]
+		
+		gpu.uniform_sets["erosion_flux_accumulation_textures"] = rd.uniform_set_create(uniforms_acc_ab, gpu.shaders["erosion_flux_accumulation"], 0)
+		if not gpu.uniform_sets["erosion_flux_accumulation_textures"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create erosion_flux_accumulation textures uniform set")
+		else:
+			print("    ✅ erosion_flux_accumulation textures uniform set créé")
+		
+		# Set 0 (B->A) : geo en lecture, flux_temp en lecture, river_flux en écriture
+		var uniforms_acc_ba = [
+			gpu.create_texture_uniform(0, gpu.textures["geo"]),
+			gpu.create_texture_uniform(1, gpu.textures["flux_temp"]),
+			gpu.create_texture_uniform(2, gpu.textures["river_flux"]),
+		]
+		
+		gpu.uniform_sets["erosion_flux_accumulation_textures_swap"] = rd.uniform_set_create(uniforms_acc_ba, gpu.shaders["erosion_flux_accumulation"], 0)
+		if not gpu.uniform_sets["erosion_flux_accumulation_textures_swap"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create erosion_flux_accumulation swap textures uniform set")
+		else:
+			print("    ✅ erosion_flux_accumulation swap textures uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ erosion_flux_accumulation shader invalide, uniform set ignoré")
 	
 	# === ÉTAPE 3 : ATMOSPHÈRE & CLIMAT ===
 	# Initialiser les textures climat avant de créer les uniform sets
@@ -449,8 +572,8 @@ func run_simulation() -> void:
 	# === ÉTAPE 0.5 : ÂGE DE CROÛTE OCÉANIQUE (JFA) ===
 	run_crust_age_phase(generation_params, w, h)
 	
-	# === ÉTAPE 1 : ÉROSION HYDRAULIQUE (À implémenter) ===
-	# run_erosion_phase(generation_params, w, h)
+	# === ÉTAPE 2 : ÉROSION HYDRAULIQUE ===
+	run_erosion_phase(generation_params, w, h)
 	
 	# === ÉTAPE 3 : ATMOSPHÈRE & CLIMAT ===
 	run_atmosphere_phase(generation_params, w, h)
@@ -725,6 +848,287 @@ func _dispatch_crust_age_finalize(w: int, h: int, groups_x: int, groups_y: int, 
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["crust_age_finalize"])
 	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["crust_age_finalize_textures"], 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+
+# ============================================================================
+# ÉTAPE 2 : ÉROSION HYDRAULIQUE
+# ============================================================================
+
+## Simule l'érosion hydraulique sur le terrain.
+##
+## Cette phase exécute plusieurs itérations du cycle hydrologique :
+## 1. Rainfall : Ajoute de l'eau selon la précipitation, évaporation
+## 2. Flow : Écoulement de l'eau vers les cellules plus basses
+## 3. Sediment : Érosion et dépôt de sédiments selon la capacité de transport
+## 4. Flux Accumulation : Accumule le flux pour détecter les rivières
+##
+## Utilise un schéma ping-pong pour éviter les race conditions GPU.
+##
+## @param params: Dictionnaire contenant seed, erosion_iterations, etc.
+## @param w: Largeur de la texture
+## @param h: Hauteur de la texture
+func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
+	# Vérifier que les shaders sont disponibles
+	var required_shaders = ["erosion_rainfall", "erosion_flow", "erosion_sediment", "erosion_flux_accumulation"]
+	for shader_name in required_shaders:
+		if not gpu.shaders.has(shader_name) or not gpu.shaders[shader_name].is_valid():
+			push_warning("[Orchestrator] ⚠️ ", shader_name, " shader non disponible, phase érosion ignorée")
+			return
+	
+	# Vérifier si la planète a une atmosphère (pas d'érosion sur planète sans atmosphère)
+	var atmosphere_type = int(params.get("planet_type", 0))
+	if atmosphere_type == 3:  # Sans atmosphère
+		print("[Orchestrator] ⏭️ Phase 2 : Érosion ignorée (planète sans atmosphère)")
+		return
+	
+	print("[Orchestrator] 💧 Phase 2 : Érosion Hydraulique")
+	
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+	
+	# Paramètres d'érosion
+	var erosion_iterations = int(params.get("erosion_iterations", 50))
+	var rain_rate = float(params.get("rain_rate", 0.005))
+	var evap_rate = float(params.get("evap_rate", 0.02))
+	var flow_rate = float(params.get("flow_rate", 0.25))
+	var erosion_rate = float(params.get("erosion_rate", 0.05))
+	var deposition_rate = float(params.get("deposition_rate", 0.05))
+	var capacity_multiplier = float(params.get("capacity_multiplier", 1.0))
+	var sea_level = float(params.get("sea_level", 0.0))
+	var gravity = compute_gravity(float(params.get("planet_radius", 6371.0)), float(params.get("planet_density", 5500.0)))  # Default Earth-like density
+	
+	# Paramètres pour l'accumulation de flux
+	var flux_iterations = int(params.get("flux_iterations", 10))
+	var base_flux = float(params.get("base_flux", 1.0))
+	var propagation_rate = float(params.get("propagation_rate", 0.8))
+	
+	print("  Iterations: ", erosion_iterations)
+	print("  Rain Rate: ", rain_rate, " | Evap Rate: ", evap_rate)
+	print("  Flow Rate: ", flow_rate)
+	print("  Erosion/Deposition: ", erosion_rate, "/", deposition_rate)
+	
+	# === BOUCLE D'ÉROSION ===
+	for iter in range(erosion_iterations):
+		var use_swap = (iter % 2 == 1)
+		
+		# === PASSE 1 : PLUIE + ÉVAPORATION ===
+		_dispatch_erosion_rainfall(w, h, groups_x, groups_y, rain_rate, evap_rate, sea_level)
+		
+		# === PASSE 2 : ÉCOULEMENT ===
+		_dispatch_erosion_flow(w, h, groups_x, groups_y, flow_rate, sea_level, gravity, use_swap)
+		
+		# === PASSE 3 : TRANSPORT SÉDIMENT ===
+		_dispatch_erosion_sediment(w, h, groups_x, groups_y, erosion_rate, deposition_rate, capacity_multiplier, sea_level, not use_swap)
+	
+	# === PASSE 4 : ACCUMULATION DE FLUX (pour rivières) ===
+	print("  • Accumulation de flux (", flux_iterations, " passes)")
+	for pass_idx in range(flux_iterations):
+		var use_swap = (pass_idx % 2 == 1)
+		_dispatch_erosion_flux_accumulation(w, h, groups_x, groups_y, pass_idx, sea_level, base_flux, propagation_rate, use_swap)
+	
+	print("[Orchestrator] ✅ Phase 2 : Érosion terminée")
+
+## Dispatch le shader de pluie/évaporation
+func _dispatch_erosion_rainfall(w: int, h: int, groups_x: int, groups_y: int, rain_rate: float, evap_rate: float, sea_level: float) -> void:
+	if not gpu.uniform_sets.has("erosion_rainfall_textures") or not gpu.uniform_sets["erosion_rainfall_textures"].is_valid():
+		return
+	
+	# Structure UBO (std140, 32 bytes):
+	# uint width, height (8 bytes)
+	# float rain_rate, evap_rate, sea_level (12 bytes)
+	# padding (12 bytes)
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_float(8, rain_rate)
+	buffer_bytes.encode_float(12, evap_rate)
+	buffer_bytes.encode_float(16, sea_level)
+	buffer_bytes.encode_float(20, 0.0)  # padding1
+	buffer_bytes.encode_float(24, 0.0)  # padding2
+	buffer_bytes.encode_float(28, 0.0)  # padding3
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["erosion_rainfall"], 1)
+	if not param_set.is_valid():
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["erosion_rainfall"])
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["erosion_rainfall_textures"], 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+
+## Dispatch le shader d'écoulement
+func _dispatch_erosion_flow(w: int, h: int, groups_x: int, groups_y: int, flow_rate: float, sea_level: float, gravity: float, use_swap: bool) -> void:
+	var uniform_set_name = "erosion_flow_textures_swap" if use_swap else "erosion_flow_textures"
+	if not gpu.uniform_sets.has(uniform_set_name) or not gpu.uniform_sets[uniform_set_name].is_valid():
+		return
+	
+	# Structure UBO (std140, 32 bytes):
+	# uint width, height (8 bytes)
+	# float flow_rate, min_slope, sea_level, gravity (16 bytes)
+	# padding (8 bytes)
+	
+	var min_slope = 0.001
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_float(8, flow_rate)
+	buffer_bytes.encode_float(12, min_slope)
+	buffer_bytes.encode_float(16, sea_level)
+	buffer_bytes.encode_float(20, gravity)
+	buffer_bytes.encode_float(24, 0.0)  # padding1
+	buffer_bytes.encode_float(28, 0.0)  # padding2
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["erosion_flow"], 1)
+	if not param_set.is_valid():
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["erosion_flow"])
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets[uniform_set_name], 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+
+## Dispatch le shader de transport de sédiments
+func _dispatch_erosion_sediment(w: int, h: int, groups_x: int, groups_y: int, erosion_rate: float, deposition_rate: float, capacity_multiplier: float, sea_level: float, use_swap: bool) -> void:
+	var uniform_set_name = "erosion_sediment_textures_swap" if use_swap else "erosion_sediment_textures"
+	if not gpu.uniform_sets.has(uniform_set_name) or not gpu.uniform_sets[uniform_set_name].is_valid():
+		return
+	
+	# Structure UBO (std140, 32 bytes):
+	# uint width, height (8 bytes)
+	# float erosion_rate, deposition_rate, capacity_multiplier, min_slope, sea_level, bedrock_hardness (24 bytes)
+	
+	var min_slope = 0.001
+	var bedrock_hardness = 0.5
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_float(8, erosion_rate)
+	buffer_bytes.encode_float(12, deposition_rate)
+	buffer_bytes.encode_float(16, capacity_multiplier)
+	buffer_bytes.encode_float(20, min_slope)
+	buffer_bytes.encode_float(24, sea_level)
+	buffer_bytes.encode_float(28, bedrock_hardness)
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["erosion_sediment"], 1)
+	if not param_set.is_valid():
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["erosion_sediment"])
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets[uniform_set_name], 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+
+## Dispatch le shader d'accumulation de flux
+func _dispatch_erosion_flux_accumulation(w: int, h: int, groups_x: int, groups_y: int, pass_index: int, sea_level: float, base_flux: float, propagation_rate: float, use_swap: bool) -> void:
+	var uniform_set_name = "erosion_flux_accumulation_textures_swap" if use_swap else "erosion_flux_accumulation_textures"
+	if not gpu.uniform_sets.has(uniform_set_name) or not gpu.uniform_sets[uniform_set_name].is_valid():
+		return
+	
+	# Structure UBO (std140, 32 bytes):
+	# uint width, height, pass_index (12 bytes)
+	# float sea_level, base_flux, propagation_rate (12 bytes)
+	# padding (8 bytes)
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, pass_index)
+	buffer_bytes.encode_float(12, sea_level)
+	buffer_bytes.encode_float(16, base_flux)
+	buffer_bytes.encode_float(20, propagation_rate)
+	buffer_bytes.encode_float(24, 0.0)  # padding1
+	buffer_bytes.encode_float(28, 0.0)  # padding2
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["erosion_flux_accumulation"], 1)
+	if not param_set.is_valid():
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["erosion_flux_accumulation"])
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets[uniform_set_name], 0)
 	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
