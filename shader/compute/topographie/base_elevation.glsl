@@ -454,9 +454,9 @@ PlateInfo findClosestPlate(vec2 uv, uint seed) {
     float borderDist = secondDist - minDist;
     
     // Décroissance exponentielle pour effet localisé aux bordures
-    // Facteur 20 : effet significatif jusqu'à ~0.1 rad (~6°, ~400km)
-    // Cela crée des chaînes de montagnes réalistes de 200-400km de large
-    float borderStrength = exp(-borderDist * 20.0);
+    // Facteur 35 : effet significatif jusqu'à ~0.06 rad (~3.5°, ~250km)
+    // Cela crée des chaînes de montagnes réalistes de 100-250km de large
+    float borderStrength = exp(-borderDist * 35.0);
     borderStrength = clamp(borderStrength, 0.0, 1.0);
     
     // Vélocités des deux plaques
@@ -502,7 +502,8 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
     float underwaterDamping = 1.0;
     if (currentElevation < -500.0) {
         // Plus on est profond, moins les fosses sont marquées
-        underwaterDamping = max(0.3, 1.0 + currentElevation / 4000.0);
+        // Damping minimum 0.5 pour garder un peu de relief océanique
+        underwaterDamping = max(0.5, 1.0 + currentElevation / 5000.0);
     }
     
     // Bruit local pour variation le long de la frontière
@@ -515,28 +516,32 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
         
         if (!isOceanic1 && !isOceanic2) {
             // Continent-Continent : Hautes montagnes (Himalaya)
-            uplift = strength * 4000.0 * conv_strength;
+            // Réduit de 4000m à 2200m pour montagnes plus réalistes
+            uplift = strength * 2200.0 * conv_strength;
         } else if (isOceanic1 && isOceanic2) {
             // Océan-Océan : Fosse + Arc insulaire
             // Position relative pour asymétrie
             float side = sign(dot(info.velocity1, vec2(1.0, 0.0)));
             if (info.borderDist < 0.01) {
                 // Fosse profonde (atténuée sous l'eau)
-                uplift = -strength * 5000.0 * conv_strength * underwaterDamping;
+                // Réduit de -5000m à -3500m pour fosses visibles mais pas excessives
+                uplift = -strength * 3500.0 * conv_strength * underwaterDamping;
             } else if (info.borderDist < 0.03) {
                 // Arc insulaire (50-100km en arrière de la fosse)
                 float arcFactor = smoothstep(0.01, 0.015, info.borderDist) * 
                                   smoothstep(0.03, 0.025, info.borderDist);
-                uplift = arcFactor * 1500.0 * conv_strength;
+                uplift = arcFactor * 1000.0 * conv_strength;
             }
         } else {
             // Océan-Continent : Subduction asymétrique
             if (isOceanic1) {
                 // Ce côté est océanique - FOSSE (atténuée sous l'eau)
-                uplift = -strength * 4000.0 * conv_strength * underwaterDamping;
+                // Réduit de -4000m à -2800m
+                uplift = -strength * 2800.0 * conv_strength * underwaterDamping;
             } else {
                 // Ce côté est continental - CORDILLÈRE
-                uplift = strength * 3000.0 * conv_strength;
+                // Réduit de 3000m à 1800m
+                uplift = strength * 1800.0 * conv_strength;
             }
         }
     } else if (convergence < -0.2) {
@@ -671,8 +676,8 @@ float calculateTripleJunctionUplift(vec2 uv, vec3 coords, uint seed, float conti
     float instability = fbm(coords * 0.03, 3, 0.7, 2.0, seed + 99999u);
     totalUplift *= (0.8 + 0.4 * instability);
     
-    // PLAFONNER l'effet cumulé
-    return clamp(totalUplift, -6000.0, 6000.0);
+    // PLAFONNER l'effet cumulé - réduit de ±6000 à ±2000 pour éviter pics excessifs
+    return clamp(totalUplift, -2000.0, 2000.0);
 }
 
 // ============================================================================
@@ -760,13 +765,13 @@ void main() {
     }
     
     // === BRUIT PRINCIPAL (Relief général) ===
-    // Amplitude réduite pour permettre plus de plaines
+    // Amplitude augmentée pour relief plus varié et continents cohérents
     float noise1 = fbm(coords * base_freq, 8, 0.75, 2.0, params.seed);
     float noise2 = fbm(coords * base_freq, 8, 0.75, 2.0, params.seed + 10000u);
     
-    // Relief de bruit : amplitude 2000m (réduit de 3500m), SANS biais positif
-    // Le biais était responsable de l'absence de plaines
-    float noiseElevation = noise1 * 2000.0 + clamp(noise2, 0.0, 1.0) * params.elevation_modifier;
+    // Relief de bruit : amplitude 2800m avec biais positif faible (+300m)
+    // Le biais favorise légèrement les terres émergées sans excès
+    float noiseElevation = noise1 * 2800.0 + 300.0 + clamp(noise2, 0.0, 1.0) * params.elevation_modifier * 0.6;
     
     // === PLAQUES TECTONIQUES (Voronoi sphérique) ===
     PlateInfo plateInfo = findClosestPlate(uv, params.seed);
@@ -790,20 +795,21 @@ void main() {
     float tripleJunctionUplift = calculateTripleJunctionUplift(uv, coords, params.seed, continental_freq);
     
     // Combiner uplift de frontière et triple junction
-    // Le triple junction ajoute un effet supplémentaire, pas un remplacement
-    tectonicUplift += tripleJunctionUplift * 0.5;  // Effet modéré
+    // Le triple junction ajoute un effet supplémentaire, réduit à 0.25 pour limiter cumul
+    tectonicUplift += tripleJunctionUplift * 0.25;  // Effet plus modéré
     
     // Plafonner l'uplift total (réalisme géologique)
-    tectonicUplift = clamp(tectonicUplift, -8000.0, 6000.0);
+    // Réduit de [-8000, 6000] à [-5000, 4000] pour éviter extrêmes
+    tectonicUplift = clamp(tectonicUplift, -5000.0, 4000.0);
     
     // === STRUCTURES TECTONIQUES LEGACY (Chaînes de montagnes supplémentaires) ===
-    // Amplitude réduite de 2500m à 1500m, seuil élargi pour chaînes plus douces
+    // Amplitude réduite à 800m, bande élargie [0.38, 0.62] pour chaînes plus larges mais plus basses
     float tectonic_mountain = abs(fbmSimplex(coords * tectonic_freq, 10, 0.55, 2.0, params.seed + 20000u));
     
     float legacyMountains = 0.0;
-    if (tectonic_mountain > 0.42 && tectonic_mountain < 0.58) {
-        float band_strength = 1.0 - abs(tectonic_mountain - 0.5) * 12.5;  // Plus doux
-        legacyMountains = 1500.0 * band_strength;
+    if (tectonic_mountain > 0.38 && tectonic_mountain < 0.62) {
+        float band_strength = 1.0 - abs(tectonic_mountain - 0.5) * 8.33;  // Plus large et plus doux
+        legacyMountains = 800.0 * band_strength * 0.6;  // Amplitude réduite
     }
     
     // === STRUCTURES TECTONIQUES LEGACY (Canyons/Rifts) ===
@@ -819,18 +825,26 @@ void main() {
     float elevation = baseElevation + noiseElevation + tectonicUplift + legacyMountains + legacyCanyons;
     
     // === DÉTAILS ADDITIONNELS (limités pour préserver les plaines) ===
-    // Seuil augmenté à 1500m et amplitude réduite à 800m
+    // Seuil augmenté à 2500m et amplitude réduite à 500m
     // Évite la rétroaction positive qui créait des montagnes partout
-    if (elevation > 1500.0) {
+    if (elevation > 2500.0) {
         float detail = clamp(fbm(coords * detail_freq, 6, 0.85, 3.0, params.seed + 40000u), 0.0, 1.0);
         // Détails proportionnels à l'altitude (plus haut = plus de détails)
-        float detailFactor = smoothstep(1500.0, 4000.0, elevation);
-        elevation += detail * 800.0 * detailFactor;
+        float detailFactor = smoothstep(2500.0, 5000.0, elevation);
+        elevation += detail * 500.0 * detailFactor;
     } else if (elevation <= -2000.0) {
         float detail = clamp(fbm(coords * detail_freq, 6, 0.85, 3.0, params.seed + 40000u), -1.0, 0.0);
-        // Détails limités dans les abysses
+        // Détails limités dans les abysses - ajout relief océanique
         float detailFactor = smoothstep(-2000.0, -4000.0, elevation);
-        elevation += detail * 600.0 * detailFactor;
+        elevation += detail * 400.0 * detailFactor;
+    }
+    
+    // === CLAMPING GLOBAL ET COMPRESSION DOUCE ===
+    // Éviter les extrêmes irréalistes
+    elevation = clamp(elevation, -7500.0, 8500.0);
+    // Compression douce au-dessus de 6000m (limite montagnes excessives)
+    if (elevation > 6000.0) {
+        elevation = 6000.0 + (elevation - 6000.0) * 0.4;
     }
     
     // === CALCUL DES COMPOSANTS GeoTexture ===

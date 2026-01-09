@@ -44,7 +44,8 @@ layout(set = 1, binding = 0, std140) uniform SedimentParams {
 // CONSTANTES
 // ============================================================================
 
-const float MIN_WATER = 0.0001;
+// Seuil réduit de 0.0001 à 0.00005 pour propager eau plus loin
+const float MIN_WATER = 0.00005;
 const float MIN_SEDIMENT = 0.00001;
 
 // Offsets des 4 voisins cardinaux (pour calcul de pente)
@@ -127,11 +128,13 @@ void main() {
     float max_slope = calculateMaxSlope(pixel, surface, w, h);
     
     // Estimation de la vélocité basée sur le flux
+    // Plafond augmenté de 10 à 25 pour autoriser écoulements rapides
     float velocity = flux / max(water, MIN_WATER);
-    velocity = clamp(velocity, 0.0, 10.0);  // Limiter
+    velocity = clamp(velocity, 0.0, 25.0);
     
-    // Capacité de transport : C = Kc * slope * velocity * water
-    float capacity = params.capacity_multiplier * max_slope * velocity * water;
+    // Capacité de transport améliorée : C = Kc * slope * sqrt(velocity) * water * 2.0
+    // Formule avec racine carrée pour favoriser zones humides
+    float capacity = params.capacity_multiplier * max_slope * sqrt(velocity) * water * 2.0;
     capacity = max(capacity, 0.0);
     
     // === ÉROSION OU DÉPÔT ===

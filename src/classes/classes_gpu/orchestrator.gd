@@ -894,14 +894,19 @@ func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
 	var groups_x = ceili(float(w) / 16.0)
 	var groups_y = ceili(float(h) / 16.0)
 	
-	# Paramètres d'érosion
-	var erosion_iterations = int(params.get("erosion_iterations", 50))
-	var rain_rate = float(params.get("rain_rate", 0.005))
+	# Paramètres d'érosion - valeurs augmentées pour effet visible
+	# Itérations: 50 → 200 pour propagation suffisante
+	var erosion_iterations = int(params.get("erosion_iterations", 200))
+	# Rain rate: 0.005 → 0.012 pour plus d'eau disponible
+	var rain_rate = float(params.get("rain_rate", 0.012))
 	var evap_rate = float(params.get("evap_rate", 0.02))
 	var flow_rate = float(params.get("flow_rate", 0.25))
-	var erosion_rate = float(params.get("erosion_rate", 0.05))
-	var deposition_rate = float(params.get("deposition_rate", 0.05))
-	var capacity_multiplier = float(params.get("capacity_multiplier", 1.0))
+	# Erosion rate: 0.05 → 0.15 pour effet plus marqué
+	var erosion_rate = float(params.get("erosion_rate", 0.15))
+	# Deposition rate: 0.05 → 0.12 pour dépôts visibles
+	var deposition_rate = float(params.get("deposition_rate", 0.12))
+	# Capacity multiplier: 1.0 → 2.5 pour transport plus efficace
+	var capacity_multiplier = float(params.get("capacity_multiplier", 2.5))
 	var sea_level = float(params.get("sea_level", 0.0))
 	var gravity = compute_gravity(float(params.get("planet_radius", 6371.0)), float(params.get("planet_density", 5500.0)))  # Default Earth-like density
 	

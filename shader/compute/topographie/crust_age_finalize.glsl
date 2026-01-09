@@ -56,6 +56,58 @@ const float NO_SEED = -1.0;
 const float PI = 3.14159265359;
 
 // ============================================================================
+// FONCTIONS DE BRUIT POUR RELIEF OCÉANIQUE
+// ============================================================================
+
+// Hash simple pour bruit
+uint hashOcean(uint x) {
+    x ^= x >> 16;
+    x *= 0x85ebca6bu;
+    x ^= x >> 13;
+    x *= 0xc2b2ae35u;
+    x ^= x >> 16;
+    return x;
+}
+
+float randOcean(uint h) {
+    return float(h) / 4294967295.0;
+}
+
+// Bruit de valeur 2D simple pour relief océanique
+float oceanNoise2D(vec2 p, uint seed) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    
+    uint ix = uint(i.x + 1000.0);
+    uint iy = uint(i.y + 1000.0);
+    
+    float a = randOcean(hashOcean(ix + seed) ^ hashOcean(iy));
+    float b = randOcean(hashOcean(ix + 1u + seed) ^ hashOcean(iy));
+    float c = randOcean(hashOcean(ix + seed) ^ hashOcean(iy + 1u));
+    float d = randOcean(hashOcean(ix + 1u + seed) ^ hashOcean(iy + 1u));
+    
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 2.0 - 1.0;
+}
+
+// fBm simple pour variation bathymétrique
+float oceanFbm(vec2 p, int octaves, uint seed) {
+    float value = 0.0;
+    float amplitude = 1.0;
+    float frequency = 1.0;
+    float total = 0.0;
+    
+    for (int i = 0; i < octaves; i++) {
+        value += amplitude * oceanNoise2D(p * frequency, seed + uint(i) * 1000u);
+        total += amplitude;
+        amplitude *= 0.5;
+        frequency *= 2.0;
+    }
+    
+    return value / total;
+}
+
+// ============================================================================
 // MAIN SHADER
 // ============================================================================
 
@@ -160,10 +212,14 @@ void main() {
     // (1) Zone océanique (sous le niveau de la mer OU faible altitude)
     // (2) Âge valide
     // (3) Âge < 180 Ma (croûte plus vieille est subduite)
-    if (height < 200.0 && age_ma > 0.0 && age_ma < 180.0) {
+    if (height < 300.0 && age_ma > 0.0 && age_ma < 180.0) {
         // La subsidence REMPLACE l'élévation de base pour les zones océaniques
         // Référence: dorsale à -2600m, puis subsidence ajoute de la profondeur
         float ridge_depth = -2600.0;
+        
+        // === TRANSITION GRADUELLE PLATEAU CONTINENTAL ===
+        // shelf_factor: 0 = océan profond, 1 = terre émergée
+        float shelf_factor = smoothstep(-200.0, 150.0, height);
         
         // Pour les zones vraiment océaniques (sous le niveau de la mer)
         if (height < 0.0) {
@@ -173,10 +229,41 @@ void main() {
             // Mélanger avec la hauteur existante pour lisser la transition
             // Plus l'âge est grand, plus on fait confiance au modèle de subsidence
             float age_factor = smoothstep(0.0, 50.0, age_ma);
-            height = mix(height, ocean_depth, age_factor * 0.7);
+            
+            // Application progressive avec shelf_factor pour transition douce
+            float blend_factor = age_factor * 0.7 * (1.0 - shelf_factor * 0.5);
+            height = mix(height, ocean_depth, blend_factor);
+            
+            // === CRÉATION PLATEAU CONTINENTAL [-200m, -50m] ===
+            // Les zones côtières peu profondes restent peu profondes
+            if (height > -250.0 && height < -20.0) {
+                // Ramener vers profondeur shelf typique (-80m à -120m)
+                float shelf_target = -100.0;
+                float coastal_blend = smoothstep(-250.0, -80.0, height);
+                height = mix(height, shelf_target, coastal_blend * 0.4);
+            }
+            
+            // === RELIEF OCÉANIQUE (variation bathymétrique) ===
+            // Ajoute du relief au fond océanique pour dorsales et abysses
+            if (height < -500.0) {
+                vec2 ocean_uv = vec2(float(pixel.x) / float(params.width), 
+                                     float(pixel.y) / float(params.height));
+                // Bruit grande échelle pour dorsales et bassins
+                float ocean_relief = oceanFbm(ocean_uv * 15.0, 4, 12345u);
+                // Amplitude: 400m de variation au fond océanique
+                height += ocean_relief * 400.0;
+                
+                // Bonus pour zones proches des dorsales (divergence)
+                vec4 plate_data = imageLoad(plates_texture, pixel);
+                float convergence_type = plate_data.a;
+                if (convergence_type < -0.3) {
+                    // Dorsale: élever légèrement (+300m effet localisé)
+                    height += 300.0 * (-convergence_type - 0.3) / 0.7;
+                }
+            }
         } else {
-            // Zones côtières/shelf: subsidence atténuée
-            float shelf_subsidence = subsidence * 0.3 * (1.0 - height / 200.0);
+            // Zones côtières/shelf: subsidence atténuée avec transition douce
+            float shelf_subsidence = subsidence * 0.2 * (1.0 - shelf_factor);
             height -= shelf_subsidence;
         }
         
