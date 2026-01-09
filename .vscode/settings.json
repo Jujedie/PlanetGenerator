@@ -6,6 +6,5 @@
 		"markdown": true,
 		"scminput": false,
 		"gdscript": true
-	},
-	"remote.SSH.path": "C:\\Windows\\System32\\OpenSSH\\ssh.exe"
+	}
 }
