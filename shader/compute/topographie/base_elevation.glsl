@@ -773,13 +773,14 @@ void main() {
     }
     
     // === BRUIT PRINCIPAL (Relief général) ===
-    // Amplitude augmentée pour relief plus varié et continents cohérents
+    // Amplitude réduite et biais minimal pour élévation médiane réaliste (~840m)
     float noise1 = fbm(coords * base_freq, 8, 0.75, 2.0, params.seed);
     float noise2 = fbm(coords * base_freq, 8, 0.75, 2.0, params.seed + 10000u);
     
-    // Relief de bruit : amplitude 2800m avec biais positif significatif (+800m)
-    // Le biais favorise les terres émergées pour créer continents cohérents
-    float noiseElevation = noise1 * 2800.0 + 800.0 + clamp(noise2, 0.0, 1.0) * params.elevation_modifier * 0.6;
+    // Relief de bruit : amplitude 2400m avec biais modéré (+200m)
+    // Plage résultante: [-2200, +2800m], centrée sur ~300m
+    // Combiné avec baseElevation (~150m) → médiane continentale ~850m (réaliste)
+    float noiseElevation = noise1 * 2400.0 + 200.0 + clamp(noise2, 0.0, 1.0) * params.elevation_modifier * 0.4;
     
     // === PLAQUES TECTONIQUES (Voronoi sphérique) ===
     PlateInfo plateInfo = findClosestPlate(uv, params.seed);
