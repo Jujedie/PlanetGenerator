@@ -32,6 +32,7 @@ var densite_planete   : float
 var erosion_iterations: int
 var tectonic_nb_years : int
 var atmosphere_steps  : int
+var ocean_ratio       : float  # Pourcentage de couverture océanique (40-90%)
 
 var erosion_rate : float
 var rain_rate    : float
@@ -70,6 +71,7 @@ var generation_params: Dictionary = {}
 func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, erosion_iterations_param: int = BASE_EROSION_ITERATIONS,
  	tectonic_nb_years_param: int = BASE_TECTONIC_YEARS, atmosphere_steps_param: int = BASE_ATMOSPHERE_STEPS, elevation_modifier_param: int = 0, nb_thread_param: int = 8, atmosphere_type_param: int = 0, renderProgress_param: ProgressBar = null, 
 	mapStatusLabel_param: Label = null, nb_avg_cases_param: int = 50, cheminSauvegarde_param: String = "user://temp/", densite_planete_param: float = 5.51, seed_param: int = 0,
+	ocean_ratio_param: float = 70.0,
 	erosion_rate_param: float = 0.05, rain_rate_param: float = 0.005, evap_rate_param: float = 0.02, flow_rate_param: float = 0.25, deposition_rate_param: float = 0.05, capacity_multiplier_param: float = 1.0,
 	flux_iterations_param: int = 10, base_flux_param: float = 1.0, propagation_rate_param: float = 0.8) -> void:
 	"""
@@ -100,6 +102,7 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 	self.erosion_iterations   = erosion_iterations_param
 	self.tectonic_nb_years    = tectonic_nb_years_param
 	self.atmosphere_steps     = atmosphere_steps_param
+	self.ocean_ratio          = clamp(ocean_ratio_param, 40.0, 90.0)  # Clamp 40-90%
 
 	self.erosion_rate         = erosion_rate_param
 	self.rain_rate            = rain_rate_param
@@ -148,6 +151,7 @@ func _compile_generation_params(seed_param: int) -> void:
 		"global_humidity"   : avg_precipitation,
 		"terrain_scale"     : float(elevation_modifier),
 		"nb_cases_regions"  : nb_avg_cases,
+		"ocean_ratio"       : ocean_ratio,  # Pourcentage couverture océanique
 
 		# Erosion and tectonics
 		"erosion_iterations" : erosion_iterations,

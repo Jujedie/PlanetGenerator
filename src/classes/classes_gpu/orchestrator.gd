@@ -626,7 +626,7 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	# - float elevation_modifier (4 bytes)
 	# - float sea_level (4 bytes)
 	# - float cylinder_radius (4 bytes)
-	# - float padding2 (4 bytes)
+	# - float ocean_threshold (4 bytes) - seuil océan/continent
 	# - float padding3 (4 bytes)
 	# Total : 32 bytes (aligné sur 16 bytes pour std140)
 	
@@ -634,6 +634,10 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	var elevation_modifier = float(params.get("terrain_scale", 0.0))
 	var sea_level = float(params.get("sea_level", 0.0))
 	var cylinder_radius = float(w) / (2.0 * PI)  # Rayon du cylindre pour le bruit seamless
+	
+	# Convertir pourcentage océan en seuil FBM
+	var ocean_ratio = float(params.get("ocean_ratio", 55.0))
+	var ocean_threshold = _percentage_to_threshold(ocean_ratio)
 	
 	# Créer le buffer de données (PackedByteArray)
 	var buffer_bytes = PackedByteArray()
@@ -646,7 +650,7 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	buffer_bytes.encode_float(12, elevation_modifier) # elevation_modifier
 	buffer_bytes.encode_float(16, sea_level)        # sea_level
 	buffer_bytes.encode_float(20, cylinder_radius)  # cylinder_radius
-	buffer_bytes.encode_float(24, 0.0)              # padding2
+	buffer_bytes.encode_float(24, ocean_threshold)  # ocean_threshold
 	buffer_bytes.encode_float(28, 0.0)              # padding3
 	
 	# 2. Création du Buffer Uniforme
@@ -676,6 +680,7 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  Elevation Modifier: ", elevation_modifier)
 	print("  Sea Level: ", sea_level)
 	print("  Cylinder Radius: ", cylinder_radius)
+	print("  Ocean Ratio: ", ocean_ratio, "% -> threshold: ", ocean_threshold)
 	print("  Dispatch: ", groups_x, "x", groups_y, " groupes (", w, "x", h, " pixels)")
 	
 	# 6. Dispatch du compute shader
@@ -699,6 +704,47 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	rd.free_rid(param_buffer)
 	
 	print("[Orchestrator] ✅ Phase 0 : Topographie de base générée")
+
+## Convertit un pourcentage d'océan (40-90%) en seuil FBM [-1, 1]
+##
+## La fonction FBM retourne des valeurs dans [-1, 1] avec une distribution
+## approximativement normale centrée sur 0. Pour obtenir X% d'océan,
+## on définit un seuil tel que X% des valeurs sont inférieures.
+##
+## Points de calibration empiriques :
+## - 40% océan → seuil -0.25
+## - 50% océan → seuil 0.0
+## - 60% océan → seuil 0.15
+## - 71% océan → seuil 0.35 (Terre réelle)
+## - 80% océan → seuil 0.55
+## - 90% océan → seuil 0.80
+##
+## @param percentage: Pourcentage d'océan désiré (40.0 = 40%, 90.0 = 90%)
+## @return float: Seuil FBM dans [-1, 1]
+func _percentage_to_threshold(percentage: float) -> float:
+	var clamped_pct = clamp(percentage, 40.0, 90.0)
+	
+	# Interpolation linéaire par segments (calibré empiriquement)
+	if clamped_pct <= 50.0:
+		# 40-50% : -0.25 à 0.0
+		var t = (clamped_pct - 40.0) / 10.0
+		return lerp(-0.25, 0.0, t)
+	elif clamped_pct <= 60.0:
+		# 50-60% : 0.0 à 0.15
+		var t = (clamped_pct - 50.0) / 10.0
+		return lerp(0.0, 0.15, t)
+	elif clamped_pct <= 71.0:
+		# 60-71% : 0.15 à 0.35 (Terre = 71%)
+		var t = (clamped_pct - 60.0) / 11.0
+		return lerp(0.15, 0.35, t)
+	elif clamped_pct <= 80.0:
+		# 71-80% : 0.35 à 0.55
+		var t = (clamped_pct - 71.0) / 9.0
+		return lerp(0.35, 0.55, t)
+	else:
+		# 80-90% : 0.55 à 0.80
+		var t = (clamped_pct - 80.0) / 10.0
+		return lerp(0.55, 0.80, t)
 
 # ============================================================================
 # ÉTAPE 0.5 : ÂGE DE CROÛTE OCÉANIQUE (JFA)

@@ -55,6 +55,11 @@ func _on_btn_comfirme_pressed() -> void:
 	var sldThread           = $Node2D/Control/sldThread
 	var typePlanete         = $Node2D/Control/typePlanete/ItemList
 	
+	# Slider optionnel pour ratio océan/continent (défaut 70% si absent)
+	var ocean_ratio_val = 70.0
+	if has_node("Node2D/Control/sldOceanRatio"):
+		ocean_ratio_val = $Node2D/Control/sldOceanRatio.value
+	
 	#var sldErosionIterations = $Node2D/Control/sldErosionIterations
 	#var sldTectonicYears     = $Node2D/Control/sldTectonicYears
 	#var sldAtmosphereSteps   = $Node2D/Control/sldAtmosphereSteps
@@ -91,7 +96,8 @@ func _on_btn_comfirme_pressed() -> void:
 		sldNbCasesRegions.value,
 		"user://temp/",
 		5.51, # Default density (Earth-like)
-		0 # Random seed by default
+		0, # Random seed by default
+		ocean_ratio_val # Ocean coverage percentage (40-90%)
 	)
 
 	var echelle = 100.0 / sldRayonPlanetaire.value
@@ -207,6 +213,10 @@ func _on_sld_nb_cases_regions_value_changed(value: float) -> void:
 	var label = $Node2D/Control/sldNbCasesRegions/Node2D/Label
 	label.text = tr("NB_CASE_REGION").format({"val": str(value)})
 
+func _on_sld_ocean_ratio_value_changed(value: float) -> void:
+	var label = $Node2D/Control/sldOceanRatio/Node2D/Label
+	label.text = tr("OCEAN_RATIO").format({"val": str(int(value))})
+
 func maj_labels() -> void:
 	_on_sld_rayon_planetaire_value_changed($Node2D/Control/sldRayonPlanetaire.value)
 	_on_sld_temp_moy_value_changed($Node2D/Control/sldTempMoy.value)
@@ -215,6 +225,9 @@ func maj_labels() -> void:
 	_on_sld_elevation_value_changed($Node2D/Control/sldElevation.value)
 	_on_sld_thread_value_changed($Node2D/Control/sldThread.value)
 	_on_sld_nb_cases_regions_value_changed($Node2D/Control/sldNbCasesRegions.value)
+	# Slider optionnel - vérifier existence avant appel
+	if has_node("Node2D/Control/sldOceanRatio"):
+		_on_sld_ocean_ratio_value_changed($Node2D/Control/sldOceanRatio.value)
 
 # ============================================================================
 # LANGUAGE & SYSTEM

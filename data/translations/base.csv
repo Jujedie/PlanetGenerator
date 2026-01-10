@@ -37,4 +37,5 @@ MAP_ICE,Ice Sheet,Banquise,Eisschicht,Ледовый покров
 MAP_BIOMES,Biomes,Biomes,Biome,Биомы
 MAP_REGIONS,Regions,Régions,Regionen,Регионы
 MAP_PREVIEW,Preview,Aperçu,Vorschau,Предпросмотр
+OCEAN_RATIO,Ocean coverage : {val}%,Couverture océanique : {val}%,Ozeanbedeckung: {val}%,Покрытие океаном: {val}%
 MAP_DONE,Done!,Terminé !,Fertig!,Готово!

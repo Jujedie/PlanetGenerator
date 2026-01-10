@@ -48,7 +48,7 @@ layout(set = 1, binding = 0, std140) uniform GenerationParams {
     float elevation_modifier; // Multiplicateur altitude (terrain_scale)
     float sea_level;        // Niveau de la mer
     float cylinder_radius;  // Rayon cylindre = width / (2*PI)
-    float padding2;
+    float ocean_threshold;  // Seuil océan/continent (configurable UI)
     float padding3;
 } params;
 
@@ -324,13 +324,15 @@ vec2 getPlateVelocity(int plateId, uint seed) {
 
 // Détermine si un point est océanique basé sur le bruit continental
 // Indépendant des plaques - permet zones mixtes dans une même plaque
-// CORRECTION: Seuil ajusté pour plus de terres émergées (~55% océan)
+// Seuil configurable via params.ocean_threshold (défini par UI)
 bool isLocallyOceanic(vec3 coords, float cylinder_radius, uint seed) {
-    // Bruit continental à grande échelle
-    float continental_freq = 0.8 / cylinder_radius;
+    // Bruit continental à TRÈS grande échelle
+    // Fréquence réduite = zones plus grandes et cohérentes
+    float continental_freq = 0.5 / cylinder_radius;
     float continentalNoise = fbm(coords * continental_freq, 6, 0.6, 2.0, seed + 77777u);
-    // Seuil : ~55% océan, ~45% continent (changé de 0.1 à 0.05)
-    return continentalNoise < 0.05;
+    // Seuil configurable depuis l'UI (params.ocean_threshold)
+    // FBM produit [-1, 1], threshold dans [-0.25, 0.80] selon ratio océan
+    return continentalNoise < params.ocean_threshold;
 }
 
 // Distance cyclique sur X (wrap horizontal pour continuité)
@@ -648,8 +650,8 @@ float calculateTripleJunctionUplift(vec2 uv, vec3 coords, uint seed, float conti
                                             params.width, params.height, params.cylinder_radius);
             vec3 c_j = getCylindricalCoords(ivec2(center_j * vec2(params.width, params.height)),
                                             params.width, params.height, params.cylinder_radius);
-            bool ocean_i = fbm(c_i * continental_freq, 6, 0.6, 2.0, seed + 77777u) < 0.1;
-            bool ocean_j = fbm(c_j * continental_freq, 6, 0.6, 2.0, seed + 77777u) < 0.1;
+            bool ocean_i = fbm(c_i * continental_freq, 6, 0.6, 2.0, seed + 77777u) < params.ocean_threshold;
+            bool ocean_j = fbm(c_j * continental_freq, 6, 0.6, 2.0, seed + 77777u) < params.ocean_threshold;
             
             // Calculer contribution (version simplifiée)
             if (conv > 0.2) {
@@ -707,9 +709,9 @@ void main() {
     
     // === MASQUE CONTINENTAL (indépendant des plaques) ===
     // Crée la dichotomie océan/continent de façon naturelle
-    // CORRECTION: Seuil ajusté + élévations pour plus de terres
+    // Seuil configurable via params.ocean_threshold
     float continentalNoise = fbm(coords * continental_freq, 6, 0.6, 2.0, params.seed + 77777u);
-    bool isOceanic = continentalNoise < 0.05;  // ~55% océan
+    bool isOceanic = continentalNoise < params.ocean_threshold;
     
     // === SYSTÈME D'ÉLÉVATION À 5 NIVEAUX ===
     // Basé sur la courbe hypsométrique terrestre réelle
@@ -728,22 +730,28 @@ void main() {
     // Bruit secondaire pour varier les types de terrain continental
     float basinNoise = fbm(coords * continental_freq * 0.5, 4, 0.5, 2.0, params.seed + 88888u);
     
+    // Calcul des seuils de transition relatifs à ocean_threshold
+    float deep_ocean_thresh = params.ocean_threshold - 0.30;  // Océan profond
+    float shelf_thresh = params.ocean_threshold - 0.15;       // Début plateau continental
+    float coast_thresh = params.ocean_threshold + 0.05;       // Plaines côtières
+    float plains_thresh = params.ocean_threshold + 0.20;      // Plaines intérieures
+    
     float baseElevation;
-    if (continentalNoise < -0.15) {
+    if (continentalNoise < deep_ocean_thresh) {
         // Océan profond
         baseElevation = oceanElev;
-    } else if (continentalNoise < 0.0) {
+    } else if (continentalNoise < shelf_thresh) {
         // Transition océan → plateau continental
-        float t = smoothstep(-0.15, 0.0, continentalNoise);
+        float t = smoothstep(deep_ocean_thresh, shelf_thresh, continentalNoise);
         baseElevation = mix(oceanElev, shelfElev, t);
-    } else if (continentalNoise < 0.1) {
+    } else if (continentalNoise < coast_thresh) {
         // Plateau continental → plaines côtières
-        float t = smoothstep(0.0, 0.1, continentalNoise);
+        float t = smoothstep(shelf_thresh, coast_thresh, continentalNoise);
         baseElevation = mix(shelfElev, coastalElev, t);
-    } else if (continentalNoise < 0.25) {
+    } else if (continentalNoise < plains_thresh) {
         // Plaines côtières → plaines intérieures
         // Avec possibilité de bassins sédimentaires (zones basses)
-        float t = smoothstep(0.1, 0.25, continentalNoise);
+        float t = smoothstep(coast_thresh, plains_thresh, continentalNoise);
         float targetElev = plainsElev;
         // Bassins sédimentaires : zones déprimées à l'intérieur des continents
         if (basinNoise < -0.2) {
@@ -769,9 +777,9 @@ void main() {
     float noise1 = fbm(coords * base_freq, 8, 0.75, 2.0, params.seed);
     float noise2 = fbm(coords * base_freq, 8, 0.75, 2.0, params.seed + 10000u);
     
-    // Relief de bruit : amplitude 2800m avec biais positif faible (+300m)
-    // Le biais favorise légèrement les terres émergées sans excès
-    float noiseElevation = noise1 * 2800.0 + 300.0 + clamp(noise2, 0.0, 1.0) * params.elevation_modifier * 0.6;
+    // Relief de bruit : amplitude 2800m avec biais positif significatif (+800m)
+    // Le biais favorise les terres émergées pour créer continents cohérents
+    float noiseElevation = noise1 * 2800.0 + 800.0 + clamp(noise2, 0.0, 1.0) * params.elevation_modifier * 0.6;
     
     // === PLAQUES TECTONIQUES (Voronoi sphérique) ===
     PlateInfo plateInfo = findClosestPlate(uv, params.seed);
@@ -784,8 +792,9 @@ void main() {
                                          params.width, params.height, params.cylinder_radius);
     vec3 coords2 = getCylindricalCoords(ivec2(center2 * vec2(params.width, params.height)), 
                                          params.width, params.height, params.cylinder_radius);
-    bool isOceanic1 = fbm(coords1 * continental_freq, 6, 0.6, 2.0, params.seed + 77777u) < 0.1;
-    bool isOceanic2 = fbm(coords2 * continental_freq, 6, 0.6, 2.0, params.seed + 77777u) < 0.1;
+    // Utiliser MÊME seuil params.ocean_threshold pour cohérence avec isLocallyOceanic
+    bool isOceanic1 = fbm(coords1 * continental_freq, 6, 0.6, 2.0, params.seed + 77777u) < params.ocean_threshold;
+    bool isOceanic2 = fbm(coords2 * continental_freq, 6, 0.6, 2.0, params.seed + 77777u) < params.ocean_threshold;
     
     // === UPLIFT TECTONIQUE AUX FRONTIÈRES ===
     // CORRECTION: Passer l'élévation de base pour atténuer sous l'eau
