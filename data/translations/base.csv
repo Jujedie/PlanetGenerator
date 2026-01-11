@@ -36,6 +36,12 @@ MAP_RIVERS,Rivers/Lakes,Rivières/Lacs,Flüsse/Seen,Реки/Озёра
 MAP_ICE,Ice Sheet,Banquise,Eisschicht,Ледовый покров
 MAP_BIOMES,Biomes,Biomes,Biome,Биомы
 MAP_REGIONS,Regions,Régions,Regionen,Регионы
+MAP_REGIONS_LAND_1,Land Counties,Départements Terrestres,Landkreise,Районы суши
+MAP_REGIONS_LAND_2,Land Regions,Régions Terrestres,Landregionen,Регионы суши
+MAP_REGIONS_LAND_3,Land Zones,Zones Terrestres,Landzonen,Зоны суши
+MAP_REGIONS_OCEAN_1,Ocean Counties,Départements Océaniques,Meereskreise,Морские районы
+MAP_REGIONS_OCEAN_2,Ocean Regions,Régions Océaniques,Meeresregionen,Морские регионы
+MAP_REGIONS_OCEAN_3,Ocean Zones,Zones Océaniques,Meereszonen,Морские зоны
 MAP_PREVIEW,Preview,Aperçu,Vorschau,Предпросмотр
 OCEAN_RATIO,Ocean coverage : {val}%,Couverture océanique : {val}%,Ozeanbedeckung: {val}%,Покрытие океаном: {val}%
 MAP_DONE,Done!,Terminé !,Fertig!,Готово!

@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://b5cy7nuo3mnn0"
+path="res://.godot/imported/region_fill_orphans.glsl-d990a52ceceaeda90948d99004dbd2f3.res"
+
+[deps]
+
+source_file="res://shader/compute/regions/region_fill_orphans.glsl"
+dest_files=["res://.godot/imported/region_fill_orphans.glsl-d990a52ceceaeda90948d99004dbd2f3.res"]
+
+[params]
+

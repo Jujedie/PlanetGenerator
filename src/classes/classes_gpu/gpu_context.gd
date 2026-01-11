@@ -34,6 +34,25 @@ static var TextureID_Climat : Array[String] = ["vapor", "vapor_temp", "temperatu
 # resources : (RGBA32F) - R=resource_id, G=intensity, B=cluster_id, A=has_resource
 static var TextureID_Resources : Array[String] = ["oil", "resources"]
 
+# Textures Étape 4 - Régions Hiérarchiques (3 niveaux)
+# Niveau 1 : Départements/Comtés (maille fine)
+# regions_land_1 : (RGBA32F) - R=region_id, G=cost_accumulated, B=is_border, A=parent_region_id
+# regions_ocean_1 : (RGBA32F) - Départements océaniques (même format)
+# Niveau 2 : Régions (regroupement de départements)
+# regions_land_2 : (RGBA32F) - R=region_id, G=center_x, B=center_y, A=area
+# regions_ocean_2 : (RGBA32F) - Régions océaniques
+# Niveau 3 : Zones (regroupement macro de régions)
+# regions_land_3 : (RGBA32F) - R=zone_id, G=0, B=0, A=0
+# regions_ocean_3 : (RGBA32F) - Zones océaniques
+# Buffers auxiliaires
+# region_cost_field : (R32F) - Champ de coût terrain (pentes, rivières, bruit)
+# region_seeds : (RGBA32F) - Positions des capitales et quotas
+static var TextureID_Regions : Array[String] = [
+	"regions_land_1", "regions_land_2", "regions_land_3",
+	"regions_ocean_1", "regions_ocean_2", "regions_ocean_3",
+	"region_cost_field", "region_seeds"
+]
+
 # === MEMBRES ===
 var rd: RenderingDevice
 var textures: Dictionary = {}
@@ -312,6 +331,81 @@ func initialize_resources_textures() -> void:
 	
 	print("✅ Textures ressources créées (1x RGBA8 + 1x RGBA32F)")
 
+# === CRÉATION DES TEXTURES RÉGIONS (Étape 4) ===
+func initialize_regions_textures() -> void:
+	"""
+	Initialise les textures spécifiques à l'étape 4 (Régions Hiérarchiques).
+	Appelé par l'orchestrateur avant la phase de génération des régions.
+	Crée 6 textures pour 3 niveaux (terrestre + océanique) + 2 buffers auxiliaires.
+	"""
+	
+	# Format RGBA32F pour textures de régions (stockage des IDs et métadonnées)
+	var format_rgba32f := RDTextureFormat.new()
+	format_rgba32f.width = resolution.x
+	format_rgba32f.height = resolution.y
+	format_rgba32f.format = FORMAT_STATE  # RGBA32F
+	format_rgba32f.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Format R32F pour champ de coût terrain
+	var format_r32f := RDTextureFormat.new()
+	format_r32f.width = resolution.x
+	format_r32f.height = resolution.y
+	format_r32f.format = FORMAT_R32F
+	format_r32f.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Créer les 6 textures de régions (RGBA32F - 16 bytes par pixel)
+	# 3 niveaux terrestres + 3 niveaux océaniques
+	var region_textures = [
+		"regions_land_1", "regions_land_2", "regions_land_3",
+		"regions_ocean_1", "regions_ocean_2", "regions_ocean_3",
+		"region_seeds"
+	]
+	
+	for tex_id in region_textures:
+		if textures.has(tex_id):
+			continue  # Déjà créée
+		
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 16)  # 16 bytes per pixel (RGBA32F)
+		# Initialiser avec -1.0 pour region_id (indique non-assigné)
+		# On utilise fill(0) puis on modifie le canal R en -1 via le shader d'init
+		data.fill(0)
+		
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_rgba32f, view, [data])
+		
+		if not rid.is_valid():
+			push_error("❌ Échec création texture région:", tex_id)
+			continue
+			
+		textures[tex_id] = rid
+	
+	# Créer texture champ de coût (R32F - 4 bytes par pixel)
+	if not textures.has("region_cost_field"):
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 4)  # 4 bytes per pixel (R32F)
+		data.fill(0)
+		
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_r32f, view, [data])
+		
+		if not rid.is_valid():
+			push_error("❌ Échec création texture region_cost_field")
+		else:
+			textures["region_cost_field"] = rid
+	
+	print("✅ Textures régions créées (7x RGBA32F + 1x R32F)")
+
 # === CHARGEMENT DES SHADERS (SÉCURISÉ) ===
 func load_compute_shader(glsl_path: String, shader_name: String) -> bool:
 	if not FileAccess.file_exists(glsl_path):
@@ -379,10 +473,10 @@ func readback_texture(tex_id: String) -> Image:
 	# Textures RGBA8 (colorées)
 	if tex_id in ["temperature_colored", "precipitation_colored", "clouds", "ice_caps", "oil"]:
 		img_format = Image.FORMAT_RGBA8
-	# Textures R32F (vapeur, flux)
-	elif tex_id in ["vapor", "vapor_temp", "river_flux", "flux_temp"]:
+	# Textures R32F (vapeur, flux, coût)
+	elif tex_id in ["vapor", "vapor_temp", "river_flux", "flux_temp", "region_cost_field"]:
 		img_format = Image.FORMAT_RF
-	# Textures RGBA32F (par défaut: geo, climate, plates, crust_age, resources)
+	# Textures RGBA32F (par défaut: geo, climate, plates, crust_age, resources, regions)
 	
 	var img := Image.create_from_data(
 		resolution.x,

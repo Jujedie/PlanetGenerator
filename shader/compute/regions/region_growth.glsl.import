@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bnknswmep5jx4"
+path="res://.godot/imported/region_growth.glsl-5317d779f2cc8f898be73f8a9bd0c9f1.res"
+
+[deps]
+
+source_file="res://shader/compute/regions/region_growth.glsl"
+dest_files=["res://.godot/imported/region_growth.glsl-5317d779f2cc8f898be73f8a9bd0c9f1.res"]
+
+[params]
+

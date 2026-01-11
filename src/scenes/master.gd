@@ -23,6 +23,12 @@ const MAP_NAME_TO_KEY = {
 	"biome_map.png": "MAP_BIOMES",
 	"final_map.png": "MAP_FINAL",
 	"region_map.png": "MAP_REGIONS",
+	"regions_land_level1.png": "MAP_REGIONS_LAND_1",
+	"regions_land_level2.png": "MAP_REGIONS_LAND_2",
+	"regions_land_level3.png": "MAP_REGIONS_LAND_3",
+	"regions_ocean_level1.png": "MAP_REGIONS_OCEAN_1",
+	"regions_ocean_level2.png": "MAP_REGIONS_OCEAN_2",
+	"regions_ocean_level3.png": "MAP_REGIONS_OCEAN_3",
 	"preview.png": "MAP_PREVIEW"
 }
 

@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://cjbjo61qbg0ml"
+path="res://.godot/imported/region_cost_field.glsl-32e08c6542ce608b18d824a394cfff10.res"
+
+[deps]
+
+source_file="res://shader/compute/regions/region_cost_field.glsl"
+dest_files=["res://.godot/imported/region_cost_field.glsl-32e08c6542ce608b18d824a394cfff10.res"]
+
+[params]
+

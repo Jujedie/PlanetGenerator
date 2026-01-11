@@ -105,6 +105,11 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	for key in climate_result.keys():
 		exported_files[key] = climate_result[key]
 	
+	# === EXPORT RÉGIONS (Step 4) - 3 niveaux + océaniques ===
+	var regions_result = _export_regions_maps(gpu, output_dir, width, height)
+	for key in regions_result.keys():
+		exported_files[key] = regions_result[key]
+	
 	# === EXPORT RESSOURCES (Step 5) ===
 	var resources_result = _export_resources_maps(gpu, output_dir, width, height)
 	for key in resources_result.keys():
@@ -592,3 +597,183 @@ func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, hei
 	
 	print("[Exporter] ✅ Resources export complete: ", result.size(), " maps")
 	return result
+
+# ============================================================================
+# ÉTAPE 4 : EXPORT RÉGIONS HIÉRARCHIQUES
+# ============================================================================
+
+## Exporte les cartes de régions hiérarchiques (3 niveaux terrestres + 3 océaniques).
+##
+## Structure des textures de régions (RGBA32F) :
+## - R = region_id (ID unique de la région)
+## - G = cost_accumulated ou lower_level_id (selon le niveau)
+## - B = is_border (1.0 si pixel sur une frontière)
+## - A = parent_region_id
+##
+## Crée un sous-dossier "regions/" contenant :
+## - regions_land_level1.png : Départements terrestres
+## - regions_land_level2.png : Régions terrestres
+## - regions_land_level3.png : Zones terrestres
+## - regions_ocean_level1.png : Départements océaniques
+## - regions_ocean_level2.png : Régions océaniques
+## - regions_ocean_level3.png : Zones océaniques
+## - region_map.png : Version composite (tous niveaux terrestres)
+##
+## @param gpu: Instance GPUContext avec les textures régions
+## @param output_dir: Dossier de sortie principal
+## @param width: Largeur de l'image
+## @param height: Hauteur de l'image
+## @return Dictionary: Chemins des fichiers exportés
+func _export_regions_maps(gpu: GPUContext, output_dir: String, width: int, height: int) -> Dictionary:
+	print("[Exporter] 🗺️ Exporting regions maps...")
+	
+	var result = {}
+	var rd = gpu.rd
+	
+	if not rd:
+		push_error("[Exporter] ❌ RenderingDevice not available")
+		return result
+	
+	# Créer le sous-dossier regions
+	var regions_dir = output_dir + "/regions"
+	if not DirAccess.dir_exists_absolute(regions_dir):
+		DirAccess.make_dir_recursive_absolute(regions_dir)
+	
+	# Synchroniser le GPU avant lecture
+	rd.submit()
+	rd.sync()
+	
+	# Liste des textures de régions à exporter
+	var region_textures = {
+		"regions_land_1": "regions_land_level1",
+		"regions_land_2": "regions_land_level2",
+		"regions_land_3": "regions_land_level3",
+		"regions_ocean_1": "regions_ocean_level1",
+		"regions_ocean_2": "regions_ocean_level2",
+		"regions_ocean_3": "regions_ocean_level3"
+	}
+	
+	# Exporter chaque niveau
+	for tex_id in region_textures.keys():
+		var output_name = region_textures[tex_id]
+		
+		if not gpu.textures.has(tex_id) or not gpu.textures[tex_id].is_valid():
+			print("  ⚠️ Texture ", tex_id, " not available, skipping")
+			continue
+		
+		var tex_data = rd.texture_get_data(gpu.textures[tex_id], 0)
+		
+		if tex_data.size() == 0:
+			print("  ⚠️ Texture ", tex_id, " empty, skipping")
+			continue
+		
+		var expected_size = width * height * 16  # RGBA32F
+		if tex_data.size() != expected_size:
+			push_error("[Exporter] ❌ ", tex_id, " data size mismatch: expected ", expected_size, ", got ", tex_data.size())
+			continue
+		
+		# Créer l'image source
+		var region_img = Image.create_from_data(width, height, false, Image.FORMAT_RGBAF, tex_data)
+		
+		# Créer l'image colorée de sortie
+		var colored_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
+		
+		# Parcourir chaque pixel et coloriser par region_id
+		for y in range(height):
+			for x in range(width):
+				var pixel = region_img.get_pixel(x, y)
+				var region_id = int(round(pixel.r))
+				var is_border = pixel.b > 0.5
+				
+				if region_id < 0:
+					# Pixel non-assigné (eau ou invalide) - transparent
+					colored_img.set_pixel(x, y, Color(0, 0, 0, 0))
+				else:
+					# Générer une couleur unique par region_id (hash déterministe)
+					var color = _hash_id_to_color(region_id)
+					
+					# Assombrir légèrement les bordures pour visualisation
+					if is_border:
+						color = Color(color.r * 0.7, color.g * 0.7, color.b * 0.7, color.a)
+					
+					colored_img.set_pixel(x, y, color)
+		
+		# Sauvegarder
+		var path = regions_dir + "/" + output_name + ".png"
+		var err = colored_img.save_png(path)
+		
+		if err == OK:
+			result[output_name] = path
+			print("  ✅ Saved: ", path)
+		else:
+			push_error("[Exporter] ❌ Failed to save ", output_name, ": ", err)
+	
+	# Créer une version composite "region_map.png" (niveau 1 terrestre pour compatibilité legacy)
+	if result.has("regions_land_level1"):
+		var composite_path = output_dir + "/region_map.png"
+		# Copier le fichier niveau 1 comme composite
+		if gpu.textures.has("regions_land_1") and gpu.textures["regions_land_1"].is_valid():
+			var tex_data = rd.texture_get_data(gpu.textures["regions_land_1"], 0)
+			if tex_data.size() == width * height * 16:
+				var region_img = Image.create_from_data(width, height, false, Image.FORMAT_RGBAF, tex_data)
+				var composite_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
+				
+				for y in range(height):
+					for x in range(width):
+						var pixel = region_img.get_pixel(x, y)
+						var region_id = int(round(pixel.r))
+						
+						if region_id < 0:
+							composite_img.set_pixel(x, y, Color(0, 0, 0, 0))
+						else:
+							composite_img.set_pixel(x, y, _hash_id_to_color(region_id))
+				
+				var err = composite_img.save_png(composite_path)
+				if err == OK:
+					result["region_map"] = composite_path
+					print("  ✅ Saved composite: ", composite_path)
+	
+	print("[Exporter] ✅ Regions export complete: ", result.size(), " maps")
+	return result
+
+## Génère une couleur unique et visuellement distincte à partir d'un ID.
+##
+## Utilise un hash déterministe pour garantir que le même ID
+## produit toujours la même couleur, même entre différentes exécutions.
+##
+## @param id: L'identifiant unique (region_id)
+## @return Color: Couleur RGB avec alpha = 1.0
+func _hash_id_to_color(id: int) -> Color:
+	# Hash basé sur une combinaison de bits pour maximiser la distinction
+	var h = id
+	h = ((h >> 16) ^ h) * 0x45d9f3b
+	h = ((h >> 16) ^ h) * 0x45d9f3b
+	h = (h >> 16) ^ h
+	
+	# Convertir en composantes RGB
+	# On utilise des valeurs distinctes sur chaque canal
+	var r = float((h & 0xFF)) / 255.0
+	var g = float(((h >> 8) & 0xFF)) / 255.0
+	var b = float(((h >> 16) & 0xFF)) / 255.0
+	
+	# Assurer une saturation minimale pour éviter les couleurs trop ternes
+	var max_val = max(r, max(g, b))
+	var min_val = min(r, min(g, b))
+	var saturation = max_val - min_val
+	
+	if saturation < 0.3:
+		# Augmenter la saturation en éloignant les valeurs
+		var mid = (max_val + min_val) / 2.0
+		r = clamp(r + (r - mid) * 0.5, 0.1, 1.0)
+		g = clamp(g + (g - mid) * 0.5, 0.1, 1.0)
+		b = clamp(b + (b - mid) * 0.5, 0.1, 1.0)
+	
+	# Assurer une luminosité minimale pour visibilité
+	var luminance = 0.299 * r + 0.587 * g + 0.114 * b
+	if luminance < 0.2:
+		var boost = 0.2 / luminance
+		r = min(r * boost, 1.0)
+		g = min(g * boost, 1.0)
+		b = min(b * boost, 1.0)
+	
+	return Color(r, g, b, 1.0)
