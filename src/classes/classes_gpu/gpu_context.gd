@@ -29,6 +29,11 @@ static var TextureID_Erosion : Array[String] = ["geo_temp", "river_flux", "flux_
 # ice_caps : (RGBA8) - banquise blanc/transparent
 static var TextureID_Climat : Array[String] = ["vapor", "vapor_temp", "temperature_colored", "precipitation_colored", "clouds", "ice_caps"]
 
+# Textures Étape 5 - Ressources & Pétrole
+# oil : (RGBA8) - carte de pétrole (noir/transparent)
+# resources : (RGBA32F) - R=resource_id, G=intensity, B=cluster_id, A=has_resource
+static var TextureID_Resources : Array[String] = ["oil", "resources"]
+
 # === MEMBRES ===
 var rd: RenderingDevice
 var textures: Dictionary = {}
@@ -246,6 +251,67 @@ func initialize_climate_textures() -> void:
 	
 	print("✅ Textures climat créées (2x R32F + 4x RGBA8)")
 
+# === CRÉATION DES TEXTURES RESSOURCES (Étape 5) ===
+func initialize_resources_textures() -> void:
+	"""
+	Initialise les textures spécifiques à l'étape 5 (Ressources & Pétrole).
+	Appelé par l'orchestrateur avant la phase de génération des ressources.
+	"""
+	
+	# Format RGBA8 pour texture de pétrole (export direct)
+	var format_rgba8 := RDTextureFormat.new()
+	format_rgba8.width = resolution.x
+	format_rgba8.height = resolution.y
+	format_rgba8.format = FORMAT_RGBA8
+	format_rgba8.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Format RGBA32F pour texture de ressources (stockage des IDs)
+	var format_rgba32f := RDTextureFormat.new()
+	format_rgba32f.width = resolution.x
+	format_rgba32f.height = resolution.y
+	format_rgba32f.format = FORMAT_STATE  # RGBA32F
+	format_rgba32f.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Créer texture oil (RGBA8 - 4 bytes par pixel)
+	if not textures.has("oil"):
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 4)  # 4 bytes per pixel (RGBA8)
+		data.fill(0)
+		
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_rgba8, view, [data])
+		
+		if not rid.is_valid():
+			push_error("❌ Échec création texture oil")
+		else:
+			textures["oil"] = rid
+	
+	# Créer texture resources (RGBA32F - 16 bytes par pixel)
+	if not textures.has("resources"):
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 16)  # 16 bytes per pixel (RGBA32F)
+		data.fill(0)
+		
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_rgba32f, view, [data])
+		
+		if not rid.is_valid():
+			push_error("❌ Échec création texture resources")
+		else:
+			textures["resources"] = rid
+	
+	print("✅ Textures ressources créées (1x RGBA8 + 1x RGBA32F)")
+
 # === CHARGEMENT DES SHADERS (SÉCURISÉ) ===
 func load_compute_shader(glsl_path: String, shader_name: String) -> bool:
 	if not FileAccess.file_exists(glsl_path):
@@ -311,12 +377,12 @@ func readback_texture(tex_id: String) -> Image:
 	var img_format = Image.FORMAT_RGBAF
 	
 	# Textures RGBA8 (colorées)
-	if tex_id in ["temperature_colored", "precipitation_colored", "clouds", "ice_caps"]:
+	if tex_id in ["temperature_colored", "precipitation_colored", "clouds", "ice_caps", "oil"]:
 		img_format = Image.FORMAT_RGBA8
 	# Textures R32F (vapeur, flux)
 	elif tex_id in ["vapor", "vapor_temp", "river_flux", "flux_temp"]:
 		img_format = Image.FORMAT_RF
-	# Textures RGBA32F (par défaut)
+	# Textures RGBA32F (par défaut: geo, climate, plates, crust_age, resources)
 	
 	var img := Image.create_from_data(
 		resolution.x,

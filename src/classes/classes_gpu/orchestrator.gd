@@ -122,6 +122,9 @@ func _compile_all_shaders() -> bool:
 		{"path": "res://shader/compute/atmosphere_climat/precipitation.glsl", "name": "precipitation", "critical": false},
 		{"path": "res://shader/compute/atmosphere_climat/clouds.glsl", "name": "clouds", "critical": false},
 		{"path": "res://shader/compute/atmosphere_climat/ice_caps.glsl", "name": "ice_caps", "critical": false},
+		# Shaders Ressources & Pétrole (Étape 5)
+		{"path": "res://shader/compute/ressources/oil.glsl", "name": "oil", "critical": false},
+		{"path": "res://shader/compute/ressources/resources.glsl", "name": "resources", "critical": false},
 	]
 	
 	var all_critical_loaded = true
@@ -496,6 +499,67 @@ func _init_uniform_sets():
 	else:
 		push_warning("[Orchestrator] ⚠️ ice_caps shader invalide, uniform set ignoré")
 	
+	# === ÉTAPE 5 : RESSOURCES & PÉTROLE ===
+	# Initialiser les textures ressources avant de créer les uniform sets
+	gpu.initialize_resources_textures()
+	
+	# === OIL SHADER ===
+	if gpu.shaders.has("oil") and gpu.shaders["oil"].is_valid():
+		print("  • Création uniform set: oil")
+		
+		# Set 0 : Textures (geo en lecture via sampler, oil en écriture)
+		# Binding 0: geo_texture (texture2D)
+		# Binding 1: geo_sampler
+		# Binding 2: oil_texture (writeonly image2D)
+		var geo_tex_uniform = RDUniform.new()
+		geo_tex_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_TEXTURE
+		geo_tex_uniform.binding = 0
+		geo_tex_uniform.add_id(gpu.textures["geo"])
+		
+		var geo_sampler_uniform = RDUniform.new()
+		geo_sampler_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_SAMPLER
+		geo_sampler_uniform.binding = 1
+		geo_sampler_uniform.add_id(_get_or_create_linear_sampler())
+		
+		var oil_tex_uniform = gpu.create_texture_uniform(2, gpu.textures["oil"])
+		
+		var uniforms_oil = [geo_tex_uniform, geo_sampler_uniform, oil_tex_uniform]
+		
+		gpu.uniform_sets["oil_textures"] = rd.uniform_set_create(uniforms_oil, gpu.shaders["oil"], 0)
+		if not gpu.uniform_sets["oil_textures"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create oil textures uniform set")
+		else:
+			print("    ✅ oil textures uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ oil shader invalide, uniform set ignoré")
+	
+	# === RESOURCES SHADER ===
+	if gpu.shaders.has("resources") and gpu.shaders["resources"].is_valid():
+		print("  • Création uniform set: resources")
+		
+		# Set 0 : Textures (geo en lecture via sampler, resources en écriture)
+		var geo_tex_uniform = RDUniform.new()
+		geo_tex_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_TEXTURE
+		geo_tex_uniform.binding = 0
+		geo_tex_uniform.add_id(gpu.textures["geo"])
+		
+		var geo_sampler_uniform = RDUniform.new()
+		geo_sampler_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_SAMPLER
+		geo_sampler_uniform.binding = 1
+		geo_sampler_uniform.add_id(_get_or_create_linear_sampler())
+		
+		var resources_tex_uniform = gpu.create_texture_uniform(2, gpu.textures["resources"])
+		
+		var uniforms_resources = [geo_tex_uniform, geo_sampler_uniform, resources_tex_uniform]
+		
+		gpu.uniform_sets["resources_textures"] = rd.uniform_set_create(uniforms_resources, gpu.shaders["resources"], 0)
+		if not gpu.uniform_sets["resources_textures"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create resources textures uniform set")
+		else:
+			print("    ✅ resources textures uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ resources shader invalide, uniform set ignoré")
+	
 	print("[Orchestrator] ✅ Uniform Sets initialization complete")
 
 # ============================================================================
@@ -546,6 +610,9 @@ func run_simulation() -> void:
 	
 	# === ÉTAPE 3 : ATMOSPHÈRE & CLIMAT ===
 	run_atmosphere_phase(generation_params, w, h)
+	
+	# === ÉTAPE 5 : RESSOURCES & PÉTROLE ===
+	run_resources_phase(generation_params, w, h)
 	
 	print("[Orchestrator] 🧹 Nettoyage de ", _rids_to_free.size(), " ressources temporaires...")
 	if rd:
@@ -1556,6 +1623,190 @@ func _dispatch_ice_caps(w: int, h: int, groups_x: int, groups_y: int, seed_val: 
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["ice_caps"])
 	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["ice_caps_textures"], 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+
+# ============================================================================
+# SAMPLER HELPER
+# ============================================================================
+
+var _linear_sampler: RID = RID()
+
+## Crée ou récupère un sampler linéaire pour lecture de textures
+func _get_or_create_linear_sampler() -> RID:
+	if _linear_sampler.is_valid():
+		return _linear_sampler
+	
+	var sampler_state := RDSamplerState.new()
+	sampler_state.mag_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
+	sampler_state.min_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
+	sampler_state.mip_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
+	sampler_state.repeat_u = RenderingDevice.SAMPLER_REPEAT_MODE_REPEAT
+	sampler_state.repeat_v = RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE
+	sampler_state.repeat_w = RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE
+	
+	_linear_sampler = rd.sampler_create(sampler_state)
+	return _linear_sampler
+
+# ============================================================================
+# ÉTAPE 5 : RESSOURCES & PÉTROLE
+# ============================================================================
+
+## Génère les cartes de ressources et de pétrole.
+##
+## Cette phase exécute :
+## 1. Oil : Gisements pétroliers basés sur géologie (bassins sédimentaires)
+## 2. Resources : Tous les autres minéraux avec distribution par probabilité
+##
+## Le pétrole et les ressources ne sont pas générés si atmosphere_type == 3
+## (pas de vie organique = pas d'hydrocarbures, pas de dépôts sédimentaires).
+##
+## @param params: Dictionnaire contenant seed, atmosphere_type, oil_probability, etc.
+## @param w: Largeur de la texture
+## @param h: Hauteur de la texture
+func run_resources_phase(params: Dictionary, w: int, h: int) -> void:
+	print("[Orchestrator] ⛏️ Phase 5 : Ressources & Pétrole")
+	
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+	
+	var seed_val = int(params.get("seed", 12345))
+	var sea_level = float(params.get("sea_level", 0.0))
+	var atmosphere_type = int(params.get("atmosphere_type", 0))
+	var cylinder_radius = float(w) / (2.0 * PI)
+	
+	# Paramètres de pétrole (depuis enum.gd)
+	var oil_probability = float(params.get("oil_probability", 0.025))
+	var oil_deposit_size = float(params.get("oil_deposit_size", 200.0))
+	
+	# Paramètres globaux des ressources
+	var global_richness = float(params.get("global_richness", 1.0))
+	
+	# === PASSE 1 : PÉTROLE ===
+	_dispatch_oil(w, h, groups_x, groups_y, seed_val, sea_level, cylinder_radius, atmosphere_type, oil_probability, oil_deposit_size)
+	
+	# === PASSE 2 : AUTRES RESSOURCES ===
+	_dispatch_resources(w, h, groups_x, groups_y, seed_val, sea_level, cylinder_radius, atmosphere_type, global_richness)
+	
+	print("[Orchestrator] ✅ Phase 5 : Ressources & Pétrole terminée")
+
+## Dispatch le shader de pétrole
+func _dispatch_oil(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, sea_level: float, cylinder_radius: float, atmosphere_type: int, oil_probability: float, deposit_size: float) -> void:
+	if not gpu.shaders.has("oil") or not gpu.shaders["oil"].is_valid():
+		push_warning("[Orchestrator] ⚠️ oil shader non disponible")
+		return
+	if not gpu.uniform_sets.has("oil_textures") or not gpu.uniform_sets["oil_textures"].is_valid():
+		push_warning("[Orchestrator] ⚠️ oil uniform set non disponible")
+		return
+	
+	print("  • Pétrole (probabilité: ", oil_probability, ", taille: ", deposit_size, ")")
+	
+	# Structure UBO (std140, 32 bytes):
+	# uint seed, width, height (12 bytes)
+	# float sea_level (4 bytes)
+	# float cylinder_radius (4 bytes)
+	# uint atmosphere_type (4 bytes)
+	# float oil_probability (4 bytes)
+	# float deposit_size (4 bytes)
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, seed_val)
+	buffer_bytes.encode_u32(4, w)
+	buffer_bytes.encode_u32(8, h)
+	buffer_bytes.encode_float(12, sea_level)
+	buffer_bytes.encode_float(16, cylinder_radius)
+	buffer_bytes.encode_u32(20, atmosphere_type)
+	buffer_bytes.encode_float(24, oil_probability)
+	buffer_bytes.encode_float(28, deposit_size)
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create oil param buffer")
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["oil"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create oil param set")
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["oil"])
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["oil_textures"], 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+
+## Dispatch le shader de ressources minérales
+func _dispatch_resources(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, sea_level: float, cylinder_radius: float, atmosphere_type: int, global_richness: float) -> void:
+	if not gpu.shaders.has("resources") or not gpu.shaders["resources"].is_valid():
+		push_warning("[Orchestrator] ⚠️ resources shader non disponible")
+		return
+	if not gpu.uniform_sets.has("resources_textures") or not gpu.uniform_sets["resources_textures"].is_valid():
+		push_warning("[Orchestrator] ⚠️ resources uniform set non disponible")
+		return
+	
+	print("  • Ressources minérales (richesse: ", global_richness, ")")
+	
+	# Structure UBO (std140, 32 bytes):
+	# uint seed, width, height (12 bytes)
+	# float sea_level (4 bytes)
+	# float cylinder_radius (4 bytes)
+	# uint atmosphere_type (4 bytes)
+	# float global_richness (4 bytes)
+	# padding (4 bytes)
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, seed_val)
+	buffer_bytes.encode_u32(4, w)
+	buffer_bytes.encode_u32(8, h)
+	buffer_bytes.encode_float(12, sea_level)
+	buffer_bytes.encode_float(16, cylinder_radius)
+	buffer_bytes.encode_u32(20, atmosphere_type)
+	buffer_bytes.encode_float(24, global_richness)
+	buffer_bytes.encode_float(28, 0.0)  # padding
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create resources param buffer")
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["resources"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create resources param set")
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["resources"])
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["resources_textures"], 0)
 	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()

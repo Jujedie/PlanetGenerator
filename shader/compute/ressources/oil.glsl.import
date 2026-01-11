@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://byxsr2v4u0632"
+path="res://.godot/imported/oil.glsl-c237043a3ec33ea94c6d1f631c039a61.res"
+
+[deps]
+
+source_file="res://shader/compute/ressources/oil.glsl"
+dest_files=["res://.godot/imported/oil.glsl-c237043a3ec33ea94c6d1f631c039a61.res"]
+
+[params]
+

@@ -305,48 +305,173 @@ var COULEUR_PRECIPITATION = {
 
 var RESSOURCES = [
 	# Format: Ressource.new(nom, couleur, probabilité_relative, taille_moyenne_gisement)
-	# Probabilités basées sur l'abondance réelle dans la croûte terrestre
+	# Probabilités basées sur l'abondance RÉELLE dans la croûte terrestre (ppm normalisés)
+	# Les ressources peuvent se superposer - génération indépendante par ressource
 	# Couleurs distinctives pour chaque ressource
 	
-	# === TRÈS COMMUNS (abondance croûte terrestre > 1%) ===
-	Ressource.new("Fer",       Color.hex(0x8B4513FF), 0.22, 350),  # Brun rouille - 5% croûte
-	Ressource.new("Aluminium", Color.hex(0xA8A9ADFF), 0.18, 280),  # Gris métallique clair - 8% croûte
-	Ressource.new("Silicium",  Color.hex(0x4A4A4AFF), 0.15, 400),  # Gris foncé - 28% croûte (mais exploitable moins)
+	# ============================================================================
+	# CATÉGORIE 1 : ULTRA-ABONDANTS (> 1% de la croûte terrestre)
+	# ============================================================================
+	Ressource.new("Silicium",       Color.hex(0x4A4A4AFF), 0.95, 800),   # 28% croûte - Gris foncé
+	Ressource.new("Aluminium",      Color.hex(0xA8A9ADFF), 0.85, 600),   # 8% croûte - Gris métallique
+	Ressource.new("Fer",            Color.hex(0x8B4513FF), 0.80, 550),   # 5% croûte - Brun rouille
+	Ressource.new("Calcium",        Color.hex(0xF5F5F5FF), 0.70, 500),   # 3.6% croûte - Blanc grisé
+	Ressource.new("Magnésium",      Color.hex(0x9ACD32FF), 0.55, 400),   # 2.1% croûte - Vert-jaune
+	Ressource.new("Potassium",      Color.hex(0xDA70D6FF), 0.50, 380),   # 2.6% croûte - Orchidée
 	
-	# === COMMUNS (abondance 0.1% - 1%) ===
-	Ressource.new("Charbon",   Color.hex(0x1C1C1CFF), 0.12, 500),  # Noir profond
-	Ressource.new("Calcaire",  Color.hex(0xF5F5DCFF), 0.08, 450),  # Beige crème
-	Ressource.new("Sel",       Color.hex(0xFFFAFAFF), 0.06, 350),  # Blanc pur
-	Ressource.new("Cuivre",    Color.hex(0xB87333FF), 0.04, 120),  # Orange cuivré
+	# ============================================================================
+	# CATÉGORIE 2 : TRÈS COMMUNS (0.1% - 1%)
+	# ============================================================================
+	Ressource.new("Titane",         Color.hex(0xC4CACEAF), 0.40, 350),   # 0.44% croûte - Blanc métallique
+	Ressource.new("Phosphate",      Color.hex(0x556B2FFF), 0.35, 320),   # 0.1% croûte - Vert olive foncé
+	Ressource.new("Manganèse",      Color.hex(0x8B8589FF), 0.30, 280),   # 0.095% croûte - Gris rosé
+	Ressource.new("Soufre",         Color.hex(0xFFFF00FF), 0.28, 300),   # 0.035% croûte - Jaune vif
+	Ressource.new("Charbon",        Color.hex(0x1C1C1CFF), 0.45, 600),   # Sédimentaire organique - Noir profond
+	Ressource.new("Calcaire",       Color.hex(0xF5F5DCFF), 0.42, 550),   # Sédimentaire - Beige crème
 	
-	# === MODÉRÉS (abondance 0.01% - 0.1%) ===
-	Ressource.new("Zinc",      Color.hex(0x7D7D7DFF), 0.025, 80),  # Gris bleuté
-	Ressource.new("Plomb",     Color.hex(0x2F4F4FFF), 0.020, 70),  # Gris ardoise foncé
-	Ressource.new("Nickel",    Color.hex(0x727472FF), 0.018, 60),  # Gris verdâtre
-	Ressource.new("Manganèse", Color.hex(0x8B8589FF), 0.015, 90),  # Gris rosé
+	# ============================================================================
+	# CATÉGORIE 3 : COMMUNS (0.01% - 0.1%)
+	# ============================================================================
+	Ressource.new("Baryum",         Color.hex(0xFFFDD0FF), 0.22, 200),   # 0.0425% croûte - Crème
+	Ressource.new("Strontium",      Color.hex(0xFFE4B5FF), 0.20, 180),   # 0.037% croûte - Mocassin
+	Ressource.new("Zirconium",      Color.hex(0xE0E0E0FF), 0.18, 160),   # 0.0165% croûte - Gris clair
+	Ressource.new("Vanadium",       Color.hex(0x708090FF), 0.16, 140),   # 0.012% croûte - Gris ardoise
+	Ressource.new("Chrome",         Color.hex(0xFFD700FF), 0.15, 130),   # 0.01% croûte - Chrome doré
+	Ressource.new("Nickel",         Color.hex(0x727472FF), 0.14, 120),   # 0.0084% croûte - Gris verdâtre
+	Ressource.new("Zinc",           Color.hex(0x7D7D7DFF), 0.13, 110),   # 0.007% croûte - Gris bleuté
+	Ressource.new("Cuivre",         Color.hex(0xB87333FF), 0.12, 100),   # 0.006% croûte - Orange cuivré
+	Ressource.new("Sel",            Color.hex(0xFFFAFAFF), 0.35, 400),   # Évaporites - Blanc pur
+	Ressource.new("Fluorine",       Color.hex(0x9966CCFF), 0.15, 120),   # Évaporite - Violet améthyste
 	
-	# === RARES (abondance 0.001% - 0.01%) ===
-	Ressource.new("Étain",     Color.hex(0xD3D4D5FF), 0.010, 40),  # Argent mat
-	Ressource.new("Tungstène", Color.hex(0x36454FFF), 0.008, 25),  # Gris charbon
-	Ressource.new("Titane",    Color.hex(0xC4CACEAF), 0.012, 55),  # Blanc métallique
-	Ressource.new("Lithium",   Color.hex(0xDDA0DDFF), 0.006, 35),  # Violet pâle
-	Ressource.new("Cobalt",    Color.hex(0x0047ABFF), 0.005, 20),  # Bleu cobalt
+	# ============================================================================
+	# CATÉGORIE 4 : MODÉRÉMENT RARES (0.001% - 0.01%)
+	# ============================================================================
+	Ressource.new("Cobalt",         Color.hex(0x0047ABFF), 0.08, 60),    # 0.0025% croûte - Bleu cobalt
+	Ressource.new("Lithium",        Color.hex(0xDDA0DDFF), 0.07, 55),    # 0.002% croûte - Violet pâle
+	Ressource.new("Niobium",        Color.hex(0x6B8E23FF), 0.06, 50),    # 0.002% croûte - Vert olive
+	Ressource.new("Plomb",          Color.hex(0x2F4F4FFF), 0.055, 45),   # 0.0014% croûte - Gris ardoise
+	Ressource.new("Bore",           Color.hex(0x8B0000FF), 0.05, 40),    # 0.001% croûte - Rouge foncé
+	Ressource.new("Thorium",        Color.hex(0x228B22FF), 0.045, 35),   # 0.0006% croûte - Vert forêt
+	Ressource.new("Graphite",       Color.hex(0x333333FF), 0.09, 80),    # Carbone cristallin - Gris anthracite
 	
-	# === TRÈS RARES (abondance < 0.001%) ===
-	Ressource.new("Uranium",   Color.hex(0x7FFF00FF), 0.003, 15),  # Vert radioactif
-	Ressource.new("Argent",    Color.hex(0xC0C0C0FF), 0.0025, 12), # Argent brillant
-	Ressource.new("Or",        Color.hex(0xFFD700FF), 0.0008, 8),  # Or brillant
-	Ressource.new("Platine",   Color.hex(0xE5E4E2FF), 0.0004, 4),  # Blanc platine
-	Ressource.new("Diamant",   Color.hex(0xB9F2FFFF), 0.0002, 3),  # Bleu cristallin
+	# ============================================================================
+	# CATÉGORIE 5 : RARES (0.0001% - 0.001%)
+	# ============================================================================
+	Ressource.new("Étain",          Color.hex(0xD3D4D5FF), 0.035, 30),   # 0.00022% croûte - Argent mat
+	Ressource.new("Béryllium",      Color.hex(0x7FFFD4FF), 0.032, 28),   # 0.00028% croûte - Aigue-marine
+	Ressource.new("Arsenic",        Color.hex(0x696969FF), 0.030, 25),   # 0.00018% croûte - Gris dim
+	Ressource.new("Germanium",      Color.hex(0xC0C0C0FF), 0.028, 22),   # 0.00015% croûte - Argent
+	Ressource.new("Uranium",        Color.hex(0x7FFF00FF), 0.026, 20),   # 0.00027% croûte - Vert radioactif
+	Ressource.new("Molybdène",      Color.hex(0x4682B4FF), 0.024, 18),   # 0.00012% croûte - Bleu acier
+	Ressource.new("Tungstène",      Color.hex(0x36454FFF), 0.022, 16),   # 0.000125% croûte - Gris charbon
+	Ressource.new("Antimoine",      Color.hex(0xFAEBD7FF), 0.020, 15),   # 0.00002% croûte - Blanc antique
+	Ressource.new("Tantale",        Color.hex(0x5F9EA0FF), 0.018, 12),   # 0.0002% croûte - Bleu cadet
 	
-	# === HYDROCARBURES (distribution géologique) ===
-	Ressource.new("Pétrole",   Color.hex(0x000000FF), 0.025, 200), # Noir
-	Ressource.new("Gaz naturel", Color.hex(0x87CEEBFF), 0.020, 180), # Bleu ciel
+	# ============================================================================
+	# CATÉGORIE 6 : TRÈS RARES (0.00001% - 0.0001%)
+	# ============================================================================
+	Ressource.new("Argent",         Color.hex(0xC0C0C0FF), 0.012, 10),   # 0.0000075% croûte - Argent brillant
+	Ressource.new("Cadmium",        Color.hex(0xFFEC8BFF), 0.010, 8),    # 0.000015% croûte - Jaune clair
+	Ressource.new("Mercure",        Color.hex(0xB0C4DEFF), 0.008, 6),    # 0.000008% croûte - Bleu clair acier
+	Ressource.new("Sélénium",       Color.hex(0xFF6347FF), 0.007, 5),    # 0.00000005% croûte - Tomate
+	Ressource.new("Indium",         Color.hex(0x4B0082FF), 0.006, 4),    # 0.00000025% croûte - Indigo
+	Ressource.new("Bismuth",        Color.hex(0xFF69B4FF), 0.005, 4),    # 0.0000085% croûte - Rose vif
+	Ressource.new("Tellure",        Color.hex(0xCD853FFF), 0.004, 3),    # 0.000001% croûte - Pérou
 	
-	# === PIERRES PRÉCIEUSES ===
-	Ressource.new("Émeraude",  Color.hex(0x50C878FF), 0.0003, 2),  # Vert émeraude
-	Ressource.new("Rubis",     Color.hex(0xE0115FFF), 0.0003, 2),  # Rouge rubis
-	Ressource.new("Saphir",    Color.hex(0x0F52BAFF), 0.0003, 2)   # Bleu saphir
+	# ============================================================================
+	# CATÉGORIE 7 : EXTRÊMEMENT RARES (< 0.00001%)
+	# ============================================================================
+	Ressource.new("Or",             Color.hex(0xFFD700FF), 0.003, 6),    # 0.0000004% croûte - Or brillant
+	Ressource.new("Platine",        Color.hex(0xE5E4E2FF), 0.0025, 4),   # 0.0000005% croûte - Blanc platine
+	Ressource.new("Palladium",      Color.hex(0xCEC8C0FF), 0.002, 3),    # 0.00000015% croûte - Gris perle
+	Ressource.new("Rhodium",        Color.hex(0xC0C0C0FF), 0.0015, 2),   # 0.0000001% croûte - Argent clair
+	Ressource.new("Iridium",        Color.hex(0xF0F8FFFF), 0.001, 2),    # 0.00000001% croûte - Blanc Alice
+	Ressource.new("Osmium",         Color.hex(0x476276FF), 0.0008, 2),   # 0.0000015% croûte - Bleu-gris
+	Ressource.new("Ruthénium",      Color.hex(0x808080FF), 0.0006, 2),   # 0.000001% croûte - Gris
+	Ressource.new("Rhénium",        Color.hex(0xA9A9A9FF), 0.0004, 1),   # 0.00000026% croûte - Gris foncé
+	
+	# ============================================================================
+	# CATÉGORIE 8 : TERRES RARES (Lanthanides - groupés par abondance)
+	# ============================================================================
+	Ressource.new("Cérium",         Color.hex(0xFFF8DCFF), 0.015, 25),   # 0.0066% - Le plus abondant des TR
+	Ressource.new("Lanthane",       Color.hex(0xFFFAF0FF), 0.013, 22),   # 0.0039% - Blanc floral
+	Ressource.new("Néodyme",        Color.hex(0x9370DBFF), 0.011, 20),   # 0.0041% - Violet moyen (aimants)
+	Ressource.new("Yttrium",        Color.hex(0x87CEFAFF), 0.010, 18),   # 0.0033% - Bleu ciel clair
+	Ressource.new("Praséodyme",     Color.hex(0xADFF2FFF), 0.008, 15),   # 0.00092% - Vert-jaune
+	Ressource.new("Samarium",       Color.hex(0xDEB887FF), 0.006, 12),   # 0.0006% - Bois
+	Ressource.new("Gadolinium",     Color.hex(0xF5DEB3FF), 0.005, 10),   # 0.00052% - Blé
+	Ressource.new("Dysprosium",     Color.hex(0xBDB76BFF), 0.0045, 8),   # 0.00052% - Kaki foncé
+	Ressource.new("Erbium",         Color.hex(0xFFC0CBFF), 0.004, 7),    # 0.00035% - Rose
+	Ressource.new("Europium",       Color.hex(0xFF4500FF), 0.003, 5),    # 0.00018% - Rouge orangé
+	Ressource.new("Terbium",        Color.hex(0x32CD32FF), 0.0025, 4),   # 0.00012% - Vert lime
+	Ressource.new("Holmium",        Color.hex(0xFFD700FF), 0.002, 3),    # 0.00013% - Or clair
+	Ressource.new("Thulium",        Color.hex(0x00CED1FF), 0.0015, 2),   # 0.00005% - Turquoise foncé
+	Ressource.new("Ytterbium",      Color.hex(0xE6E6FAFF), 0.0012, 2),   # 0.00032% - Lavande
+	Ressource.new("Lutétium",       Color.hex(0xD8BFD8FF), 0.0008, 1),   # 0.00008% - Chardon
+	Ressource.new("Scandium",       Color.hex(0x00FA9AFF), 0.007, 12),   # 0.0022% - Vert printemps
+	
+	# ============================================================================
+	# CATÉGORIE 9 : HYDROCARBURES ET COMBUSTIBLES FOSSILES
+	# ============================================================================
+	Ressource.new("Pétrole",        Color.hex(0x000000FF), 0.18, 350),   # Distribution géologique - Noir
+	Ressource.new("Gaz naturel",    Color.hex(0x87CEEBFF), 0.20, 320),   # Associé au pétrole - Bleu ciel
+	Ressource.new("Lignite",        Color.hex(0x3D2B1FFF), 0.25, 400),   # Charbon jeune - Brun foncé
+	Ressource.new("Anthracite",     Color.hex(0x0C0C0CFF), 0.15, 300),   # Charbon pur - Noir intense
+	Ressource.new("Tourbe",         Color.hex(0x5C4033FF), 0.30, 450),   # Pré-charbon - Brun terre
+	Ressource.new("Schiste bitumineux", Color.hex(0x4A412AFF), 0.12, 280), # Oil shale - Brun olive
+	Ressource.new("Méthane hydraté", Color.hex(0xADD8E6FF), 0.08, 200),  # Clathrates - Bleu clair
+	
+	# ============================================================================
+	# CATÉGORIE 10 : PIERRES PRÉCIEUSES ET GEMMES
+	# ============================================================================
+	Ressource.new("Diamant",        Color.hex(0xB9F2FFFF), 0.0018, 4),   # Carbone HP - Bleu cristallin
+	Ressource.new("Émeraude",       Color.hex(0x50C878FF), 0.0012, 3),   # Béryl vert - Vert émeraude
+	Ressource.new("Rubis",          Color.hex(0xE0115FFF), 0.0010, 2),   # Corindon rouge - Rouge rubis
+	Ressource.new("Saphir",         Color.hex(0x0F52BAFF), 0.0010, 2),   # Corindon bleu - Bleu saphir
+	Ressource.new("Topaze",         Color.hex(0xFFC87CFF), 0.0015, 3),   # Silicate - Orange doré
+	Ressource.new("Améthyste",      Color.hex(0x9966CCFF), 0.0020, 4),   # Quartz violet - Violet
+	Ressource.new("Opale",          Color.hex(0xA8C3BCFF), 0.0008, 2),   # Silice hydratée - Blanc nacré
+	Ressource.new("Turquoise",      Color.hex(0x40E0D0FF), 0.0010, 2),   # Phosphate cuivre - Turquoise
+	Ressource.new("Grenat",         Color.hex(0x9B111EFF), 0.0025, 5),   # Silicate - Rouge profond
+	Ressource.new("Péridot",        Color.hex(0xB4C424FF), 0.0018, 3),   # Olivine - Vert-jaune
+	Ressource.new("Jade",           Color.hex(0x00A86BFF), 0.0012, 3),   # Néphrite/jadéite - Vert jade
+	Ressource.new("Lapis-lazuli",   Color.hex(0x26619CFF), 0.0008, 2),   # Lazurite - Bleu profond
+	
+	# ============================================================================
+	# CATÉGORIE 11 : MINÉRAUX INDUSTRIELS ET MATÉRIAUX DE CONSTRUCTION
+	# ============================================================================
+	Ressource.new("Quartz",         Color.hex(0xFFFFFF99), 0.65, 700),   # SiO2 cristallin - Blanc transparent
+	Ressource.new("Feldspath",      Color.hex(0xFFE4E1FF), 0.60, 650),   # Silicate Al - Rose pâle
+	Ressource.new("Mica",           Color.hex(0xD4AF37FF), 0.45, 450),   # Silicate feuilleté - Or mat
+	Ressource.new("Argile",         Color.hex(0xCD853FFF), 0.55, 550),   # Céramique - Brun argile
+	Ressource.new("Kaolin",         Color.hex(0xFFF5EEFF), 0.40, 400),   # Argile blanche - Blanc crème
+	Ressource.new("Gypse",          Color.hex(0xF0F0F0FF), 0.38, 380),   # Sulfate calcium - Gris blanc
+	Ressource.new("Talc",           Color.hex(0xE0F0E0FF), 0.32, 320),   # Silicate Mg - Vert très pâle
+	Ressource.new("Bauxite",        Color.hex(0xD2691EFF), 0.35, 350),   # Minerai Al - Chocolat
+	Ressource.new("Marbre",         Color.hex(0xF8F8FFFF), 0.30, 400),   # Calcaire métamorphique - Blanc fantôme
+	Ressource.new("Granit",         Color.hex(0x808080FF), 0.50, 500),   # Roche ignée - Gris
+	Ressource.new("Ardoise",        Color.hex(0x2F4F4FFF), 0.28, 300),   # Schiste métamorphique - Gris ardoise
+	Ressource.new("Grès",           Color.hex(0xF4A460FF), 0.48, 480),   # Sable consolidé - Sable
+	Ressource.new("Sable",          Color.hex(0xC2B280FF), 0.75, 800),   # Construction/verre - Kaki clair
+	Ressource.new("Gravier",        Color.hex(0xA0A0A0FF), 0.70, 750),   # Agrégats - Gris moyen
+	Ressource.new("Basalte",        Color.hex(0x1C1C1CFF), 0.42, 420),   # Roche volcanique - Noir
+	Ressource.new("Obsidienne",     Color.hex(0x0B0B0BFF), 0.15, 150),   # Verre volcanique - Noir brillant
+	Ressource.new("Pierre ponce",   Color.hex(0xDCDCDCFF), 0.18, 180),   # Lave poreuse - Gris gainsboro
+	Ressource.new("Amiante",        Color.hex(0x808000FF), 0.10, 100),   # Fibres silicate - Olive (dangereux)
+	Ressource.new("Vermiculite",    Color.hex(0xDAA520FF), 0.12, 120),   # Mica expansé - Or sombre
+	Ressource.new("Perlite",        Color.hex(0xEEEEEEFF), 0.14, 140),   # Verre volcanique - Gris très clair
+	Ressource.new("Bentonite",      Color.hex(0xD2B48CFF), 0.20, 200),   # Argile montmorillonite - Tan
+	Ressource.new("Zéolite",        Color.hex(0xE0FFFFFF), 0.16, 160),   # Silicate poreux - Cyan clair
+	
+	# ============================================================================
+	# CATÉGORIE 12 : MINÉRAUX SPÉCIAUX ET STRATÉGIQUES
+	# ============================================================================
+	Ressource.new("Hafnium",        Color.hex(0x4F4F4FFF), 0.008, 8),    # Avec zirconium - Gris foncé
+	Ressource.new("Gallium",        Color.hex(0x8470FFFF), 0.006, 6),    # Semi-conducteur - Bleu lavande
+	Ressource.new("Césium",         Color.hex(0xFFDAB9FF), 0.002, 2),    # Horloges atomiques - Pêche
+	Ressource.new("Rubidium",       Color.hex(0xE6E6FAFF), 0.004, 4),    # Recherche - Lavande
+	Ressource.new("Hélium",         Color.hex(0xFFFAF0FF), 0.05, 50),    # Gaz noble (gisements) - Blanc floral
+	Ressource.new("Terres rares mélangées", Color.hex(0x98FB98FF), 0.025, 30) # Monazite/bastnäsite - Vert pâle
 ]
 
 func getElevationColor(elevation: int, grey_version : bool = false) -> Color:

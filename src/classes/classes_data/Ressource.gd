@@ -11,16 +11,16 @@ var nbCaseLeft    : int
 var isComplete    : bool
 
 func _init(nom_param: String, couleur_param: Color, probabilite_param: float, avgSilonTaille_param: int) -> void:
-		self.nom = nom_param
-		self.couleur = couleur_param
-		self.probabilite = probabilite_param
-		self.cases = []
+	self.nom = nom_param
+	self.couleur = couleur_param
+	self.probabilite = probabilite_param
+	self.cases = []
 
-		randomize()
-		self.avgSilonTaille = avgSilonTaille_param
-		self.nbCaseLeft = randi() % ((int)(avgSilonTaille_param / 2.0)) + (int)((avgSilonTaille_param / 2.0))
-		self.isComplete = false
-
+	randomize()
+	self.avgSilonTaille = avgSilonTaille_param
+	# Éviter modulo par zéro en garantissant une valeur minimale de 1
+	var half_size = max(1, int(avgSilonTaille_param / 2.0))
+	self.nbCaseLeft = randi() % half_size + half_size
 func getColor() -> Color:
 		return self.color
 func getCases() -> Array[Array]:

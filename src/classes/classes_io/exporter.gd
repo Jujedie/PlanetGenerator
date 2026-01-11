@@ -105,6 +105,11 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	for key in climate_result.keys():
 		exported_files[key] = climate_result[key]
 	
+	# === EXPORT RESSOURCES (Step 5) ===
+	var resources_result = _export_resources_maps(gpu, output_dir, width, height)
+	for key in resources_result.keys():
+		exported_files[key] = resources_result[key]
+	
 	print("[Exporter] Export complete: ", exported_files.size(), " maps")
 	return exported_files
 
@@ -436,4 +441,154 @@ func _export_climate_maps_optimized(gpu: GPUContext, output_dir: String) -> Dict
 			push_error("[Exporter] ❌ Failed to save ", filename, ": ", err)
 	
 	print("[Exporter] ✅ Climate export complete: ", result.size(), " maps")
+	return result
+
+# ============================================================================
+# ÉTAPE 5 : EXPORT RESSOURCES
+# ============================================================================
+
+## Noms des ressources (doit correspondre à l'ordre dans enum.gd RESSOURCES - 116 ressources)
+const RESOURCE_NAMES = [
+	# CAT 1: Ultra-abondants (6)
+	"silicium", "aluminium", "fer", "calcium", "magnesium", "potassium",
+	# CAT 2: Très communs (6)
+	"titane", "phosphate", "manganese", "soufre", "charbon", "calcaire",
+	# CAT 3: Communs (10)
+	"baryum", "strontium", "zirconium", "vanadium", "chrome", "nickel", "zinc", "cuivre", "sel", "fluorine",
+	# CAT 4: Modérément rares (7)
+	"cobalt", "lithium", "niobium", "plomb", "bore", "thorium", "graphite",
+	# CAT 5: Rares (9)
+	"etain", "beryllium", "arsenic", "germanium", "uranium", "molybdene", "tungstene", "antimoine", "tantale",
+	# CAT 6: Très rares (7)
+	"argent", "cadmium", "mercure", "selenium", "indium", "bismuth", "tellure",
+	# CAT 7: Extrêmement rares (8)
+	"or", "platine", "palladium", "rhodium", "iridium", "osmium", "ruthenium", "rhenium",
+	# CAT 8: Terres rares (16)
+	"cerium", "lanthane", "neodyme", "yttrium", "praseodyme", "samarium", "gadolinium", "dysprosium", "erbium", "europium", "terbium", "holmium", "thulium", "ytterbium", "lutetium", "scandium",
+	# CAT 9: Hydrocarbures (7)
+	"petrole", "gaz_naturel", "lignite", "anthracite", "tourbe", "schiste_bitumineux", "methane_hydrate",
+	# CAT 10: Pierres précieuses (12)
+	"diamant", "emeraude", "rubis", "saphir", "topaze", "amethyste", "opale", "turquoise", "grenat", "peridot", "jade", "lapis_lazuli",
+	# CAT 11: Minéraux industriels (22)
+	"quartz", "feldspath", "mica", "argile", "kaolin", "gypse", "talc", "bauxite", "marbre", "granit", "ardoise", "gres", "sable", "gravier", "basalte", "obsidienne", "pierre_ponce", "amiante", "vermiculite", "perlite", "bentonite", "zeolite",
+	# CAT 12: Minéraux spéciaux (6)
+	"hafnium", "gallium", "cesium", "rubidium", "helium", "terres_rares_melangees"
+]
+
+## Exporte les cartes de ressources et de pétrole.
+##
+## Crée un sous-dossier "ressource/" contenant :
+## - oil_map.png : Carte de pétrole (noir/transparent)
+## - Une carte par ressource minérale avec la couleur définie dans enum.gd
+##
+## @param gpu: Instance GPUContext avec les textures ressources
+## @param output_dir: Dossier de sortie principal
+## @param width: Largeur de l'image
+## @param height: Hauteur de l'image
+## @return Dictionary: Chemins des fichiers exportés
+func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, height: int) -> Dictionary:
+	print("[Exporter] ⛏️ Exporting resources maps...")
+	
+	var result = {}
+	var rd = gpu.rd
+	
+	if not rd:
+		push_error("[Exporter] ❌ RenderingDevice not available")
+		return result
+	
+	# Créer le sous-dossier ressource
+	var resources_dir = output_dir + "/ressource"
+	if not DirAccess.dir_exists_absolute(resources_dir):
+		DirAccess.make_dir_recursive_absolute(resources_dir)
+	
+	# Synchroniser le GPU avant lecture
+	rd.submit()
+	rd.sync()
+	
+	# === EXPORT PÉTROLE (RGBA8 direct) ===
+	if gpu.textures.has("oil") and gpu.textures["oil"].is_valid():
+		var oil_data = rd.texture_get_data(gpu.textures["oil"], 0)
+		
+		if oil_data.size() > 0:
+			var expected_size = width * height * 4  # RGBA8
+			if oil_data.size() == expected_size:
+				var oil_img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, oil_data)
+				var oil_path = resources_dir + "/oil_map.png"
+				var err = oil_img.save_png(oil_path)
+				
+				if err == OK:
+					result["oil_map"] = oil_path
+					print("  ✅ Saved: ", oil_path)
+				else:
+					push_error("[Exporter] ❌ Failed to save oil_map: ", err)
+			else:
+				push_error("[Exporter] ❌ Oil data size mismatch: expected ", expected_size, ", got ", oil_data.size())
+		else:
+			print("  ⚠️ Oil texture empty, skipping")
+	else:
+		print("  ⚠️ Oil texture not available, skipping")
+	
+	# === EXPORT RESSOURCES (RGBA32F -> cartes individuelles) ===
+	if gpu.textures.has("resources") and gpu.textures["resources"].is_valid():
+		var res_data = rd.texture_get_data(gpu.textures["resources"], 0)
+		
+		if res_data.size() > 0:
+			var expected_size = width * height * 16  # RGBA32F
+			if res_data.size() == expected_size:
+				# Créer l'image source
+				var res_img = Image.create_from_data(width, height, false, Image.FORMAT_RGBAF, res_data)
+				
+				# Créer une image pour chaque ressource
+				var resource_images: Dictionary = {}
+				for i in range(RESOURCE_NAMES.size()):
+					resource_images[i] = Image.create(width, height, false, Image.FORMAT_RGBA8)
+				
+				# Récupérer les couleurs des ressources depuis Enum.gd
+				var resource_colors = []
+				for res in Enum.RESSOURCES:
+					resource_colors.append(res.couleur)  # Utiliser 'couleur' au lieu de 'color'
+				
+				# Parcourir chaque pixel
+				for y in range(height):
+					for x in range(width):
+						var pixel = res_img.get_pixel(x, y)
+						var resource_id = int(round(pixel.r))
+						var intensity = pixel.g
+						var has_resource = pixel.a > 0.5
+						
+						if has_resource and resource_id >= 0 and resource_id < RESOURCE_NAMES.size():
+							# Couleur de la ressource
+							var base_color = resource_colors[resource_id] if resource_id < resource_colors.size() else Color(1, 1, 1, 1)
+							
+							# RGB = couleur * intensité, Alpha = intensité
+							var color = Color(
+								base_color.r * intensity,
+								base_color.g * intensity,
+								base_color.b * intensity,
+								intensity
+							)
+							
+							# Écrire dans la carte individuelle
+							resource_images[resource_id].set_pixel(x, y, color)
+				
+				# Sauvegarder TOUTES les cartes individuelles
+				for i in range(RESOURCE_NAMES.size()):
+					if not resource_images.has(i):
+						continue
+					
+					var res_path = resources_dir + "/" + RESOURCE_NAMES[i] + "_map.png"
+					var err = resource_images[i].save_png(res_path)
+					if err == OK:
+						result[RESOURCE_NAMES[i] + "_map"] = res_path
+						print("  ✅ Saved: ", res_path)
+					else:
+						push_error("[Exporter] ❌ Failed to save ", RESOURCE_NAMES[i], "_map: ", err)
+			else:
+				push_error("[Exporter] ❌ Resources data size mismatch: expected ", expected_size, ", got ", res_data.size())
+		else:
+			print("  ⚠️ Resources texture empty, skipping")
+	else:
+		print("  ⚠️ Resources texture not available, skipping")
+	
+	print("[Exporter] ✅ Resources export complete: ", result.size(), " maps")
 	return result
