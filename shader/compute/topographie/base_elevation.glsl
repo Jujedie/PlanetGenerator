@@ -526,8 +526,8 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
             float side = sign(dot(info.velocity1, vec2(1.0, 0.0)));
             if (info.borderDist < 0.01) {
                 // Fosse profonde (atténuée sous l'eau)
-                // Réduit de -5000m à -3500m pour fosses visibles mais pas excessives
-                uplift = -strength * 3500.0 * conv_strength * underwaterDamping;
+                // Réduit à -2000m pour bordures tectoniques moins marquées
+                uplift = -strength * 2000.0 * conv_strength * underwaterDamping;
             } else if (info.borderDist < 0.03) {
                 // Arc insulaire (50-100km en arrière de la fosse)
                 float arcFactor = smoothstep(0.01, 0.015, info.borderDist) * 
@@ -538,8 +538,8 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
             // Océan-Continent : Subduction asymétrique
             if (isOceanic1) {
                 // Ce côté est océanique - FOSSE (atténuée sous l'eau)
-                // Réduit de -4000m à -2800m
-                uplift = -strength * 2800.0 * conv_strength * underwaterDamping;
+                // Réduit à -1800m pour bordures moins excessives
+                uplift = -strength * 1800.0 * conv_strength * underwaterDamping;
             } else {
                 // Ce côté est continental - CORDILLÈRE
                 // Réduit de 3000m à 1800m
@@ -557,7 +557,7 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
             // Rift continental (Vallée du Rift)
             // Vallée centrale + épaules surélevées
             if (info.borderDist < 0.008) {
-                uplift = -strength * 800.0 * div_strength;  // Vallée
+                uplift = -strength * 500.0 * div_strength;  // Vallée (réduit 800→500m)
             } else if (info.borderDist < 0.02) {
                 float shoulderFactor = smoothstep(0.008, 0.012, info.borderDist) *
                                        smoothstep(0.02, 0.016, info.borderDist);
@@ -668,7 +668,7 @@ float calculateTripleJunctionUplift(vec2 uv, vec3 coords, uint seed, float conti
                 if (ocean_i && ocean_j) {
                     totalUplift += 1000.0 * min(-conv, 1.0);  // Dorsale
                 } else {
-                    totalUplift -= 300.0 * min(-conv, 1.0);   // Rift
+                    totalUplift -= 150.0 * min(-conv, 1.0);   // Rift (réduit 300→150m)
                 }
             }
         }
@@ -838,6 +838,17 @@ void main() {
     
     // === ÉLÉVATION FINALE ===
     float elevation = baseElevation + noiseElevation + tectonicUplift + legacyMountains + legacyCanyons;
+    
+    // === CORRECTION ARCHIPEL : Remonter zones continentales légèrement submergées ===
+    // Appliqué uniquement aux zones continentales proches du niveau de la mer
+    // Évite l'effet archipel sans élever globalement la topographie
+    if (!isOceanic && elevation > -300.0 && elevation < 0.0) {
+        // Boost progressif : plus on est profond (proche de -300m), plus on booste
+        float submersionDepth = -elevation;  // 0 à 300m
+        float boostFactor = smoothstep(0.0, 300.0, submersionDepth);
+        // Boost max +200m pour les zones à -300m, décroissant vers 0m
+        elevation += boostFactor * 200.0;
+    }
     
     // === DÉTAILS ADDITIONNELS (limités pour préserver les plaines) ===
     // Seuil augmenté à 2500m et amplitude réduite à 500m
