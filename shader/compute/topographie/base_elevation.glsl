@@ -780,7 +780,7 @@ void main() {
     // Relief de bruit : amplitude 2400m avec biais modéré (+200m)
     // Plage résultante: [-2200, +2800m], centrée sur ~300m
     // Combiné avec baseElevation (~150m) → médiane continentale ~850m (réaliste)
-    float noiseElevation = noise1 * 2400.0 + 200.0 + clamp(noise2, 0.0, 1.0) * params.elevation_modifier * 0.4;
+    float noiseElevation = noise1 * 1500.0 + 200.0 + clamp(noise2, 0.0, 1.0) * params.elevation_modifier * 0.4;
     
     // === PLAQUES TECTONIQUES (Voronoi sphérique) ===
     PlateInfo plateInfo = findClosestPlate(uv, params.seed);
@@ -823,12 +823,17 @@ void main() {
     }
     
     // === STRUCTURES TECTONIQUES LEGACY (Canyons/Rifts) ===
+    // RARIFIÉ: Seuil plus strict (0.48-0.52) et profondeur réduite (-600m)
+    // Évite les larges dépressions circulaires partout
     float tectonic_canyon = abs(fbmSimplex(coords * tectonic_freq, 4, 0.55, 2.0, params.seed + 30000u));
     
     float legacyCanyons = 0.0;
-    if (tectonic_canyon > 0.45 && tectonic_canyon < 0.55) {
-        float band_strength = 1.0 - abs(tectonic_canyon - 0.5) * 20.0;
-        legacyCanyons = -1500.0 * band_strength;
+    // Seuil très étroit pour rareté + vérification altitude (éviter canyons sous-marins)
+    if (tectonic_canyon > 0.48 && tectonic_canyon < 0.52 && baseElevation + noiseElevation > -500.0) {
+        float band_strength = 1.0 - abs(tectonic_canyon - 0.5) * 50.0;  // Bande très étroite
+        // Profondeur réduite et modulée par le bruit pour aspect naturel
+        float depth_modulation = 0.6 + 0.4 * fbm(coords * tectonic_freq * 2.0, 3, 0.6, 2.0, params.seed + 31000u);
+        legacyCanyons = -600.0 * band_strength * depth_modulation;
     }
     
     // === ÉLÉVATION FINALE ===
