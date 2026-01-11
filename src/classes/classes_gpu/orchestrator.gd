@@ -110,6 +110,8 @@ func _compile_all_shaders() -> bool:
 		# Shaders d'âge de croûte (JFA + Finalisation)
 		{"path": "res://shader/compute/topographie/crust_age_jfa.glsl", "name": "crust_age_jfa", "critical": false},
 		{"path": "res://shader/compute/topographie/crust_age_finalize.glsl", "name": "crust_age_finalize", "critical": false},
+		# Shader de cratères (planètes sans atmosphère)
+		{"path": "res://shader/compute/topographie/cratering.glsl", "name": "cratering", "critical": false},
 		# Shaders Érosion Hydraulique (Étape 2)
 		{"path": "res://shader/compute/erosion/erosion_rainfall.glsl", "name": "erosion_rainfall", "critical": false},
 		{"path": "res://shader/compute/erosion/erosion_flow.glsl", "name": "erosion_flow", "critical": false},
@@ -283,6 +285,23 @@ func _init_uniform_sets():
 			print("    ✅ crust_age_finalize textures uniform set créé")
 	else:
 		push_warning("[Orchestrator] ⚠️ crust_age_finalize shader invalide, uniform set ignoré")
+	
+	# === CRATERING SHADER (planètes sans atmosphère) ===
+	if gpu.shaders.has("cratering") and gpu.shaders["cratering"].is_valid():
+		print("  • Création uniform set: cratering")
+		
+		# Set 0 : Textures (geo en lecture/écriture)
+		var uniforms_cratering = [
+			gpu.create_texture_uniform(0, gpu.textures["geo"]),
+		]
+		
+		gpu.uniform_sets["cratering_textures"] = rd.uniform_set_create(uniforms_cratering, gpu.shaders["cratering"], 0)
+		if not gpu.uniform_sets["cratering_textures"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create cratering textures uniform set")
+		else:
+			print("    ✅ cratering textures uniform set créé")
+	else:
+		push_warning("[Orchestrator] ⚠️ cratering shader invalide, uniform set ignoré")
 	
 	# === ÉTAPE 2 : ÉROSION HYDRAULIQUE ===
 	# Initialiser les textures érosion avant de créer les uniform sets
@@ -571,6 +590,9 @@ func run_simulation() -> void:
 	
 	# === ÉTAPE 0.5 : ÂGE DE CROÛTE OCÉANIQUE (JFA) ===
 	run_crust_age_phase(generation_params, w, h)
+	
+	# === ÉTAPE 0.6 : CRATÈRES D'IMPACT (planètes sans atmosphère) ===
+	run_cratering_phase(generation_params, w, h)
 	
 	# === ÉTAPE 2 : ÉROSION HYDRAULIQUE ===
 	run_erosion_phase(generation_params, w, h)
@@ -903,6 +925,125 @@ func _dispatch_crust_age_finalize(w: int, h: int, groups_x: int, groups_y: int, 
 	
 	rd.free_rid(param_set)
 	rd.free_rid(param_buffer)
+
+# ============================================================================
+# ÉTAPE 0.6 : CRATÈRES D'IMPACT (planètes sans atmosphère)
+# ============================================================================
+
+## Applique des cratères d'impact sur les planètes sans atmosphère.
+##
+## Cette phase génère procéduralement des cratères avec :
+## - Distribution en loi de puissance (petits fréquents, gros rares)
+## - Profil réaliste (bowl + rim + ejecta)
+## - Variation azimutale pour éviter les cercles parfaits
+##
+## N'est exécutée QUE si atmosphere_type == 3 (sans atmosphère).
+##
+## @param params: Dictionnaire contenant seed, planet_type, crater_density, etc.
+## @param w: Largeur de la texture
+## @param h: Hauteur de la texture
+func run_cratering_phase(params: Dictionary, w: int, h: int) -> void:
+	# Vérifier que le shader est disponible
+	if not gpu.shaders.has("cratering") or not gpu.shaders["cratering"].is_valid():
+		push_warning("[Orchestrator] ⚠️ cratering shader non disponible, phase ignorée")
+		return
+	
+	# Vérifier si la planète est sans atmosphère
+	var atmosphere_type = int(params.get("planet_type", 0))
+	if atmosphere_type != 3:  # 3 = Sans atmosphère
+		print("[Orchestrator] ⏭️ Phase 0.6 : Cratères ignorés (planète avec atmosphère)")
+		return
+	
+	print("[Orchestrator] ☄️ Phase 0.6 : Génération des cratères d'impact")
+	
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+	
+	# Paramètres de cratères
+	var seed_val = int(params.get("seed", 12345))
+	var crater_density = float(params.get("crater_density", 0.5))  # 0.0 - 1.0
+	
+	# Calculer l'échelle pixels → mètres
+	# Pour une planète de rayon R km, la circonférence = 2πR km
+	# Sur une texture de largeur W, chaque pixel = (2πR × 1000) / W mètres
+	var planet_radius_km = float(params.get("planet_radius", 1737.0))  # Défaut: Lune (1737 km)
+	var meters_per_pixel = (2.0 * PI * planet_radius_km * 1000.0) / float(w)
+	
+	# Calculer le nombre de cratères basé sur la densité et la taille
+	# Densité 0.5 sur 2048x1024 → environ 500 cratères
+	var base_craters = int(float(w * h) / 4000.0)
+	var num_craters = int(float(base_craters) * crater_density)
+	num_craters = clamp(num_craters, 50, 3000)  # Limites raisonnables
+	
+	# Paramètres du profil de cratère
+	var max_radius = float(params.get("crater_max_radius", min(w, h) * 0.08))  # 8% de la dimension
+	var min_radius = float(params.get("crater_min_radius", 3.0))  # Minimum 3 pixels
+	var depth_ratio = float(params.get("crater_depth_ratio", 0.25))  # Profondeur = 25% du rayon
+	var rim_height_ratio = float(params.get("crater_rim_ratio", 0.15))  # Rebord = 15% de la profondeur
+	var ejecta_extent = float(params.get("crater_ejecta_extent", 2.5))  # Éjectas jusqu'à 2.5× rayon
+	var ejecta_decay = float(params.get("crater_ejecta_decay", 3.0))  # Décroissance exponentielle
+	var azimuth_variation = float(params.get("crater_azimuth_var", 0.3))  # 30% de variation
+	
+	print("  Nombre de cratères: ", num_craters)
+	print("  Rayon: ", min_radius, " - ", max_radius, " px")
+	print("  Profondeur ratio: ", depth_ratio)
+	print("  Échelle: ", meters_per_pixel, " m/px")
+	print("  Éjectas: ", ejecta_extent, "× rayon")
+	
+	# Structure UBO pour cratering (std140, 48 bytes):
+	# uint seed (4) + uint width (4) + uint height (4) + uint num_craters (4) = 16 bytes
+	# float max_radius (4) + float min_radius (4) + float depth_ratio (4) + float rim_height_ratio (4) = 16 bytes
+	# float ejecta_extent (4) + float ejecta_decay (4) + float azimuth_variation (4) + float meters_per_pixel (4) = 16 bytes
+	# Total: 48 bytes
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(48)
+	
+	buffer_bytes.encode_u32(0, seed_val)              # seed
+	buffer_bytes.encode_u32(4, w)                      # width
+	buffer_bytes.encode_u32(8, h)                      # height
+	buffer_bytes.encode_u32(12, num_craters)           # num_craters
+	buffer_bytes.encode_float(16, max_radius)          # max_radius
+	buffer_bytes.encode_float(20, min_radius)          # min_radius
+	buffer_bytes.encode_float(24, depth_ratio)         # depth_ratio
+	buffer_bytes.encode_float(28, rim_height_ratio)    # rim_height_ratio
+	buffer_bytes.encode_float(32, ejecta_extent)       # ejecta_extent
+	buffer_bytes.encode_float(36, ejecta_decay)        # ejecta_decay
+	buffer_bytes.encode_float(40, azimuth_variation)   # azimuth_variation
+	buffer_bytes.encode_float(44, meters_per_pixel)    # meters_per_pixel
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create cratering param buffer")
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["cratering"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create cratering param set")
+		rd.free_rid(param_buffer)
+		return
+	
+	# Dispatch du compute shader
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["cratering"])
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["cratering_textures"], 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	# Nettoyage
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	
+	print("[Orchestrator] ✅ Phase 0.6 : Cratères générés")
 
 # ============================================================================
 # ÉTAPE 2 : ÉROSION HYDRAULIQUE

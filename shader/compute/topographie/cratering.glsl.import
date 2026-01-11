@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://4l8g8bk4eqhv"
+path="res://.godot/imported/cratering.glsl-3ecf07a4ab6c3e0f37d8746222aae614.res"
+
+[deps]
+
+source_file="res://shader/compute/topographie/cratering.glsl"
+dest_files=["res://.godot/imported/cratering.glsl-3ecf07a4ab6c3e0f37d8746222aae614.res"]
+
+[params]
+
