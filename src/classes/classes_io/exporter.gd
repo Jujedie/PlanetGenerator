@@ -105,6 +105,11 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	for key in climate_result.keys():
 		exported_files[key] = climate_result[key]
 	
+	# === EXPORT EAUX (Step 2.5) - Classification des masses d'eau ===
+	var water_result = _export_water_classification(gpu, output_dir, width, height)
+	for key in water_result.keys():
+		exported_files[key] = water_result[key]
+	
 	# === EXPORT RESSOURCES (Step 5) ===
 	var resources_result = _export_resources_maps(gpu, output_dir, width, height)
 	for key in resources_result.keys():
@@ -591,4 +596,168 @@ func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, hei
 		print("  ⚠️ Resources texture not available, skipping")
 	
 	print("[Exporter] ✅ Resources export complete: ", result.size(), " maps")
+	return result
+
+# ============================================================================
+# ÉTAPE 2.5 : EXPORT CLASSIFICATION DES EAUX
+# ============================================================================
+
+## Couleurs pour les types d'eau
+const WATER_TYPE_COLORS = {
+	0: Color(0, 0, 0, 0),           # NONE - Transparent
+	1: Color(0.145, 0.322, 0.541),  # OCEAN - Bleu profond (#25528a)
+	2: Color(0.180, 0.380, 0.580),  # MER - Bleu moyen
+	3: Color(0.271, 0.518, 0.824),  # LAC - Bleu clair (#4584d2)
+	4: Color(0.420, 0.667, 0.898),  # AFFLUENT - Bleu très clair (#6BAAE5)
+	5: Color(0.290, 0.565, 0.851),  # RIVIÈRE - Bleu moyen (#4A90D9)
+	6: Color(0.243, 0.498, 0.769),  # FLEUVE - Bleu soutenu (#3E7FC4)
+}
+
+## Noms des types d'eau pour debug
+const WATER_TYPE_NAMES = [
+	"Terre",
+	"Océan",
+	"Mer",
+	"Lac",
+	"Affluent",
+	"Rivière",
+	"Fleuve"
+]
+
+## Exporte les cartes de classification des eaux.
+##
+## Génère :
+## - eaux_map.png : Carte colorée avec océans/mers/lacs/rivières
+## - water_types.png : Carte en niveaux de gris pour debug (0-6 → 0-255)
+## - river_map.png : Carte de flux des rivières
+##
+## @param gpu: Instance GPUContext avec les textures d'eau
+## @param output_dir: Dossier de sortie
+## @param width: Largeur de l'image
+## @param height: Hauteur de l'image
+## @return Dictionary: Chemins des fichiers exportés
+func _export_water_classification(gpu: GPUContext, output_dir: String, width: int, height: int) -> Dictionary:
+	print("[Exporter] 💧 Exporting water classification maps...")
+	
+	var result = {}
+	var rd = gpu.rd
+	
+	if not rd:
+		push_error("[Exporter] ❌ RenderingDevice not available")
+		return result
+	
+	# Synchroniser le GPU
+	rd.submit()
+	rd.sync()
+	
+	# Vérifier si les textures d'eau existent
+	if not gpu.textures.has("water_types"):
+		print("  ⚠️ Water types texture not available, skipping water export")
+		return result
+	
+	# === EXPORT WATER_TYPES (R32UI) ===
+	var types_data = rd.texture_get_data(gpu.textures["water_types"], 0)
+	
+	if types_data.size() == 0:
+		print("  ⚠️ Water types texture empty, skipping")
+		return result
+	
+	# Créer les images de sortie
+	var water_colored = Image.create(width, height, false, Image.FORMAT_RGBA8)
+	var water_grey = Image.create(width, height, false, Image.FORMAT_RGBA8)
+	
+	# Compteurs pour statistiques
+	var type_counts = [0, 0, 0, 0, 0, 0, 0]
+	
+	# Parcourir les données R32UI (4 bytes par pixel)
+	for y in range(height):
+		for x in range(width):
+			var idx = (y * width + x) * 4
+			var water_type = types_data.decode_u32(idx)
+			
+			# Limiter au nombre de types connus
+			water_type = mini(water_type, 6)
+			type_counts[water_type] += 1
+			
+			# Couleur selon le type
+			var color = WATER_TYPE_COLORS.get(water_type, Color(0, 0, 0, 0))
+			water_colored.set_pixel(x, y, color)
+			
+			# Niveau de gris pour debug (0 → noir, 6 → blanc)
+			var grey = float(water_type) / 6.0
+			water_grey.set_pixel(x, y, Color(grey, grey, grey, 1.0 if water_type > 0 else 0.0))
+	
+	# Afficher statistiques
+	print("  Water type distribution:")
+	for i in range(7):
+		if type_counts[i] > 0:
+			var percent = 100.0 * type_counts[i] / (width * height)
+			print("    - ", WATER_TYPE_NAMES[i], ": ", type_counts[i], " (", "%.2f" % percent, "%)")
+	
+	# Sauvegarder la carte colorée
+	var path_colored = output_dir + "/eaux_map.png"
+	var err_colored = water_colored.save_png(path_colored)
+	if err_colored == OK:
+		result["eaux_map"] = path_colored
+		print("  ✅ Saved: ", path_colored)
+	else:
+		push_error("[Exporter] ❌ Failed to save eaux_map: ", err_colored)
+	
+	# Sauvegarder la carte debug
+	var path_grey = output_dir + "/water_types.png"
+	var err_grey = water_grey.save_png(path_grey)
+	if err_grey == OK:
+		result["water_types"] = path_grey
+		print("  ✅ Saved: ", path_grey)
+	else:
+		push_error("[Exporter] ❌ Failed to save water_types: ", err_grey)
+	
+	# === EXPORT RIVER_MAP (flux des rivières) ===
+	if gpu.textures.has("water_paths") and gpu.textures["water_paths"].is_valid():
+		var paths_data = rd.texture_get_data(gpu.textures["water_paths"], 0)
+		
+		if paths_data.size() > 0:
+			# Trouver le flux maximum pour normalisation
+			var max_flux = 1.0
+			for y in range(height):
+				for x in range(width):
+					var idx = (y * width + x) * 4
+					var flux = paths_data.decode_float(idx)
+					max_flux = maxf(max_flux, flux)
+			
+			print("  Max river flux: ", max_flux)
+			
+			# Créer l'image du flux
+			var river_map = Image.create(width, height, false, Image.FORMAT_RGBA8)
+			
+			for y in range(height):
+				for x in range(width):
+					var idx = (y * width + x) * 4
+					var flux = paths_data.decode_float(idx)
+					
+					if flux > 0.1:  # Seuil minimum
+						# Normaliser et appliquer une courbe logarithmique
+						var normalized = log(1.0 + flux) / log(1.0 + max_flux)
+						normalized = clampf(normalized, 0.0, 1.0)
+						
+						# Couleur bleu avec intensité selon le flux
+						var color = Color(
+							0.2 * normalized,
+							0.4 + 0.4 * normalized,
+							0.7 + 0.3 * normalized,
+							0.5 + 0.5 * normalized
+						)
+						river_map.set_pixel(x, y, color)
+					else:
+						river_map.set_pixel(x, y, Color(0, 0, 0, 0))
+			
+			var path_river = output_dir + "/river_map.png"
+			var err_river = river_map.save_png(path_river)
+			if err_river == OK:
+				result["river_map"] = path_river
+				print("  ✅ Saved: ", path_river)
+			else:
+				push_error("[Exporter] ❌ Failed to save river_map: ", err_river)
+	
+	print("[Exporter] ✅ Water export complete: ", result.size(), " maps")
 	return result

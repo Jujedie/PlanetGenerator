@@ -125,6 +125,13 @@ func _compile_all_shaders() -> bool:
 		# Shaders Ressources & Pétrole (Étape 5)
 		{"path": "res://shader/compute/ressources/oil.glsl", "name": "oil", "critical": false},
 		{"path": "res://shader/compute/ressources/resources.glsl", "name": "resources", "critical": false},
+		# Shaders Classification des Eaux (Étape 2.5)
+		{"path": "res://shader/compute/water/river_sources.glsl", "name": "river_sources", "critical": false},
+		{"path": "res://shader/compute/water/river_propagation.glsl", "name": "river_propagation", "critical": false},
+		{"path": "res://shader/compute/water/water_classification.glsl", "name": "water_classification", "critical": false},
+		{"path": "res://shader/compute/water/water_jfa.glsl", "name": "water_jfa", "critical": false},
+		{"path": "res://shader/compute/water/water_size_classification.glsl", "name": "water_size_classification", "critical": false},
+		{"path": "res://shader/compute/water/water_finalize.glsl", "name": "water_finalize", "critical": false},
 	]
 	
 	var all_critical_loaded = true
@@ -181,7 +188,7 @@ func _init_textures():
 			continue
 		gpu.textures[tex_name] = rid
 	
-	print("[Orchestrator] ✅ Textures créées (4x ", size / 1024, " KB)")
+	print("[Orchestrator] ✅ Textures créées (4x ", int(size / 1024.0), " KB)")
 
 # ============================================================================
 # INITIALISATION DES UNIFORM SETS
@@ -560,6 +567,9 @@ func _init_uniform_sets():
 	else:
 		push_warning("[Orchestrator] ⚠️ resources shader invalide, uniform set ignoré")
 	
+	# Note: Les uniform sets pour les shaders water (étape 2.5) ne sont PAS créés ici
+	# car ils nécessitent un ping-pong dynamique qui est géré dans les dispatch functions
+	
 	print("[Orchestrator] ✅ Uniform Sets initialization complete")
 
 # ============================================================================
@@ -607,6 +617,9 @@ func run_simulation() -> void:
 	
 	# === ÉTAPE 2 : ÉROSION HYDRAULIQUE ===
 	run_erosion_phase(generation_params, w, h)
+	
+	# === ÉTAPE 2.5 : CLASSIFICATION DES EAUX ===
+	run_water_classification_phase(generation_params, w, h)
 	
 	# === ÉTAPE 3 : ATMOSPHÈRE & CLIMAT ===
 	run_atmosphere_phase(generation_params, w, h)
@@ -1346,6 +1359,519 @@ func _dispatch_erosion_flux_accumulation(w: int, h: int, groups_x: int, groups_y
 	rd.free_rid(param_buffer)
 
 # ============================================================================
+# ÉTAPE 2.5 : CLASSIFICATION DES EAUX
+# ============================================================================
+
+## Classifie les masses d'eau en océans, mers, lacs et rivières.
+##
+## Cette phase exécute :
+## 1. Détection des sources de rivières (altitude + précipitation)
+## 2. Propagation des rivières par descente de gradient
+## 3. Classification initiale (océan/mer/lac/rivière par seuils)
+## 4. JFA pour composantes connexes des masses d'eau
+## 5. Reclassification par taille (océan > mer > lac)
+##
+## Écrit dans water_types (R32UI) :
+## - 0 = Terre
+## - 1 = Océan (grande masse sous niveau mer)
+## - 2 = Mer (masse moyenne)
+## - 3 = Lac (petite masse ou altitude >= sea_level)
+## - 4 = Affluent (flux faible)
+## - 5 = Rivière (flux moyen)
+## - 6 = Fleuve (flux élevé)
+##
+## @param params: Dictionnaire contenant seed, sea_level, precipitation, etc.
+## @param w: Largeur de la texture
+## @param h: Hauteur de la texture
+func run_water_classification_phase(params: Dictionary, w: int, h: int) -> void:
+	# Vérifier si la planète a une atmosphère (pas d'eau sur planète sans atmosphère)
+	var atmosphere_type = int(params.get("planet_type", 0))
+	if atmosphere_type == 3:  # Sans atmosphère
+		print("[Orchestrator] ⏭️ Phase 2.5 : Classification eaux ignorée (planète sans atmosphère)")
+		return
+	
+	# Vérifier que les shaders sont disponibles
+	var required_shaders = ["river_sources", "river_propagation", "water_classification", "water_jfa", "water_finalize"]
+	for shader_name in required_shaders:
+		if not gpu.shaders.has(shader_name) or not gpu.shaders[shader_name].is_valid():
+			push_warning("[Orchestrator] ⚠️ ", shader_name, " shader non disponible, phase eaux ignorée")
+			return
+	
+	print("[Orchestrator] 💧 Phase 2.5 : Classification des Eaux")
+	
+	# Initialiser les textures d'eau (si pas déjà fait)
+	if not gpu.textures.has("water_sources"):
+		gpu.initialize_water_textures()
+	
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+	
+	var seed_val = int(params.get("seed", 12345))
+	var sea_level = float(params.get("sea_level", 0.0))
+	var _avg_precipitation = float(params.get("avg_precipitation", 0.5))  # Utilisé pour ajuster les seuils
+	
+	# Paramètres de rivières
+	var min_altitude = 100.0  # Altitude minimale des sources au-dessus de la mer
+	var min_precipitation = 0.3  # Précipitation minimale pour source
+	var cell_size = max(10.0, float(w) / 60.0)  # Taille de cellule pour espacement
+	var river_propagation_iterations = 200  # Nombre de passes de propagation
+	var base_river_flux = 10.0  # Flux initial par source
+	
+	# Paramètres de classification
+	var flux_threshold_low = 5.0    # Seuil affluent
+	var flux_threshold_mid = 50.0   # Seuil rivière
+	var flux_threshold_high = 200.0 # Seuil fleuve
+	var lake_min_water = 0.5        # Eau min pour lac en altitude
+	
+	# Paramètres de taille (basés sur résolution)
+	var total_pixels = w * h
+	var ocean_threshold = int(total_pixels * 0.01)  # >1% = océan
+	var sea_threshold = int(total_pixels * 0.001)   # >0.1% = mer
+	
+	print("  Seed: ", seed_val, " | Sea Level: ", sea_level)
+	print("  Cell Size: ", cell_size, " | Propagation Iterations: ", river_propagation_iterations)
+	print("  Ocean Threshold: ", ocean_threshold, " | Sea Threshold: ", sea_threshold)
+	
+	# === PASSE 1 : DÉTECTION DES SOURCES ===
+	print("  • Détection des sources de rivières...")
+	_dispatch_river_sources(w, h, groups_x, groups_y, seed_val, sea_level, min_altitude, min_precipitation, cell_size)
+	
+	# === PASSE 2 : PROPAGATION DES RIVIÈRES ===
+	print("  • Propagation des rivières (", river_propagation_iterations, " passes)...")
+	for pass_idx in range(river_propagation_iterations):
+		var use_swap = (pass_idx % 2 == 1)
+		_dispatch_river_propagation(w, h, groups_x, groups_y, pass_idx, seed_val, sea_level, base_river_flux, use_swap)
+	
+	# Si river_propagation_iterations est pair, le résultat est dans water_paths_temp, donc on doit copier vers water_paths
+	if river_propagation_iterations % 2 == 0:
+		print("  • Copie du résultat propagation vers water_paths...")
+		_copy_texture(gpu.textures["water_paths_temp"], gpu.textures["water_paths"], w, h)
+	
+	# === PASSE 3 : CLASSIFICATION INITIALE ===
+	print("  • Classification initiale des eaux...")
+	_dispatch_water_classification(w, h, groups_x, groups_y, sea_level, flux_threshold_low, flux_threshold_mid, flux_threshold_high, lake_min_water)
+	
+	# === PASSE 4 : JFA POUR COMPOSANTES CONNEXES ===
+	var jfa_passes = int(ceil(log(max(w, h)) / log(2.0)))
+	print("  • JFA composantes connexes (", jfa_passes, " passes)...")
+	var step_size: int = int(pow(2, jfa_passes - 1))
+	for pass_idx in range(jfa_passes):
+		var use_swap = (pass_idx % 2 == 1)
+		_dispatch_water_jfa(w, h, groups_x, groups_y, step_size, use_swap)
+		step_size = max(1, step_size >> 1)  # Division par 2 entière
+	
+	# Si jfa_passes est pair, le résultat est dans water_jfa_temp, donc on doit copier vers water_jfa
+	if jfa_passes % 2 == 0:
+		print("  • Copie du résultat JFA vers water_jfa...")
+		_copy_texture(gpu.textures["water_jfa_temp"], gpu.textures["water_jfa"], w, h)
+	
+	# === PASSE 5 : RECLASSIFICATION PAR TAILLE ===
+	print("  • Reclassification par taille...")
+	_dispatch_water_finalize(w, h, groups_x, groups_y, sea_level, ocean_threshold, sea_threshold)
+	
+	print("[Orchestrator] ✅ Phase 2.5 : Classification des eaux terminée")
+
+## Dispatch le shader de détection des sources de rivières
+func _dispatch_river_sources(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, sea_level: float, min_altitude: float, min_precipitation: float, cell_size: float) -> void:
+	if not gpu.shaders.has("river_sources") or not gpu.shaders["river_sources"].is_valid():
+		return
+	
+	# Créer les uniforms de texture
+	var tex_uniforms: Array[RDUniform] = []
+	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
+	tex_uniforms.append(gpu.create_texture_uniform(1, gpu.textures["climate"]))
+	
+	# Uniform pour water_sources (R32UI - utilise IMAGE)
+	var sources_uniform = RDUniform.new()
+	sources_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	sources_uniform.binding = 2
+	sources_uniform.add_id(gpu.textures["water_sources"])
+	tex_uniforms.append(sources_uniform)
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["river_sources"], 0)
+	if not tex_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create river_sources texture set")
+		return
+	
+	# Structure UBO (std140, 32 bytes)
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, w)                    # width
+	buffer_bytes.encode_u32(4, h)                    # height
+	buffer_bytes.encode_u32(8, seed_val)             # seed
+	buffer_bytes.encode_u32(12, 10000)               # max_sources (non utilisé actuellement)
+	buffer_bytes.encode_float(16, sea_level)         # sea_level
+	buffer_bytes.encode_float(20, min_altitude)      # min_altitude
+	buffer_bytes.encode_float(24, min_precipitation) # min_precipitation
+	buffer_bytes.encode_float(28, cell_size)         # cell_size
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		rd.free_rid(tex_set)
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["river_sources"], 1)
+	if not param_set.is_valid():
+		rd.free_rid(tex_set)
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["river_sources"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+## Dispatch le shader de propagation des rivières
+func _dispatch_river_propagation(w: int, h: int, groups_x: int, groups_y: int, pass_index: int, seed_val: int, sea_level: float, base_flux: float, use_swap: bool) -> void:
+	if not gpu.shaders.has("river_propagation") or not gpu.shaders["river_propagation"].is_valid():
+		return
+	
+	# Textures input/output en ping-pong
+	var input_tex = gpu.textures["water_paths"] if not use_swap else gpu.textures["water_paths_temp"]
+	var output_tex = gpu.textures["water_paths_temp"] if not use_swap else gpu.textures["water_paths"]
+	
+	# Créer les uniforms de texture
+	var tex_uniforms: Array[RDUniform] = []
+	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
+	
+	# Input (R32F readonly)
+	var input_uniform = RDUniform.new()
+	input_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	input_uniform.binding = 1
+	input_uniform.add_id(input_tex)
+	tex_uniforms.append(input_uniform)
+	
+	# Output (R32F writeonly)
+	var output_uniform = RDUniform.new()
+	output_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	output_uniform.binding = 2
+	output_uniform.add_id(output_tex)
+	tex_uniforms.append(output_uniform)
+	
+	# Sources (R32UI readonly)
+	var sources_uniform = RDUniform.new()
+	sources_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	sources_uniform.binding = 3
+	sources_uniform.add_id(gpu.textures["water_sources"])
+	tex_uniforms.append(sources_uniform)
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["river_propagation"], 0)
+	if not tex_set.is_valid():
+		return
+	
+	# Structure UBO (std140, 32 bytes)
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, w)                    # width
+	buffer_bytes.encode_u32(4, h)                    # height
+	buffer_bytes.encode_u32(8, pass_index)           # pass_index
+	buffer_bytes.encode_float(12, sea_level)         # sea_level
+	buffer_bytes.encode_float(16, base_flux)         # base_flux
+	buffer_bytes.encode_float(20, 0.01)              # min_slope
+	buffer_bytes.encode_float(24, 0.3)               # meander_factor
+	buffer_bytes.encode_u32(28, seed_val)            # seed
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		rd.free_rid(tex_set)
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["river_propagation"], 1)
+	if not param_set.is_valid():
+		rd.free_rid(tex_set)
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["river_propagation"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+## Dispatch le shader de classification initiale des eaux
+func _dispatch_water_classification(w: int, h: int, groups_x: int, groups_y: int, sea_level: float, flux_low: float, flux_mid: float, flux_high: float, lake_min_water: float) -> void:
+	if not gpu.shaders.has("water_classification") or not gpu.shaders["water_classification"].is_valid():
+		return
+	
+	# Créer les uniforms de texture
+	var tex_uniforms: Array[RDUniform] = []
+	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
+	
+	# River paths (utiliser le résultat final de la propagation)
+	var paths_uniform = RDUniform.new()
+	paths_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	paths_uniform.binding = 1
+	paths_uniform.add_id(gpu.textures["water_paths"])
+	tex_uniforms.append(paths_uniform)
+	
+	# Water types output
+	var types_uniform = RDUniform.new()
+	types_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	types_uniform.binding = 2
+	types_uniform.add_id(gpu.textures["water_types"])
+	tex_uniforms.append(types_uniform)
+	
+	# Water JFA output
+	var jfa_uniform = RDUniform.new()
+	jfa_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	jfa_uniform.binding = 3
+	jfa_uniform.add_id(gpu.textures["water_jfa"])
+	tex_uniforms.append(jfa_uniform)
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["water_classification"], 0)
+	if not tex_set.is_valid():
+		return
+	
+	# Structure UBO (std140, 32 bytes)
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, w)                    # width
+	buffer_bytes.encode_u32(4, h)                    # height
+	buffer_bytes.encode_float(8, sea_level)          # sea_level
+	buffer_bytes.encode_float(12, flux_low)          # flux_threshold_low
+	buffer_bytes.encode_float(16, flux_mid)          # flux_threshold_mid
+	buffer_bytes.encode_float(20, flux_high)         # flux_threshold_high
+	buffer_bytes.encode_float(24, lake_min_water)    # lake_min_water
+	buffer_bytes.encode_float(28, 0.0)               # padding
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		rd.free_rid(tex_set)
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["water_classification"], 1)
+	if not param_set.is_valid():
+		rd.free_rid(tex_set)
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["water_classification"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+## Dispatch le shader JFA pour composantes connexes
+func _dispatch_water_jfa(w: int, h: int, groups_x: int, groups_y: int, step_size: int, use_swap: bool) -> void:
+	if not gpu.shaders.has("water_jfa") or not gpu.shaders["water_jfa"].is_valid():
+		return
+	
+	# Textures input/output en ping-pong
+	var input_tex = gpu.textures["water_jfa"] if not use_swap else gpu.textures["water_jfa_temp"]
+	var output_tex = gpu.textures["water_jfa_temp"] if not use_swap else gpu.textures["water_jfa"]
+	
+	# Créer les uniforms de texture
+	var tex_uniforms: Array[RDUniform] = []
+	
+	# Input JFA
+	var input_uniform = RDUniform.new()
+	input_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	input_uniform.binding = 0
+	input_uniform.add_id(input_tex)
+	tex_uniforms.append(input_uniform)
+	
+	# Output JFA
+	var output_uniform = RDUniform.new()
+	output_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	output_uniform.binding = 1
+	output_uniform.add_id(output_tex)
+	tex_uniforms.append(output_uniform)
+	
+	# Water types (readonly)
+	var types_uniform = RDUniform.new()
+	types_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	types_uniform.binding = 2
+	types_uniform.add_id(gpu.textures["water_types"])
+	tex_uniforms.append(types_uniform)
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["water_jfa"], 0)
+	if not tex_set.is_valid():
+		return
+	
+	# Structure UBO (std140, 16 bytes)
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(16)
+	
+	buffer_bytes.encode_u32(0, w)          # width
+	buffer_bytes.encode_u32(4, h)          # height
+	buffer_bytes.encode_s32(8, step_size)  # step_size
+	buffer_bytes.encode_u32(12, 0)         # padding
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		rd.free_rid(tex_set)
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["water_jfa"], 1)
+	if not param_set.is_valid():
+		rd.free_rid(tex_set)
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["water_jfa"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+## Dispatch le shader de finalisation (reclassification par taille)
+func _dispatch_water_finalize(w: int, h: int, groups_x: int, groups_y: int, sea_level: float, ocean_threshold: int, sea_threshold: int) -> void:
+	if not gpu.shaders.has("water_finalize") or not gpu.shaders["water_finalize"].is_valid():
+		return
+	
+	# Note: water_size_classification utilise un SSBO pour compter les pixels
+	# Pour simplifier, on fait la reclassification directement dans water_finalize
+	# sans comptage atomique (on utilise une estimation basée sur le seed JFA)
+	
+	# Créer les uniforms de texture
+	var tex_uniforms: Array[RDUniform] = []
+	
+	# Water JFA (readonly) - utiliser la texture finale (après nombre pair de passes)
+	var jfa_uniform = RDUniform.new()
+	jfa_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	jfa_uniform.binding = 0
+	jfa_uniform.add_id(gpu.textures["water_jfa"])
+	tex_uniforms.append(jfa_uniform)
+	
+	# Water types (read/write)
+	var types_uniform = RDUniform.new()
+	types_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	types_uniform.binding = 1
+	types_uniform.add_id(gpu.textures["water_types"])
+	tex_uniforms.append(types_uniform)
+	
+	# Créer un SSBO pour les compteurs (w * h * 4 bytes)
+	var counter_size = w * h * 4
+	var counter_data = PackedByteArray()
+	counter_data.resize(counter_size)
+	counter_data.fill(0)
+	var counter_buffer = rd.storage_buffer_create(counter_size, counter_data)
+	
+	if not counter_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create counter SSBO")
+		return
+	
+	var counter_uniform = RDUniform.new()
+	counter_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	counter_uniform.binding = 2
+	counter_uniform.add_id(counter_buffer)
+	tex_uniforms.append(counter_uniform)
+	
+	# Geo texture (readonly)
+	tex_uniforms.append(gpu.create_texture_uniform(3, gpu.textures["geo"]))
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["water_finalize"], 0)
+	if not tex_set.is_valid():
+		rd.free_rid(counter_buffer)
+		return
+	
+	# Structure UBO (std140, 32 bytes)
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, w)                    # width
+	buffer_bytes.encode_u32(4, h)                    # height
+	buffer_bytes.encode_float(8, sea_level)          # sea_level
+	buffer_bytes.encode_u32(12, ocean_threshold)     # ocean_threshold
+	buffer_bytes.encode_u32(16, sea_threshold)       # sea_threshold
+	buffer_bytes.encode_u32(20, 10)                  # lake_threshold (très petits lacs)
+	buffer_bytes.encode_float(24, 0.0)               # padding1
+	buffer_bytes.encode_float(28, 0.0)               # padding2
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		rd.free_rid(tex_set)
+		rd.free_rid(counter_buffer)
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["water_finalize"], 1)
+	if not param_set.is_valid():
+		rd.free_rid(tex_set)
+		rd.free_rid(param_buffer)
+		rd.free_rid(counter_buffer)
+		return
+	
+	# Passe 1: Compter les pixels par composante (via water_size_classification si disponible)
+	# Pour l'instant, on skip le comptage et on utilise la classification basée sur l'altitude seule
+	
+	# Passe 2: Finalisation
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["water_finalize"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+	rd.free_rid(counter_buffer)
+
+# ============================================================================
 # ÉTAPE 3 : ATMOSPHÈRE & CLIMAT
 # ============================================================================
 
@@ -1818,68 +2344,6 @@ func _dispatch_resources(w: int, h: int, groups_x: int, groups_y: int, seed_val:
 	rd.free_rid(param_buffer)
 
 # ============================================================================
-# EXEMPLE PHASES DE SIMULATION
-# ============================================================================
-
-func run_example(params: Dictionary, w: int, h: int):	
-	if not rd or not gpu.pipelines["example"].is_valid():
-		push_warning("[Orchestrator] ⚠️ Orogeny pipeline not ready, skipping")
-		return
-	
-	print("[Orchestrator] Example Phase")
-	
-	# 1. Préparation des données des paramètres
-	var m_strength = float(params.get("mountain_strength", 50.0))
-	var r_strength = float(params.get("rift_strength", -30.0))
-	var erosion    = float(params.get("orogeny_erosion", 0.98))
-	var dt         = float(params.get("delta_time", 0.016))
-	
-	var buffer_data = PackedFloat32Array([m_strength, r_strength, erosion, dt])
-	var buffer_bytes = buffer_data.to_byte_array()
-	
-	# 2. Création du Buffer (Uniform Buffer)
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	
-	# 3. Création de l'Uniform
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0 # Binding 0 dans le Set 1
-	param_uniform.add_id(param_buffer)
-	
-	# 4. Création du Set (Set Index 1)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["example"], 1)
-	
-	if not param_set.is_valid():
-		push_error("[Orchestrator] ❌ Failed to create Example Param Set")
-		return
-		
-	# Calcul des groupes
-	var groups_x = ceili(float(w) / 16.0)
-	var groups_y = ceili(float(h) / 16.0)
-	
-	# 5. Dispatch
-	var compute_list = rd.compute_list_begin()
-	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["example"])
-	
-	# Bind du Set 0 (Textures)
-	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["example"], 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
-	
-	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
-	rd.compute_list_end()
-	
-	# 6. Nettoyage immédiat (Optimisation)
-	# On libère les ressources temporaires après l'exécution de la commande (rd.submit n'est pas bloquant mais free_rid l'est pour la ressource)
-	# Note : Pour être 100% safe avec Vulkan, on devrait les garder jusqu'à la fin de la frame, 
-	# mais Godot gère souvent ça. Si ça crash, on les mettra dans une liste 'garbage_bin'.
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	
-	rd.submit()
-	rd.sync()
-	print("[Orchestrator] ✅ Orogenèse terminée")
-
-# ============================================================================
 # EXPORT
 # ============================================================================
 
@@ -1943,6 +2407,17 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE:
 		# cleanup()  # Commented out to prevent null instance error
 		pass
+
+## Copie une texture vers une autre (pour résoudre les problèmes de ping-pong)
+func _copy_texture(src: RID, dst: RID, width: int, height: int) -> void:
+	"""Copie src vers dst en utilisant texture_copy"""
+	if not rd or not src.is_valid() or not dst.is_valid():
+		push_error("[Orchestrator] ❌ Cannot copy texture: invalid RID or RD")
+		return
+	
+	rd.texture_copy(src, dst, Vector3(0, 0, 0), Vector3(0, 0, 0), Vector3(width, height, 1), 0, 0, 0, 0)
+	rd.submit()
+	rd.sync()
 
 # ============================================================================
 # PHYSICS HELPERS

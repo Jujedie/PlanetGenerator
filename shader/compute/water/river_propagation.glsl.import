@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://diep2563nmgvn"
+path="res://.godot/imported/river_propagation.glsl-0f44ed3af3a0401a64f01435f3acbd1f.res"
+
+[deps]
+
+source_file="res://shader/compute/water/river_propagation.glsl"
+dest_files=["res://.godot/imported/river_propagation.glsl-0f44ed3af3a0401a64f01435f3acbd1f.res"]
+
+[params]
+

@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://b1hvhvuug6oa"
+path="res://.godot/imported/water_classification.glsl-4c63736075aaa3d2fee5c07a5d768c0e.res"
+
+[deps]
+
+source_file="res://shader/compute/water/water_classification.glsl"
+dest_files=["res://.godot/imported/water_classification.glsl-4c63736075aaa3d2fee5c07a5d768c0e.res"]
+
+[params]
+

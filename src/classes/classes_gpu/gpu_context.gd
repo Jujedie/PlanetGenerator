@@ -5,6 +5,8 @@ class_name GPUContext
 const FORMAT_STATE = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
 const FORMAT_RGBA8 = RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM
 const FORMAT_R32F = RenderingDevice.DATA_FORMAT_R32_SFLOAT
+const FORMAT_R32UI = RenderingDevice.DATA_FORMAT_R32_UINT
+const FORMAT_RG32I = RenderingDevice.DATA_FORMAT_R32G32_SINT
 
 # IDs des textures GPU utilisées dans la pipeline
 # geo : GeoTexture (RGBA32F) - R=height, G=bedrock, B=sediment, A=water_height
@@ -33,6 +35,15 @@ static var TextureID_Climat : Array[String] = ["vapor", "vapor_temp", "temperatu
 # oil : (RGBA8) - carte de pétrole (noir/transparent)
 # resources : (RGBA32F) - R=resource_id, G=intensity, B=cluster_id, A=has_resource
 static var TextureID_Resources : Array[String] = ["oil", "resources"]
+
+# Textures Étape 2.5 - Classification des Eaux
+# water_sources : (R32UI) - ID de source de rivière (0 = pas de source)
+# water_paths : (R32F) - flux accumulé des rivières
+# water_paths_temp : (R32F) - buffer ping-pong pour propagation
+# water_types : (R32UI) - type d'eau (0=terre, 1=océan, 2=mer, 3=lac, 4=affluent, 5=rivière, 6=fleuve)
+# water_jfa : (RG32I) - coordonnées seed pour JFA
+# water_jfa_temp : (RG32I) - buffer ping-pong pour JFA
+static var TextureID_Water : Array[String] = ["water_sources", "water_paths", "water_paths_temp", "water_types", "water_jfa", "water_jfa_temp"]
 
 # === MEMBRES ===
 var rd: RenderingDevice
@@ -115,7 +126,7 @@ func _initialize_textures() -> void:
 			
 		textures[tex_id] = rid
 	
-	print("✅ Textures GPU d'état créées (%d x %d KB)" % [TextureID.size(), resolution.x * resolution.y * 16 / 1024])
+	print("✅ Textures GPU d'état créées (%d x %d KB)" % [TextureID.size(), int(resolution.x * resolution.y * 16.0 / 1024.0)])
 
 # === CRÉATION DES TEXTURES ÉROSION (Étape 2) ===
 func initialize_erosion_textures() -> void:
@@ -312,6 +323,109 @@ func initialize_resources_textures() -> void:
 	
 	print("✅ Textures ressources créées (1x RGBA8 + 1x RGBA32F)")
 
+# === CRÉATION DES TEXTURES EAUX (Étape 2.5) ===
+func initialize_water_textures() -> void:
+	"""
+	Initialise les textures spécifiques à la classification des eaux.
+	Appelé par l'orchestrateur avant la phase de classification des eaux.
+	"""
+	
+	# Format R32UI pour sources et types d'eau (4 bytes par pixel)
+	var format_r32ui := RDTextureFormat.new()
+	format_r32ui.width = resolution.x
+	format_r32ui.height = resolution.y
+	format_r32ui.format = FORMAT_R32UI
+	format_r32ui.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Format R32F pour flux des rivières (4 bytes par pixel)
+	var format_r32f := RDTextureFormat.new()
+	format_r32f.width = resolution.x
+	format_r32f.height = resolution.y
+	format_r32f.format = FORMAT_R32F
+	format_r32f.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Format RG32I pour JFA (8 bytes par pixel - coordonnées x,y signées)
+	var format_rg32i := RDTextureFormat.new()
+	format_rg32i.width = resolution.x
+	format_rg32i.height = resolution.y
+	format_rg32i.format = FORMAT_RG32I
+	format_rg32i.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Créer les textures R32UI (sources, types)
+	for tex_id in ["water_sources", "water_types"]:
+		if textures.has(tex_id):
+			continue  # Déjà créée
+		
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 4)  # 4 bytes per pixel (R32UI)
+		data.fill(0)
+		
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_r32ui, view, [data])
+		
+		if not rid.is_valid():
+			push_error("❌ Échec création texture:", tex_id)
+			continue
+			
+		textures[tex_id] = rid
+	
+	# Créer les textures R32F (flux des rivières - ping-pong)
+	for tex_id in ["water_paths", "water_paths_temp"]:
+		if textures.has(tex_id):
+			continue  # Déjà créée
+		
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 4)  # 4 bytes per pixel (R32F)
+		data.fill(0)
+		
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_r32f, view, [data])
+		
+		if not rid.is_valid():
+			push_error("❌ Échec création texture:", tex_id)
+			continue
+			
+		textures[tex_id] = rid
+	
+	# Créer les textures RG32I (JFA - ping-pong)
+	# Initialiser avec -1,-1 (pas de seed)
+	for tex_id in ["water_jfa", "water_jfa_temp"]:
+		if textures.has(tex_id):
+			continue  # Déjà créée
+		
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 8)  # 8 bytes per pixel (RG32I)
+		# Initialiser avec -1 (0xFFFFFFFF en int32 signé)
+		for i in range(resolution.x * resolution.y):
+			data.encode_s32(i * 8, -1)      # x = -1
+			data.encode_s32(i * 8 + 4, -1)  # y = -1
+		
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_rg32i, view, [data])
+		
+		if not rid.is_valid():
+			push_error("❌ Échec création texture JFA:", tex_id)
+			continue
+			
+		textures[tex_id] = rid
+	
+	print("✅ Textures eaux créées (2x R32UI + 2x R32F + 2x RG32I)")
+
 # === CHARGEMENT DES SHADERS (SÉCURISÉ) ===
 func load_compute_shader(glsl_path: String, shader_name: String) -> bool:
 	if not FileAccess.file_exists(glsl_path):
@@ -380,8 +494,10 @@ func readback_texture(tex_id: String) -> Image:
 	if tex_id in ["temperature_colored", "precipitation_colored", "clouds", "ice_caps", "oil"]:
 		img_format = Image.FORMAT_RGBA8
 	# Textures R32F (vapeur, flux)
-	elif tex_id in ["vapor", "vapor_temp", "river_flux", "flux_temp"]:
+	elif tex_id in ["vapor", "vapor_temp", "river_flux", "flux_temp", "water_paths", "water_paths_temp"]:
 		img_format = Image.FORMAT_RF
+	# Textures R32UI et RG32I ne peuvent pas être converties directement en Image
+	# Utiliser readback_texture_raw() pour ces formats
 	# Textures RGBA32F (par défaut: geo, climate, plates, crust_age, resources)
 	
 	var img := Image.create_from_data(
@@ -392,6 +508,18 @@ func readback_texture(tex_id: String) -> Image:
 		data
 	)
 	return img
+
+# === READBACK TEXTURE RAW ===
+func readback_texture_raw(tex_id: String) -> PackedByteArray:
+	"""
+	Lit les données brutes d'une texture GPU.
+	Utile pour les formats non-image (R32UI, RG32I).
+	"""
+	if not textures.has(tex_id):
+		push_error("❌ Texture introuvable: ", tex_id)
+		return PackedByteArray()
+	
+	return rd.texture_get_data(textures[tex_id], 0)
 
 # === NETTOYAGE ===
 func _exit_tree() -> void:
