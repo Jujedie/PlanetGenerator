@@ -466,6 +466,7 @@ func initialize_region_textures() -> void:
 		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
 		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
 		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT |
 		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
 	)
 	
@@ -508,6 +509,20 @@ func initialize_region_textures() -> void:
 		else:
 			push_error("❌ Échec création texture region_map")
 	
+	# Créer region_map_temp (R32UI - pour ping-pong dans cleanup)
+	if not textures.has("region_map_temp"):
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 4)
+		# Initialiser à 0xFFFFFFFF (invalide/non assigné)
+		for i in range(0, data.size(), 4):
+			data.encode_u32(i, 0xFFFFFFFF)
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_r32ui, view, [data])
+		if rid.is_valid():
+			textures["region_map_temp"] = rid
+		else:
+			push_error("❌ Échec création texture region_map_temp")
+	
 	# Créer region_cost et region_cost_temp (R32F - 4 bytes par pixel)
 	for tex_id in ["region_cost", "region_cost_temp"]:
 		if not textures.has(tex_id):
@@ -535,7 +550,7 @@ func initialize_region_textures() -> void:
 		else:
 			push_error("❌ Échec création texture region_colored")
 	
-	print("✅ Textures régions créées (1x R32UI + 2x R32F + 1x RGBA8)")
+	print("✅ Textures régions créées (2x R32UI + 2x R32F + 1x RGBA8)")
 
 # === CHARGEMENT DES SHADERS (SÉCURISÉ) ===
 func load_compute_shader(glsl_path: String, shader_name: String) -> bool:

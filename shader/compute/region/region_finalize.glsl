@@ -6,8 +6,8 @@
 // ===========================================================================
 // Génère les couleurs des régions de manière déterministe.
 // Reproduit exactement le système de couleurs du legacy Region.gd :
-//   - Couleur = (R, G, B) avec pas de 17 par canal
-//   - nextColor[0] += 17; if > 255 → wrap et incrémenter nextColor[1], etc.
+//   - Couleur = (R, G, B) avec pas de 10 par canal
+//   - nextColor[0] += 10; if > 255 → wrap et incrémenter nextColor[1], etc.
 //
 // Entrées :
 //   - region_map (binding 0) : R32UI - ID de région
@@ -48,16 +48,16 @@ uint hashForColor(uint x) {
 }
 
 // Convertit un region_id en couleur RGB déterministe
-// Reproduit EXACTEMENT le système legacy : pas de 17 par canal, wrap progressif
-// Le legacy fait : nextColor[0] += 17, puis wrap + incrémente nextColor[1], etc.
+// Reproduit EXACTEMENT le système legacy : pas de 10 par canal, wrap progressif
+// Le legacy fait : nextColor[0] += 10, puis wrap + incrémente nextColor[1], etc.
 vec3 regionIdToColor(uint region_id) {
-    const uint STEP = 17u;
+    const uint STEP = 10u;
     
     // Hasher l'ID pour disperser les couleurs et éviter les patterns
     uint color_index = hashForColor(region_id);
     
     // Simuler l'incrément progressif des canaux comme le legacy
-    // On utilise une représentation base-15 (256/17 ≈ 15)
+    // On utilise une représentation base-15 (256/10 ≈ 15)
     const uint BASE = 15u;  // Nombre de valeurs par canal
     
     uint r_idx = color_index % BASE;
@@ -95,7 +95,7 @@ void main() {
     vec4 final_color;
     
     // Si c'est de l'eau, utiliser la couleur d'eau (comme legacy: 0x161a1fFF)
-    if (water_type > 0u || region_id == 0xFFFFFFFFu) {
+    if (water_type > 0u) {
         // Couleur eau du legacy : RGB(22, 26, 31) = #161a1f
         final_color = vec4(
             float(params.water_color_r) / 255.0,
@@ -104,8 +104,15 @@ void main() {
             1.0
         );
     } else {
-        // Pixel de terre avec région assignée
-        vec3 rgb = regionIdToColor(region_id);
+        // Pixel de terre : TOUTE TERRE DOIT AVOIR UNE RÉGION
+        // Si pas de région assignée par la propagation, en créer une unique
+        if (region_id == 0xFFFFFFFFu) {
+            region_id = uint(pixel.x) + uint(pixel.y) * params.width;
+        }
+        
+        // Utiliser un hash de l'ID pour disperser les couleurs
+        uint color_index = hashForColor(region_id);
+        vec3 rgb = regionIdToColor(color_index);
         final_color = vec4(rgb, 1.0);
     }
     

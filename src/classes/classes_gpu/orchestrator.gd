@@ -137,6 +137,7 @@ func _compile_all_shaders() -> bool:
 		# Shaders Régions Administratives (Étape 4)
 		{"path": "res://shader/compute/region/region_seed_placement.glsl", "name": "region_seed_placement", "critical": false},
 		{"path": "res://shader/compute/region/region_growth.glsl", "name": "region_growth", "critical": false},
+		{"path": "res://shader/compute/region/region_cleanup.glsl", "name": "region_cleanup", "critical": false},
 		{"path": "res://shader/compute/region/region_finalize.glsl", "name": "region_finalize", "critical": false},
 	]
 	
@@ -2175,7 +2176,7 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# Nombre d'itérations de croissance (basé sur la taille de la carte)
 	# Augmenté pour garantir que toute la terre soit couverte
-	var region_iterations = int(params.get("region_iterations", max(w, h)))
+	var region_iterations = int(params.get("region_iterations", max(w, h) * 2))
 	
 	print("  Seed: ", seed_val, " | Cases/Région: ", nb_cases_region)
 	print("  Coûts - Plat: ", cost_flat, " | Montée: ", cost_uphill, " | Rivière: +", cost_river)
@@ -2197,6 +2198,16 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# Si nombre impair de passes, copier le résultat vers la texture principale
 	if region_iterations % 2 == 1:
+		_copy_region_textures(w, h)
+	
+	# === PASSE 2.5 : NETTOYAGE FINAL (assigner toute terre restante) ===
+	print("  • Nettoyage final (couverture complète)...")
+	for cleanup_pass in range(10):  # 10 passes de nettoyage agressif
+		var use_swap = ((region_iterations + cleanup_pass) % 2 == 1)
+		_dispatch_region_cleanup(w, h, groups_x, groups_y, seed_val, use_swap)
+	
+	# Si nombre impair de passes totales, copier le résultat
+	if (region_iterations + 10) % 2 == 1:
 		_copy_region_textures(w, h)
 	
 	# === PASSE 3 : FINALISATION ET COLORATION ===
@@ -2360,6 +2371,80 @@ func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int, pass_
 func _copy_region_textures(w: int, h: int) -> void:
 	# Copier region_cost_temp -> region_cost
 	_copy_texture(gpu.textures["region_cost_temp"], gpu.textures["region_cost"], w, h)
+
+## Dispatch le shader de nettoyage final des régions (assigne toute terre restante)
+func _dispatch_region_cleanup(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, use_swap: bool) -> void:
+	if not gpu.shaders.has("region_cleanup") or not gpu.shaders["region_cleanup"].is_valid():
+		push_warning("[Orchestrator] ⚠️ region_cleanup shader non disponible")
+		return
+	
+	# Choisir les textures source/destination selon le ping-pong
+	var src_map: RID = gpu.textures["region_map"] if not use_swap else gpu.textures["region_map_temp"]
+	var dst_map: RID = gpu.textures["region_map_temp"] if not use_swap else gpu.textures["region_map"]
+	var dst_cost: RID = gpu.textures["region_cost_temp"] if not use_swap else gpu.textures["region_cost"]
+	
+	# Créer les uniforms de texture (set 0)
+	var tex_uniforms: Array[RDUniform] = []
+	
+	# water_mask (R8UI)
+	var mask_uniform = RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 0
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	
+	# region_map_in (R32UI)
+	var map_in_uniform = RDUniform.new()
+	map_in_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_in_uniform.binding = 1
+	map_in_uniform.add_id(src_map)
+	tex_uniforms.append(map_in_uniform)
+	
+	# region_map_out (R32UI)
+	var map_out_uniform = RDUniform.new()
+	map_out_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_out_uniform.binding = 2
+	map_out_uniform.add_id(dst_map)
+	tex_uniforms.append(map_out_uniform)
+	
+	# region_cost_out (R32F)
+	tex_uniforms.append(gpu.create_texture_uniform(3, dst_cost))
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["region_cleanup"], 0)
+	
+	# UBO paramètres (16 bytes, std140)
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(16)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, seed_val)
+	buffer_bytes.encode_u32(12, 0)  # padding
+	
+	var param_buffer = rd.storage_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["region_cleanup"], 1)
+	
+	# Dispatch
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["region_cleanup"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+	
+	# Copier le résultat dans region_map si on a utilisé le swap
+	if use_swap:
+		_copy_texture(dst_map, gpu.textures["region_map"], w, h)
 
 ## Dispatch le shader de finalisation des régions (coloration)
 func _dispatch_region_finalize(w: int, h: int, groups_x: int, groups_y: int, seed_val: int) -> void:
