@@ -139,6 +139,11 @@ func _compile_all_shaders() -> bool:
 		{"path": "res://shader/compute/region/region_growth.glsl", "name": "region_growth", "critical": false},
 		{"path": "res://shader/compute/region/region_cleanup.glsl", "name": "region_cleanup", "critical": false},
 		{"path": "res://shader/compute/region/region_finalize.glsl", "name": "region_finalize", "critical": false},
+		# Shaders Régions Océaniques (Étape 4.5)
+		{"path": "res://shader/compute/ocean_region/ocean_region_seed_placement.glsl", "name": "ocean_region_seed_placement", "critical": false},
+		{"path": "res://shader/compute/ocean_region/ocean_region_growth.glsl", "name": "ocean_region_growth", "critical": false},
+		{"path": "res://shader/compute/ocean_region/ocean_region_cleanup.glsl", "name": "ocean_region_cleanup", "critical": false},
+		{"path": "res://shader/compute/ocean_region/ocean_region_finalize.glsl", "name": "ocean_region_finalize", "critical": false},
 	]
 	
 	var all_critical_loaded = true
@@ -635,6 +640,9 @@ func run_simulation() -> void:
 	
 	# === ÉTAPE 4 : RÉGIONS ADMINISTRATIVES ===
 	run_region_phase(generation_params, w, h)
+	
+	# === ÉTAPE 4.5 : RÉGIONS OCÉANIQUES ===
+	run_ocean_region_phase(generation_params, w, h)
 	
 	# === ÉTAPE 5 : RESSOURCES & PÉTROLE ===
 	run_resources_phase(generation_params, w, h)
@@ -2420,9 +2428,9 @@ func _dispatch_region_cleanup(w: int, h: int, groups_x: int, groups_y: int, seed
 	buffer_bytes.encode_u32(8, seed_val)
 	buffer_bytes.encode_u32(12, 0)  # padding
 	
-	var param_buffer = rd.storage_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
 	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
 	param_uniform.binding = 0
 	param_uniform.add_id(param_buffer)
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["region_cleanup"], 1)
@@ -2441,10 +2449,6 @@ func _dispatch_region_cleanup(w: int, h: int, groups_x: int, groups_y: int, seed
 	rd.free_rid(param_set)
 	rd.free_rid(param_buffer)
 	rd.free_rid(tex_set)
-	
-	# Copier le résultat dans region_map si on a utilisé le swap
-	if use_swap:
-		_copy_texture(dst_map, gpu.textures["region_map"], w, h)
 
 ## Dispatch le shader de finalisation des régions (coloration)
 func _dispatch_region_finalize(w: int, h: int, groups_x: int, groups_y: int, seed_val: int) -> void:
@@ -2496,6 +2500,324 @@ func _dispatch_region_finalize(w: int, h: int, groups_x: int, groups_y: int, see
 	
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["region_finalize"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+# ============================================================================
+# ÉTAPE 4.5 : RÉGIONS OCÉANIQUES
+# ============================================================================
+
+## Exécute la phase de génération des régions océaniques (step 4.5)
+## @param params: Dictionnaire contenant seed, nb_cases_ocean_regions, etc.
+## @param w: Largeur de la texture
+## @param h: Hauteur de la texture
+func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
+	print("[Orchestrator] 🌊 Phase 4.5 : Régions Océaniques")
+	
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+	
+	var seed_val = int(params.get("seed", 12345))
+	var sea_level = float(params.get("sea_level", 0.0))
+	var nb_cases_ocean_region = int(params.get("nb_cases_ocean_regions", 100))
+	
+	# Paramètres de coûts pour océans
+	var cost_flat = float(params.get("ocean_cost_flat", 1.0))
+	var cost_deeper = float(params.get("ocean_cost_deeper", 2.0))
+	var noise_strength = float(params.get("ocean_noise_strength", 10.0))
+	
+	var ocean_iterations = int(params.get("ocean_iterations", max(w, h) * 2))
+	
+	print("  Seed: ", seed_val, " | Cases/Région: ", nb_cases_ocean_region)
+	print("  Coûts - Plat: ", cost_flat, " | Profondeur: ", cost_deeper)
+	print("  Bruit frontières: ", noise_strength)
+	print("  Itérations de croissance: ", ocean_iterations)
+	
+	# Initialiser les textures océaniques
+	gpu.initialize_ocean_region_textures()
+	
+	# === PASSE 1 : PLACEMENT DES SEEDS ===
+	print("  • Placement des seeds de régions océaniques...")
+	_dispatch_ocean_region_seed_placement(w, h, groups_x, groups_y, seed_val, nb_cases_ocean_region, sea_level)
+	
+	# === PASSE 2 : CROISSANCE ITÉRATIVE ===
+	print("  • Croissance des régions océaniques (", ocean_iterations, " passes)...")
+	for pass_idx in range(ocean_iterations):
+		var use_swap = (pass_idx % 2 == 1)
+		_dispatch_ocean_region_growth(w, h, groups_x, groups_y, pass_idx, seed_val, sea_level, cost_flat, cost_deeper, noise_strength, use_swap)
+	
+	if ocean_iterations % 2 == 1:
+		_copy_ocean_region_textures(w, h)
+	
+	# === PASSE 2.5 : NETTOYAGE FINAL ===
+	print("  • Nettoyage final (couverture complète)...")
+	for cleanup_pass in range(10):
+		var use_swap = ((ocean_iterations + cleanup_pass) % 2 == 1)
+		_dispatch_ocean_region_cleanup(w, h, groups_x, groups_y, seed_val, use_swap)
+	
+	if (ocean_iterations + 10) % 2 == 1:
+		_copy_ocean_region_textures(w, h)
+	
+	# === PASSE 3 : FINALISATION ET COLORATION ===
+	print("  • Finalisation et coloration...")
+	_dispatch_ocean_region_finalize(w, h, groups_x, groups_y, seed_val)
+	
+	print("[Orchestrator] ✅ Phase 4.5 : Régions océaniques terminées")
+
+## Dispatch le shader de placement des seeds de région océanique
+func _dispatch_ocean_region_seed_placement(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, nb_cases_region: int, sea_level: float) -> void:
+	if not gpu.shaders.has("ocean_region_seed_placement") or not gpu.shaders["ocean_region_seed_placement"].is_valid():
+		push_warning("[Orchestrator] ⚠️ ocean_region_seed_placement shader non disponible")
+		return
+	
+	var tex_uniforms: Array[RDUniform] = []
+	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
+	
+	var mask_uniform = RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 1
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	
+	var map_uniform = RDUniform.new()
+	map_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_uniform.binding = 2
+	map_uniform.add_id(gpu.textures["ocean_region_map"])
+	tex_uniforms.append(map_uniform)
+	
+	tex_uniforms.append(gpu.create_texture_uniform(3, gpu.textures["ocean_region_cost"]))
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["ocean_region_seed_placement"], 0)
+	
+	var area_total = w * h
+	# Diviser par 10 pour des régions 10x plus grandes
+	var seed_probability = (float(nb_cases_region) / float(area_total)) / 10.0
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, seed_val)
+	buffer_bytes.encode_float(12, sea_level)
+	buffer_bytes.encode_float(16, seed_probability)
+	buffer_bytes.encode_float(20, 0.25)
+	buffer_bytes.encode_u32(24, nb_cases_region)
+	buffer_bytes.encode_u32(28, 0)
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["ocean_region_seed_placement"], 1)
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["ocean_region_seed_placement"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+## Dispatch le shader de croissance des régions océaniques
+func _dispatch_ocean_region_growth(w: int, h: int, groups_x: int, groups_y: int, pass_idx: int, seed_val: int, sea_level: float, cost_flat: float, cost_deeper: float, noise_strength: float, use_swap: bool) -> void:
+	if not gpu.shaders.has("ocean_region_growth") or not gpu.shaders["ocean_region_growth"].is_valid():
+		push_warning("[Orchestrator] ⚠️ ocean_region_growth shader non disponible")
+		return
+	
+	var src_map: RID = gpu.textures["ocean_region_map"] if not use_swap else gpu.textures["ocean_region_map_temp"]
+	var src_cost: RID = gpu.textures["ocean_region_cost"] if not use_swap else gpu.textures["ocean_region_cost_temp"]
+	var dst_map: RID = gpu.textures["ocean_region_map_temp"] if not use_swap else gpu.textures["ocean_region_map"]
+	var dst_cost: RID = gpu.textures["ocean_region_cost_temp"] if not use_swap else gpu.textures["ocean_region_cost"]
+	
+	var tex_uniforms: Array[RDUniform] = []
+	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
+	
+	var mask_uniform = RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 1
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	
+	var map_in_uniform = RDUniform.new()
+	map_in_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_in_uniform.binding = 2
+	map_in_uniform.add_id(src_map)
+	tex_uniforms.append(map_in_uniform)
+	
+	tex_uniforms.append(gpu.create_texture_uniform(3, src_cost))
+	
+	var map_out_uniform = RDUniform.new()
+	map_out_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_out_uniform.binding = 4
+	map_out_uniform.add_id(dst_map)
+	tex_uniforms.append(map_out_uniform)
+	
+	tex_uniforms.append(gpu.create_texture_uniform(5, dst_cost))
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["ocean_region_growth"], 0)
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(48)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, pass_idx)
+	buffer_bytes.encode_u32(12, seed_val)
+	buffer_bytes.encode_float(16, sea_level)
+	buffer_bytes.encode_float(20, cost_flat)
+	buffer_bytes.encode_float(24, cost_deeper)
+	buffer_bytes.encode_float(28, noise_strength)
+	buffer_bytes.encode_float(32, 0.0)
+	buffer_bytes.encode_float(36, 0.0)
+	buffer_bytes.encode_float(40, 0.0)
+	buffer_bytes.encode_float(44, 0.0)
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["ocean_region_growth"], 1)
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["ocean_region_growth"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+## Copie les textures océaniques du buffer temp vers le buffer principal
+func _copy_ocean_region_textures(w: int, h: int) -> void:
+	_copy_texture(gpu.textures["ocean_region_cost_temp"], gpu.textures["ocean_region_cost"], w, h)
+
+## Dispatch le shader de nettoyage des régions océaniques
+func _dispatch_ocean_region_cleanup(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, use_swap: bool) -> void:
+	if not gpu.shaders.has("ocean_region_cleanup") or not gpu.shaders["ocean_region_cleanup"].is_valid():
+		push_warning("[Orchestrator] ⚠️ ocean_region_cleanup shader non disponible")
+		return
+	
+	var src_map: RID = gpu.textures["ocean_region_map"] if not use_swap else gpu.textures["ocean_region_map_temp"]
+	var dst_map: RID = gpu.textures["ocean_region_map_temp"] if not use_swap else gpu.textures["ocean_region_map"]
+	var dst_cost: RID = gpu.textures["ocean_region_cost_temp"] if not use_swap else gpu.textures["ocean_region_cost"]
+	
+	var tex_uniforms: Array[RDUniform] = []
+	
+	var mask_uniform = RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 0
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	
+	var map_in_uniform = RDUniform.new()
+	map_in_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_in_uniform.binding = 1
+	map_in_uniform.add_id(src_map)
+	tex_uniforms.append(map_in_uniform)
+	
+	var map_out_uniform = RDUniform.new()
+	map_out_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_out_uniform.binding = 2
+	map_out_uniform.add_id(dst_map)
+	tex_uniforms.append(map_out_uniform)
+	
+	tex_uniforms.append(gpu.create_texture_uniform(3, dst_cost))
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["ocean_region_cleanup"], 0)
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(16)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, seed_val)
+	buffer_bytes.encode_u32(12, 0)
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["ocean_region_cleanup"], 1)
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["ocean_region_cleanup"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+## Dispatch le shader de finalisation des régions océaniques (coloration)
+func _dispatch_ocean_region_finalize(w: int, h: int, groups_x: int, groups_y: int, seed_val: int) -> void:
+	if not gpu.shaders.has("ocean_region_finalize") or not gpu.shaders["ocean_region_finalize"].is_valid():
+		push_warning("[Orchestrator] ⚠️ ocean_region_finalize shader non disponible")
+		return
+	
+	var tex_uniforms: Array[RDUniform] = []
+	
+	var map_uniform = RDUniform.new()
+	map_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_uniform.binding = 0
+	map_uniform.add_id(gpu.textures["ocean_region_map"])
+	tex_uniforms.append(map_uniform)
+	
+	var mask_uniform = RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 1
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	
+	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["ocean_region_colored"]))
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["ocean_region_finalize"], 0)
+	
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, seed_val)
+	buffer_bytes.encode_u32(12, 42)   # land_color_r (gris)
+	buffer_bytes.encode_u32(16, 42)   # land_color_g
+	buffer_bytes.encode_u32(20, 42)   # land_color_b
+	buffer_bytes.encode_float(24, 0.0)
+	buffer_bytes.encode_float(28, 0.0)
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["ocean_region_finalize"], 1)
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["ocean_region_finalize"])
 	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
 	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)

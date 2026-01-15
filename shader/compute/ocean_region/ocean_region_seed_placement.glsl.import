@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://6pth6lvxmptk"
+path="res://.godot/imported/ocean_region_seed_placement.glsl-ad8bad54fec298b590a91edff7a48361.res"
+
+[deps]
+
+source_file="res://shader/compute/ocean_region/ocean_region_seed_placement.glsl"
+dest_files=["res://.godot/imported/ocean_region_seed_placement.glsl-ad8bad54fec298b590a91edff7a48361.res"]
+
+[params]
+

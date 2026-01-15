@@ -115,6 +115,11 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	for key in region_result.keys():
 		exported_files[key] = region_result[key]
 	
+	# === EXPORT RÉGIONS OCÉANIQUES (Step 4.5) ===
+	var ocean_region_result = _export_ocean_region_map(gpu, output_dir)
+	for key in ocean_region_result.keys():
+		exported_files[key] = ocean_region_result[key]
+	
 	# === EXPORT RESSOURCES (Step 5) ===
 	var resources_result = _export_resources_maps(gpu, output_dir, width, height)
 	for key in resources_result.keys():
@@ -523,6 +528,72 @@ func _export_region_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 		push_error("[Exporter] ❌ Failed to save region map: ", err)
 	
 	print("[Exporter] ✅ Region export complete")
+	return result
+
+## Exporte ocean_region_colored (RGBA8) en PNG
+## Identique à _export_region_map mais pour les régions océaniques
+##
+## @param gpu: Instance GPUContext avec la texture ocean_region_colored
+## @param output_dir: Dossier de sortie
+## @return Dictionary: Chemin du fichier exporté
+func _export_ocean_region_map(gpu: GPUContext, output_dir: String) -> Dictionary:
+	print("[Exporter] 🌊 Exporting ocean region map (optimized RGBA8 direct)...")
+	
+	var result = {}
+	var rd = gpu.rd
+	
+	if not rd:
+		push_error("[Exporter] ❌ RenderingDevice not available")
+		return result
+	
+	# Synchroniser le GPU avant lecture
+	rd.submit()
+	rd.sync()
+	
+	var tex_id = "ocean_region_colored"
+	var filename = "ocean_region_map.png"
+	
+	if not gpu.textures.has(tex_id) or not gpu.textures[tex_id].is_valid():
+		print("  ⚠️ Texture 'ocean_region_colored' non disponible, skip")
+		return result
+	
+	# Lecture directe des données RGBA8 depuis le GPU
+	var data = rd.texture_get_data(gpu.textures[tex_id], 0)
+	
+	if data.size() == 0:
+		push_error("[Exporter] ❌ Empty data for ocean region texture")
+		return result
+	
+	# Récupérer les dimensions depuis le format de texture
+	var tex_format = rd.texture_get_format(gpu.textures[tex_id])
+	var width = tex_format.width
+	var height = tex_format.height
+	
+	# Vérifier la taille des données (RGBA8 = 4 bytes par pixel)
+	var expected_size = width * height * 4
+	if data.size() != expected_size:
+		push_error("[Exporter] ❌ Data size mismatch for ocean region map: expected ", 
+			expected_size, ", got ", data.size())
+		return result
+	
+	# Créer l'image directement à partir des données
+	var img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, data)
+	
+	if not img:
+		push_error("[Exporter] ❌ Failed to create ocean region image")
+		return result
+	
+	# Sauvegarder en PNG
+	var filepath = output_dir + "/" + filename
+	var err = img.save_png(filepath)
+	
+	if err == OK:
+		result[tex_id] = filepath
+		print("  ✅ Saved: ", filepath, " (", width, "x", height, ", direct RGBA8)")
+	else:
+		push_error("[Exporter] ❌ Failed to save ocean region map: ", err)
+	
+	print("[Exporter] ✅ Ocean region export complete")
 	return result
 
 # ============================================================================

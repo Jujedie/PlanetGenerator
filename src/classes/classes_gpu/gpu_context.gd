@@ -552,6 +552,110 @@ func initialize_region_textures() -> void:
 	
 	print("✅ Textures régions créées (2x R32UI + 2x R32F + 1x RGBA8)")
 
+func initialize_ocean_region_textures() -> void:
+	"""
+	Initialise les textures spécifiques aux régions océaniques (étape 4.5).
+	Appelé par l'orchestrateur avant la phase de génération des régions océaniques.
+	
+	Textures créées:
+	- ocean_region_map (R32UI) : ID de région océanique par pixel
+	- ocean_region_map_temp (R32UI) : Buffer ping-pong pour cleanup
+	- ocean_region_cost / ocean_region_cost_temp (R32F) : Coûts accumulés
+	- ocean_region_colored (RGBA8) : Couleur finale pour export
+	"""
+	
+	# Format R32UI pour IDs de région (4 bytes par pixel)
+	var format_r32ui := RDTextureFormat.new()
+	format_r32ui.width = resolution.x
+	format_r32ui.height = resolution.y
+	format_r32ui.format = FORMAT_R32UI
+	format_r32ui.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Format R32F pour coûts (4 bytes par pixel)
+	var format_r32f := RDTextureFormat.new()
+	format_r32f.width = resolution.x
+	format_r32f.height = resolution.y
+	format_r32f.format = FORMAT_R32F
+	format_r32f.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Format RGBA8 pour couleur finale (4 bytes par pixel)
+	var format_rgba8 := RDTextureFormat.new()
+	format_rgba8.width = resolution.x
+	format_rgba8.height = resolution.y
+	format_rgba8.format = FORMAT_RGBA8
+	format_rgba8.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Créer ocean_region_map (R32UI)
+	if not textures.has("ocean_region_map"):
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 4)
+		for i in range(0, data.size(), 4):
+			data.encode_u32(i, 0xFFFFFFFF)
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_r32ui, view, [data])
+		if rid.is_valid():
+			textures["ocean_region_map"] = rid
+		else:
+			push_error("❌ Échec création texture ocean_region_map")
+	
+	# Créer ocean_region_map_temp (R32UI)
+	if not textures.has("ocean_region_map_temp"):
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 4)
+		for i in range(0, data.size(), 4):
+			data.encode_u32(i, 0xFFFFFFFF)
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_r32ui, view, [data])
+		if rid.is_valid():
+			textures["ocean_region_map_temp"] = rid
+		else:
+			push_error("❌ Échec création texture ocean_region_map_temp")
+	
+	# Créer ocean_region_cost et ocean_region_cost_temp (R32F)
+	for tex_id in ["ocean_region_cost", "ocean_region_cost_temp"]:
+		if not textures.has(tex_id):
+			var data = PackedByteArray()
+			data.resize(resolution.x * resolution.y * 4)
+			for i in range(0, data.size(), 4):
+				data.encode_float(i, 1e30)
+			var view := RDTextureView.new()
+			var rid := rd.texture_create(format_r32f, view, [data])
+			if rid.is_valid():
+				textures[tex_id] = rid
+			else:
+				push_error("❌ Échec création texture " + tex_id)
+	
+	# Créer ocean_region_colored (RGBA8)
+	if not textures.has("ocean_region_colored"):
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 4)
+		data.fill(0)
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_rgba8, view, [data])
+		if rid.is_valid():
+			textures["ocean_region_colored"] = rid
+		else:
+			push_error("❌ Échec création texture ocean_region_colored")
+	
+	print("✅ Textures régions océaniques créées (2x R32UI + 2x R32F + 1x RGBA8)")
+
 # === CHARGEMENT DES SHADERS (SÉCURISÉ) ===
 func load_compute_shader(glsl_path: String, shader_name: String) -> bool:
 	if not FileAccess.file_exists(glsl_path):
