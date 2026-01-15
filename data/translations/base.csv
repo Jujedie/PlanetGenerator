@@ -29,7 +29,7 @@ MAP_FINAL,Final Map,Carte Finale,Endkarte,Финальная карта
 MAP_CLOUDS,Clouds,Nuages,Wolken,Облака
 MAP_PRECIPITATION,Precipitation,Précipitations,Niederschlag,Осадки
 MAP_WATER,Seas,Mers,Meere,Моря
-MAP_OIL,Oil,Pétrole,Öl,Нефть
+MAP_PETROLE,Petroleum,Pétrole,Öl,Нефть
 MAP_RESOURCES,Resources,Ressources,Ressourcen,Ресурсы
 MAP_TEMPERATURE,Temperature,Température,Temperatur,Температура
 MAP_RIVERS,Rivers/Lakes,Rivières/Lacs,Flüsse/Seen,Реки/Озёра

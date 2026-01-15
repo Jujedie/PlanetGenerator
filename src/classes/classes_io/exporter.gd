@@ -471,7 +471,7 @@ const RESOURCE_NAMES = [
 	# CAT 8: Terres rares (16)
 	"cerium", "lanthane", "neodyme", "yttrium", "praseodyme", "samarium", "gadolinium", "dysprosium", "erbium", "europium", "terbium", "holmium", "thulium", "ytterbium", "lutetium", "scandium",
 	# CAT 9: Hydrocarbures (7)
-	"petrole", "gaz_naturel", "lignite", "anthracite", "tourbe", "schiste_bitumineux", "methane_hydrate",
+	"gaz_naturel", "lignite", "anthracite", "tourbe", "schiste_bitumineux", "methane_hydrate",
 	# CAT 10: Pierres précieuses (12)
 	"diamant", "emeraude", "rubis", "saphir", "topaze", "amethyste", "opale", "turquoise", "grenat", "peridot", "jade", "lapis_lazuli",
 	# CAT 11: Minéraux industriels (22)
@@ -602,12 +602,12 @@ func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, hei
 # ÉTAPE 2.5 : EXPORT CLASSIFICATION DES EAUX
 # ============================================================================
 
-## Couleurs pour les types d'eau
+## Couleurs pour les types d'eau (nouvelle classification eau salée/douce)
 const WATER_TYPE_COLORS = {
-	0: Color(0, 0, 0, 0),           # NONE - Transparent
-	1: Color(0.145, 0.322, 0.541),  # OCEAN - Bleu profond (#25528a)
-	2: Color(0.180, 0.380, 0.580),  # MER - Bleu moyen
-	3: Color(0.271, 0.518, 0.824),  # LAC - Bleu clair (#4584d2)
+	0: Color(0, 0, 0, 0),           # NONE - Transparent (terre)
+	1: Color(0.145, 0.322, 0.541),  # SALTWATER - Bleu profond eau salée (#25528a)
+	2: Color(0.180, 0.380, 0.580),  # (réservé) - Bleu moyen
+	3: Color(0.271, 0.518, 0.824),  # FRESHWATER - Bleu clair eau douce (#4584d2)
 	4: Color(0.420, 0.667, 0.898),  # AFFLUENT - Bleu très clair (#6BAAE5)
 	5: Color(0.290, 0.565, 0.851),  # RIVIÈRE - Bleu moyen (#4A90D9)
 	6: Color(0.243, 0.498, 0.769),  # FLEUVE - Bleu soutenu (#3E7FC4)
@@ -616,9 +616,9 @@ const WATER_TYPE_COLORS = {
 ## Noms des types d'eau pour debug
 const WATER_TYPE_NAMES = [
 	"Terre",
-	"Océan",
-	"Mer",
-	"Lac",
+	"Eau salée",
+	"(réservé)",
+	"Eau douce",
 	"Affluent",
 	"Rivière",
 	"Fleuve"

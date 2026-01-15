@@ -191,10 +191,8 @@ void main() {
     // === MISE À JOUR DU FLUX ===
     float new_flux = current_flux + incoming_flux;
     
-    // Ajouter le flux de source si applicable (pour les passes suivantes)
-    if (source_id > 0u) {
-        new_flux = max(new_flux, params.base_flux);
-    }
+    // Note: Le flux de source est injecté uniquement à pass_index == 0 (ligne 154)
+    // Les passes suivantes ne font que propager et accumuler le flux
     
     // === ÉCRITURE DU RÉSULTAT ===
     imageStore(paths_output, pixel, vec4(new_flux, 0.0, 0.0, 0.0));

@@ -2,12 +2,12 @@
 #version 450
 
 // ============================================================================
-// WATER FINALIZE SHADER - Reclassification finale par taille
+// WATER FINALIZE SHADER - Reclassification finale eau salée/eau douce
 // ============================================================================
 // Lit les compteurs de pixels par composante et reclassifie :
-// - Océan : > ocean_threshold pixels
-// - Mer : entre sea_threshold et ocean_threshold pixels
-// - Lac : < sea_threshold pixels
+// - Eau salée (type 1) : masse d'eau >= saltwater_threshold pixels
+// - Eau douce (type 3) : masse d'eau < saltwater_threshold pixels
+// - Lacs en altitude : toujours eau douce (type 3)
 //
 // Les rivières (types 4, 5, 6) ne sont pas modifiées.
 // ============================================================================
@@ -35,24 +35,24 @@ layout(set = 1, binding = 0, std140) uniform FinalizeParams {
     uint width;
     uint height;
     float sea_level;
-    uint ocean_threshold;     // Seuil océan (ex: 10000 pixels)
-    uint sea_threshold;       // Seuil mer (ex: 1000 pixels)
-    uint lake_threshold;      // Seuil lac (ex: 100 pixels pour très petits)
-    float padding1;
-    float padding2;
+    uint saltwater_threshold;  // Seuil eau salée (>= ce seuil = eau salée)
+    uint padding1;             // Ancien sea_threshold (non utilisé)
+    uint padding2;             // Ancien lake_threshold (non utilisé)
+    float padding3;
+    float padding4;
 } params;
 
 // ============================================================================
-// CONSTANTES
+// CONSTANTES - Types d'eau simplifiés
 // ============================================================================
 
-const uint WATER_NONE     = 0u;
-const uint WATER_OCEAN    = 1u;
-const uint WATER_SEA      = 2u;
-const uint WATER_LAKE     = 3u;
-const uint WATER_AFFLUENT = 4u;
-const uint WATER_RIVER    = 5u;
-const uint WATER_FLEUVE   = 6u;
+const uint WATER_NONE      = 0u;  // Terre
+const uint WATER_SALTWATER = 1u;  // Eau salée (ex-océan) - grande masse >= saltwater_threshold
+const uint WATER_SEA       = 2u;  // Non utilisé, gardé pour compatibilité export
+const uint WATER_FRESHWATER = 3u; // Eau douce (lacs, petites masses) - < saltwater_threshold
+const uint WATER_AFFLUENT  = 4u;  // Affluent (rivière)
+const uint WATER_RIVER     = 5u;  // Rivière
+const uint WATER_FLEUVE    = 6u;  // Fleuve
 
 // ============================================================================
 // MAIN
@@ -94,27 +94,30 @@ void main() {
     uint seed_index = uint(seed.y) * params.width + uint(seed.x);
     uint component_size = pixel_counts[seed_index];
     
+    // Si le compteur n'a pas été rempli (= 0), ne pas modifier
+    if (component_size == 0u) {
+        return;
+    }
+    
     // Lire l'altitude pour déterminer si c'est un lac en altitude
     vec4 geo = imageLoad(geo_texture, pixel);
     float height = geo.r;
     bool is_highland_lake = (height >= params.sea_level);
     
-    // === RECLASSIFICATION PAR TAILLE ===
-    uint new_type = water_type;
+    // === RECLASSIFICATION EAU SALÉE / EAU DOUCE ===
+    uint new_type;
     
     if (is_highland_lake) {
-        // Les lacs en altitude restent des lacs quelle que soit leur taille
-        new_type = WATER_LAKE;
+        // Les lacs en altitude sont TOUJOURS de l'eau douce
+        new_type = WATER_FRESHWATER;
     }
-    else if (component_size > params.ocean_threshold) {
-        new_type = WATER_OCEAN;
-    }
-    else if (component_size > params.sea_threshold) {
-        new_type = WATER_SEA;
+    else if (component_size >= params.saltwater_threshold) {
+        // Grande masse d'eau sous le niveau de la mer = eau salée
+        new_type = WATER_SALTWATER;
     }
     else {
-        // Petite masse d'eau sous le niveau de la mer = lac intérieur
-        new_type = WATER_LAKE;
+        // Petite masse d'eau sous le niveau de la mer = eau douce (lac intérieur)
+        new_type = WATER_FRESHWATER;
     }
     
     // Écrire le nouveau type

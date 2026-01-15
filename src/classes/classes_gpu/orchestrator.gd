@@ -16,6 +16,9 @@ var rd: RenderingDevice
 var resolution: Vector2i
 var generation_params: Dictionary
 
+# SSBO pour comptage de pixels par composante (water classification)
+var water_counter_buffer: RID = RID()
+
 # ============================================================================
 # INITIALISATION
 # ============================================================================
@@ -1414,23 +1417,23 @@ func run_water_classification_phase(params: Dictionary, w: int, h: int) -> void:
 	var min_altitude = 100.0  # Altitude minimale des sources au-dessus de la mer
 	var min_precipitation = 0.3  # Précipitation minimale pour source
 	var cell_size = max(10.0, float(w) / 60.0)  # Taille de cellule pour espacement
-	var river_propagation_iterations = 200  # Nombre de passes de propagation
-	var base_river_flux = 10.0  # Flux initial par source
+	var river_propagation_iterations = 500  # Nombre de passes de propagation (augmenté pour longues rivières)
+	var base_river_flux = 500.0  # Flux initial par source (augmenté pour accumulation)
 	
 	# Paramètres de classification
-	var flux_threshold_low = 5.0    # Seuil affluent
-	var flux_threshold_mid = 50.0   # Seuil rivière
-	var flux_threshold_high = 200.0 # Seuil fleuve
-	var lake_min_water = 0.5        # Eau min pour lac en altitude
+	var flux_threshold_low = 2.0     # Seuil affluent (réduit pour détection)
+	var flux_threshold_mid = 25.0    # Seuil rivière (réduit pour détection)
+	var flux_threshold_high = 100.0  # Seuil fleuve (réduit pour détection)
+	var lake_min_water = 0.5         # Eau min pour lac en altitude
 	
-	# Paramètres de taille (basés sur résolution)
-	var total_pixels = w * h
-	var ocean_threshold = int(total_pixels * 0.01)  # >1% = océan
-	var sea_threshold = int(total_pixels * 0.001)   # >0.1% = mer
+	# Paramètres de taille pour classification eau salée/douce
+	# Eau salée = masse d'eau >= saltwater_threshold pixels
+	# Eau douce = masse d'eau < saltwater_threshold pixels (et lacs d'altitude)
+	var saltwater_threshold = 300    # Seuil minimal pour eau salée (fixe, pas basé sur résolution)
 	
 	print("  Seed: ", seed_val, " | Sea Level: ", sea_level)
 	print("  Cell Size: ", cell_size, " | Propagation Iterations: ", river_propagation_iterations)
-	print("  Ocean Threshold: ", ocean_threshold, " | Sea Threshold: ", sea_threshold)
+	print("  Saltwater Threshold: ", saltwater_threshold, " pixels (eau salée >= ce seuil)")
 	
 	# === PASSE 1 : DÉTECTION DES SOURCES ===
 	print("  • Détection des sources de rivières...")
@@ -1465,9 +1468,13 @@ func run_water_classification_phase(params: Dictionary, w: int, h: int) -> void:
 		print("  • Copie du résultat JFA vers water_jfa...")
 		_copy_texture(gpu.textures["water_jfa_temp"], gpu.textures["water_jfa"], w, h)
 	
+	# === PASSE 4.5 : COMPTAGE ATOMIQUE DES PIXELS ===
+	print("  • Comptage des pixels par composante...")
+	_dispatch_water_size_classification(w, h, groups_x, groups_y)
+	
 	# === PASSE 5 : RECLASSIFICATION PAR TAILLE ===
-	print("  • Reclassification par taille...")
-	_dispatch_water_finalize(w, h, groups_x, groups_y, sea_level, ocean_threshold, sea_threshold)
+	print("  • Reclassification par taille (eau salée >= ", saltwater_threshold, " pixels)...")
+	_dispatch_water_finalize(w, h, groups_x, groups_y, sea_level, saltwater_threshold)
 	
 	print("[Orchestrator] ✅ Phase 2.5 : Classification des eaux terminée")
 
@@ -1770,19 +1777,105 @@ func _dispatch_water_jfa(w: int, h: int, groups_x: int, groups_y: int, step_size
 	rd.free_rid(param_buffer)
 	rd.free_rid(tex_set)
 
-## Dispatch le shader de finalisation (reclassification par taille)
-func _dispatch_water_finalize(w: int, h: int, groups_x: int, groups_y: int, sea_level: float, ocean_threshold: int, sea_threshold: int) -> void:
-	if not gpu.shaders.has("water_finalize") or not gpu.shaders["water_finalize"].is_valid():
+## Dispatch le shader de comptage des pixels par composante (via atomics)
+func _dispatch_water_size_classification(w: int, h: int, groups_x: int, groups_y: int) -> void:
+	if not gpu.shaders.has("water_size_classification") or not gpu.shaders["water_size_classification"].is_valid():
+		push_warning("[Orchestrator] ⚠️ water_size_classification shader non disponible, comptage ignoré")
 		return
 	
-	# Note: water_size_classification utilise un SSBO pour compter les pixels
-	# Pour simplifier, on fait la reclassification directement dans water_finalize
-	# sans comptage atomique (on utilise une estimation basée sur le seed JFA)
+	# Créer le SSBO pour les compteurs (w * h * 4 bytes) s'il n'existe pas
+	var counter_size = w * h * 4
+	if not water_counter_buffer.is_valid():
+		var counter_data = PackedByteArray()
+		counter_data.resize(counter_size)
+		counter_data.fill(0)
+		water_counter_buffer = rd.storage_buffer_create(counter_size, counter_data)
+		
+		if not water_counter_buffer.is_valid():
+			push_error("[Orchestrator] ❌ Failed to create water counter SSBO")
+			return
+	else:
+		# Réinitialiser le buffer à zéro
+		var zero_data = PackedByteArray()
+		zero_data.resize(counter_size)
+		zero_data.fill(0)
+		rd.buffer_update(water_counter_buffer, 0, counter_size, zero_data)
 	
 	# Créer les uniforms de texture
 	var tex_uniforms: Array[RDUniform] = []
 	
-	# Water JFA (readonly) - utiliser la texture finale (après nombre pair de passes)
+	# Water JFA (readonly)
+	var jfa_uniform = RDUniform.new()
+	jfa_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	jfa_uniform.binding = 0
+	jfa_uniform.add_id(gpu.textures["water_jfa"])
+	tex_uniforms.append(jfa_uniform)
+	
+	# Water types (readonly)
+	var types_uniform = RDUniform.new()
+	types_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	types_uniform.binding = 1
+	types_uniform.add_id(gpu.textures["water_types"])
+	tex_uniforms.append(types_uniform)
+	
+	# Counter SSBO (read/write)
+	var counter_uniform = RDUniform.new()
+	counter_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	counter_uniform.binding = 2
+	counter_uniform.add_id(water_counter_buffer)
+	tex_uniforms.append(counter_uniform)
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["water_size_classification"], 0)
+	if not tex_set.is_valid():
+		return
+	
+	# Structure UBO (std140, 16 bytes)
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(16)
+	buffer_bytes.encode_u32(0, w)   # width
+	buffer_bytes.encode_u32(4, h)   # height
+	buffer_bytes.encode_u32(8, 0)   # padding1
+	buffer_bytes.encode_u32(12, 0)  # padding2
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		rd.free_rid(tex_set)
+		return
+	
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["water_size_classification"], 1)
+	if not param_set.is_valid():
+		rd.free_rid(tex_set)
+		rd.free_rid(param_buffer)
+		return
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["water_size_classification"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+## Dispatch le shader de finalisation (reclassification eau salée/douce)
+func _dispatch_water_finalize(w: int, h: int, groups_x: int, groups_y: int, sea_level: float, saltwater_threshold: int) -> void:
+	if not gpu.shaders.has("water_finalize") or not gpu.shaders["water_finalize"].is_valid():
+		return
+	
+	# Créer les uniforms de texture
+	var tex_uniforms: Array[RDUniform] = []
+	
+	# Water JFA (readonly)
 	var jfa_uniform = RDUniform.new()
 	jfa_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
 	jfa_uniform.binding = 0
@@ -1796,21 +1889,19 @@ func _dispatch_water_finalize(w: int, h: int, groups_x: int, groups_y: int, sea_
 	types_uniform.add_id(gpu.textures["water_types"])
 	tex_uniforms.append(types_uniform)
 	
-	# Créer un SSBO pour les compteurs (w * h * 4 bytes)
-	var counter_size = w * h * 4
-	var counter_data = PackedByteArray()
-	counter_data.resize(counter_size)
-	counter_data.fill(0)
-	var counter_buffer = rd.storage_buffer_create(counter_size, counter_data)
-	
-	if not counter_buffer.is_valid():
-		push_error("[Orchestrator] ❌ Failed to create counter SSBO")
-		return
+	# Counter SSBO (readonly) - doit exister après _dispatch_water_size_classification
+	if not water_counter_buffer.is_valid():
+		# Créer un buffer vide si le comptage n'a pas été effectué
+		var counter_size = w * h * 4
+		var counter_data = PackedByteArray()
+		counter_data.resize(counter_size)
+		counter_data.fill(0)
+		water_counter_buffer = rd.storage_buffer_create(counter_size, counter_data)
 	
 	var counter_uniform = RDUniform.new()
 	counter_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
 	counter_uniform.binding = 2
-	counter_uniform.add_id(counter_buffer)
+	counter_uniform.add_id(water_counter_buffer)
 	tex_uniforms.append(counter_uniform)
 	
 	# Geo texture (readonly)
@@ -1818,26 +1909,25 @@ func _dispatch_water_finalize(w: int, h: int, groups_x: int, groups_y: int, sea_
 	
 	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["water_finalize"], 0)
 	if not tex_set.is_valid():
-		rd.free_rid(counter_buffer)
 		return
 	
 	# Structure UBO (std140, 32 bytes)
+	# Nouvelle structure : width, height, sea_level, saltwater_threshold
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(32)
 	
-	buffer_bytes.encode_u32(0, w)                    # width
-	buffer_bytes.encode_u32(4, h)                    # height
-	buffer_bytes.encode_float(8, sea_level)          # sea_level
-	buffer_bytes.encode_u32(12, ocean_threshold)     # ocean_threshold
-	buffer_bytes.encode_u32(16, sea_threshold)       # sea_threshold
-	buffer_bytes.encode_u32(20, 10)                  # lake_threshold (très petits lacs)
-	buffer_bytes.encode_float(24, 0.0)               # padding1
-	buffer_bytes.encode_float(28, 0.0)               # padding2
+	buffer_bytes.encode_u32(0, w)                     # width
+	buffer_bytes.encode_u32(4, h)                     # height
+	buffer_bytes.encode_float(8, sea_level)           # sea_level
+	buffer_bytes.encode_u32(12, saltwater_threshold)  # saltwater_threshold (>= ce seuil = eau salée)
+	buffer_bytes.encode_u32(16, 0)                    # padding (ancien sea_threshold)
+	buffer_bytes.encode_u32(20, 0)                    # padding (ancien lake_threshold)
+	buffer_bytes.encode_float(24, 0.0)                # padding1
+	buffer_bytes.encode_float(28, 0.0)                # padding2
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
 	if not param_buffer.is_valid():
 		rd.free_rid(tex_set)
-		rd.free_rid(counter_buffer)
 		return
 	
 	var param_uniform = RDUniform.new()
@@ -1849,13 +1939,8 @@ func _dispatch_water_finalize(w: int, h: int, groups_x: int, groups_y: int, sea_
 	if not param_set.is_valid():
 		rd.free_rid(tex_set)
 		rd.free_rid(param_buffer)
-		rd.free_rid(counter_buffer)
 		return
 	
-	# Passe 1: Compter les pixels par composante (via water_size_classification si disponible)
-	# Pour l'instant, on skip le comptage et on utilise la classification basée sur l'altitude seule
-	
-	# Passe 2: Finalisation
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["water_finalize"])
 	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
@@ -1869,7 +1954,11 @@ func _dispatch_water_finalize(w: int, h: int, groups_x: int, groups_y: int, sea_
 	rd.free_rid(param_set)
 	rd.free_rid(param_buffer)
 	rd.free_rid(tex_set)
-	rd.free_rid(counter_buffer)
+	
+	# Libérer le buffer de comptage après utilisation
+	if water_counter_buffer.is_valid():
+		rd.free_rid(water_counter_buffer)
+		water_counter_buffer = RID()
 
 # ============================================================================
 # ÉTAPE 3 : ATMOSPHÈRE & CLIMAT
