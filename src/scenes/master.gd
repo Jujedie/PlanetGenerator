@@ -14,7 +14,7 @@ const MAP_NAME_TO_KEY = {
 	"plaques_map.png": "MAP_PLAQUES",
 	"plaques_bordures_map.png": "MAP_PLAQUES_BORDURES",
 	"nuage_map.png": "MAP_CLOUDS",
-	"oil_map.png": "MAP_OIL",
+	"petrole_map.png": "MAP_PETROLE",
 	"ressource_map.png": "MAP_RESOURCES",
 	"precipitation_map.png": "MAP_PRECIPITATION",
 	"temperature_map.png": "MAP_TEMPERATURE",

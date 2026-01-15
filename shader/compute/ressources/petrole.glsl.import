@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://dpcw1gmlyx7p1"
+path="res://.godot/imported/petrole.glsl-214349e0838e4da9260dd9d82e1e6ab5.res"
+
+[deps]
+
+source_file="res://shader/compute/ressources/petrole.glsl"
+dest_files=["res://.godot/imported/petrole.glsl-214349e0838e4da9260dd9d82e1e6ab5.res"]
+
+[params]
+

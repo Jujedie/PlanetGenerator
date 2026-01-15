@@ -483,7 +483,7 @@ const RESOURCE_NAMES = [
 ## Exporte les cartes de ressources et de pétrole.
 ##
 ## Crée un sous-dossier "ressource/" contenant :
-## - oil_map.png : Carte de pétrole (noir/transparent)
+## - petrole_map.png : Carte de pétrole (noir/transparent)
 ## - Une carte par ressource minérale avec la couleur définie dans enum.gd
 ##
 ## @param gpu: Instance GPUContext avec les textures ressources
@@ -511,27 +511,27 @@ func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, hei
 	rd.sync()
 	
 	# === EXPORT PÉTROLE (RGBA8 direct) ===
-	if gpu.textures.has("oil") and gpu.textures["oil"].is_valid():
-		var oil_data = rd.texture_get_data(gpu.textures["oil"], 0)
+	if gpu.textures.has("petrole") and gpu.textures["petrole"].is_valid():
+		var petrole_data = rd.texture_get_data(gpu.textures["petrole"], 0)
 		
-		if oil_data.size() > 0:
+		if petrole_data.size() > 0:
 			var expected_size = width * height * 4  # RGBA8
-			if oil_data.size() == expected_size:
-				var oil_img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, oil_data)
-				var oil_path = resources_dir + "/oil_map.png"
-				var err = oil_img.save_png(oil_path)
+			if petrole_data.size() == expected_size:
+				var petrole_img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, petrole_data)
+				var petrole_path = resources_dir + "/petrole_map.png"
+				var err = petrole_img.save_png(petrole_path)
 				
 				if err == OK:
-					result["oil_map"] = oil_path
-					print("  ✅ Saved: ", oil_path)
+					result["petrole_map"] = petrole_path
+					print("  ✅ Saved: ", petrole_path)
 				else:
-					push_error("[Exporter] ❌ Failed to save oil_map: ", err)
+					push_error("[Exporter] ❌ Failed to save petrole_map: ", err)
 			else:
-				push_error("[Exporter] ❌ Oil data size mismatch: expected ", expected_size, ", got ", oil_data.size())
+				push_error("[Exporter] ❌ Petrole data size mismatch: expected ", expected_size, ", got ", petrole_data.size())
 		else:
-			print("  ⚠️ Oil texture empty, skipping")
+			print("  ⚠️ Petrole texture empty, skipping")
 	else:
-		print("  ⚠️ Oil texture not available, skipping")
+		print("  ⚠️ Petrole texture not available, skipping")
 	
 	# === EXPORT RESSOURCES (RGBA32F -> cartes individuelles) ===
 	if gpu.textures.has("resources") and gpu.textures["resources"].is_valid():

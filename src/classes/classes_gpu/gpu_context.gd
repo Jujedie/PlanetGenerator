@@ -32,9 +32,9 @@ static var TextureID_Erosion : Array[String] = ["geo_temp", "river_flux", "flux_
 static var TextureID_Climat : Array[String] = ["vapor", "vapor_temp", "temperature_colored", "precipitation_colored", "clouds", "ice_caps"]
 
 # Textures Étape 5 - Ressources & Pétrole
-# oil : (RGBA8) - carte de pétrole (noir/transparent)
+# petrole : (RGBA8) - carte de pétrole (noir/transparent)
 # resources : (RGBA32F) - R=resource_id, G=intensity, B=cluster_id, A=has_resource
-static var TextureID_Resources : Array[String] = ["oil", "resources"]
+static var TextureID_Resources : Array[String] = ["petrole", "resources"]
 
 # Textures Étape 2.5 - Classification des Eaux
 # water_sources : (R32UI) - ID de source de rivière (0 = pas de source)
@@ -293,8 +293,8 @@ func initialize_resources_textures() -> void:
 		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
 	)
 	
-	# Créer texture oil (RGBA8 - 4 bytes par pixel)
-	if not textures.has("oil"):
+	# Créer texture petrole (RGBA8 - 4 bytes par pixel)
+	if not textures.has("petrole"):
 		var data = PackedByteArray()
 		data.resize(resolution.x * resolution.y * 4)  # 4 bytes per pixel (RGBA8)
 		data.fill(0)
@@ -303,9 +303,9 @@ func initialize_resources_textures() -> void:
 		var rid := rd.texture_create(format_rgba8, view, [data])
 		
 		if not rid.is_valid():
-			push_error("❌ Échec création texture oil")
+			push_error("❌ Échec création texture petrole")
 		else:
-			textures["oil"] = rid
+			textures["petrole"] = rid
 	
 	# Créer texture resources (RGBA32F - 16 bytes par pixel)
 	if not textures.has("resources"):
@@ -494,7 +494,7 @@ func readback_texture(tex_id: String) -> Image:
 	var img_format = Image.FORMAT_RGBAF
 	
 	# Textures RGBA8 (colorées)
-	if tex_id in ["temperature_colored", "precipitation_colored", "clouds", "ice_caps", "oil"]:
+	if tex_id in ["temperature_colored", "precipitation_colored", "clouds", "ice_caps", "petrole"]:
 		img_format = Image.FORMAT_RGBA8
 	# Textures R32F (vapeur, flux)
 	elif tex_id in ["vapor", "vapor_temp", "river_flux", "flux_temp", "water_paths", "water_paths_temp"]:

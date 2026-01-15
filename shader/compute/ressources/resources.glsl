@@ -35,66 +35,66 @@ layout(set = 1, binding = 0, std140) uniform ResourcesParams {
 } params;
 
 // ============================================================================
-// CONSTANTES : Données des ressources (depuis enum.gd - 116 ressources)
+// CONSTANTES : Données des ressources (depuis enum.gd - 115 ressources)
 // ============================================================================
 
-const int NUM_RESOURCES = 116;
+const int NUM_RESOURCES = 115;
 
 // Probabilités relatives (depuis enum.gd)
 // Organisées par catégorie pour correspondre à enum.gd
 const float RESOURCE_PROBABILITIES[NUM_RESOURCES] = float[](
     // CAT 1: Ultra-abondants (6) - indices 0-5
-    0.95, 0.85, 0.80, 0.70, 0.55, 0.50,
+    27.7, 8.1, 5.0, 3.6, 2.1, 2.0,
     // CAT 2: Très communs (6) - indices 6-11
-    0.40, 0.35, 0.30, 0.28, 0.45, 0.42,
+    0.56, 0.1, 0.1, 0.1, 0.08, 0.08,
     // CAT 3: Communs (10) - indices 12-21
-    0.22, 0.20, 0.18, 0.16, 0.15, 0.14, 0.13, 0.12, 0.35, 0.15,
+    0.04, 0.04, 0.02, 0.02, 0.02, 0.01, 0.01, 0.01, 0.01, 0.01,
     // CAT 4: Modérément rares (7) - indices 22-28
-    0.08, 0.07, 0.06, 0.055, 0.05, 0.045, 0.09,
+    0.002, 0.002, 0.002, 0.002, 0.001, 0.001, 0.001,
     // CAT 5: Rares (9) - indices 29-37
-    0.035, 0.032, 0.030, 0.028, 0.026, 0.024, 0.022, 0.020, 0.018,
+    0.0002, 0.0002, 0.0002, 0.0002, 0.0002, 0.0002, 0.0002, 0.00005, 0.00005,
     // CAT 6: Très rares (7) - indices 38-44
-    0.012, 0.010, 0.008, 0.007, 0.006, 0.005, 0.004,
+    0.000007, 0.000005, 0.000005, 0.000005, 0.000001, 0.000001, 0.000001,
     // CAT 7: Extrêmement rares (8) - indices 45-52
-    0.003, 0.0025, 0.002, 0.0015, 0.001, 0.0008, 0.0006, 0.0004,
+    0.0000004, 0.0000001, 0.0000001, 0.0000001, 0.0000001, 0.0000001, 0.0000001, 0.0000001,
     // CAT 8: Terres rares (16) - indices 53-68
-    0.015, 0.013, 0.011, 0.010, 0.008, 0.006, 0.005, 0.0045, 0.004, 0.003, 0.0025, 0.002, 0.0015, 0.0012, 0.0008, 0.007,
-    // CAT 9: Hydrocarbures (7) - indices 69-75
-    0.18, 0.20, 0.25, 0.15, 0.30, 0.12, 0.08,
-    // CAT 10: Pierres précieuses (12) - indices 76-87
-    0.0018, 0.0012, 0.0010, 0.0010, 0.0015, 0.0020, 0.0008, 0.0010, 0.0025, 0.0018, 0.0012, 0.0008,
-    // CAT 11: Minéraux industriels (22) - indices 88-109
-    0.65, 0.60, 0.45, 0.55, 0.40, 0.38, 0.32, 0.35, 0.30, 0.50, 0.28, 0.48, 0.75, 0.70, 0.42, 0.15, 0.18, 0.10, 0.12, 0.14, 0.20, 0.16,
-    // CAT 12: Minéraux spéciaux (6) - indices 110-115
-    0.008, 0.006, 0.002, 0.004, 0.05, 0.025
+    0.006, 0.003, 0.003, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001,
+    // CAT 9: Hydrocarbures (6) - indices 69-74 (pétrole retiré - géré par petrole.glsl)
+    0.5, 0.5, 0.5, 1.0, 1.0, 0.1,
+    // CAT 10: Pierres précieuses (12) - indices 75-86
+    0.001, 0.001, 0.001, 0.001, 0.01, 0.5, 0.01, 0.01, 0.5, 0.01, 0.01, 0.01,
+    // CAT 11: Minéraux industriels (22) - indices 87-108
+    5.0, 5.0, 5.0, 15.0, 5.0, 5.0, 0.5, 10.0, 2.0, 10.0, 2.0, 10.0, 15.0, 15.0, 10.0, 2.0, 2.0, 0.5, 0.5, 0.5, 0.5, 0.5,
+    // CAT 12: Minéraux spéciaux (6) - indices 109-114
+    0.0003, 0.0019, 0.0003, 0.009, 0.0000008, 0.01
 );
 
 // Tailles moyennes des gisements (échelle 2048px)
 const float RESOURCE_SIZES[NUM_RESOURCES] = float[](
     // CAT 1: Ultra-abondants (6)
-    800.0, 600.0, 550.0, 500.0, 400.0, 380.0,
+    1000.0, 800.0, 700.0, 650.0, 550.0, 500.0,
     // CAT 2: Très communs (6)
-    350.0, 320.0, 280.0, 300.0, 600.0, 550.0,
+    450.0, 400.0, 380.0, 400.0, 700.0, 700.0,
     // CAT 3: Communs (10)
-    200.0, 180.0, 160.0, 140.0, 130.0, 120.0, 110.0, 100.0, 400.0, 120.0,
+    280.0, 260.0, 220.0, 200.0, 190.0, 170.0, 160.0, 150.0, 500.0, 180.0,
     // CAT 4: Modérément rares (7)
-    60.0, 55.0, 50.0, 45.0, 40.0, 35.0, 80.0,
+    100.0, 90.0, 85.0, 80.0, 70.0, 65.0, 120.0,
     // CAT 5: Rares (9)
-    30.0, 28.0, 25.0, 22.0, 20.0, 18.0, 16.0, 15.0, 12.0,
+    50.0, 48.0, 45.0, 42.0, 40.0, 38.0, 35.0, 30.0, 28.0,
     // CAT 6: Très rares (7)
-    10.0, 8.0, 6.0, 5.0, 4.0, 4.0, 3.0,
+    20.0, 18.0, 16.0, 14.0, 12.0, 12.0, 10.0,
     // CAT 7: Extrêmement rares (8)
-    6.0, 4.0, 3.0, 2.0, 2.0, 2.0, 2.0, 1.0,
+    15.0, 10.0, 10.0, 8.0, 8.0, 8.0, 8.0, 6.0,
     // CAT 8: Terres rares (16)
-    25.0, 22.0, 20.0, 18.0, 15.0, 12.0, 10.0, 8.0, 7.0, 5.0, 4.0, 3.0, 2.0, 2.0, 1.0, 12.0,
-    // CAT 9: Hydrocarbures (7)
-    350.0, 320.0, 400.0, 300.0, 450.0, 280.0, 200.0,
+    40.0, 35.0, 35.0, 28.0, 26.0, 24.0, 22.0, 20.0, 18.0, 14.0, 12.0, 10.0, 8.0, 8.0, 6.0, 20.0,
+    // CAT 9: Hydrocarbures (6) - pétrole retiré
+    450.0, 500.0, 420.0, 550.0, 400.0, 300.0,
     // CAT 10: Pierres précieuses (12)
-    4.0, 3.0, 2.0, 2.0, 3.0, 4.0, 2.0, 2.0, 5.0, 3.0, 3.0, 2.0,
+    12.0, 10.0, 10.0, 10.0, 18.0, 50.0, 15.0, 15.0, 55.0, 18.0, 16.0, 14.0,
     // CAT 11: Minéraux industriels (22)
-    700.0, 650.0, 450.0, 550.0, 400.0, 380.0, 320.0, 350.0, 400.0, 500.0, 300.0, 480.0, 800.0, 750.0, 420.0, 150.0, 180.0, 100.0, 120.0, 140.0, 200.0, 160.0,
+    900.0, 850.0, 700.0, 1000.0, 650.0, 600.0, 400.0, 550.0, 600.0, 800.0, 500.0, 700.0, 1000.0, 950.0, 700.0, 250.0, 280.0, 180.0, 200.0, 220.0, 300.0, 250.0,
     // CAT 12: Minéraux spéciaux (6)
-    8.0, 6.0, 2.0, 4.0, 50.0, 30.0
+    20.0, 25.0, 15.0, 35.0, 80.0, 60.0
 );
 
 // Types de ressources pour facteurs géologiques
@@ -116,8 +116,8 @@ const int RESOURCE_GEO_TYPE[NUM_RESOURCES] = int[](
     2, 2, 2, 2, 2, 2, 2, 2,
     // CAT 8: Terres rares (16)
     2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-    // CAT 9: Hydrocarbures (7): Pétrole, Gaz naturel, Lignite, Anthracite, Tourbe, Schiste, Méthane
-    1, 1, 1, 1, 1, 1, 5,
+    // CAT 9: Hydrocarbures (6): Gaz naturel, Lignite, Anthracite, Tourbe, Schiste, Méthane (pétrole retiré)
+    1, 1, 1, 1, 1, 5,
     // CAT 10: Pierres précieuses (12)
     2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2,
     // CAT 11: Minéraux industriels (22): Quartz, Feldspath, Mica, Argile, Kaolin, Gypse, Talc, Bauxite, Marbre, Granit, Ardoise, Grès, Sable, Gravier, Basalte, Obsidienne, Pierre ponce, Amiante, Vermiculite, Perlite, Bentonite, Zéolite
@@ -302,11 +302,7 @@ void main() {
     float elevation = geo_data.r;
     float water_height = geo_data.a;
     
-    // Pas de ressources sous l'eau
-    if (water_height > 0.5) {
-        imageStore(resources_texture, pixel, vec4(-1.0, 0.0, 0.0, 0.0));
-        return;
-    }
+    // Les ressources peuvent maintenant apparaître sous l'eau (limitation supprimée)
     
     // Coordonnées cylindriques
     vec3 coords = getCylindricalCoords(pixel);
@@ -320,9 +316,7 @@ void main() {
     // Calculer la somme des probabilités pour normalisation
     float total_prob = 0.0;
     for (int i = 0; i < NUM_RESOURCES; i++) {
-        if (i != 69) { // Skip pétrole (indice 69 - géré séparément)
-            total_prob += RESOURCE_PROBABILITIES[i];
-        }
+        total_prob += RESOURCE_PROBABILITIES[i];
     }
     
     // Hash de base pour ce pixel
@@ -348,8 +342,7 @@ void main() {
     
     // Tester chaque ressource
     for (int i = 0; i < NUM_RESOURCES; i++) {
-        // Skip pétrole (indice 69 - géré par oil.glsl)
-        if (i == 69) continue;
+        // Pétrole a été retiré de ce shader (géré par petrole.glsl)
         
         float prob = RESOURCE_PROBABILITIES[i];
         float size = RESOURCE_SIZES[i] * (float(params.width) / 2048.0); // Ajuster à la résolution
@@ -381,8 +374,8 @@ void main() {
         presence *= geo_factor;
         presence *= params.global_richness;
         
-        // Seuil très bas pour avoir beaucoup de ressources
-        float base_threshold = 0.15;
+        // Seuil réduit pour augmenter le nombre de gisements
+        float base_threshold = 0.05;
         
         // Intensité brute avec grande plage
         float raw_intensity = smoothstep(base_threshold, 0.7, presence);
