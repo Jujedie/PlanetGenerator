@@ -47,10 +47,10 @@ layout(set = 1, binding = 0, std140) uniform ClassifyParams {
     uint height;             // Hauteur texture
     uint pass_type;          // 0=comptage, 1=classification
     uint saltwater_min_size; // Taille minimale pour eau salée (défaut: 150)
+    uint freshwater_max_size;// Taille maximale pour eau douce (défaut: 100)
     float sea_level;         // Niveau de la mer (pour détecter lacs altitude)
     float padding1;
     float padding2;
-    float padding3;
 } params;
 
 // ============================================================================
@@ -111,23 +111,32 @@ void main() {
         float height = geo.r;
         
         // Règles de classification :
-        // 1. Lacs en altitude (au-dessus du niveau mer) = TOUJOURS eau douce
+        // 1. Lacs en altitude (au-dessus du niveau mer) = TOUJOURS eau douce (si <= freshwater_max_size)
         // 2. Taille >= saltwater_min_size = eau salée
-        // 3. Sinon = eau douce
+        // 3. Taille <= freshwater_max_size = eau douce
+        // 4. Entre freshwater_max_size et saltwater_min_size = eau salée (zone intermédiaire)
         
         uint final_type;
         
         if (height >= params.sea_level) {
-            // Lac en altitude = toujours eau douce
-            final_type = WATER_FRESHWATER;
+            // Lac en altitude = eau douce si petit, salée si grand
+            if (component_size <= params.freshwater_max_size) {
+                final_type = WATER_FRESHWATER;
+            } else {
+                final_type = WATER_SALTWATER;
+            }
         }
         else if (component_size >= params.saltwater_min_size) {
             // Grande masse d'eau sous niveau mer = eau salée
             final_type = WATER_SALTWATER;
         }
-        else {
+        else if (component_size <= params.freshwater_max_size) {
             // Petite masse d'eau = eau douce
             final_type = WATER_FRESHWATER;
+        }
+        else {
+            // Entre freshwater_max_size et saltwater_min_size = considéré comme eau salée
+            final_type = WATER_SALTWATER;
         }
         
         // Écrire le type final

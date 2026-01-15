@@ -79,15 +79,16 @@ void main() {
         return;
     }
     
-    // Lire l'altitude
+    // Lire l'altitude ET la colonne d'eau (déjà calculée dans base_elevation)
     vec4 geo = imageLoad(geo_texture, pixel);
     float height = geo.r;
+    float water_height = geo.a;  // Canal A = colonne d'eau si sous le niveau de la mer
     
     // === CLASSIFICATION DE BASE ===
     bool is_water = false;
     
-    // 1. Sous le niveau de la mer = eau
-    if (height < params.sea_level) {
+    // 1. Si water_height > 0, c'est que c'est sous le niveau de la mer
+    if (water_height > 0.0) {
         is_water = true;
     }
     // 2. Détection des lacs en altitude (dépressions locales)

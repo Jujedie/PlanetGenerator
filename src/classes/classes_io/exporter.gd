@@ -605,8 +605,8 @@ func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, hei
 ## Couleurs pour les types d'eau (nouvelle classification eau salée/douce)
 const WATER_TYPE_COLORS = {
 	0: Color(0, 0, 0, 0),           # NONE - Transparent (terre)
-	1: Color(0.145, 0.322, 0.541),  # SALTWATER - Bleu profond eau salée (#25528a)
-	2: Color(0.271, 0.518, 0.824),  # FRESHWATER - Bleu clair eau douce (#4584d2)
+	1: Color(0.02, 0.1, 0.3),       # SALTWATER - Bleu très foncé (#05194d)
+	2: Color(0.4, 0.9, 1.0),        # FRESHWATER - Cyan très clair (#66e6ff)
 }
 
 ## Noms des types d'eau pour debug

@@ -1706,17 +1706,18 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# Paramètres de classification des eaux
 	var saltwater_min_size = int(params.get("saltwater_min_size", 150))
+	var freshwater_max_size = int(params.get("freshwater_max_size", 149))
 	var lake_threshold = float(params.get("lake_threshold", 5.0))  # Profondeur min pour lac altitude
 	
 	# Paramètres de rivières
 	var river_iterations = int(params.get("river_iterations", 500))
 	var river_min_altitude = float(params.get("river_min_altitude", 100.0))
-	var river_min_precipitation = float(params.get("river_min_precipitation", 0.2))
-	var river_cell_size = float(w) / 80.0  # ~80 sources max en largeur
+	var river_min_precipitation = float(params.get("river_min_precipitation", 0.1))
+	var river_cell_size = float(w) / 150.0  # ~150 sources max en largeur (plus dense)
 	var river_base_flux = float(params.get("river_base_flux", 10.0))
 	
 	print("  Seed: ", seed_val, " | Sea Level: ", sea_level)
-	print("  Saltwater Min Size: ", saltwater_min_size, " pixels")
+	print("  Saltwater Min Size: ", saltwater_min_size, " pixels | Freshwater Max Size: ", freshwater_max_size, " pixels")
 	print("  River Iterations: ", river_iterations)
 	
 	# Initialiser les textures d'eau
@@ -1751,10 +1752,37 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	var counter_buffer = rd.storage_buffer_create(counter_buffer_size, counter_data)
 	
 	# Passe 1 : Comptage
-	_dispatch_water_size_classify(w, h, groups_x, groups_y, 0, saltwater_min_size, sea_level, counter_buffer)
+	_dispatch_water_size_classify(w, h, groups_x, groups_y, 0, saltwater_min_size, freshwater_max_size, sea_level, counter_buffer)
+	
+	# SYNCHRONISATION GPU - Attendre que tous les comptages atomiques soient terminés
+	rd.submit()
+	rd.sync()
 	
 	# Passe 2 : Classification
-	_dispatch_water_size_classify(w, h, groups_x, groups_y, 1, saltwater_min_size, sea_level, counter_buffer)
+	_dispatch_water_size_classify(w, h, groups_x, groups_y, 1, saltwater_min_size, freshwater_max_size, sea_level, counter_buffer)
+	
+	# DEBUG : Lire quelques valeurs du buffer de comptage pour vérifier
+	var counter_bytes = rd.buffer_get_data(counter_buffer)
+	var max_component_size = 0
+	var non_zero_components = 0
+	var total_water_pixels = 0
+	var saltwater_components = 0
+	var freshwater_components = 0
+	
+	# Vérifier TOUS les seeds possibles
+	for i in range(counter_bytes.size() / 4):
+		var count = counter_bytes.decode_u32(i * 4)
+		if count > 0:
+			non_zero_components += 1
+			total_water_pixels += count
+			max_component_size = maxi(max_component_size, count)
+			if count >= saltwater_min_size:
+				saltwater_components += 1
+			elif count <= freshwater_max_size:
+				freshwater_components += 1
+	
+	print("  DEBUG - Composantes: ", non_zero_components, " | Pixels eau: ", total_water_pixels)
+	print("  DEBUG - Taille max: ", max_component_size, " | Saltwater: ", saltwater_components, " | Freshwater: ", freshwater_components)
 	
 	# Libérer le buffer de comptage
 	rd.free_rid(counter_buffer)
@@ -1893,7 +1921,7 @@ func _dispatch_water_jfa(w: int, h: int, groups_x: int, groups_y: int, step_size
 	rd.free_rid(tex_set)
 
 ## Dispatch le shader de classification par taille
-func _dispatch_water_size_classify(w: int, h: int, groups_x: int, groups_y: int, pass_type: int, saltwater_min_size: int, sea_level: float, counter_buffer: RID) -> void:
+func _dispatch_water_size_classify(w: int, h: int, groups_x: int, groups_y: int, pass_type: int, saltwater_min_size: int, freshwater_max_size: int, sea_level: float, counter_buffer: RID) -> void:
 	if not gpu.shaders.has("water_size_classify") or not gpu.shaders["water_size_classify"].is_valid():
 		return
 	
@@ -1932,8 +1960,8 @@ func _dispatch_water_size_classify(w: int, h: int, groups_x: int, groups_y: int,
 	buffer_bytes.encode_u32(4, h)
 	buffer_bytes.encode_u32(8, pass_type)
 	buffer_bytes.encode_u32(12, saltwater_min_size)
-	buffer_bytes.encode_float(16, sea_level)
-	buffer_bytes.encode_float(20, 0.0)  # padding
+	buffer_bytes.encode_u32(16, freshwater_max_size)
+	buffer_bytes.encode_float(20, sea_level)
 	buffer_bytes.encode_float(24, 0.0)  # padding
 	buffer_bytes.encode_float(28, 0.0)  # padding
 	
