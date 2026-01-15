@@ -94,11 +94,6 @@ void main() {
     uint seed_index = uint(seed.y) * params.width + uint(seed.x);
     uint component_size = pixel_counts[seed_index];
     
-    // Si le compteur n'a pas été rempli (= 0), ne pas modifier
-    if (component_size == 0u) {
-        return;
-    }
-    
     // Lire l'altitude pour déterminer si c'est un lac en altitude
     vec4 geo = imageLoad(geo_texture, pixel);
     float height = geo.r;
@@ -110,6 +105,12 @@ void main() {
     if (is_highland_lake) {
         // Les lacs en altitude sont TOUJOURS de l'eau douce
         new_type = WATER_FRESHWATER;
+    }
+    else if (component_size == 0u) {
+        // Si le compteur n'a pas été rempli, fallback basé sur position du seed
+        // Si le seed est proche du centre ou des bords, c'est probablement un océan
+        // Sinon, on garde le type initial (eau sous la mer = eau salée par défaut)
+        new_type = WATER_SALTWATER;
     }
     else if (component_size >= params.saltwater_threshold) {
         // Grande masse d'eau sous le niveau de la mer = eau salée

@@ -621,11 +621,14 @@ func run_simulation() -> void:
 	# === ÉTAPE 2 : ÉROSION HYDRAULIQUE ===
 	run_erosion_phase(generation_params, w, h)
 	
-	# === ÉTAPE 2.5 : CLASSIFICATION DES EAUX ===
-	run_water_classification_phase(generation_params, w, h)
-	
 	# === ÉTAPE 3 : ATMOSPHÈRE & CLIMAT ===
+	# IMPORTANT: Doit être exécuté AVANT la classification des eaux
+	# car les rivières dépendent des précipitations (climate texture canal G)
 	run_atmosphere_phase(generation_params, w, h)
+	
+	# === ÉTAPE 2.5 : CLASSIFICATION DES EAUX ===
+	# Exécuté après l'atmosphère pour avoir accès aux précipitations
+	run_water_classification_phase(generation_params, w, h)
 	
 	# === ÉTAPE 5 : RESSOURCES & PÉTROLE ===
 	run_resources_phase(generation_params, w, h)
@@ -1414,9 +1417,9 @@ func run_water_classification_phase(params: Dictionary, w: int, h: int) -> void:
 	var _avg_precipitation = float(params.get("avg_precipitation", 0.5))  # Utilisé pour ajuster les seuils
 	
 	# Paramètres de rivières
-	var min_altitude = 100.0  # Altitude minimale des sources au-dessus de la mer
-	var min_precipitation = 0.3  # Précipitation minimale pour source
-	var cell_size = max(10.0, float(w) / 60.0)  # Taille de cellule pour espacement
+	var min_altitude = 50.0  # Altitude minimale des sources au-dessus de la mer (réduit)
+	var min_precipitation = 0.1  # Précipitation minimale pour source (réduit pour plus de sources)
+	var cell_size = max(8.0, float(w) / 80.0)  # Taille de cellule pour espacement (plus petite = plus de sources)
 	var river_propagation_iterations = 500  # Nombre de passes de propagation (augmenté pour longues rivières)
 	var base_river_flux = 500.0  # Flux initial par source (augmenté pour accumulation)
 	

@@ -142,8 +142,9 @@ void main() {
             
             // Seuil adaptatif basé sur les précipitations
             // Plus il pleut, plus de chances d'avoir une source
-            float threshold = 0.5 - (precipitation - params.min_precipitation) * 0.3;
-            threshold = clamp(threshold, 0.2, 0.8);
+            // Seuil réduit pour créer plus de sources
+            float threshold = 0.3 - (precipitation - params.min_precipitation) * 0.4;
+            threshold = clamp(threshold, 0.1, 0.5);
             
             if (selection_hash > threshold) {
                 // Générer un ID unique pour cette source (basé sur position)
