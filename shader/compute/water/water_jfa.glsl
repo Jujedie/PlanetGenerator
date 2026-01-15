@@ -4,48 +4,47 @@
 // ============================================================================
 // WATER JFA SHADER - Jump Flooding Algorithm pour composantes connexes
 // ============================================================================
-// Propage les seeds pour calculer les composantes connexes des masses d'eau.
-// Après N passes (log2(max(w,h))), chaque pixel connaît le seed de sa composante.
+// Propage les seeds pour regrouper les pixels d'eau en composantes connexes.
+// Chaque pixel d'eau finit par pointer vers un unique pixel "représentant"
+// de sa composante, permettant ensuite de compter la taille.
 //
-// Entrées/Sorties (ping-pong) :
-// - WaterJFAInput (RG32I) : coordonnées du seed actuel
-// - WaterJFAOutput (RG32I) : coordonnées du seed mis à jour
+// Entrées :
+// - water_component_input (RG32I) : Seeds actuels
+// - water_mask (R8UI) : Masque d'eau (pour savoir quels pixels sont de l'eau)
 //
-// Le step_size commence à max(w,h)/2 et est divisé par 2 à chaque passe.
+// Sorties :
+// - water_component_output (RG32I) : Seeds mis à jour après une passe JFA
 // ============================================================================
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 // === BINDINGS ===
 
-// WaterJFAInput (RG32I) - lecture
-layout(set = 0, binding = 0, rg32i) uniform readonly iimage2D jfa_input;
+// Composantes entrée (ping)
+layout(set = 0, binding = 0, rg32i) uniform readonly iimage2D component_input;
 
-// WaterJFAOutput (RG32I) - écriture (ping-pong)
-layout(set = 0, binding = 1, rg32i) uniform writeonly iimage2D jfa_output;
+// Composantes sortie (pong)
+layout(set = 0, binding = 1, rg32i) uniform writeonly iimage2D component_output;
 
-// WaterTypesTexture (R32UI) - pour vérifier le type d'eau
-layout(set = 0, binding = 2, r32ui) uniform readonly uimage2D water_types;
+// Masque d'eau pour vérifier la connectivité
+layout(set = 0, binding = 2, r8ui) uniform readonly uimage2D water_mask;
 
-// Uniform Buffer : Paramètres JFA
+// Uniform Buffer : Paramètres
 layout(set = 1, binding = 0, std140) uniform JFAParams {
-    uint width;       // Largeur texture
-    uint height;      // Hauteur texture
-    int step_size;    // Taille du pas (commence à w/2, divisé par 2 chaque passe)
-    uint padding;
+    uint width;      // Largeur texture
+    uint height;     // Hauteur texture
+    int step_size;   // Taille du pas JFA (diminue à chaque passe : W/2, W/4, ..., 1)
+    uint pass_index; // Index de la passe (pour debug)
 } params;
 
 // ============================================================================
 // CONSTANTES
 // ============================================================================
 
-const uint WATER_NONE = 0u;
-
-// 9 directions (centre + 8 voisins à distance step_size)
-const ivec2 DIRECTIONS[9] = ivec2[9](
-    ivec2( 0,  0),
+// 8 directions + self pour JFA
+const ivec2 JFA_OFFSETS[9] = ivec2[9](
     ivec2(-1, -1), ivec2(0, -1), ivec2(1, -1),
-    ivec2(-1,  0),               ivec2(1,  0),
+    ivec2(-1,  0), ivec2(0,  0), ivec2(1,  0),
     ivec2(-1,  1), ivec2(0,  1), ivec2(1,  1)
 );
 
@@ -55,7 +54,7 @@ const ivec2 DIRECTIONS[9] = ivec2[9](
 
 /// Wrap X pour projection équirectangulaire
 int wrapX(int x, int w) {
-    return (x + w) % w;
+    return (x % w + w) % w;
 }
 
 /// Clamp Y pour les pôles
@@ -63,13 +62,12 @@ int clampY(int y, int h) {
     return clamp(y, 0, h - 1);
 }
 
-/// Distance euclidienne au carré (évite sqrt)
-int distSq(ivec2 a, ivec2 b, int w) {
-    // Gérer le wrapping en X
+/// Distance au carré entre deux points (avec wrap X)
+float distanceSquared(ivec2 a, ivec2 b, int w) {
     int dx = abs(a.x - b.x);
-    dx = min(dx, w - dx);  // Distance cyclique
+    dx = min(dx, w - dx);  // Wrap horizontal
     int dy = a.y - b.y;
-    return dx * dx + dy * dy;
+    return float(dx * dx + dy * dy);
 }
 
 // ============================================================================
@@ -87,62 +85,49 @@ void main() {
         return;
     }
     
-    // Si ce n'est pas de l'eau (type NONE), pas de propagation
-    uint my_type = imageLoad(water_types, pixel).r;
-    if (my_type == WATER_NONE) {
-        imageStore(jfa_output, pixel, ivec4(-1, -1, 0, 0));
+    // Si ce n'est pas de l'eau, conserver (-1, -1)
+    uint water_type = imageLoad(water_mask, pixel).r;
+    if (water_type == 0u) {
+        imageStore(component_output, pixel, ivec4(-1, -1, 0, 0));
         return;
     }
     
-    // Seed actuel de ce pixel
-    ivec2 my_seed = imageLoad(jfa_input, pixel).rg;
-    int best_dist_sq = (my_seed.x >= 0) ? distSq(pixel, my_seed, w) : 0x7FFFFFFF;
-    ivec2 best_seed = my_seed;
+    // Lire le seed actuel
+    ivec2 current_seed = imageLoad(component_input, pixel).xy;
+    float current_dist = (current_seed.x >= 0) ? distanceSquared(pixel, current_seed, w) : 1e10;
     
-    // Parcourir les 9 directions
+    ivec2 best_seed = current_seed;
+    float best_dist = current_dist;
+    
+    // Parcourir les 9 directions JFA
     for (int i = 0; i < 9; i++) {
-        ivec2 offset = DIRECTIONS[i] * params.step_size;
+        ivec2 offset = JFA_OFFSETS[i] * params.step_size;
         int nx = wrapX(pixel.x + offset.x, w);
         int ny = clampY(pixel.y + offset.y, h);
+        ivec2 neighbor = ivec2(nx, ny);
         
-        // Vérifier que le voisin est aussi de l'eau (même type général)
-        uint n_type = imageLoad(water_types, ivec2(nx, ny)).r;
-        if (n_type == WATER_NONE) {
+        // Vérifier que le voisin est aussi de l'eau (connectivité)
+        uint n_water = imageLoad(water_mask, neighbor).r;
+        if (n_water == 0u) {
             continue;
         }
         
-        // Pour JFA océan/mer/lac, on ne mélange pas les types
-        // Un océan et un lac ne sont pas la même composante
-        // Exception : océan et mer sont fusionnables (même masse sous la mer)
-        bool compatible = false;
-        if (my_type == n_type) {
-            compatible = true;
-        }
-        // Océan (1) et Mer (2) sont compatibles
-        else if ((my_type == 1u || my_type == 2u) && (n_type == 1u || n_type == 2u)) {
-            compatible = true;
-        }
-        
-        if (!compatible) {
-            continue;
-        }
-        
-        // Seed du voisin
-        ivec2 n_seed = imageLoad(jfa_input, ivec2(nx, ny)).rg;
-        
+        // Lire le seed du voisin
+        ivec2 n_seed = imageLoad(component_input, neighbor).xy;
         if (n_seed.x < 0) {
             continue;  // Pas de seed valide
         }
         
-        // Distance au seed du voisin
-        int dist_sq = distSq(pixel, n_seed, w);
+        // Calculer la distance à ce seed
+        float n_dist = distanceSquared(pixel, n_seed, w);
         
-        if (dist_sq < best_dist_sq) {
-            best_dist_sq = dist_sq;
+        // Garder le seed le plus proche
+        if (n_dist < best_dist) {
+            best_dist = n_dist;
             best_seed = n_seed;
         }
     }
     
-    // Écrire le meilleur seed
-    imageStore(jfa_output, pixel, ivec4(best_seed, 0, 0));
+    // Écrire le meilleur seed trouvé
+    imageStore(component_output, pixel, ivec4(best_seed, 0, 0));
 }

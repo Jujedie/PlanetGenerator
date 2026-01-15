@@ -166,7 +166,15 @@ func _compile_generation_params(seed_param: int) -> void:
 		"propagation_rate"   : propagation_rate,
  
 		"tectonic_years"    : tectonic_nb_years,
-		"atmosphere_steps"  : atmosphere_steps
+		"atmosphere_steps"  : atmosphere_steps,
+		
+		# Water classification & Rivers (Étape 2.5)
+		"saltwater_min_size"       : 150,    # Taille min pour eau salée (pixels)
+		"lake_threshold"           : 5.0,    # Profondeur min pour lac d'altitude
+		"river_iterations"         : 500,    # Passes de propagation des rivières
+		"river_min_altitude"       : 100.0,  # Altitude min au-dessus du niveau mer
+		"river_min_precipitation"  : 0.2,    # Précipitation min pour source
+		"river_base_flux"          : 10.0,   # Flux initial par source
 	}
 	
 	print("[PlanetGenerator] Parameters compiled:")
