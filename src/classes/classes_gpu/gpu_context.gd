@@ -52,6 +52,11 @@ static var TextureID_Water : Array[String] = ["water_mask", "water_component", "
 # region_colored : (RGBA8) - Couleur finale des régions pour export
 static var TextureID_Region : Array[String] = ["region_map", "region_cost", "region_cost_temp", "region_colored"]
 
+# Textures Étape 4.1 - Biomes
+# biome_colored : (RGBA8) - Couleur du biome par pixel (non-réaliste, get_couleur())
+# biome_temp : (RGBA8) - Buffer ping-pong pour lissage
+static var TextureID_Biome : Array[String] = ["biome_colored", "biome_temp"]
+
 # === MEMBRES ===
 var rd: RenderingDevice
 var textures: Dictionary = {}
@@ -655,6 +660,44 @@ func initialize_ocean_region_textures() -> void:
 			push_error("❌ Échec création texture ocean_region_colored")
 	
 	print("✅ Textures régions océaniques créées (2x R32UI + 2x R32F + 1x RGBA8)")
+
+# === CRÉATION DES TEXTURES BIOMES (Étape 4.1) ===
+func initialize_biome_textures() -> void:
+	"""
+	Initialise les textures spécifiques à l'étape 4.1 (Biomes).
+	Appelé par l'orchestrateur avant la phase de génération des biomes.
+	
+	Textures créées:
+	- biome_colored (RGBA8) : Couleur du biome (non-réaliste, get_couleur())
+	- biome_temp (RGBA8) : Buffer ping-pong pour lissage
+	"""
+	
+	# Format RGBA8 pour couleurs de biomes (4 bytes par pixel)
+	var format_rgba8 := RDTextureFormat.new()
+	format_rgba8.width = resolution.x
+	format_rgba8.height = resolution.y
+	format_rgba8.format = FORMAT_RGBA8
+	format_rgba8.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Créer biome_colored et biome_temp (RGBA8 - 4 bytes par pixel)
+	for tex_id in ["biome_colored", "biome_temp"]:
+		if not textures.has(tex_id):
+			var data = PackedByteArray()
+			data.resize(resolution.x * resolution.y * 4)
+			data.fill(0)
+			var view := RDTextureView.new()
+			var rid := rd.texture_create(format_rgba8, view, [data])
+			if rid.is_valid():
+				textures[tex_id] = rid
+			else:
+				push_error("❌ Échec création texture " + tex_id)
+	
+	print("✅ Textures biomes créées (2x RGBA8)")
 
 # === CHARGEMENT DES SHADERS (SÉCURISÉ) ===
 func load_compute_shader(glsl_path: String, shader_name: String) -> bool:

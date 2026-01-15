@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://v81e8o1i102n"
+path="res://.godot/imported/biome_border.glsl-e27262033b75c3da453ccb3a5f65a43c.res"
+
+[deps]
+
+source_file="res://shader/compute/biome/biome_border.glsl"
+dest_files=["res://.godot/imported/biome_border.glsl-e27262033b75c3da453ccb3a5f65a43c.res"]
+
+[params]
+

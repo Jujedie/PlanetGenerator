@@ -144,6 +144,10 @@ func _compile_all_shaders() -> bool:
 		{"path": "res://shader/compute/ocean_region/ocean_region_growth.glsl", "name": "ocean_region_growth", "critical": false},
 		{"path": "res://shader/compute/ocean_region/ocean_region_cleanup.glsl", "name": "ocean_region_cleanup", "critical": false},
 		{"path": "res://shader/compute/ocean_region/ocean_region_finalize.glsl", "name": "ocean_region_finalize", "critical": false},
+		# Shaders Biomes (Étape 4.1)
+		{"path": "res://shader/compute/biome/biome_classify.glsl", "name": "biome_classify", "critical": false},
+		{"path": "res://shader/compute/biome/biome_smooth.glsl", "name": "biome_smooth", "critical": false},
+		{"path": "res://shader/compute/biome/biome_border.glsl", "name": "biome_border", "critical": false},
 	]
 	
 	var all_critical_loaded = true
@@ -637,6 +641,9 @@ func run_simulation() -> void:
 	
 	# === ÉTAPE 2.5 : CLASSIFICATION DES EAUX & RIVIÈRES ===
 	run_water_phase(generation_params, w, h)
+	
+	# === ÉTAPE 4.1 : BIOMES ===
+	run_biome_phase(generation_params, w, h)
 	
 	# === ÉTAPE 4 : RÉGIONS ADMINISTRATIVES ===
 	run_region_phase(generation_params, w, h)
@@ -2840,12 +2847,283 @@ func _dispatch_ocean_region_finalize(w: int, h: int, groups_x: int, groups_y: in
 ## 1. Petrole : Gisements pétroliers basés sur géologie (bassins sédimentaires)
 ## 2. Resources : Tous les autres minéraux avec distribution par probabilité
 ##
-## Le pétrole et les ressources ne sont pas générés si atmosphere_type == 3
-## (pas de vie organique = pas d'hydrocarbures, pas de dépôts sédimentaires).
+# ============================================================================
+# ÉTAPE 4.1 : BIOMES
+# ============================================================================
+
+## Génère la carte des biomes basée sur le climat et le terrain.
 ##
-## @param params: Dictionnaire contenant seed, atmosphere_type, petrole_probability, etc.
+## Cette phase exécute :
+## 1. Biome Classify : Classification initiale de chaque pixel en biome
+## 2. Biome Smooth (2 passes) : Lissage par vote majoritaire
+## 3. Biome Border : Ajout d'irrégularité aux frontières
+##
+## @param params: Dictionnaire contenant seed, atmosphere_type, etc.
 ## @param w: Largeur de la texture
 ## @param h: Hauteur de la texture
+func run_biome_phase(params: Dictionary, w: int, h: int) -> void:
+	print("[Orchestrator] 🌿 Phase 4.1 : Génération des Biomes")
+	
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+	
+	var seed_val = int(params.get("seed", 12345))
+	var atmosphere_type = int(params.get("atmosphere_type", 0))
+	var sea_level = float(params.get("sea_level", 0.0))
+	
+	# Paramètres de rivières
+	var river_threshold = float(params.get("river_threshold", 1.0))
+	
+	# Paramètres de bruit (fréquence relative à la taille)
+	var biome_noise_frequency = 4.0 / float(w)  # ~4 continents
+	var border_noise_frequency = 25.0 / float(w)  # Détails fins pour bordures
+	
+	print("  Seed: ", seed_val, " | Atmosphere: ", atmosphere_type)
+	print("  Biome Noise Freq: ", biome_noise_frequency, " | Border Noise Freq: ", border_noise_frequency)
+	
+	# Initialiser les textures biomes
+	gpu.initialize_biome_textures()
+	
+	# === PASSE 1 : CLASSIFICATION INITIALE ===
+	print("  • Classification des biomes...")
+	_dispatch_biome_classify(w, h, groups_x, groups_y, seed_val, atmosphere_type, sea_level, river_threshold, biome_noise_frequency)
+	
+	# === PASSE 2 : LISSAGE (2 itérations avec ping-pong) ===
+	print("  • Lissage des biomes (2 passes)...")
+	for i in range(2):
+		var use_swap = (i % 2 == 1)
+		_dispatch_biome_smooth(w, h, groups_x, groups_y, seed_val, river_threshold, use_swap)
+	
+	# === PASSE 3 : IRRÉGULARITÉ DES BORDURES ===
+	print("  • Ajout d'irrégularité aux bordures...")
+	_dispatch_biome_border(w, h, groups_x, groups_y, seed_val, river_threshold, border_noise_frequency)
+	
+	print("[Orchestrator] ✅ Phase 4.1 : Biomes générés")
+
+# === DISPATCH BIOME CLASSIFY ===
+func _dispatch_biome_classify(w: int, h: int, groups_x: int, groups_y: int, 
+		seed_val: int, atmosphere_type: int, sea_level: float, 
+		river_threshold: float, biome_noise_frequency: float) -> void:
+	
+	if not gpu.shaders.has("biome_classify") or not gpu.shaders["biome_classify"].is_valid():
+		push_warning("[Orchestrator] ⚠️ biome_classify shader non disponible")
+		return
+	
+	# Create texture uniforms (Set 0)
+	# Binding 0-1: geo texture + sampler
+	var geo_tex_uniform = RDUniform.new()
+	geo_tex_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_TEXTURE
+	geo_tex_uniform.binding = 0
+	geo_tex_uniform.add_id(gpu.textures["geo"])
+	
+	var geo_sampler_uniform = RDUniform.new()
+	geo_sampler_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_SAMPLER
+	geo_sampler_uniform.binding = 1
+	geo_sampler_uniform.add_id(_get_or_create_linear_sampler())
+	
+	# Binding 2-3: climate texture + sampler
+	var climate_tex_uniform = RDUniform.new()
+	climate_tex_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_TEXTURE
+	climate_tex_uniform.binding = 2
+	climate_tex_uniform.add_id(gpu.textures["climate"])
+	
+	var climate_sampler_uniform = RDUniform.new()
+	climate_sampler_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_SAMPLER
+	climate_sampler_uniform.binding = 3
+	climate_sampler_uniform.add_id(_get_or_create_linear_sampler())
+	
+	# Binding 4: ice_caps (image2D)
+	var ice_uniform = gpu.create_texture_uniform(4, gpu.textures["ice_caps"])
+	
+	# Binding 5: river_flux (image2D)
+	var river_uniform = gpu.create_texture_uniform(5, gpu.textures["river_flux"])
+	
+	# Binding 6: biome_colored (writeonly image2D)
+	var biome_uniform = gpu.create_texture_uniform(6, gpu.textures["biome_colored"])
+	
+	var tex_uniforms = [geo_tex_uniform, geo_sampler_uniform, climate_tex_uniform, 
+						climate_sampler_uniform, ice_uniform, river_uniform, biome_uniform]
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["biome_classify"], 0)
+	if not tex_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create biome_classify texture set")
+		return
+	
+	# Create params UBO (Set 1)
+	# struct: seed(4) + width(4) + height(4) + atmosphere_type(4) + river_threshold(4) + 
+	#         sea_level(4) + biome_noise_frequency(4) + padding(4) = 32 bytes
+	var param_data = PackedByteArray()
+	param_data.resize(32)
+	param_data.encode_u32(0, seed_val)
+	param_data.encode_u32(4, w)
+	param_data.encode_u32(8, h)
+	param_data.encode_u32(12, atmosphere_type)
+	param_data.encode_float(16, river_threshold)
+	param_data.encode_float(20, sea_level)
+	param_data.encode_float(24, biome_noise_frequency)
+	param_data.encode_float(28, 0.0)  # padding
+	
+	var param_buffer = rd.uniform_buffer_create(param_data.size(), param_data)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["biome_classify"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create biome_classify param set")
+		rd.free_rid(param_buffer)
+		rd.free_rid(tex_set)
+		return
+	
+	# Dispatch
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["biome_classify"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+# === DISPATCH BIOME SMOOTH ===
+func _dispatch_biome_smooth(w: int, h: int, groups_x: int, groups_y: int,
+		seed_val: int, river_threshold: float, use_swap: bool) -> void:
+	
+	if not gpu.shaders.has("biome_smooth") or not gpu.shaders["biome_smooth"].is_valid():
+		push_warning("[Orchestrator] ⚠️ biome_smooth shader non disponible")
+		return
+	
+	# Ping-pong: alternate source and destination
+	var source_tex = "biome_colored" if not use_swap else "biome_temp"
+	var dest_tex = "biome_temp" if not use_swap else "biome_colored"
+	
+	# Create texture uniforms (Set 0)
+	var source_uniform = gpu.create_texture_uniform(0, gpu.textures[source_tex])
+	var dest_uniform = gpu.create_texture_uniform(1, gpu.textures[dest_tex])
+	var ice_uniform = gpu.create_texture_uniform(2, gpu.textures["ice_caps"])
+	var river_uniform = gpu.create_texture_uniform(3, gpu.textures["river_flux"])
+	
+	var tex_uniforms = [source_uniform, dest_uniform, ice_uniform, river_uniform]
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["biome_smooth"], 0)
+	if not tex_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create biome_smooth texture set")
+		return
+	
+	# Create params UBO (Set 1)
+	# struct: seed(4) + width(4) + height(4) + river_threshold(4) + majority_threshold(4) + padding*3(12) = 32 bytes
+	var param_data = PackedByteArray()
+	param_data.resize(32)
+	param_data.encode_u32(0, seed_val)
+	param_data.encode_u32(4, w)
+	param_data.encode_u32(8, h)
+	param_data.encode_float(12, river_threshold)
+	param_data.encode_u32(16, 5)  # majority_threshold (5 out of 8 neighbors)
+	param_data.encode_float(20, 0.0)
+	param_data.encode_float(24, 0.0)
+	param_data.encode_float(28, 0.0)
+	
+	var param_buffer = rd.uniform_buffer_create(param_data.size(), param_data)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["biome_smooth"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create biome_smooth param set")
+		rd.free_rid(param_buffer)
+		rd.free_rid(tex_set)
+		return
+	
+	# Dispatch
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["biome_smooth"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+# === DISPATCH BIOME BORDER ===
+func _dispatch_biome_border(w: int, h: int, groups_x: int, groups_y: int,
+		seed_val: int, river_threshold: float, border_noise_frequency: float) -> void:
+	
+	if not gpu.shaders.has("biome_border") or not gpu.shaders["biome_border"].is_valid():
+		push_warning("[Orchestrator] ⚠️ biome_border shader non disponible")
+		return
+	
+	# Create texture uniforms (Set 0)
+	# Note: biome_colored is read/write in place
+	var biome_uniform = gpu.create_texture_uniform(0, gpu.textures["biome_colored"])
+	var ice_uniform = gpu.create_texture_uniform(1, gpu.textures["ice_caps"])
+	var river_uniform = gpu.create_texture_uniform(2, gpu.textures["river_flux"])
+	
+	var tex_uniforms = [biome_uniform, ice_uniform, river_uniform]
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["biome_border"], 0)
+	if not tex_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create biome_border texture set")
+		return
+	
+	# Create params UBO (Set 1)
+	# struct: seed(4) + width(4) + height(4) + river_threshold(4) + border_noise_frequency(4) + swap_threshold(4) + padding*2(8) = 32 bytes
+	var param_data = PackedByteArray()
+	param_data.resize(32)
+	param_data.encode_u32(0, seed_val)
+	param_data.encode_u32(4, w)
+	param_data.encode_u32(8, h)
+	param_data.encode_float(12, river_threshold)
+	param_data.encode_float(16, border_noise_frequency)
+	param_data.encode_float(20, 0.4)  # swap_threshold (noise > 0.4 = ~30% of borders)
+	param_data.encode_float(24, 0.0)
+	param_data.encode_float(28, 0.0)
+	
+	var param_buffer = rd.uniform_buffer_create(param_data.size(), param_data)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["biome_border"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create biome_border param set")
+		rd.free_rid(param_buffer)
+		rd.free_rid(tex_set)
+		return
+	
+	# Dispatch
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["biome_border"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+# ============================================================================
+# ÉTAPE 5 : RESSOURCES & PÉTROLE
+# ============================================================================
+
+## Génère les cartes de pétrole et de ressources minérales.
 func run_resources_phase(params: Dictionary, w: int, h: int) -> void:
 	print("[Orchestrator] ⛏️ Phase 5 : Ressources & Pétrole")
 	
