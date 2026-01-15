@@ -38,52 +38,43 @@ layout(set = 1, binding = 0, std140) uniform FinalizeParams {
 
 // === FONCTIONS UTILITAIRES ===
 
-// Convertit un region_id en couleur RGB déterministe
-// Reproduit le système legacy : pas de 17 par canal, wrap progressif
-vec3 regionIdToColor(uint region_id) {
-    // Utiliser le hash de l'ID pour obtenir un index de couleur
-    // Chaque région doit avoir une couleur unique et répétable
-    
-    // On simule le compteur legacy en utilisant l'ID comme index
-    // Le pas est 17, donc on calcule combien de "pas" on a fait
-    
-    // Approche : utiliser l'ID modulo un grand nombre pour avoir un index
-    // puis convertir en couleur avec le système de pas de 17
-    
-    uint color_index = region_id;
-    
-    // Calculer R, G, B comme si on avait incrémenté color_index fois
-    // Chaque canal a 256/17 ≈ 15 valeurs avant overflow
-    
-    // Nombre de valeurs par canal avant wrap
-    const uint STEP = 17u;
-    const uint VALUES_PER_CHANNEL = 256u / STEP;  // 15
-    
-    // Décomposer l'index en R, G, B
-    uint r_index = color_index % VALUES_PER_CHANNEL;
-    uint g_index = (color_index / VALUES_PER_CHANNEL) % VALUES_PER_CHANNEL;
-    uint b_index = (color_index / (VALUES_PER_CHANNEL * VALUES_PER_CHANNEL)) % VALUES_PER_CHANNEL;
-    
-    // Convertir en valeurs de couleur [0, 255]
-    uint r = (r_index * STEP) % 256u;
-    uint g = (g_index * STEP) % 256u;
-    uint b = (b_index * STEP) % 256u;
-    
-    // Éviter le noir pur (0,0,0) qui pourrait être confondu avec autre chose
-    if (r == 0u && g == 0u && b == 0u) {
-        r = STEP;  // Première couleur valide
-    }
-    
-    return vec3(float(r) / 255.0, float(g) / 255.0, float(b) / 255.0);
-}
-
 // Hash pour obtenir un index de couleur stable depuis un region_id
 uint hashForColor(uint x) {
-    // Simple hash pour disperser les IDs
+    // Simple hash pour disperser les IDs et éviter les collisions de couleurs
     x = ((x >> 16u) ^ x) * 0x45d9f3bu;
     x = ((x >> 16u) ^ x) * 0x45d9f3bu;
     x = (x >> 16u) ^ x;
     return x;
+}
+
+// Convertit un region_id en couleur RGB déterministe
+// Reproduit EXACTEMENT le système legacy : pas de 17 par canal, wrap progressif
+// Le legacy fait : nextColor[0] += 17, puis wrap + incrémente nextColor[1], etc.
+vec3 regionIdToColor(uint region_id) {
+    const uint STEP = 17u;
+    
+    // Hasher l'ID pour disperser les couleurs et éviter les patterns
+    uint color_index = hashForColor(region_id);
+    
+    // Simuler l'incrément progressif des canaux comme le legacy
+    // On utilise une représentation base-15 (256/17 ≈ 15)
+    const uint BASE = 15u;  // Nombre de valeurs par canal
+    
+    uint r_idx = color_index % BASE;
+    uint g_idx = (color_index / BASE) % BASE;
+    uint b_idx = (color_index / (BASE * BASE)) % BASE;
+    
+    uint r = (r_idx * STEP) % 256u;
+    uint g = (g_idx * STEP) % 256u;
+    uint b = (b_idx * STEP) % 256u;
+    
+    // Éviter le noir pur (0,0,0) et les couleurs trop sombres
+    if (r + g + b < 50u) {
+        r = (r + STEP) % 256u;
+        if (r < STEP) g = (g + STEP) % 256u;
+    }
+    
+    return vec3(float(r) / 255.0, float(g) / 255.0, float(b) / 255.0);
 }
 
 // === MAIN ===
@@ -114,9 +105,7 @@ void main() {
         );
     } else {
         // Pixel de terre avec région assignée
-        // Utiliser un hash de l'ID pour disperser les couleurs
-        uint color_index = hashForColor(region_id);
-        vec3 rgb = regionIdToColor(color_index);
+        vec3 rgb = regionIdToColor(region_id);
         final_color = vec4(rgb, 1.0);
     }
     

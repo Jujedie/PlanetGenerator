@@ -41,18 +41,40 @@ layout(set = 1, binding = 0, std140) uniform GrowthParams {
     uint width;
     uint height;
     uint pass_index;
-    uint padding0;
+    uint seed;                 // Pour le bruit
     float sea_level;
     float river_threshold;     // Seuil de flux pour considérer comme rivière
     float cost_flat;           // Coût terrain plat (1.0)
     float cost_uphill;         // Coût montée (2.0)
     float cost_river;          // Coût traversée rivière (3.0)
+    float noise_strength;      // Force du bruit (comme randf() * 10.0 du legacy)
     float padding1;
     float padding2;
-    float padding3;
 } params;
 
 // === FONCTIONS UTILITAIRES ===
+
+// Hash pseudo-aléatoire (Déterministe)
+uint hash(uint x) {
+    x ^= x >> 16u;
+    x *= 0x85ebca6bu;
+    x ^= x >> 13u;
+    x *= 0xc2b2ae35u;
+    x ^= x >> 16u;
+    return x;
+}
+
+uint hash2(uint x, uint y) {
+    return hash(x ^ (y * 1664525u + 1013904223u));
+}
+
+uint hash3(uint x, uint y, uint z) {
+    return hash(hash2(x, y) ^ (z * 2654435761u));
+}
+
+float hashToFloat(uint h) {
+    return float(h) / float(0xFFFFFFFFu);
+}
 
 // Wrap X pour projection équirectangulaire (seamless horizontalement)
 int wrapX(int x, int w) {
@@ -143,8 +165,12 @@ void main() {
             edge_cost += params.cost_river;
         }
         
+        // Ajouter du bruit pour rendre les frontières irrégulières (comme legacy randf() * 10.0)
+        uint noise_hash = hash3(uint(pixel.x), uint(pixel.y), params.seed + params.pass_index);
+        float noise = hashToFloat(noise_hash) * params.noise_strength;
+        
         // Coût total pour atteindre ce pixel via ce voisin
-        float total_cost = neighbor_cost + edge_cost;
+        float total_cost = neighbor_cost + edge_cost + noise;
         
         // Si c'est meilleur, mettre à jour
         if (total_cost < best_cost) {

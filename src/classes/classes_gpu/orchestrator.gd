@@ -2171,12 +2171,15 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	var cost_river = float(params.get("region_cost_river", 3.0))
 	var river_threshold = float(params.get("region_river_threshold", 1.0))
 	var budget_variation = float(params.get("region_budget_variation", 0.5))
+	var noise_strength = float(params.get("region_noise_strength", 10.0))  # Comme legacy randf() * 10.0
 	
 	# Nombre d'itérations de croissance (basé sur la taille de la carte)
-	var region_iterations = int(params.get("region_iterations", max(w, h) / 2))
+	# Augmenté pour garantir que toute la terre soit couverte
+	var region_iterations = int(params.get("region_iterations", max(w, h)))
 	
 	print("  Seed: ", seed_val, " | Cases/Région: ", nb_cases_region)
 	print("  Coûts - Plat: ", cost_flat, " | Montée: ", cost_uphill, " | Rivière: +", cost_river)
+	print("  Bruit frontières: ", noise_strength)
 	print("  Itérations de croissance: ", region_iterations)
 	
 	# Initialiser les textures de région
@@ -2190,7 +2193,7 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  • Croissance des régions (", region_iterations, " passes)...")
 	for pass_idx in range(region_iterations):
 		var use_swap = (pass_idx % 2 == 1)
-		_dispatch_region_growth(w, h, groups_x, groups_y, pass_idx, sea_level, river_threshold, cost_flat, cost_uphill, cost_river, use_swap)
+		_dispatch_region_growth(w, h, groups_x, groups_y, pass_idx, seed_val, sea_level, river_threshold, cost_flat, cost_uphill, cost_river, noise_strength, use_swap)
 	
 	# Si nombre impair de passes, copier le résultat vers la texture principale
 	if region_iterations % 2 == 1:
@@ -2265,7 +2268,7 @@ func _dispatch_region_seed_placement(w: int, h: int, groups_x: int, groups_y: in
 	rd.free_rid(tex_set)
 
 ## Dispatch le shader de croissance des régions (Dijkstra-like)
-func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int, pass_idx: int, sea_level: float, river_threshold: float, cost_flat: float, cost_uphill: float, cost_river: float, use_swap: bool) -> void:
+func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int, pass_idx: int, seed_val: int, sea_level: float, river_threshold: float, cost_flat: float, cost_uphill: float, cost_river: float, noise_strength: float, use_swap: bool) -> void:
 	if not gpu.shaders.has("region_growth") or not gpu.shaders["region_growth"].is_valid():
 		push_warning("[Orchestrator] ⚠️ region_growth shader non disponible")
 		return
@@ -2322,13 +2325,13 @@ func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int, pass_
 	buffer_bytes.encode_u32(0, w)
 	buffer_bytes.encode_u32(4, h)
 	buffer_bytes.encode_u32(8, pass_idx)
-	buffer_bytes.encode_u32(12, 0)  # padding
+	buffer_bytes.encode_u32(12, seed_val)  # seed pour le bruit
 	buffer_bytes.encode_float(16, sea_level)
 	buffer_bytes.encode_float(20, river_threshold)
 	buffer_bytes.encode_float(24, cost_flat)
 	buffer_bytes.encode_float(28, cost_uphill)
 	buffer_bytes.encode_float(32, cost_river)
-	buffer_bytes.encode_float(36, 0.0)  # padding
+	buffer_bytes.encode_float(36, noise_strength)  # Force du bruit
 	buffer_bytes.encode_float(40, 0.0)  # padding
 	buffer_bytes.encode_float(44, 0.0)  # padding
 	

@@ -97,41 +97,27 @@ void main() {
     }
     
     // Décider si ce pixel est un seed de région
-    // On utilise une grille spatiale pour espacer les seeds
-    // La taille de cellule est calculée pour avoir environ (W*H/2) / nb_cases_region régions
+    // Utiliser une probabilité par pixel pour avoir une distribution régulière
     
     // Estimation du nombre de régions attendues
     float land_area_estimate = float(w * h) * 0.35;  // ~35% de terre (approximatif)
     float num_regions_expected = land_area_estimate / float(params.nb_cases_region);
     
-    // Taille de grille pour espacer les seeds
-    float grid_cell_size = sqrt(land_area_estimate / max(num_regions_expected, 1.0));
-    int cell_size = max(int(grid_cell_size), 1);
+    // Probabilité qu'un pixel terre soit un seed
+    float seed_probability = num_regions_expected / land_area_estimate;
     
-    // Position dans la grille
-    int cell_x = pixel.x / cell_size;
-    int cell_y = pixel.y / cell_size;
+    // Hash déterministe pour ce pixel
+    uint pixel_hash = hash3(uint(pixel.x), uint(pixel.y), params.seed);
+    float random_value = hashToFloat(pixel_hash);
     
-    // Hash pour cette cellule de grille
-    uint cell_hash = hash3(uint(cell_x), uint(cell_y), params.seed);
-    
-    // Position "élue" dans cette cellule (Poisson-like simple)
-    int elected_x = (cell_x * cell_size) + int(cell_hash % uint(cell_size));
-    int elected_y = (cell_y * cell_size) + int((cell_hash >> 8) % uint(cell_size));
-    
-    // Ce pixel est-il le représentant élu de sa cellule ?
-    bool is_seed = (pixel.x == elected_x && pixel.y == elected_y);
+    // Ce pixel est un seed si son hash est sous la probabilité
+    bool is_seed = (random_value < seed_probability);
     
     if (is_seed) {
         // Ce pixel est un seed de région !
-        // Calculer un ID unique basé sur la position (pour couleur déterministe)
-        uint region_id = hash2(uint(pixel.x), uint(pixel.y));
-        
-        // Calculer le budget avec variation
-        float base_budget = float(params.nb_cases_region);
-        float variation = (hashToFloat(hash(region_id)) - 0.5) * 2.0 * params.budget_variation;
-        float budget = base_budget * (1.0 + variation);
-        budget = max(budget, 10.0);  // Minimum 10 cases par région
+        // Utiliser un ID séquentiel basé sur la position pour des couleurs uniques
+        // L'ID est basé sur x + y*width pour avoir un ordre cohérent
+        uint region_id = uint(pixel.x) + uint(pixel.y) * uint(w);
         
         // Écrire le seed
         imageStore(region_map, pixel, uvec4(region_id, 0u, 0u, 0u));
