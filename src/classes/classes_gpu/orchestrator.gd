@@ -134,6 +134,10 @@ func _compile_all_shaders() -> bool:
 		{"path": "res://shader/compute/water/water_size_classify.glsl", "name": "water_size_classify", "critical": false},
 		{"path": "res://shader/compute/water/river_sources.glsl", "name": "river_sources", "critical": false},
 		{"path": "res://shader/compute/water/river_propagation.glsl", "name": "river_propagation", "critical": false},
+		# Shaders Régions Administratives (Étape 4)
+		{"path": "res://shader/compute/region/region_seed_placement.glsl", "name": "region_seed_placement", "critical": false},
+		{"path": "res://shader/compute/region/region_growth.glsl", "name": "region_growth", "critical": false},
+		{"path": "res://shader/compute/region/region_finalize.glsl", "name": "region_finalize", "critical": false},
 	]
 	
 	var all_critical_loaded = true
@@ -627,6 +631,9 @@ func run_simulation() -> void:
 	
 	# === ÉTAPE 2.5 : CLASSIFICATION DES EAUX & RIVIÈRES ===
 	run_water_phase(generation_params, w, h)
+	
+	# === ÉTAPE 4 : RÉGIONS ADMINISTRATIVES ===
+	run_region_phase(generation_params, w, h)
 	
 	# === ÉTAPE 5 : RESSOURCES & PÉTROLE ===
 	run_resources_phase(generation_params, w, h)
@@ -2113,6 +2120,294 @@ func _dispatch_river_propagation(w: int, h: int, groups_x: int, groups_y: int, p
 	
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["river_propagation"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+# ============================================================================
+# ÉTAPE 4 : RÉGIONS ADMINISTRATIVES
+# ============================================================================
+
+## Génère les régions administratives sur la terre uniquement.
+##
+## Cette phase remplace conceptuellement RegionMapGenerator.gd (version CPU).
+## Utilise un algorithme de croissance Dijkstra-like avec système de coûts :
+## - Terrain plat : coût 1
+## - Montée (altitude +) : coût 2  
+## - Traversée rivière : coût +3
+##
+## Les régions ne sont générées que sur la terre (water_mask == 0).
+##
+## @param params: Dictionnaire contenant seed, nb_cases_regions, etc.
+## @param w: Largeur de la texture
+## @param h: Hauteur de la texture
+func run_region_phase(params: Dictionary, w: int, h: int) -> void:
+	print("[Orchestrator] 🗺️ Phase 4 : Régions Administratives")
+	
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+	
+	var seed_val = int(params.get("seed", 12345))
+	var sea_level = float(params.get("sea_level", 0.0))
+	var nb_cases_region = int(params.get("nb_cases_regions", 50))
+	var atmosphere_type = int(params.get("atmosphere_type", 0))
+	
+	# Si pas d'atmosphère, pas de régions (planète sans vie)
+	if atmosphere_type == 3:
+		print("  ⏭️ Planète sans atmosphère - pas de régions")
+		return
+	
+	# Paramètres de coûts
+	var cost_flat = float(params.get("region_cost_flat", 1.0))
+	var cost_uphill = float(params.get("region_cost_uphill", 2.0))
+	var cost_river = float(params.get("region_cost_river", 3.0))
+	var river_threshold = float(params.get("region_river_threshold", 1.0))
+	var budget_variation = float(params.get("region_budget_variation", 0.5))
+	
+	# Nombre d'itérations de croissance (basé sur la taille de la carte)
+	var region_iterations = int(params.get("region_iterations", max(w, h) / 2))
+	
+	print("  Seed: ", seed_val, " | Cases/Région: ", nb_cases_region)
+	print("  Coûts - Plat: ", cost_flat, " | Montée: ", cost_uphill, " | Rivière: +", cost_river)
+	print("  Itérations de croissance: ", region_iterations)
+	
+	# Initialiser les textures de région
+	gpu.initialize_region_textures()
+	
+	# === PASSE 1 : PLACEMENT DES SEEDS ===
+	print("  • Placement des seeds de régions...")
+	_dispatch_region_seed_placement(w, h, groups_x, groups_y, seed_val, nb_cases_region, sea_level, budget_variation)
+	
+	# === PASSE 2 : CROISSANCE ITÉRATIVE (Dijkstra-like) ===
+	print("  • Croissance des régions (", region_iterations, " passes)...")
+	for pass_idx in range(region_iterations):
+		var use_swap = (pass_idx % 2 == 1)
+		_dispatch_region_growth(w, h, groups_x, groups_y, pass_idx, sea_level, river_threshold, cost_flat, cost_uphill, cost_river, use_swap)
+	
+	# Si nombre impair de passes, copier le résultat vers la texture principale
+	if region_iterations % 2 == 1:
+		_copy_region_textures(w, h)
+	
+	# === PASSE 3 : FINALISATION ET COLORATION ===
+	print("  • Finalisation et coloration...")
+	_dispatch_region_finalize(w, h, groups_x, groups_y, seed_val)
+	
+	print("[Orchestrator] ✅ Phase 4 : Régions terminées")
+
+## Dispatch le shader de placement des seeds de région
+func _dispatch_region_seed_placement(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, nb_cases_region: int, sea_level: float, budget_variation: float) -> void:
+	if not gpu.shaders.has("region_seed_placement") or not gpu.shaders["region_seed_placement"].is_valid():
+		push_warning("[Orchestrator] ⚠️ region_seed_placement shader non disponible")
+		return
+	
+	# Créer les uniforms de texture (set 0)
+	var tex_uniforms: Array[RDUniform] = []
+	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
+	
+	# water_mask (R8UI)
+	var mask_uniform = RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 1
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	
+	# region_map (R32UI)
+	var map_uniform = RDUniform.new()
+	map_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_uniform.binding = 2
+	map_uniform.add_id(gpu.textures["region_map"])
+	tex_uniforms.append(map_uniform)
+	
+	# region_cost (R32F)
+	tex_uniforms.append(gpu.create_texture_uniform(3, gpu.textures["region_cost"]))
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["region_seed_placement"], 0)
+	
+	# UBO paramètres (32 bytes, std140)
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, seed_val)
+	buffer_bytes.encode_u32(12, nb_cases_region)
+	buffer_bytes.encode_float(16, sea_level)
+	buffer_bytes.encode_float(20, budget_variation)
+	buffer_bytes.encode_float(24, 0.0)  # padding
+	buffer_bytes.encode_float(28, 0.0)  # padding
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["region_seed_placement"], 1)
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["region_seed_placement"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+## Dispatch le shader de croissance des régions (Dijkstra-like)
+func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int, pass_idx: int, sea_level: float, river_threshold: float, cost_flat: float, cost_uphill: float, cost_river: float, use_swap: bool) -> void:
+	if not gpu.shaders.has("region_growth") or not gpu.shaders["region_growth"].is_valid():
+		push_warning("[Orchestrator] ⚠️ region_growth shader non disponible")
+		return
+	
+	# Textures ping-pong
+	var map_in = gpu.textures["region_map"] if not use_swap else gpu.textures["region_map"]
+	var cost_in = gpu.textures["region_cost"] if not use_swap else gpu.textures["region_cost_temp"]
+	var cost_out = gpu.textures["region_cost_temp"] if not use_swap else gpu.textures["region_cost"]
+	
+	# Note: region_map ne fait pas de ping-pong, on écrit directement dessus
+	# car on veut garder l'ID du seed même quand on propage le coût
+	
+	# Créer les uniforms de texture (set 0)
+	var tex_uniforms: Array[RDUniform] = []
+	
+	# geo_texture (binding 0)
+	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
+	
+	# water_mask (binding 1)
+	var mask_uniform = RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 1
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	
+	# river_flux (binding 2)
+	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["river_flux"]))
+	
+	# region_map_in (binding 3) - lecture
+	var map_in_uniform = RDUniform.new()
+	map_in_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_in_uniform.binding = 3
+	map_in_uniform.add_id(map_in)
+	tex_uniforms.append(map_in_uniform)
+	
+	# region_cost_in (binding 4) - lecture
+	tex_uniforms.append(gpu.create_texture_uniform(4, cost_in))
+	
+	# region_map_out (binding 5) - écriture
+	var map_out_uniform = RDUniform.new()
+	map_out_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_out_uniform.binding = 5
+	map_out_uniform.add_id(map_in)  # Même texture car pas de ping-pong sur map
+	tex_uniforms.append(map_out_uniform)
+	
+	# region_cost_out (binding 6) - écriture
+	tex_uniforms.append(gpu.create_texture_uniform(6, cost_out))
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["region_growth"], 0)
+	
+	# UBO paramètres (48 bytes, std140)
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(48)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, pass_idx)
+	buffer_bytes.encode_u32(12, 0)  # padding
+	buffer_bytes.encode_float(16, sea_level)
+	buffer_bytes.encode_float(20, river_threshold)
+	buffer_bytes.encode_float(24, cost_flat)
+	buffer_bytes.encode_float(28, cost_uphill)
+	buffer_bytes.encode_float(32, cost_river)
+	buffer_bytes.encode_float(36, 0.0)  # padding
+	buffer_bytes.encode_float(40, 0.0)  # padding
+	buffer_bytes.encode_float(44, 0.0)  # padding
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["region_growth"], 1)
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["region_growth"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+## Copie les textures de région du buffer temp vers le buffer principal
+func _copy_region_textures(w: int, h: int) -> void:
+	# Copier region_cost_temp -> region_cost
+	_copy_texture(gpu.textures["region_cost_temp"], gpu.textures["region_cost"], w, h)
+
+## Dispatch le shader de finalisation des régions (coloration)
+func _dispatch_region_finalize(w: int, h: int, groups_x: int, groups_y: int, seed_val: int) -> void:
+	if not gpu.shaders.has("region_finalize") or not gpu.shaders["region_finalize"].is_valid():
+		push_warning("[Orchestrator] ⚠️ region_finalize shader non disponible")
+		return
+	
+	# Créer les uniforms de texture (set 0)
+	var tex_uniforms: Array[RDUniform] = []
+	
+	# region_map (binding 0)
+	var map_uniform = RDUniform.new()
+	map_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_uniform.binding = 0
+	map_uniform.add_id(gpu.textures["region_map"])
+	tex_uniforms.append(map_uniform)
+	
+	# water_mask (binding 1)
+	var mask_uniform = RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 1
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	
+	# region_colored (binding 2)
+	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["region_colored"]))
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["region_finalize"], 0)
+	
+	# UBO paramètres (32 bytes, std140)
+	# Couleur eau legacy : 0x161a1f = RGB(22, 26, 31)
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, seed_val)
+	buffer_bytes.encode_u32(12, 22)   # water_color_r
+	buffer_bytes.encode_u32(16, 26)   # water_color_g
+	buffer_bytes.encode_u32(20, 31)   # water_color_b
+	buffer_bytes.encode_float(24, 0.0)  # padding
+	buffer_bytes.encode_float(28, 0.0)  # padding
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["region_finalize"], 1)
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["region_finalize"])
 	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
 	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)

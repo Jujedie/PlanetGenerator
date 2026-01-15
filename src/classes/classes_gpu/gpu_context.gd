@@ -45,6 +45,13 @@ static var TextureID_Resources : Array[String] = ["petrole", "resources"]
 # river_flux_temp : (R32F) - Buffer ping-pong pour propagation
 static var TextureID_Water : Array[String] = ["water_mask", "water_component", "water_component_temp", "river_sources", "river_flux", "river_flux_temp"]
 
+# Textures Étape 4 - Régions administratives
+# region_map : (R32UI) - ID de région par pixel (0xFFFFFFFF = non assigné)
+# region_cost : (R32F) - Coût accumulé depuis le seed (pour Dijkstra)
+# region_cost_temp : (R32F) - Buffer ping-pong pour propagation
+# region_colored : (RGBA8) - Couleur finale des régions pour export
+static var TextureID_Region : Array[String] = ["region_map", "region_cost", "region_cost_temp", "region_colored"]
+
 # === MEMBRES ===
 var rd: RenderingDevice
 var textures: Dictionary = {}
@@ -438,6 +445,98 @@ func initialize_water_textures() -> void:
 	
 	print("✅ Textures eaux créées (1x R8 + 2x RG32I + 1x R32UI + 2x R32F)")
 
+# === CRÉATION DES TEXTURES RÉGIONS (Étape 4) ===
+func initialize_region_textures() -> void:
+	"""
+	Initialise les textures spécifiques à l'étape 4 (Régions administratives).
+	Appelé par l'orchestrateur avant la phase de génération des régions.
+	
+	Textures créées:
+	- region_map (R32UI) : ID de région par pixel
+	- region_cost / region_cost_temp (R32F) : Coûts accumulés (ping-pong Dijkstra)
+	- region_colored (RGBA8) : Couleur finale pour export
+	"""
+	
+	# Format R32UI pour IDs de région (4 bytes par pixel)
+	var format_r32ui := RDTextureFormat.new()
+	format_r32ui.width = resolution.x
+	format_r32ui.height = resolution.y
+	format_r32ui.format = FORMAT_R32UI
+	format_r32ui.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Format R32F pour coûts (4 bytes par pixel)
+	var format_r32f := RDTextureFormat.new()
+	format_r32f.width = resolution.x
+	format_r32f.height = resolution.y
+	format_r32f.format = FORMAT_R32F
+	format_r32f.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Format RGBA8 pour couleur finale (4 bytes par pixel)
+	var format_rgba8 := RDTextureFormat.new()
+	format_rgba8.width = resolution.x
+	format_rgba8.height = resolution.y
+	format_rgba8.format = FORMAT_RGBA8
+	format_rgba8.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Créer region_map (R32UI - 4 bytes par pixel, initialisé à 0xFFFFFFFF = non assigné)
+	if not textures.has("region_map"):
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 4)
+		# Initialiser à 0xFFFFFFFF (invalide/non assigné)
+		for i in range(0, data.size(), 4):
+			data.encode_u32(i, 0xFFFFFFFF)
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_r32ui, view, [data])
+		if rid.is_valid():
+			textures["region_map"] = rid
+		else:
+			push_error("❌ Échec création texture region_map")
+	
+	# Créer region_cost et region_cost_temp (R32F - 4 bytes par pixel)
+	for tex_id in ["region_cost", "region_cost_temp"]:
+		if not textures.has(tex_id):
+			var data = PackedByteArray()
+			data.resize(resolution.x * resolution.y * 4)
+			# Initialiser à une grande valeur (coût infini)
+			for i in range(0, data.size(), 4):
+				data.encode_float(i, 1e30)
+			var view := RDTextureView.new()
+			var rid := rd.texture_create(format_r32f, view, [data])
+			if rid.is_valid():
+				textures[tex_id] = rid
+			else:
+				push_error("❌ Échec création texture " + tex_id)
+	
+	# Créer region_colored (RGBA8 - 4 bytes par pixel)
+	if not textures.has("region_colored"):
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 4)
+		data.fill(0)
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_rgba8, view, [data])
+		if rid.is_valid():
+			textures["region_colored"] = rid
+		else:
+			push_error("❌ Échec création texture region_colored")
+	
+	print("✅ Textures régions créées (1x R32UI + 2x R32F + 1x RGBA8)")
+
 # === CHARGEMENT DES SHADERS (SÉCURISÉ) ===
 func load_compute_shader(glsl_path: String, shader_name: String) -> bool:
 	if not FileAccess.file_exists(glsl_path):
@@ -503,10 +602,10 @@ func readback_texture(tex_id: String) -> Image:
 	var img_format = Image.FORMAT_RGBAF
 	
 	# Textures RGBA8 (colorées)
-	if tex_id in ["temperature_colored", "precipitation_colored", "clouds", "ice_caps", "petrole"]:
+	if tex_id in ["temperature_colored", "precipitation_colored", "clouds", "ice_caps", "petrole", "region_colored"]:
 		img_format = Image.FORMAT_RGBA8
 	# Textures R32F (vapeur, flux)
-	elif tex_id in ["vapor", "vapor_temp", "river_flux", "flux_temp", "water_paths", "water_paths_temp"]:
+	elif tex_id in ["vapor", "vapor_temp", "river_flux", "flux_temp", "water_paths", "water_paths_temp", "region_cost", "region_cost_temp"]:
 		img_format = Image.FORMAT_RF
 	# Textures R32UI et RG32I ne peuvent pas être converties directement en Image
 	# Utiliser readback_texture_raw() pour ces formats
