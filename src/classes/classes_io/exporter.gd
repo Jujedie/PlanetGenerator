@@ -521,6 +521,10 @@ func _export_region_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 	if not img:
 		push_error("[Exporter] ❌ Failed to create region image")
 		return result
+
+	# Fusion des régions de taille 1 avec des voisins
+	var land_color = Color(0x16 / 255.0, 0x1a / 255.0, 0x1f / 255.0)  # 0x161a1f
+	img = _merge_isolated_regions(img, width, height, land_color)
 	
 	# Sauvegarder en PNG
 	var filepath = output_dir + "/" + filename
@@ -588,6 +592,10 @@ func _export_ocean_region_map(gpu: GPUContext, output_dir: String) -> Dictionary
 		push_error("[Exporter] ❌ Failed to create ocean region image")
 		return result
 	
+	# Fusion des régions de taille 1 avec des voisins
+	var ocean_color = Color(0x2a / 255.0, 0x2a / 255.0, 0x2a / 255.0)  # 0x2a2a2a
+	img = _merge_isolated_regions(img, width, height, ocean_color)
+
 	# Sauvegarder en PNG
 	var filepath = output_dir + "/" + filename
 	var err = img.save_png(filepath)
@@ -975,3 +983,144 @@ func _export_water_classification(gpu: GPUContext, output_dir: String, width: in
 	
 	print("[Exporter] ✅ Water export complete: ", result.size(), " maps")
 	return result
+
+## Fusionne les régions isolées (taille 1) avec leurs voisins les plus fréquents
+##
+## Pour chaque pixel qui n'a AUCUN voisin de sa couleur, remplit récursivement
+## tous les pixels voisins avec sa propre couleur (flood-fill).
+##
+## @param img: Image source (modifiée)
+## @param width: Largeur de l'image
+## @param height: Hauteur de l'image
+## @param ignore_color: Couleur à ignorer (terre pour régions, océan pour régions océaniques)
+## @return Image: Image avec régions isolées fusionnées
+func _merge_isolated_regions(img: Image, width: int, height: int, ignore_color: Color) -> Image:
+	print("  • Fusion des régions isolées (flood-fill récursif)...")
+	
+	# Voisinage 4-connecté (nord, ouest, est, sud)
+	var neighbors = [
+		Vector2i(0, -1),   # Nord
+		Vector2i(-1, 0),   # Ouest
+		Vector2i(1, 0),    # Est
+		Vector2i(0, 1)     # Sud
+	]
+	
+	var total_filled = 0
+	
+	for y in range(height):
+		for x in range(width):
+			var my_color = img.get_pixel(x, y)
+			
+			# Ignorer les pixels de la couleur à ignorer (terre/océan)
+			if _colors_equal(my_color, ignore_color):
+				continue
+			
+			# Vérifier si ce pixel a au moins un voisin de sa couleur
+			var has_same_neighbor = false
+			var neighbor_colors = {}
+			
+			for offset in neighbors:
+				var nx = (x + offset.x + width) % width  # Wrap X
+				var ny = clampi(y + offset.y, 0, height - 1)  # Clamp Y
+				
+				var neighbor_color = img.get_pixel(nx, ny)
+				
+				# Ignorer la couleur interdite
+				if _colors_equal(neighbor_color, ignore_color):
+					continue
+				
+				# Vérifier si même couleur que le pixel
+				if _colors_equal(neighbor_color, my_color):
+					has_same_neighbor = true
+					break
+				
+				# Compter les occurrences de chaque couleur voisine
+				var color_key = _color_to_key(neighbor_color)
+				if neighbor_colors.has(color_key):
+					neighbor_colors[color_key].count += 1
+				else:
+					neighbor_colors[color_key] = {"color": neighbor_color, "count": 1}
+			
+			# Si pas de voisin de la même couleur
+			if not has_same_neighbor:
+				# Vérifier s'il y a 2 voisins ou plus avec la même couleur
+				var should_stop = false
+				for color_data in neighbor_colors.values():
+					if color_data.count >= 2:
+						# Adopter cette couleur au lieu de faire le flood-fill
+						img.set_pixel(x, y, color_data.color)
+						total_filled += 1
+						should_stop = true
+						break
+				
+				# Si pas de couleur dominante (>=2 voisins), faire le flood-fill
+				if not should_stop:
+					var filled = _flood_fill_neighbors(img, x, y, my_color, ignore_color, width, height, neighbors)
+					total_filled += filled
+	
+	print("    Fusion terminée : ", total_filled, " pixels colorés")
+	return img
+
+## Remplit récursivement tous les pixels voisins (non-ignore_color) avec fill_color
+##
+## @param img: Image à modifier
+## @param x: Position X du pixel source
+## @param y: Position Y du pixel source
+## @param fill_color: Couleur à appliquer
+## @param ignore_color: Couleur à ne pas toucher
+## @param width: Largeur de l'image
+## @param height: Hauteur de l'image
+## @param neighbors: Liste des offsets de voisinage
+## @return int: Nombre de pixels colorés
+func _flood_fill_neighbors(img: Image, x: int, y: int, fill_color: Color, ignore_color: Color, width: int, height: int, neighbors: Array) -> int:
+	var filled_count = 0
+	var to_fill = []  # Pile pour flood-fill itératif (éviter stack overflow)
+	var visited = {}  # Dictionnaire pour éviter de revisiter les mêmes pixels
+	
+	# Ajouter tous les voisins directs à la pile
+	for offset in neighbors:
+		var nx = (x + offset.x + width) % width  # Wrap X
+		var ny = clampi(y + offset.y, 0, height - 1)  # Clamp Y
+		
+		var key = str(nx) + "," + str(ny)
+		if not visited.has(key):
+			to_fill.append(Vector2i(nx, ny))
+			visited[key] = true
+	
+	# Flood-fill itératif
+	while to_fill.size() > 0:
+		var pos = to_fill.pop_back()
+		var current_color = img.get_pixel(pos.x, pos.y)
+		
+		# Ignorer si c'est la couleur interdite ou déjà la bonne couleur
+		if _colors_equal(current_color, ignore_color) or _colors_equal(current_color, fill_color):
+			continue
+		
+		# Colorier ce pixel
+		img.set_pixel(pos.x, pos.y, fill_color)
+		filled_count += 1
+		
+		# Ajouter les voisins à la pile
+		for offset in neighbors:
+			var nx = (pos.x + offset.x + width) % width  # Wrap X
+			var ny = clampi(pos.y + offset.y, 0, height - 1)  # Clamp Y
+			
+			var key = str(nx) + "," + str(ny)
+			if not visited.has(key):
+				to_fill.append(Vector2i(nx, ny))
+				visited[key] = true
+	
+	return filled_count
+
+## Compare deux couleurs avec tolérance pour erreurs de compression
+func _colors_equal(c1: Color, c2: Color) -> bool:
+	var threshold = 0.01
+	return (
+		absf(c1.r - c2.r) < threshold and
+		absf(c1.g - c2.g) < threshold and
+		absf(c1.b - c2.b) < threshold
+	)
+
+## Convertit une couleur en clé de dictionnaire
+func _color_to_key(c: Color) -> String:
+	return str(int(c.r * 255)) + "," + str(int(c.g * 255)) + "," + str(int(c.b * 255))

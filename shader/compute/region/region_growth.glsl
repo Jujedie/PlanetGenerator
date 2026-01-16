@@ -124,8 +124,17 @@ void main() {
     float my_river_flux = imageLoad(river_flux, pixel).r;
     
     // Chercher le meilleur voisin (coût minimal)
+    // Si le pixel est déjà assigné, il garde sa région (stable)
+    // Si le pixel n'est PAS assigné, on cherche le voisin avec le meilleur coût
+    bool is_assigned = (current_region != 0xFFFFFFFFu);
     uint best_region = current_region;
     float best_cost = current_cost;
+    
+    // Si PAS assigné, on accepte n'importe quel voisin valide
+    if (!is_assigned) {
+        best_region = 0xFFFFFFFFu;  // Reset pour trouver le meilleur voisin
+        best_cost = 1e30;  // Reset pour trouver le minimum
+    }
     
     for (int i = 0; i < 4; i++) {
         ivec2 neighbor_offset = NEIGHBORS[i];
@@ -166,7 +175,9 @@ void main() {
         }
         
         // Ajouter du bruit pour rendre les frontières irrégulières (comme legacy randf() * 10.0)
-        uint noise_hash = hash3(uint(pixel.x), uint(pixel.y), params.seed + params.pass_index);
+        // NOTE: Le bruit doit être CONSTANT par pixel (pas dépendre de pass_index)
+        // sinon les frontières "bougent" et les régions ne peuvent pas s'étendre de manière stable
+        uint noise_hash = hash3(uint(pixel.x), uint(pixel.y), params.seed);
         float noise = hashToFloat(noise_hash) * params.noise_strength;
         
         // Coût total pour atteindre ce pixel via ce voisin

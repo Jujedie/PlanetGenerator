@@ -2187,7 +2187,7 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	var cost_river = float(params.get("region_cost_river", 3.0))
 	var river_threshold = float(params.get("region_river_threshold", 1.0))
 	var budget_variation = float(params.get("region_budget_variation", 0.5))
-	var noise_strength = float(params.get("region_noise_strength", 10.0))  # Comme legacy randf() * 10.0
+	var noise_strength = float(params.get("region_noise_strength", 0.5))  # Réduit pour ne pas dominer les coûts (flat=1, uphill=2)
 	
 	# Nombre d'itérations de croissance (basé sur la taille de la carte)
 	# Augmenté pour garantir que toute la terre soit couverte
@@ -2299,13 +2299,11 @@ func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int, pass_
 		push_warning("[Orchestrator] ⚠️ region_growth shader non disponible")
 		return
 	
-	# Textures ping-pong
-	var map_in = gpu.textures["region_map"] if not use_swap else gpu.textures["region_map"]
-	var cost_in = gpu.textures["region_cost"] if not use_swap else gpu.textures["region_cost_temp"]
-	var cost_out = gpu.textures["region_cost_temp"] if not use_swap else gpu.textures["region_cost"]
-	
-	# Note: region_map ne fait pas de ping-pong, on écrit directement dessus
-	# car on veut garder l'ID du seed même quand on propage le coût
+	# Textures ping-pong (comme pour les régions océaniques)
+	var map_in: RID = gpu.textures["region_map"] if not use_swap else gpu.textures["region_map_temp"]
+	var map_out: RID = gpu.textures["region_map_temp"] if not use_swap else gpu.textures["region_map"]
+	var cost_in: RID = gpu.textures["region_cost"] if not use_swap else gpu.textures["region_cost_temp"]
+	var cost_out: RID = gpu.textures["region_cost_temp"] if not use_swap else gpu.textures["region_cost"]
 	
 	# Créer les uniforms de texture (set 0)
 	var tex_uniforms: Array[RDUniform] = []
@@ -2337,7 +2335,7 @@ func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int, pass_
 	var map_out_uniform = RDUniform.new()
 	map_out_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
 	map_out_uniform.binding = 5
-	map_out_uniform.add_id(map_in)  # Même texture car pas de ping-pong sur map
+	map_out_uniform.add_id(map_out)  # Ping-pong correct pour éviter les race conditions
 	tex_uniforms.append(map_out_uniform)
 	
 	# region_cost_out (binding 6) - écriture
@@ -2384,6 +2382,8 @@ func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int, pass_
 
 ## Copie les textures de région du buffer temp vers le buffer principal
 func _copy_region_textures(w: int, h: int) -> void:
+	# Copier region_map_temp -> region_map
+	_copy_texture(gpu.textures["region_map_temp"], gpu.textures["region_map"], w, h)
 	# Copier region_cost_temp -> region_cost
 	_copy_texture(gpu.textures["region_cost_temp"], gpu.textures["region_cost"], w, h)
 
@@ -2540,7 +2540,7 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	# Paramètres de coûts pour océans
 	var cost_flat = float(params.get("ocean_cost_flat", 1.0))
 	var cost_deeper = float(params.get("ocean_cost_deeper", 2.0))
-	var noise_strength = float(params.get("ocean_noise_strength", 10.0))
+	var noise_strength = float(params.get("ocean_noise_strength", 0.5))  # Réduit pour ne pas dominer les coûts
 	
 	var ocean_iterations = int(params.get("ocean_iterations", max(w, h) * 2))
 	
