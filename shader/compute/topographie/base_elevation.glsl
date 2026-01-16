@@ -822,22 +822,8 @@ void main() {
         legacyMountains = 800.0 * band_strength * 0.6;  // Amplitude réduite
     }
     
-    // === STRUCTURES TECTONIQUES LEGACY (Canyons/Rifts) ===
-    // RARIFIÉ: Seuil plus strict (0.48-0.52) et profondeur réduite (-600m)
-    // Évite les larges dépressions circulaires partout
-    float tectonic_canyon = abs(fbmSimplex(coords * tectonic_freq, 4, 0.55, 2.0, params.seed + 30000u));
-    
-    float legacyCanyons = 0.0;
-    // Seuil très étroit pour rareté + vérification altitude (éviter canyons sous-marins)
-    if (tectonic_canyon > 0.48 && tectonic_canyon < 0.52 && baseElevation + noiseElevation > -500.0) {
-        float band_strength = 1.0 - abs(tectonic_canyon - 0.5) * 50.0;  // Bande très étroite
-        // Profondeur réduite et modulée par le bruit pour aspect naturel
-        float depth_modulation = 0.6 + 0.4 * fbm(coords * tectonic_freq * 2.0, 3, 0.6, 2.0, params.seed + 31000u);
-        legacyCanyons = -600.0 * band_strength * depth_modulation;
-    }
-    
     // === ÉLÉVATION FINALE ===
-    float elevation = baseElevation + noiseElevation + tectonicUplift + legacyMountains + legacyCanyons;
+    float elevation = baseElevation + noiseElevation + tectonicUplift + legacyMountains;
     
     // === CORRECTION ARCHIPEL : Remonter zones continentales légèrement submergées ===
     // Appliqué uniquement aux zones continentales proches du niveau de la mer
