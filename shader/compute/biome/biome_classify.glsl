@@ -107,14 +107,35 @@ float fbm_detail(vec2 p, float freq, uint s) {
 }
 
 // Additional noise for climate perturbation - creates irregular biome boundaries
+// Uses higher frequency and more octaves for organic boundaries
 float climate_perturb_noise(vec2 p, uint s) {
     vec2 offset = vec2(float(s) * 1.23, float(s) * 0.89);
-    float freq = 12.0 / float(width);  // Medium scale perturbation
+    float freq = 30.0 / float(width);  // Higher frequency for more detailed perturbation
     
     float n1 = snoise((p + offset) * freq);
     float n2 = snoise((p + offset * 1.7) * freq * 2.3);
+    float n3 = snoise((p + offset * 2.3) * freq * 4.7);  // Extra octave for micro-variations
     
-    return (n1 + n2 * 0.5) / 1.5;  // Returns [-1, 1]
+    return (n1 + n2 * 0.5 + n3 * 0.25) / 1.75;  // Returns [-1, 1]
+}
+
+// Domain warping function - displaces coordinates to break up straight isolines
+// This creates organic, flowing boundaries instead of rectangular ones
+vec2 apply_domain_warp(vec2 p, uint s) {
+    vec2 offset1 = vec2(float(s) * 0.47, float(s) * 0.31);
+    vec2 offset2 = vec2(float(s) * 0.83, float(s) * 0.59);
+    float warp_freq = 8.0 / float(width);  // Scale for warp displacement
+    float warp_strength = 12.0;  // Pixels of displacement
+    
+    // First layer of warping
+    float warp_x = snoise((p + offset1) * warp_freq);
+    float warp_y = snoise((p + offset2) * warp_freq);
+    
+    // Second layer (finer detail)
+    float warp_x2 = snoise((p + offset1 * 2.1) * warp_freq * 2.0) * 0.5;
+    float warp_y2 = snoise((p + offset2 * 2.1) * warp_freq * 2.0) * 0.5;
+    
+    return p + vec2(warp_x + warp_x2, warp_y + warp_y2) * warp_strength;
 }
 
 // ============================================================================
@@ -275,9 +296,10 @@ vec4 classifyBiome(int elevation, float precipitation, int temperature,
     
     // Apply noise perturbation to climate values for more natural boundaries
     // This creates gradual transitions instead of hard rectangular lines
-    float temp_perturb = perturb_noise * 8.0;  // +/- 4 degrees
-    float precip_perturb = perturb_noise * 0.2;  // +/- 0.1
-    float elev_perturb = perturb_noise * 150.0;  // +/- 75m
+    // Increased amplitudes for more organic biome borders
+    float temp_perturb = perturb_noise * 16.0;  // +/- 8 degrees (doubled)
+    float precip_perturb = perturb_noise * 0.35;  // +/- 0.175 (increased)
+    float elev_perturb = perturb_noise * 300.0;  // +/- 150m (doubled)
     
     int temp = temperature + int(temp_perturb);
     float precip = clamp(precipitation + precip_perturb, 0.0, 1.0);
@@ -518,11 +540,15 @@ void main() {
     // Generate noise values matching FastNoiseLite behavior
     vec2 world_pos = vec2(pos);
     
-    // Main biome selection noise (frequency = 4.0 / width)
-    float biome_noise = fbm_biome(world_pos, biome_noise_frequency, seed);
+    // Apply domain warping to break up straight climate isolines
+    // This is the key to organic biome boundaries
+    vec2 warped_pos = apply_domain_warp(world_pos, seed);
     
-    // Climate perturbation noise for irregular boundaries
-    float perturb_noise = climate_perturb_noise(world_pos, seed + 1u);
+    // Main biome selection noise (frequency = 4.0 / width)
+    float biome_noise = fbm_biome(warped_pos, biome_noise_frequency, seed);
+    
+    // Climate perturbation noise for irregular boundaries (using warped coords)
+    float perturb_noise = climate_perturb_noise(warped_pos, seed + 1u);
     
     vec4 biome_color;
     

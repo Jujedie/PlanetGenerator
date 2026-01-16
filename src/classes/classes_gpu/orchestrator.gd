@@ -2878,8 +2878,13 @@ func run_biome_phase(params: Dictionary, w: int, h: int) -> void:
 	var biome_noise_frequency = 4.0 / float(w)  # ~4 continents
 	var border_noise_frequency = 25.0 / float(w)  # Détails fins pour bordures
 	
+	# Paramètres de lissage et bordure (optimisés pour résultat organique)
+	var majority_threshold = 4  # Abaissé de 5 à 4 (50% au lieu de 62.5%)
+	var swap_threshold = 0.2  # Abaissé de 0.4 à 0.2 (~50% des bordures au lieu de 30%)
+	
 	print("  Seed: ", seed_val, " | Atmosphere: ", atmosphere_type)
 	print("  Biome Noise Freq: ", biome_noise_frequency, " | Border Noise Freq: ", border_noise_frequency)
+	print("  Majority Threshold: ", majority_threshold, " | Swap Threshold: ", swap_threshold)
 	
 	# Initialiser les textures biomes
 	gpu.initialize_biome_textures()
@@ -2888,15 +2893,20 @@ func run_biome_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  • Classification des biomes...")
 	_dispatch_biome_classify(w, h, groups_x, groups_y, seed_val, atmosphere_type, sea_level, river_threshold, biome_noise_frequency)
 	
-	# === PASSE 2 : LISSAGE (2 itérations avec ping-pong) ===
-	print("  • Lissage des biomes (2 passes)...")
-	for i in range(2):
-		var use_swap = (i % 2 == 1)
-		_dispatch_biome_smooth(w, h, groups_x, groups_y, seed_val, river_threshold, use_swap)
+	# === PASSE 2 : PREMIER LISSAGE (1 itération) ===
+	# Applique un lissage initial pour éliminer les pixels isolés
+	print("  • Premier lissage des biomes...")
+	_dispatch_biome_smooth(w, h, groups_x, groups_y, seed_val, river_threshold, majority_threshold, false)  # colored -> temp
 	
 	# === PASSE 3 : IRRÉGULARITÉ DES BORDURES ===
+	# Appliquée ENTRE les deux passes de lissage pour être ensuite "fondue"
 	print("  • Ajout d'irrégularité aux bordures...")
-	_dispatch_biome_border(w, h, groups_x, groups_y, seed_val, river_threshold, border_noise_frequency)
+	_dispatch_biome_border(w, h, groups_x, groups_y, seed_val, river_threshold, border_noise_frequency, swap_threshold)
+	
+	# === PASSE 4 : SECOND LISSAGE (1 itération) ===
+	# Fond les irrégularités dans le résultat final
+	print("  • Second lissage des biomes...")
+	_dispatch_biome_smooth(w, h, groups_x, groups_y, seed_val, river_threshold, majority_threshold, true)  # temp -> colored
 	
 	print("[Orchestrator] ✅ Phase 4.1 : Biomes générés")
 
@@ -2993,7 +3003,7 @@ func _dispatch_biome_classify(w: int, h: int, groups_x: int, groups_y: int,
 
 # === DISPATCH BIOME SMOOTH ===
 func _dispatch_biome_smooth(w: int, h: int, groups_x: int, groups_y: int,
-		seed_val: int, river_threshold: float, use_swap: bool) -> void:
+		seed_val: int, river_threshold: float, majority_threshold: int, use_swap: bool) -> void:
 	
 	if not gpu.shaders.has("biome_smooth") or not gpu.shaders["biome_smooth"].is_valid():
 		push_warning("[Orchestrator] ⚠️ biome_smooth shader non disponible")
@@ -3024,7 +3034,7 @@ func _dispatch_biome_smooth(w: int, h: int, groups_x: int, groups_y: int,
 	param_data.encode_u32(4, w)
 	param_data.encode_u32(8, h)
 	param_data.encode_float(12, river_threshold)
-	param_data.encode_u32(16, 5)  # majority_threshold (5 out of 8 neighbors)
+	param_data.encode_u32(16, majority_threshold)  # Now using parameter instead of hardcoded 5
 	param_data.encode_float(20, 0.0)
 	param_data.encode_float(24, 0.0)
 	param_data.encode_float(28, 0.0)
@@ -3059,7 +3069,7 @@ func _dispatch_biome_smooth(w: int, h: int, groups_x: int, groups_y: int,
 
 # === DISPATCH BIOME BORDER ===
 func _dispatch_biome_border(w: int, h: int, groups_x: int, groups_y: int,
-		seed_val: int, river_threshold: float, border_noise_frequency: float) -> void:
+		seed_val: int, river_threshold: float, border_noise_frequency: float, swap_threshold: float) -> void:
 	
 	if not gpu.shaders.has("biome_border") or not gpu.shaders["biome_border"].is_valid():
 		push_warning("[Orchestrator] ⚠️ biome_border shader non disponible")
@@ -3067,7 +3077,8 @@ func _dispatch_biome_border(w: int, h: int, groups_x: int, groups_y: int,
 	
 	# Create texture uniforms (Set 0)
 	# Note: biome_colored is read/write in place
-	var biome_uniform = gpu.create_texture_uniform(0, gpu.textures["biome_colored"])
+	# After first smooth pass, data is in biome_temp, so we modify biome_temp
+	var biome_uniform = gpu.create_texture_uniform(0, gpu.textures["biome_temp"])
 	var ice_uniform = gpu.create_texture_uniform(1, gpu.textures["ice_caps"])
 	var river_uniform = gpu.create_texture_uniform(2, gpu.textures["river_flux"])
 	
@@ -3087,7 +3098,7 @@ func _dispatch_biome_border(w: int, h: int, groups_x: int, groups_y: int,
 	param_data.encode_u32(8, h)
 	param_data.encode_float(12, river_threshold)
 	param_data.encode_float(16, border_noise_frequency)
-	param_data.encode_float(20, 0.4)  # swap_threshold (noise > 0.4 = ~30% of borders)
+	param_data.encode_float(20, swap_threshold)  # Now using parameter instead of hardcoded 0.4
 	param_data.encode_float(24, 0.0)
 	param_data.encode_float(28, 0.0)
 	
