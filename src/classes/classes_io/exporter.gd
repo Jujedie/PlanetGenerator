@@ -475,7 +475,7 @@ func _export_climate_maps_optimized(gpu: GPUContext, output_dir: String) -> Dict
 ## @param gpu: Instance GPUContext avec la texture region_colored
 ## @param output_dir: Dossier de sortie
 ## @return Dictionary: Chemin du fichier exporté
-func _export_region_map(gpu: GPUContext, output_dir: String) -> Dictionary:
+func _export_region_map(gpu: GPUContext, output_dir: String, optimised_region_generation : bool = true) -> Dictionary:
 	print("[Exporter] 🗺️ Exporting region map (optimized RGBA8 direct)...")
 	
 	var result = {}
@@ -522,9 +522,10 @@ func _export_region_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 		push_error("[Exporter] ❌ Failed to create region image")
 		return result
 
-	# Fusion des régions de taille 1 avec des voisins
-	var land_color = Color(0x16 / 255.0, 0x1a / 255.0, 0x1f / 255.0)  # 0x161a1f
-	img = _merge_isolated_regions(img, width, height, land_color)
+	if not optimised_region_generation:
+		# Fusion des régions de taille 1 avec des voisins
+		var land_color = Color(0x16 / 255.0, 0x1a / 255.0, 0x1f / 255.0)  # 0x161a1f
+		img = _merge_isolated_regions(img, width, height, land_color)
 	
 	# Sauvegarder en PNG
 	var filepath = output_dir + "/" + filename
@@ -545,7 +546,7 @@ func _export_region_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 ## @param gpu: Instance GPUContext avec la texture ocean_region_colored
 ## @param output_dir: Dossier de sortie
 ## @return Dictionary: Chemin du fichier exporté
-func _export_ocean_region_map(gpu: GPUContext, output_dir: String) -> Dictionary:
+func _export_ocean_region_map(gpu: GPUContext, output_dir: String, optimised_region_generation : bool = true) -> Dictionary:
 	print("[Exporter] 🌊 Exporting ocean region map (optimized RGBA8 direct)...")
 	
 	var result = {}
@@ -592,9 +593,10 @@ func _export_ocean_region_map(gpu: GPUContext, output_dir: String) -> Dictionary
 		push_error("[Exporter] ❌ Failed to create ocean region image")
 		return result
 	
-	# Fusion des régions de taille 1 avec des voisins
-	var ocean_color = Color(0x2a / 255.0, 0x2a / 255.0, 0x2a / 255.0)  # 0x2a2a2a
-	img = _merge_isolated_regions(img, width, height, ocean_color)
+	if not optimised_region_generation:
+		# Fusion des régions de taille 1 avec des voisins
+		var ocean_color = Color(0x2a / 255.0, 0x2a / 255.0, 0x2a / 255.0)  # 0x2a2a2a
+		img = _merge_isolated_regions(img, width, height, ocean_color)
 
 	# Sauvegarder en PNG
 	var filepath = output_dir + "/" + filename
