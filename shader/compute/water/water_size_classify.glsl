@@ -110,33 +110,24 @@ void main() {
         vec4 geo = imageLoad(geo_texture, pixel);
         float height = geo.r;
         
-        // Règles de classification :
-        // 1. Lacs en altitude (au-dessus du niveau mer) = TOUJOURS eau douce (si <= freshwater_max_size)
-        // 2. Taille >= saltwater_min_size = eau salée
-        // 3. Taille <= freshwater_max_size = eau douce
-        // 4. Entre freshwater_max_size et saltwater_min_size = eau salée (zone intermédiaire)
+        // Règles de classification SIMPLIFIÉES :
+        // 1. Lacs en altitude (au-dessus du niveau mer) = TOUJOURS eau douce
+        // 2. Taille >= saltwater_min_size sous niveau mer = eau salée (océans/mers)
+        // 3. Taille < saltwater_min_size sous niveau mer = eau douce (lacs de basse altitude)
         
         uint final_type;
         
         if (height >= params.sea_level) {
-            // Lac en altitude = eau douce si petit, salée si grand
-            if (component_size <= params.freshwater_max_size) {
-                final_type = WATER_FRESHWATER;
-            } else {
-                final_type = WATER_SALTWATER;
-            }
-        }
-        else if (component_size >= params.saltwater_min_size) {
-            // Grande masse d'eau sous niveau mer = eau salée
-            final_type = WATER_SALTWATER;
-        }
-        else if (component_size <= params.freshwater_max_size) {
-            // Petite masse d'eau = eau douce
+            // Lac en altitude = TOUJOURS eau douce (peu importe la taille)
             final_type = WATER_FRESHWATER;
         }
-        else {
-            // Entre freshwater_max_size et saltwater_min_size = considéré comme eau salée
+        else if (component_size >= params.saltwater_min_size) {
+            // Grande masse d'eau sous niveau mer = océan/mer (eau salée)
             final_type = WATER_SALTWATER;
+        }
+        else {
+            // Petite masse d'eau sous niveau mer = lac de basse altitude (eau douce)
+            final_type = WATER_FRESHWATER;
         }
         
         // Écrire le type final
