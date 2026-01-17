@@ -29,6 +29,9 @@ layout(set = 0, binding = 0, rgba32f) uniform image2D climate_texture;
 // Texture de sortie colorée : RGBA8 pour export direct
 layout(set = 0, binding = 1, rgba8) uniform writeonly image2D precipitation_colored;
 
+// GeoTexture en lecture seule pour effet orographique
+layout(set = 0, binding = 2, rgba32f) uniform readonly image2D geo_texture;
+
 // Uniform Buffer : Paramètres de génération
 layout(set = 1, binding = 0, std140) uniform PrecipParams {
     uint seed;              // Graine de génération
@@ -37,7 +40,7 @@ layout(set = 1, binding = 0, std140) uniform PrecipParams {
     float avg_precipitation;// Facteur global humidité [0, 1]
     float cylinder_radius;  // width / (2*PI) pour bruit seamless
     uint atmosphere_type;   // 0=Terre, 1=Toxique, 2=Volcanique, 3=Sans atm
-    float padding1;
+    float sea_level;        // Niveau de la mer pour effet orographique
     float padding2;
 } params;
 
@@ -219,29 +222,72 @@ void main() {
     // === 4. Combiner les bruits ===
     float base_precip = main_value * 0.6 + detail_value * 0.25 + cell_value * 0.15;
     
-    // === 5. Influence de la latitude ===
+    // === 5. Influence de la latitude AMÉLIORÉE ===
+    // Basée sur les cellules de Hadley, Ferrel et Polaire
     float lat_influence = 1.0;
     
-    // Équateur (ITCZ) : plus humide
-    if (latitude < 0.2) {
-        lat_influence = 1.0 + 0.15 * (1.0 - latitude / 0.2);
+    // Équateur (ITCZ) : Zone de convergence intertropicale - TRÈS humide
+    if (latitude < 0.15) {
+        lat_influence = 1.0 + 0.6 * (1.0 - latitude / 0.15);  // +60% à l'équateur (était +15%)
     }
-    // Subtropiques (déserts) : plus sec
-    else if (latitude > 0.25 && latitude < 0.4) {
-        float t = (latitude - 0.25) / 0.15;
-        lat_influence = 1.0 - 0.2 * sin(t * PI);
+    // Subtropiques (cellule de Hadley descendante) : Déserts - TRÈS sec
+    else if (latitude > 0.2 && latitude < 0.35) {
+        float t = (latitude - 0.2) / 0.15;
+        lat_influence = 1.0 - 0.55 * sin(t * PI);  // -55% aux subtropiques (était -20%)
     }
-    // Pôles : plus sec
-    else if (latitude > 0.85) {
-        lat_influence = 1.0 - 0.3 * (latitude - 0.85) / 0.15;
+    // Zone tempérée (vents d'ouest) : Relativement humide
+    else if (latitude > 0.35 && latitude < 0.6) {
+        float t = (latitude - 0.35) / 0.25;
+        lat_influence = 0.75 + 0.25 * sin(t * PI);  // Zone tempérée humide
+    }
+    // Zone subpolaire : Plus humide (fronts polaires)
+    else if (latitude > 0.6 && latitude < 0.75) {
+        lat_influence = 0.85;
+    }
+    // Pôles : TRÈS sec (air froid = peu d'humidité)
+    else if (latitude > 0.75) {
+        lat_influence = 0.85 - 0.55 * (latitude - 0.75) / 0.25;  // -55% aux pôles (était -30%)
     }
     
-    // === 6. Application du facteur global ===
-    float value = base_precip * lat_influence;
+    // === 6. EFFET OROGRAPHIQUE (pluie sur montagnes) ===
+    // Les masses d'air humides s'élèvent contre les montagnes et produisent plus de pluie
+    vec4 geo = imageLoad(geo_texture, pixel);
+    float height = geo.r;
+    float orographic_factor = 1.0;
+    
+    if (height > params.sea_level) {
+        // Calculer la pente en regardant les voisins (simplifiée : vers l'ouest pour vents dominants)
+        int nx_west = (pixel.x - 1 + int(params.width)) % int(params.width);
+        vec4 geo_west = imageLoad(geo_texture, ivec2(nx_west, pixel.y));
+        float height_west = geo_west.r;
+        float slope = height - height_west;
+        
+        // Pente positive (versant au vent) = plus de pluie (effet orographique)
+        if (slope > 10.0) {
+            orographic_factor = 1.0 + clamp(slope / 500.0, 0.0, 0.8);  // +0-80% pluie sur pentes ascendantes
+        }
+        // Pente négative (versant sous le vent) = moins de pluie (rain shadow)
+        else if (slope < -10.0) {
+            orographic_factor = max(0.3, 1.0 + slope / 1000.0);  // -0-70% pluie en zone d'ombre
+        }
+        
+        // Altitude élevée = généralement plus de précipitations (jusqu'à un seuil)
+        float altitude_above_sea = height - params.sea_level;
+        if (altitude_above_sea > 0.0 && altitude_above_sea < 3000.0) {
+            orographic_factor *= 1.0 + (altitude_above_sea / 3000.0) * 0.3;  // +30% max pour altitude modérée
+        }
+        // Très haute altitude = moins de précipitations (air trop sec)
+        else if (altitude_above_sea >= 3000.0) {
+            orographic_factor *= max(0.5, 1.0 - (altitude_above_sea - 3000.0) / 5000.0);
+        }
+    }
+    
+    // === 7. Application du facteur global ===
+    float value = base_precip * lat_influence * orographic_factor;
     value = value * (0.4 + params.avg_precipitation * 0.6);
     value = clamp(value, 0.0, 1.0);
     
-    // === 7. Écriture des résultats ===
+    // === 8. Écriture des résultats ===
     
     // Lire la température existante
     vec4 climate = imageLoad(climate_texture, pixel);
