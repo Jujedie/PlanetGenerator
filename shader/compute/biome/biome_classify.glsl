@@ -18,6 +18,7 @@ layout(set = 0, binding = 3) uniform sampler climate_sampler;
 layout(set = 0, binding = 4, rgba8) uniform readonly image2D ice_caps;
 layout(set = 0, binding = 5, r32f) uniform readonly image2D river_flux_texture;
 layout(set = 0, binding = 6, rgba8) uniform writeonly image2D biome_colored;
+layout(set = 0, binding = 7, r8ui) uniform readonly uimage2D water_mask_texture;  // 0=terre, 1=salée, 2=douce
 
 // === SET 1: PARAMETERS UBO ===
 layout(set = 1, binding = 0) uniform Params {
@@ -115,27 +116,34 @@ float climate_perturb_noise(vec2 p, uint s) {
     float n1 = snoise((p + offset) * freq);
     float n2 = snoise((p + offset * 1.7) * freq * 2.3);
     float n3 = snoise((p + offset * 2.3) * freq * 4.7);  // Extra octave for micro-variations
+    float n4 = snoise((p + offset * 3.1) * freq * 7.3);  // Additional octave for even finer details
     
-    return (n1 + n2 * 0.5 + n3 * 0.25) / 1.75;  // Returns [-1, 1]
+    return (n1 + n2 * 0.5 + n3 * 0.25 + n4 * 0.125) / 1.875;  // Returns [-1, 1]
 }
 
 // Domain warping function - displaces coordinates to break up straight isolines
 // This creates organic, flowing boundaries instead of rectangular ones
+// ENHANCED: Increased strength and added third layer for more natural results
 vec2 apply_domain_warp(vec2 p, uint s) {
     vec2 offset1 = vec2(float(s) * 0.47, float(s) * 0.31);
     vec2 offset2 = vec2(float(s) * 0.83, float(s) * 0.59);
+    vec2 offset3 = vec2(float(s) * 1.17, float(s) * 0.73);  // New offset for third layer
     float warp_freq = 8.0 / float(width);  // Scale for warp displacement
-    float warp_strength = 12.0;  // Pixels of displacement
+    float warp_strength = 48.0;  // INCREASED: Pixels of displacement (was 12.0)
     
-    // First layer of warping
+    // First layer of warping (large-scale displacement)
     float warp_x = snoise((p + offset1) * warp_freq);
     float warp_y = snoise((p + offset2) * warp_freq);
     
-    // Second layer (finer detail)
+    // Second layer (medium detail)
     float warp_x2 = snoise((p + offset1 * 2.1) * warp_freq * 2.0) * 0.5;
     float warp_y2 = snoise((p + offset2 * 2.1) * warp_freq * 2.0) * 0.5;
     
-    return p + vec2(warp_x + warp_x2, warp_y + warp_y2) * warp_strength;
+    // Third layer (fine detail) - NEW
+    float warp_x3 = snoise((p + offset3 * 3.7) * warp_freq * 4.0) * 0.25;
+    float warp_y3 = snoise((p + offset3 * 2.9) * warp_freq * 4.0) * 0.25;
+    
+    return p + vec2(warp_x + warp_x2 + warp_x3, warp_y + warp_y2 + warp_y3) * warp_strength;
 }
 
 // ============================================================================
@@ -525,6 +533,11 @@ void main() {
     vec4 ice = imageLoad(ice_caps, pos);
     float river_flux = imageLoad(river_flux_texture, pos).r;
     
+    // Read water type from water_mask: 0=terre, 1=eau salée, 2=eau douce
+    uint water_type = imageLoad(water_mask_texture, pos).r;
+    bool is_saltwater = (water_type == 1u);
+    bool is_freshwater = (water_type == 2u);
+    
     // Extract values from textures
     float height_val = geo.r;
     float water_height = geo.a;
@@ -533,7 +546,7 @@ void main() {
     
     int elevation = int(round(height_val));
     int temp_int = int(round(temperature));
-    bool is_water = water_height > 0.0;
+    bool is_water = water_height > 0.0 || is_saltwater || is_freshwater;
     bool is_banquise = ice.a > 0.0;
     bool is_river = river_flux > river_threshold;
     
@@ -556,14 +569,35 @@ void main() {
     if (is_banquise) {
         biome_color = getBanquiseColor(atmosphere_type);
     }
-    // Priority 2: Rivers - write river biome colors directly into biome map
-    // This matches legacy behavior where river_map colors are copied to biome_map
-    else if (is_river) {
+    // Priority 2: Rivers on FRESHWATER only (is_river attribute check)
+    // Rivers should only appear on freshwater, not saltwater
+    else if (is_river && is_freshwater) {
         // Estimate max flux for size classification
         float estimated_max_flux = river_threshold * 100.0;
         biome_color = classifyRiverBiome(temp_int, river_flux, estimated_max_flux, atmosphere_type);
     }
-    // Priority 3: Regular biome classification
+    // Priority 3: Saltwater biomes (océans, mers)
+    else if (is_saltwater) {
+        // Use classifyBiome with is_water=true for saltwater classification
+        biome_color = classifyBiome(elevation, precipitation, temp_int, true, 
+                                     atmosphere_type, biome_noise, perturb_noise);
+    }
+    // Priority 4: Freshwater biomes (lacs d'eau douce) - NOT rivers
+    else if (is_freshwater && !is_river) {
+        // Freshwater lakes use specific lake biomes
+        if (atmosphere_type == 0u) {
+            biome_color = COL_LAC_DOUCE;
+        } else if (atmosphere_type == 1u) {
+            biome_color = COL_LAC_ACIDE;
+        } else if (atmosphere_type == 2u) {
+            biome_color = COL_LAC_MAGMA;
+        } else if (atmosphere_type == 4u) {
+            biome_color = COL_LAC_IRRADIE;
+        } else {
+            biome_color = COL_LAC;
+        }
+    }
+    // Priority 5: Regular terrestrial biome classification
     else {
         biome_color = classifyBiome(elevation, precipitation, temp_int, is_water, 
                                      atmosphere_type, biome_noise, perturb_noise);

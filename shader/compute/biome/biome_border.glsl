@@ -86,7 +86,8 @@ float fbm_detail(vec2 p, float freq, uint s) {
     float max_amp = 0.0;
     vec2 offset = vec2(float(s) * 0.71, float(s) * 0.83);
     
-    for (int i = 0; i < 4; i++) {
+    // Increased octaves from 4 to 6 for more detail in border irregularity
+    for (int i = 0; i < 6; i++) {
         value += amplitude * snoise((p + offset) * freq);
         max_amp += amplitude;
         amplitude *= 0.5;

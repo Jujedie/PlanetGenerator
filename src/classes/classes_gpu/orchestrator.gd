@@ -472,10 +472,11 @@ func _init_uniform_sets():
 	if gpu.shaders.has("precipitation") and gpu.shaders["precipitation"].is_valid():
 		print("  • Création uniform set: precipitation")
 		
-		# Set 0 : Textures (climate en lecture/écriture, precipitation_colored en écriture)
+		# Set 0 : Textures (climate en lecture/écriture, precipitation_colored en écriture, geo en lecture pour effet orographique)
 		var uniforms_precipitation = [
 			gpu.create_texture_uniform(0, gpu.textures["climate"]),
 			gpu.create_texture_uniform(1, gpu.textures["precipitation_colored"]),
+			gpu.create_texture_uniform(2, gpu.textures["geo"]),  # Ajouté pour effet orographique
 		]
 		
 		gpu.uniform_sets["precipitation_textures"] = rd.uniform_set_create(uniforms_precipitation, gpu.shaders["precipitation"], 0)
@@ -1426,7 +1427,7 @@ func run_atmosphere_phase(params: Dictionary, w: int, h: int) -> void:
 	_dispatch_temperature(w, h, groups_x, groups_y, seed_val, avg_temperature, sea_level, cylinder_radius, atmosphere_type)
 	
 	# === PASSE 2 : PRÉCIPITATION ===
-	_dispatch_precipitation(w, h, groups_x, groups_y, seed_val, avg_precipitation, cylinder_radius, atmosphere_type)
+	_dispatch_precipitation(w, h, groups_x, groups_y, seed_val, avg_precipitation, cylinder_radius, atmosphere_type, sea_level)
 	
 	# === PASSE 3 : NUAGES ===
 	var cloud_coverage = float(params.get("cloud_coverage", 0.5))
@@ -1498,7 +1499,7 @@ func _dispatch_temperature(w: int, h: int, groups_x: int, groups_y: int, seed_va
 	rd.free_rid(param_buffer)
 
 ## Dispatch le shader de précipitation
-func _dispatch_precipitation(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, avg_precipitation: float, cylinder_radius: float, atmosphere_type: int) -> void:
+func _dispatch_precipitation(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, avg_precipitation: float, cylinder_radius: float, atmosphere_type: int, sea_level: float = 0.0) -> void:
 	if not gpu.shaders.has("precipitation") or not gpu.shaders["precipitation"].is_valid():
 		push_warning("[Orchestrator] ⚠️ precipitation shader non disponible")
 		return
@@ -1512,7 +1513,8 @@ func _dispatch_precipitation(w: int, h: int, groups_x: int, groups_y: int, seed_
 	# uint seed, width, height (12 bytes)
 	# float avg_precipitation, cylinder_radius (8 bytes)
 	# uint atmosphere_type (4 bytes)
-	# padding (8 bytes)
+	# float sea_level (4 bytes)
+	# padding (4 bytes)
 	
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(32)
@@ -1523,7 +1525,7 @@ func _dispatch_precipitation(w: int, h: int, groups_x: int, groups_y: int, seed_
 	buffer_bytes.encode_float(12, avg_precipitation)
 	buffer_bytes.encode_float(16, cylinder_radius)
 	buffer_bytes.encode_u32(20, atmosphere_type)
-	buffer_bytes.encode_u32(24, 0)  # padding
+	buffer_bytes.encode_float(24, sea_level)  # sea_level pour effet orographique
 	buffer_bytes.encode_u32(28, 0)  # padding
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
@@ -1733,11 +1735,11 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	var lake_threshold = float(params.get("lake_threshold", 5.0))  # Profondeur min pour lac altitude
 	
 	# Paramètres de rivières
-	var river_iterations = int(params.get("river_iterations", 500))
-	var river_min_altitude = float(params.get("river_min_altitude", 100.0))
-	var river_min_precipitation = float(params.get("river_min_precipitation", 0.1))
-	var river_cell_size = float(w) / 150.0  # ~150 sources max en largeur (plus dense)
-	var river_base_flux = float(params.get("river_base_flux", 10.0))
+	var river_iterations = int(params.get("river_iterations", 2000))
+	var river_min_altitude = float(params.get("river_min_altitude", 20.0))
+	var river_min_precipitation = float(params.get("river_min_precipitation", 0.08))
+	var river_cell_size = float(w) / 80.0  # ~80 sources max en largeur (plus dense, était 150)
+	var river_base_flux = float(params.get("river_base_flux", 1.0))
 	
 	print("  Seed: ", seed_val, " | Sea Level: ", sea_level)
 	print("  Saltwater Min Size: ", saltwater_min_size, " pixels | Freshwater Max Size: ", freshwater_max_size, " pixels")
@@ -2123,9 +2125,9 @@ func _dispatch_river_propagation(w: int, h: int, groups_x: int, groups_y: int, p
 	buffer_bytes.encode_u32(8, pass_index)
 	buffer_bytes.encode_float(12, sea_level)
 	buffer_bytes.encode_float(16, base_flux)
-	buffer_bytes.encode_float(20, 0.001)  # min_slope
-	buffer_bytes.encode_float(24, 0.999)  # flux_decay
-	buffer_bytes.encode_u32(28, 12345)    # seed
+	buffer_bytes.encode_float(20, 0.0005)  # min_slope (réduit pour permettre écoulement sur terrain plus plat)
+	buffer_bytes.encode_float(24, 0.995)   # flux_decay (ajusté de 0.999 pour décroissance plus réaliste)
+	buffer_bytes.encode_u32(28, 12345)     # seed
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
 	var param_uniform = RDUniform.new()
@@ -2951,8 +2953,14 @@ func _dispatch_biome_classify(w: int, h: int, groups_x: int, groups_y: int,
 	# Binding 6: biome_colored (writeonly image2D)
 	var biome_uniform = gpu.create_texture_uniform(6, gpu.textures["biome_colored"])
 	
+	# Binding 7: water_mask (r8ui image2D) pour distinguer eau salée/douce
+	var water_mask_uniform = RDUniform.new()
+	water_mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	water_mask_uniform.binding = 7
+	water_mask_uniform.add_id(gpu.textures["water_mask"])
+	
 	var tex_uniforms = [geo_tex_uniform, geo_sampler_uniform, climate_tex_uniform, 
-						climate_sampler_uniform, ice_uniform, river_uniform, biome_uniform]
+						climate_sampler_uniform, ice_uniform, river_uniform, biome_uniform, water_mask_uniform]
 	
 	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["biome_classify"], 0)
 	if not tex_set.is_valid():

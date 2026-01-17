@@ -169,13 +169,14 @@ func _compile_generation_params(seed_param: int) -> void:
 		"atmosphere_steps"  : atmosphere_steps,
 		
 		# Water classification & Rivers (Étape 2.5)
-		"saltwater_min_size"       : 150,    # Taille min pour eau salée (pixels)
-		"freshwater_max_size"      : 100,    # Taille max pour eau douce (pixels)
-		"lake_threshold"           : 20.0,   # Profondeur min pour lac d'altitude (réduit lacs)
-		"river_iterations"         : 500,    # Passes de propagation des rivières
-		"river_min_altitude"       : 30.0,   # Altitude min (réduit pour plus de sources)
-		"river_min_precipitation"  : 0.1,    # Précipitation min (réduit pour plus de sources)
-		"river_base_flux"          : 50.0,   # Flux initial (augmenté pour rivières visibles)
+		# Les seuils sont calculés proportionnellement à la résolution (base: 2048x1024)
+		"saltwater_min_size"       : 3000,   # Taille min pour eau salée (pixels) - ~3000 @ 2048x1024
+		"freshwater_max_size"      : 500,    # Taille max pour eau douce (pixels) - ~500 @ 2048x1024
+		"lake_threshold"           : 20.0,   # Profondeur min pour lac d'altitude
+		"river_iterations"         : 2000,   # Passes de propagation des rivières (augmenté 4x pour traverser la carte)
+		"river_min_altitude"       : 20.0,   # Altitude min (réduit pour plus de sources)
+		"river_min_precipitation"  : 0.08,   # Précipitation min (réduit pour plus de sources)
+		"river_base_flux"          : 1.0,    # Flux initial (réduit, accumulé sur plus d'itérations)
 	}
 	
 	print("[PlanetGenerator] Parameters compiled:")
