@@ -32,7 +32,8 @@ layout(set = 0, binding = 0, rgba32f) uniform readonly image2D geo_texture;
 layout(set = 0, binding = 1, rgba8) uniform readonly image2D biome_colored;
 layout(set = 0, binding = 2, r32f) uniform readonly image2D river_flux;
 layout(set = 0, binding = 3, rgba8) uniform readonly image2D ice_caps;
-layout(set = 0, binding = 4, rgba8) uniform writeonly image2D final_map;
+layout(set = 0, binding = 4, rgba8) uniform readonly image2D water_colored;
+layout(set = 0, binding = 5, rgba8) uniform writeonly image2D final_map;
 
 // === SET 1: PARAMETERS UBO ===
 layout(set = 1, binding = 0, std140) uniform FinalMapParams {
@@ -44,6 +45,8 @@ layout(set = 1, binding = 0, std140) uniform FinalMapParams {
     float sea_level;
     float min_elevation;        // Élévation minimale pour normalisation
     float max_elevation;        // Élévation maximale pour normalisation
+    float water_relief_factor;  // Facteur de réduction du relief sur l'eau (défaut: 0.2)
+    float padding1;
 } params;
 
 // ============================================================================
@@ -218,11 +221,11 @@ const vec3 VEG_REGOLITHE = vec3(0.290, 0.282, 0.271);
 const vec3 COL_FOSSE_IMPACT = vec3(0.365, 0.361, 0.349);
 const vec3 VEG_FOSSE_IMPACT = vec3(0.278, 0.271, 0.263);
 
-// Banquise colors
-const vec3 COL_BANQUISE = vec3(0.749, 0.745, 0.733);
-const vec3 VEG_BANQUISE = vec3(0.749, 0.745, 0.733);
-const vec3 COL_BANQUISE_MORTE = vec3(0.851, 0.820, 0.800);
-const vec3 VEG_BANQUISE_MORTE = vec3(0.851, 0.820, 0.800);
+// Banquise colors - 0xd4d3d2ff = RGB(212, 211, 210)
+const vec3 COL_BANQUISE = vec3(0.831, 0.827, 0.824);
+const vec3 VEG_BANQUISE = vec3(0.831, 0.827, 0.824);
+const vec3 COL_BANQUISE_MORTE = vec3(0.831, 0.827, 0.824);
+const vec3 VEG_BANQUISE_MORTE = vec3(0.831, 0.827, 0.824);
 
 // ============================================================================
 // BIOME TO VEGETATION MAPPING FUNCTION
@@ -339,12 +342,10 @@ vec3 biomeToVegetation(vec3 biome) {
 // ============================================================================
 
 vec3 getBanquiseColor(uint atmo) {
-    if (atmo == 0u) return VEG_BANQUISE;
-    if (atmo == 1u) return VEG_BANQUISE_TOXIC;
+    // Couleur banquise: 0xd4d3d2ff = RGB(212, 211, 210) = vec3(0.831, 0.827, 0.824)
+    // Utilisé pour tous les types d'atmosphère sauf volcanic
     if (atmo == 2u) return VEG_LAVE_REFROIDIE;  // Volcanic banquise is cooled lava
-    if (atmo == 3u) return VEG_BANQUISE_MORTE;
-    if (atmo == 4u) return VEG_BANQUISE_MORTE;
-    return VEG_BANQUISE;
+    return VEG_BANQUISE;  // 0xd4d3d2ff pour tous les autres
 }
 
 // ============================================================================
@@ -388,23 +389,34 @@ void main() {
     
     // === READ TEXTURES ===
     vec4 biome = imageLoad(biome_colored, pos);
+    vec4 water = imageLoad(water_colored, pos);
     float flux = imageLoad(river_flux, pos).r;
     vec4 ice = imageLoad(ice_caps, pos);
     
+    bool is_water = water.a > 0.0;  // L'eau a alpha > 0 dans water_colored
     bool is_banquise = ice.a > 0.0;
     bool is_river = flux > params.river_threshold;
     
-    // === STEP 1: Convert biome color to vegetation color ===
+    // === STEP 1: Base color ===
+    // TOUJOURS utiliser biomeToVegetation pour obtenir la couleur végétale du biome
+    // que ce soit terre OU eau - le biome contient déjà la couleur correcte (océan/lac/etc)
     vec3 color = biomeToVegetation(biome.rgb);
     
     // === STEP 2: Apply hillshade (topographic shading) ===
     float shading = calculateTopoShading(pos, w, h);
-    float shade_factor = mix(1.0 - params.relief_strength, 1.0, shading);
+    
+    // Réduire l'intensité du relief sur l'eau
+    float effective_strength = params.relief_strength;
+    if (is_water) {
+        effective_strength *= params.water_relief_factor;  // Relief très atténué sur l'eau
+    }
+    
+    float shade_factor = mix(1.0 - effective_strength, 1.0, shading);
     color *= shade_factor;
     
-    // === STEP 3: Rivers (already in vegetation color from biome) ===
-    // Rivers are already colored by biome_classify, just apply shading
-    // The biomeToVegetation handles river colors too
+    // === STEP 3: Rivers overlay ===
+    // Les rivières sont déjà dans biome_colored avec leur couleur de biome
+    // Pas besoin de traitement spécial, biomeToVegetation gère les couleurs de rivières
     
     // === STEP 4: Banquise overlay (highest priority) ===
     if (is_banquise) {

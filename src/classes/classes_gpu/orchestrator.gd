@@ -1736,8 +1736,8 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 		return
 	
 	# Paramètres de classification des eaux
-	var saltwater_min_size = int(params.get("saltwater_min_size", 150))
-	var freshwater_max_size = int(params.get("freshwater_max_size", 149))
+	var saltwater_min_size = int(params.get("saltwater_min_size", 1000))
+	var freshwater_max_size = int(params.get("freshwater_max_size", 999))
 	var lake_threshold = float(params.get("lake_threshold", 5.0))  # Profondeur min pour lac altitude
 	
 	# Paramètres de rivières
@@ -3464,14 +3464,15 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 	# Valeurs hardcodées pour river_threshold et relief_strength
 	var river_threshold = 5.0
 	var relief_strength = 0.3
+	var water_relief_factor = 0.2  # Relief très atténué sur l'eau (20% de la force normale)
 	
 	# Calculer min/max élévation pour normalisation (approximatif)
 	var min_elevation = -10000.0
 	var max_elevation = 10000.0
 	
-	# Créer le buffer de paramètres
+	# Créer le buffer de paramètres (40 bytes pour inclure water_relief_factor + padding)
 	var buffer_bytes = PackedByteArray()
-	buffer_bytes.resize(32)
+	buffer_bytes.resize(48)  # Alignement std140
 	
 	buffer_bytes.encode_u32(0, w)                      # width
 	buffer_bytes.encode_u32(4, h)                      # height
@@ -3481,6 +3482,10 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 	buffer_bytes.encode_float(20, sea_level)          # sea_level
 	buffer_bytes.encode_float(24, min_elevation)      # min_elevation
 	buffer_bytes.encode_float(28, max_elevation)      # max_elevation
+	buffer_bytes.encode_float(32, water_relief_factor) # water_relief_factor
+	buffer_bytes.encode_float(36, 0.0)                # padding1
+	buffer_bytes.encode_float(40, 0.0)                # padding2
+	buffer_bytes.encode_float(44, 0.0)                # padding3
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
 	if not param_buffer.is_valid():
@@ -3518,10 +3523,17 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 	u_ice.add_id(gpu.textures["ice_caps"])
 	tex_uniforms.append(u_ice)
 	
-	# Binding 4: final_map (RGBA8) output
+	# Binding 4: water_colored (RGBA8) - couleurs des eaux (salée/douce)
+	var u_water = RDUniform.new()
+	u_water.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	u_water.binding = 4
+	u_water.add_id(gpu.textures["water_colored"])
+	tex_uniforms.append(u_water)
+	
+	# Binding 5: final_map (RGBA8) output
 	var u_final = RDUniform.new()
 	u_final.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	u_final.binding = 4
+	u_final.binding = 5
 	u_final.add_id(gpu.textures["final_map"])
 	tex_uniforms.append(u_final)
 	

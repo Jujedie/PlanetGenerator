@@ -139,6 +139,7 @@ func _compile_generation_params(seed_param: int) -> void:
 	
 	generation_params = {
 		"seed"              : seed_param,
+		"nb_thread"         : nb_thread,
 
 		# Planet properties
 		"planet_name"       : nom,

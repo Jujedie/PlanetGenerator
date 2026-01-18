@@ -136,7 +136,7 @@ vec3 getCylindricalCoords(ivec2 pixel, uint w, uint h) {
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
     
-    if (pixel.x >= int(params.width) || pixel.y >= int(params.height)) {
+    if (pixel.x > int(params.width) || pixel.y > int(params.height)) {
         return;
     }
     

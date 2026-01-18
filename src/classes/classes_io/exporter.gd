@@ -6,10 +6,41 @@ class_name PlanetExporter
 ## ============================================================================
 ## Converts GPU compute results to legacy-compatible PNG images
 ## Uses existing color palettes from enum.gd for consistency
+## Now with CPU-side water classification and river generation
 ## ============================================================================
 
 # Map generation parameters (for context-aware coloring)
 var params: Dictionary = {}
+
+# Number of threads for parallel processing
+var _nb_threads: int = 8
+
+# Water colors by atmosphere type
+static var WATER_COLORS = {
+	# Type 0 (Default) - Bleu
+	0: {
+		"saltwater": Color.hex(0x25528aFF),  # Océan
+		"freshwater": Color.hex(0x4584d2FF)  # Lac
+	},
+	# Type 1 (Toxic) - Vert toxique
+	1: {
+		"saltwater": Color.hex(0x329b83FF),
+		"freshwater": Color.hex(0x48d63bFF)
+	},
+	# Type 2 (Volcanic) - Lave
+	2: {
+		"saltwater": Color.hex(0xd69617FF),
+		"freshwater": Color.hex(0xb7490eFF)
+	},
+	# Type 4 (Dead) - Vert mort
+	4: {
+		"saltwater": Color.hex(0x49794aFF),
+		"freshwater": Color.hex(0x619f63FF)
+	}
+}
+
+# Water darkening factor for final map
+static var WATER_DARKENING_FACTOR = 0.85
 
 ## Coordonne l'extraction et la conversion de toutes les cartes générées.
 ##
@@ -21,18 +52,20 @@ var params: Dictionary = {}
 func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictionary) -> Dictionary:
 	"""
 	Export all map types from GPU textures to PNG files
+	Each individual export function handles its own threading internally
 	
 	Args:
-		rids: Dictionary with RIDs for each map type
+		gpu: GPUContext with texture RIDs
 		output_dir: Save directory path
-		generation_params: Generation parameters
+		generation_params: Generation parameters (includes nb_thread)
 	
 	Returns:
 		Dictionary with keys: map_name -> file_path
 	"""
 	params = generation_params
+	_nb_threads = int(params.get("nb_thread", 8))
 	
-	print("[Exporter] Starting map export to: ", output_dir)
+	print("[Exporter] Starting map export to: ", output_dir, " (nb_threads=", _nb_threads, ")")
 	
 	if not DirAccess.dir_exists_absolute(output_dir):
 		DirAccess.make_dir_recursive_absolute(output_dir)
@@ -109,6 +142,11 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	var water_result = _export_water_classification(gpu, output_dir, width, height)
 	for key in water_result.keys():
 		exported_files[key] = water_result[key]
+	
+	# === EXPORT RIVIÈRES (Step 2.6) - Carte des rivières CPU ===
+	var river_result = _export_river_map(gpu, output_dir, width, height)
+	for key in river_result.keys():
+		exported_files[key] = river_result[key]
 	
 	# === EXPORT RÉGIONS (Step 4) - Régions administratives ===
 	var region_result = _export_region_map(gpu, output_dir)
@@ -832,36 +870,24 @@ func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, hei
 	return result
 
 # ============================================================================
-# ÉTAPE 2.5 : EXPORT CLASSIFICATION DES EAUX
+# ÉTAPE 2.5 : EXPORT CLASSIFICATION DES EAUX (CPU FLOOD-FILL)
 # ============================================================================
 
-## Couleurs pour les types d'eau (nouvelle classification eau salée/douce)
-const WATER_TYPE_COLORS = {
-	0: Color(0, 0, 0, 0),           # NONE - Transparent (terre)
-	1: Color(0.02, 0.1, 0.3),       # SALTWATER - Bleu très foncé (#05194d)
-	2: Color(0.4, 0.9, 1.0),        # FRESHWATER - Cyan très clair (#66e6ff)
-}
-
-## Noms des types d'eau pour debug
-const WATER_TYPE_NAMES = [
-	"Terre",
-	"Eau salée",
-	"Eau douce"
-]
-
-## Exporte les cartes de classification des eaux.
+## Exporte les cartes de classification des eaux via CPU flood-fill.
 ##
-## Génère :
-## - eaux_map.png : Carte colorée eau salée/douce (sans rivières)
-## - river_map.png : Carte de flux des rivières (séparée)
+## Algorithme :
+## 1. Lit la texture geo pour identifier les pixels sous le niveau de la mer
+## 2. Colore TOUS les pixels eau en couleur "eau salée" initialement
+## 3. Flood-fill pour identifier les composantes connexes
+## 4. Si une composante a moins de freshwater_max_size pixels -> eau douce
 ##
-## @param gpu: Instance GPUContext avec les textures d'eau
+## @param gpu: Instance GPUContext avec les textures
 ## @param output_dir: Dossier de sortie
 ## @param width: Largeur de l'image
 ## @param height: Hauteur de l'image
 ## @return Dictionary: Chemins des fichiers exportés
 func _export_water_classification(gpu: GPUContext, output_dir: String, width: int, height: int) -> Dictionary:
-	print("[Exporter] 💧 Exporting water classification maps...")
+	print("[Exporter] 💧 Exporting water classification maps (CPU flood-fill)...")
 	
 	var result = {}
 	var rd = gpu.rd
@@ -874,151 +900,305 @@ func _export_water_classification(gpu: GPUContext, output_dir: String, width: in
 	rd.submit()
 	rd.sync()
 	
-	# === EXPORT WATER_COLORED (RGBA8) - Carte eaux_map.png (nouvelle méthode via GPU) ===
-	if gpu.textures.has("water_colored") and gpu.textures["water_colored"].is_valid():
-		var water_data = rd.texture_get_data(gpu.textures["water_colored"], 0)
+	# Récupérer les paramètres
+	var atmosphere_type = int(params.get("atmosphere_type", 0))
+	var freshwater_max_size = int(params.get("freshwater_max_size", 999))
+	
+	# Récupérer les couleurs selon le type d'atmosphère
+	var water_colors = WATER_COLORS.get(atmosphere_type, WATER_COLORS[0])
+	var saltwater_color: Color = water_colors["saltwater"]
+	var freshwater_color: Color = water_colors["freshwater"]
+	
+	print("  Atmosphere type: ", atmosphere_type)
+	print("  Saltwater color: ", saltwater_color)
+	print("  Freshwater color: ", freshwater_color)
+	print("  Freshwater max size: ", freshwater_max_size)
+	
+	# Lire la texture geo pour l'élévation (RGBA32F)
+	if not gpu.textures.has("geo") or not gpu.textures["geo"].is_valid():
+		push_error("[Exporter] ❌ geo texture not available for water classification")
+		return result
+	
+	var geo_data = rd.texture_get_data(gpu.textures["geo"], 0)
+	if geo_data.size() == 0:
+		push_error("[Exporter] ❌ geo texture data is empty")
+		return result
+	
+	# Créer un tableau pour stocker l'état de chaque pixel
+	# -1 = terre, 0+ = ID de composante eau
+	var pixel_component: PackedInt32Array = PackedInt32Array()
+	pixel_component.resize(width * height)
+	pixel_component.fill(-1)  # Tout est terre par défaut
+	
+	# Identifier les pixels eau (élévation < 0)
+	var water_pixels: Array[Vector2i] = []
+	
+	for y in range(height):
+		for x in range(width):
+			var idx = (y * width + x) * 16  # RGBA32F = 16 bytes par pixel
+			var elevation = geo_data.decode_float(idx)  # R = élévation
+			
+			if elevation < 0.0:
+				water_pixels.append(Vector2i(x, y))
+				pixel_component[y * width + x] = 0  # Marqué comme eau, composante non assignée
+	
+	print("  Water pixels found: ", water_pixels.size(), " / ", width * height)
+	
+	if water_pixels.size() == 0:
+		print("  ⚠️ No water pixels found, creating empty water map")
+		var water_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
+		water_img.fill(Color(0, 0, 0, 0))
+		var path_water = output_dir + "/eaux_map.png"
+		water_img.save_png(path_water)
+		result["eaux_map"] = path_water
+		return result
+	
+	# Flood-fill pour identifier les composantes connexes
+	var neighbors = [
+		Vector2i(0, -1),   # Nord
+		Vector2i(-1, 0),   # Ouest
+		Vector2i(1, 0),    # Est
+		Vector2i(0, 1)     # Sud
+	]
+	
+	var component_sizes: Array[int] = []
+	var current_component_id = 0
+	
+	# Pour chaque pixel eau non visité, faire un flood-fill
+	for start_pos in water_pixels:
+		var start_idx = start_pos.y * width + start_pos.x
 		
-		if water_data.size() > 0:
-			var expected_size = width * height * 4  # RGBA8
-			if water_data.size() == expected_size:
-				var water_img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, water_data)
-				var path_colored = output_dir + "/eaux_map.png"
-				var err_colored = water_img.save_png(path_colored)
-				if err_colored == OK:
-					result["eaux_map"] = path_colored
-					print("  ✅ Saved: ", path_colored, " (water_colored GPU direct)")
+		# Si déjà assigné à une composante, passer
+		if pixel_component[start_idx] > 0:
+			continue
+		
+		# Nouvelle composante
+		current_component_id += 1
+		var component_size = 0
+		
+		# Pile pour flood-fill itératif
+		var stack: Array[Vector2i] = [start_pos]
+		
+		while stack.size() > 0:
+			var pos = stack.pop_back()
+			var idx = pos.y * width + pos.x
+			
+			# Si déjà visité ou terre, passer
+			if pixel_component[idx] != 0:
+				continue
+			
+			# Assigner à cette composante
+			pixel_component[idx] = current_component_id
+			component_size += 1
+			
+			# Ajouter les voisins eau
+			for offset in neighbors:
+				var nx = (pos.x + offset.x + width) % width  # Wrap X
+				var ny = clampi(pos.y + offset.y, 0, height - 1)  # Clamp Y
+				var n_idx = ny * width + nx
+				
+				# Si c'est un pixel eau non visité
+				if pixel_component[n_idx] == 0:
+					stack.append(Vector2i(nx, ny))
+		
+		component_sizes.append(component_size)
+	
+	print("  Components found: ", current_component_id)
+	
+	# Statistiques des composantes
+	var saltwater_components = 0
+	var freshwater_components = 0
+	var saltwater_pixels = 0
+	var freshwater_pixels_count = 0
+	
+	for i in range(component_sizes.size()):
+		if component_sizes[i] <= freshwater_max_size:
+			freshwater_components += 1
+			freshwater_pixels_count += component_sizes[i]
+		else:
+			saltwater_components += 1
+			saltwater_pixels += component_sizes[i]
+	
+	print("  Saltwater: ", saltwater_components, " components, ", saltwater_pixels, " pixels")
+	print("  Freshwater: ", freshwater_components, " components, ", freshwater_pixels_count, " pixels")
+	
+	# Créer l'image finale avec les couleurs
+	var water_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
+	water_img.fill(Color(0, 0, 0, 0))  # Transparent par défaut (terre)
+	
+	for y in range(height):
+		for x in range(width):
+			var idx = y * width + x
+			var comp_id = pixel_component[idx]
+			
+			if comp_id > 0:
+				# C'est de l'eau - vérifier si eau douce ou salée
+				var comp_size = component_sizes[comp_id - 1]  # Les IDs commencent à 1
+				
+				if comp_size <= freshwater_max_size:
+					water_img.set_pixel(x, y, freshwater_color)
 				else:
-					push_error("[Exporter] ❌ Failed to save eaux_map: ", err_colored)
-			else:
-				push_error("[Exporter] ❌ water_colored size mismatch: ", water_data.size(), " vs ", expected_size)
-		else:
-			print("  ⚠️ water_colored texture empty, falling back to water_mask")
-			# Fallback vers l'ancienne méthode si water_colored n'est pas disponible
-			_export_water_classification_legacy(gpu, output_dir, width, height, result)
-	else:
-		print("  ⚠️ water_colored texture not available, falling back to water_mask")
-		# Fallback vers l'ancienne méthode
-		_export_water_classification_legacy(gpu, output_dir, width, height, result)
+					water_img.set_pixel(x, y, saltwater_color)
 	
-	# === EXPORT RIVER_FLUX (R32F) - Carte river_map.png ===
-	if gpu.textures.has("river_flux") and gpu.textures["river_flux"].is_valid():
-		var flux_data = rd.texture_get_data(gpu.textures["river_flux"], 0)
-		
-		if flux_data.size() > 0:
-			# Trouver le flux maximum pour normalisation
-			var max_flux = 0.0
-			var non_zero_count = 0
-			
-			for y in range(height):
-				for x in range(width):
-					var idx = (y * width + x) * 4
-					var flux = flux_data.decode_float(idx)
-					if flux > 0.0:
-						non_zero_count += 1
-						max_flux = maxf(max_flux, flux)
-			
-			print("  River flux stats:")
-			print("    - Non-zero pixels: ", non_zero_count, " / ", width * height)
-			print("    - Max flux: ", max_flux)
-			
-			if max_flux < 0.001:
-				print("  ⚠️ No significant river flux detected")
-				max_flux = 1.0  # Éviter division par zéro
-			
-			# Seuil minimum pour dessiner une rivière (basé sur le flux max)
-			var flux_threshold = max_flux * 0.01  # 1% du flux max
-			
-			# Créer l'image du flux
-			var river_map = Image.create(width, height, false, Image.FORMAT_RGBA8)
-			var river_pixel_count = 0
-			
-			for y in range(height):
-				for x in range(width):
-					var idx = (y * width + x) * 4
-					var flux = flux_data.decode_float(idx)
-					
-					if flux > flux_threshold:
-						river_pixel_count += 1
-						# Normaliser avec courbe logarithmique pour meilleur contraste
-						var normalized = log(1.0 + flux) / log(1.0 + max_flux)
-						normalized = clampf(normalized, 0.0, 1.0)
-						
-						# Couleur bleu avec intensité variable
-						# Plus le flux est fort, plus la rivière est large/visible
-						var color = Color(
-							0.1 + 0.1 * normalized,
-							0.3 + 0.4 * normalized,
-							0.6 + 0.4 * normalized,
-							0.6 + 0.4 * normalized
-						)
-						river_map.set_pixel(x, y, color)
-					else:
-						river_map.set_pixel(x, y, Color(0, 0, 0, 0))
-			
-			print("    - River pixels drawn: ", river_pixel_count)
-			
-			var path_river = output_dir + "/river_map.png"
-			var err_river = river_map.save_png(path_river)
-			if err_river == OK:
-				result["river_map"] = path_river
-				print("  ✅ Saved: ", path_river)
-			else:
-				push_error("[Exporter] ❌ Failed to save river_map: ", err_river)
-		else:
-			print("  ⚠️ river_flux texture empty")
+	# Sauvegarder
+	var path_water = output_dir + "/eaux_map.png"
+	var err = water_img.save_png(path_water)
+	if err == OK:
+		result["eaux_map"] = path_water
+		print("  ✅ Saved: ", path_water, " (CPU flood-fill)")
 	else:
-		print("  ⚠️ river_flux texture not available")
+		push_error("[Exporter] ❌ Failed to save eaux_map: ", err)
 	
-	print("[Exporter] ✅ Water export complete: ", result.size(), " maps")
+	print("[Exporter] ✅ Water classification complete")
 	return result
 
-## Méthode legacy pour exporter water_mask si water_colored n'est pas disponible
-func _export_water_classification_legacy(gpu: GPUContext, output_dir: String, width: int, height: int, result: Dictionary) -> void:
+# ============================================================================
+# ÉTAPE 2.6 : EXPORT RIVER MAP (CPU)
+# ============================================================================
+
+## Exporte la carte des rivières en CPU.
+##
+## Algorithme :
+## 1. Lit la texture river_flux pour identifier les pixels de rivière
+## 2. Pour chaque pixel rivière (flux > threshold), assigne le biome rivière correspondant
+## 3. Les biomes rivière sont choisis selon le type d'atmosphère
+##
+## @param gpu: Instance GPUContext avec les textures
+## @param output_dir: Dossier de sortie
+## @param width: Largeur de l'image
+## @param height: Hauteur de l'image
+## @return Dictionary: Chemins des fichiers exportés
+func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: int) -> Dictionary:
+	print("[Exporter] 🌊 Exporting river map (CPU)...")
+	
+	var result = {}
 	var rd = gpu.rd
 	
-	if gpu.textures.has("water_mask") and gpu.textures["water_mask"].is_valid():
-		var mask_data = rd.texture_get_data(gpu.textures["water_mask"], 0)
-		
-		if mask_data.size() > 0:
-			# Créer l'image de sortie
-			var water_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
+	if not rd:
+		push_error("[Exporter] ❌ RenderingDevice not available")
+		return result
+	
+	# Synchroniser le GPU
+	rd.submit()
+	rd.sync()
+	
+	# Récupérer le type d'atmosphère
+	var atmosphere_type = int(params.get("atmosphere_type", 0))
+	
+	# Récupérer les biomes rivières pour ce type d'atmosphère
+	var river_biomes: Array = []
+	for biome in Enum.BIOMES:
+		if biome.isRiver() and atmosphere_type in biome.get_type_planete():
+			river_biomes.append(biome)
+	
+	if river_biomes.size() == 0:
+		print("  ⚠️ No river biomes found for atmosphere type ", atmosphere_type)
+		return result
+	
+	print("  Found ", river_biomes.size(), " river biomes for atmosphere type ", atmosphere_type)
+	for rb in river_biomes:
+		print("    - ", rb.get_nom(), " (", rb.get_couleur(), ")")
+	
+	# Lire la texture river_flux (R32F)
+	if not gpu.textures.has("river_flux") or not gpu.textures["river_flux"].is_valid():
+		print("  ⚠️ river_flux texture not available")
+		return result
+	
+	var flux_data = rd.texture_get_data(gpu.textures["river_flux"], 0)
+	
+	if flux_data.size() == 0:
+		print("  ⚠️ river_flux texture empty")
+		return result
+	
+	# Trouver le flux maximum pour normalisation
+	var max_flux = 0.0
+	var non_zero_count = 0
+	
+	for y in range(height):
+		for x in range(width):
+			var idx = (y * width + x) * 4  # R32F = 4 bytes par pixel
+			var flux = flux_data.decode_float(idx)
+			if flux > 0.0:
+				non_zero_count += 1
+				max_flux = maxf(max_flux, flux)
+	
+	print("  River flux stats:")
+	print("    - Non-zero pixels: ", non_zero_count, " / ", width * height)
+	print("    - Max flux: ", max_flux)
+	
+	if max_flux < 0.001:
+		print("  ⚠️ No significant river flux detected")
+		# Créer une carte vide
+		var river_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
+		river_img.fill(Color(0, 0, 0, 0))
+		var path_river = output_dir + "/river_map.png"
+		river_img.save_png(path_river)
+		result["river_map"] = path_river
+		return result
+	
+	# Définir les seuils pour les différents types de rivières
+	# (basés sur le flux normalisé)
+	var flux_threshold = max_flux * 0.01  # Seuil minimum (1% du max)
+	var fleuve_threshold = max_flux * 0.4  # Seuil pour fleuve (40% du max)
+	var riviere_threshold = max_flux * 0.15  # Seuil pour rivière (15% du max)
+	
+	# Créer l'image de sortie
+	var river_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
+	river_img.fill(Color(0, 0, 0, 0))  # Transparent par défaut
+	
+	var river_pixel_count = 0
+	var biome_counts: Dictionary = {}
+	
+	for y in range(height):
+		for x in range(width):
+			var idx = (y * width + x) * 4
+			var flux = flux_data.decode_float(idx)
 			
-			# Compteurs pour statistiques
-			var type_counts = [0, 0, 0]
-			
-			# Parcourir les données R8UI (1 byte par pixel)
-			for y in range(height):
-				for x in range(width):
-					var idx = y * width + x
-					var water_type = mask_data.decode_u8(idx)
-					
-					# Limiter au nombre de types connus
-					water_type = mini(water_type, 2)
-					type_counts[water_type] += 1
-					
-					# Couleur selon le type
-					var color = WATER_TYPE_COLORS.get(water_type, Color(0, 0, 0, 0))
-					water_img.set_pixel(x, y, color)
-			
-			# Afficher statistiques
-			print("  Water type distribution (legacy):")
-			for i in range(3):
-				if type_counts[i] > 0:
-					var percent = 100.0 * type_counts[i] / (width * height)
-					print("    - ", WATER_TYPE_NAMES[i], ": ", type_counts[i], " (", "%.2f" % percent, "%)")
-			
-			# Sauvegarder la carte colorée
-			var path_colored = output_dir + "/eaux_map.png"
-			var err_colored = water_img.save_png(path_colored)
-			if err_colored == OK:
-				result["eaux_map"] = path_colored
-				print("  ✅ Saved: ", path_colored, " (legacy water_mask)")
-			else:
-				push_error("[Exporter] ❌ Failed to save eaux_map: ", err_colored)
-		else:
-			print("  ⚠️ water_mask texture empty")
+			if flux > flux_threshold:
+				river_pixel_count += 1
+				
+				# Sélectionner le biome en fonction du flux
+				var selected_biome: Biome = null
+				
+				if flux >= fleuve_threshold and river_biomes.size() > 1:
+					# Fleuve (2ème biome rivière = Fleuve)
+					selected_biome = river_biomes[1]
+				elif flux >= riviere_threshold and river_biomes.size() > 0:
+					# Rivière (1er biome = Rivière)
+					selected_biome = river_biomes[0]
+				elif river_biomes.size() > 2:
+					# Affluent (3ème biome = Affluent)
+					selected_biome = river_biomes[2]
+				else:
+					# Défaut au premier biome
+					selected_biome = river_biomes[0]
+				
+				# Utiliser la couleur du biome
+				var color = selected_biome.get_couleur()
+				river_img.set_pixel(x, y, color)
+				
+				# Stats
+				var biome_name = selected_biome.get_nom()
+				if biome_counts.has(biome_name):
+					biome_counts[biome_name] += 1
+				else:
+					biome_counts[biome_name] = 1
+	
+	print("  River pixels drawn: ", river_pixel_count)
+	for biome_name in biome_counts.keys():
+		print("    - ", biome_name, ": ", biome_counts[biome_name])
+	
+	# Sauvegarder
+	var path_river = output_dir + "/river_map.png"
+	var err = river_img.save_png(path_river)
+	if err == OK:
+		result["river_map"] = path_river
+		print("  ✅ Saved: ", path_river, " (CPU)")
 	else:
-		print("  ⚠️ water_mask texture not available")
+		push_error("[Exporter] ❌ Failed to save river_map: ", err)
+	
+	print("[Exporter] ✅ River map export complete")
+	return result
 
 # ============================================================================
 # ÉTAPE 6 : EXPORT FINAL MAP
@@ -1032,11 +1212,14 @@ func _export_water_classification_legacy(gpu: GPUContext, output_dir: String, wi
 ## - Relief topographique (ombrage hillshade)
 ## - Banquise (overlay prioritaire)
 ##
+## Post-traitement CPU :
+## - Assombrit les pixels eau avec WATER_DARKENING_FACTOR
+##
 ## @param gpu: Instance GPUContext avec la texture final_map
 ## @param output_dir: Dossier de sortie
 ## @return Dictionary: Chemin du fichier exporté
 func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
-	print("[Exporter] 🗺️ Exporting final map (GPU compute shader)...")
+	print("[Exporter] 🗺️ Exporting final map (GPU compute shader + CPU darkening)...")
 	
 	var result = {}
 	var rd = gpu.rd
@@ -1082,13 +1265,44 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 		push_error("[Exporter] ❌ Failed to create final_map image")
 		return result
 	
+	# === POST-TRAITEMENT CPU : Assombrir les pixels eau ===
+	# Lire la texture geo pour identifier les pixels eau (élévation < 0)
+	if gpu.textures.has("geo") and gpu.textures["geo"].is_valid():
+		var geo_data = rd.texture_get_data(gpu.textures["geo"], 0)
+		
+		if geo_data.size() > 0:
+			print("  Applying water darkening factor: ", WATER_DARKENING_FACTOR)
+			var water_pixels_darkened = 0
+			
+			for y in range(height):
+				for x in range(width):
+					var geo_idx = (y * width + x) * 16  # RGBA32F = 16 bytes par pixel
+					var elevation = geo_data.decode_float(geo_idx)  # R = élévation
+					
+					# Si c'est de l'eau (élévation négative)
+					if elevation < 0.0:
+						var current_color = img.get_pixel(x, y)
+						# Assombrir RGB tout en gardant l'alpha
+						var darkened_color = Color(
+							current_color.r * WATER_DARKENING_FACTOR,
+							current_color.g * WATER_DARKENING_FACTOR,
+							current_color.b * WATER_DARKENING_FACTOR,
+							current_color.a
+						)
+						img.set_pixel(x, y, darkened_color)
+						water_pixels_darkened += 1
+			
+			print("  Water pixels darkened: ", water_pixels_darkened)
+	else:
+		print("  ⚠️ geo texture not available, skipping water darkening")
+	
 	# Sauvegarder en PNG
 	var filepath = output_dir + "/" + filename
 	var err = img.save_png(filepath)
 	
 	if err == OK:
 		result[tex_id] = filepath
-		print("  ✅ Saved: ", filepath, " (", width, "x", height, ", direct RGBA8)")
+		print("  ✅ Saved: ", filepath, " (", width, "x", height, ", with water darkening)")
 	else:
 		push_error("[Exporter] ❌ Failed to save final_map: ", err)
 	
