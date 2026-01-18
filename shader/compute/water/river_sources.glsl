@@ -177,7 +177,7 @@ void main() {
             float prob_hash = hash21(vec2(pixel) * 0.1 + float(params.seed) * 0.001);
             
             // Plus il pleut, plus de chance d'avoir une source
-            float probability = 0.5 + precipitation * 0.4;  // 50% à 90%
+            float probability = 0.7 + precipitation * 0.3;  // 70% à 100%
             
             if (prob_hash < probability) {
                 // Générer un ID unique (basé sur position)

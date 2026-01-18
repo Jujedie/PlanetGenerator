@@ -5,7 +5,8 @@
 // BIOME CLASSIFICATION SHADER
 // Classifies each pixel into a biome based on climate and terrain data.
 // Logic matching BiomeMapGenerator.gd + enum.gd getBiomeByNoise()
-// Outputs: biome_colored texture with non-realistic colors (get_couleur())
+// Output: biome_colored texture with distinctive colors for map display (get_couleur())
+// Note: Vegetation colors (for realistic rendering) are converted in final_map.glsl
 // ============================================================================
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
@@ -565,24 +566,24 @@ void main() {
     
     vec4 biome_color;
     
-    // Priority 1: Banquise (ice caps)
-    if (is_banquise) {
-        biome_color = getBanquiseColor(atmosphere_type);
-    }
-    // Priority 2: Rivers on FRESHWATER only (is_river attribute check)
+    // NOTE: La banquise n'influence PAS le choix du biome.
+    // Elle sera appliquée en overlay dans final_map.glsl uniquement.
+    // Le biome sous-jacent est toujours calculé normalement.
+    
+    // Priority 1: Rivers on FRESHWATER only (is_river attribute check)
     // Rivers should only appear on freshwater, not saltwater
-    else if (is_river && is_freshwater) {
+    if (is_river && is_freshwater) {
         // Estimate max flux for size classification
         float estimated_max_flux = river_threshold * 100.0;
         biome_color = classifyRiverBiome(temp_int, river_flux, estimated_max_flux, atmosphere_type);
     }
-    // Priority 3: Saltwater biomes (océans, mers)
+    // Priority 2: Saltwater biomes (océans, mers)
     else if (is_saltwater) {
         // Use classifyBiome with is_water=true for saltwater classification
         biome_color = classifyBiome(elevation, precipitation, temp_int, true, 
                                      atmosphere_type, biome_noise, perturb_noise);
     }
-    // Priority 4: Freshwater biomes (lacs d'eau douce) - NOT rivers
+    // Priority 3: Freshwater biomes (lacs d'eau douce) - NOT rivers
     else if (is_freshwater && !is_river) {
         // Freshwater lakes use specific lake biomes
         if (atmosphere_type == 0u) {
@@ -597,7 +598,7 @@ void main() {
             biome_color = COL_LAC;
         }
     }
-    // Priority 5: Regular terrestrial biome classification
+    // Priority 4: Regular terrestrial biome classification
     else {
         biome_color = classifyBiome(elevation, precipitation, temp_int, is_water, 
                                      atmosphere_type, biome_noise, perturb_noise);

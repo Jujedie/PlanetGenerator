@@ -492,6 +492,18 @@ static func deleteImagesTemps():
 		file_name = dir.get_next()
 	dir.list_dir_end()
 
+	dir = DirAccess.open("user://temp/ressource/")
+	if dir == null:
+		DirAccess.make_dir_absolute("user://temp/ressource/")
+		return
+	
+	dir.list_dir_begin()
+	file_name = dir.get_next()
+	while file_name != "":
+		dir.remove(file_name)
+		file_name = dir.get_next()
+	dir.list_dir_end()
+
 ## Gestionnaire de notifications système Godot.
 ##
 ## Intercepte [constant Node.NOTIFICATION_PREDELETE] pour assurer le nettoyage

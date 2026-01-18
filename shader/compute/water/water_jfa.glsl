@@ -106,12 +106,6 @@ void main() {
         int ny = clampY(pixel.y + offset.y, h);
         ivec2 neighbor = ivec2(nx, ny);
         
-        // Vérifier que le voisin est aussi de l'eau (connectivité)
-        uint n_water = imageLoad(water_mask, neighbor).r;
-        if (n_water == 0u) {
-            continue;
-        }
-        
         // Lire le seed du voisin
         ivec2 n_seed = imageLoad(component_input, neighbor).xy;
         if (n_seed.x < 0) {

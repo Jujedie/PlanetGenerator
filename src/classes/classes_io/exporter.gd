@@ -125,6 +125,11 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	for key in biome_result.keys():
 		exported_files[key] = biome_result[key]
 	
+	# === EXPORT FINAL MAP (Step 6) ===
+	var final_result = _export_final_map(gpu, output_dir)
+	for key in final_result.keys():
+		exported_files[key] = final_result[key]
+	
 	# === EXPORT RESSOURCES (Step 5) ===
 	var resources_result = _export_resources_maps(gpu, output_dir, width, height)
 	for key in resources_result.keys():
@@ -869,50 +874,31 @@ func _export_water_classification(gpu: GPUContext, output_dir: String, width: in
 	rd.submit()
 	rd.sync()
 	
-	# === EXPORT WATER_MASK (R8UI) - Carte eaux_map.png ===
-	if gpu.textures.has("water_mask") and gpu.textures["water_mask"].is_valid():
-		var mask_data = rd.texture_get_data(gpu.textures["water_mask"], 0)
+	# === EXPORT WATER_COLORED (RGBA8) - Carte eaux_map.png (nouvelle méthode via GPU) ===
+	if gpu.textures.has("water_colored") and gpu.textures["water_colored"].is_valid():
+		var water_data = rd.texture_get_data(gpu.textures["water_colored"], 0)
 		
-		if mask_data.size() > 0:
-			# Créer l'image de sortie
-			var water_colored = Image.create(width, height, false, Image.FORMAT_RGBA8)
-			
-			# Compteurs pour statistiques
-			var type_counts = [0, 0, 0]
-			
-			# Parcourir les données R8UI (1 byte par pixel)
-			for y in range(height):
-				for x in range(width):
-					var idx = y * width + x
-					var water_type = mask_data.decode_u8(idx)
-					
-					# Limiter au nombre de types connus
-					water_type = mini(water_type, 2)
-					type_counts[water_type] += 1
-					
-					# Couleur selon le type
-					var color = WATER_TYPE_COLORS.get(water_type, Color(0, 0, 0, 0))
-					water_colored.set_pixel(x, y, color)
-			
-			# Afficher statistiques
-			print("  Water type distribution:")
-			for i in range(3):
-				if type_counts[i] > 0:
-					var percent = 100.0 * type_counts[i] / (width * height)
-					print("    - ", WATER_TYPE_NAMES[i], ": ", type_counts[i], " (", "%.2f" % percent, "%)")
-			
-			# Sauvegarder la carte colorée
-			var path_colored = output_dir + "/eaux_map.png"
-			var err_colored = water_colored.save_png(path_colored)
-			if err_colored == OK:
-				result["eaux_map"] = path_colored
-				print("  ✅ Saved: ", path_colored)
+		if water_data.size() > 0:
+			var expected_size = width * height * 4  # RGBA8
+			if water_data.size() == expected_size:
+				var water_img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, water_data)
+				var path_colored = output_dir + "/eaux_map.png"
+				var err_colored = water_img.save_png(path_colored)
+				if err_colored == OK:
+					result["eaux_map"] = path_colored
+					print("  ✅ Saved: ", path_colored, " (water_colored GPU direct)")
+				else:
+					push_error("[Exporter] ❌ Failed to save eaux_map: ", err_colored)
 			else:
-				push_error("[Exporter] ❌ Failed to save eaux_map: ", err_colored)
+				push_error("[Exporter] ❌ water_colored size mismatch: ", water_data.size(), " vs ", expected_size)
 		else:
-			print("  ⚠️ water_mask texture empty")
+			print("  ⚠️ water_colored texture empty, falling back to water_mask")
+			# Fallback vers l'ancienne méthode si water_colored n'est pas disponible
+			_export_water_classification_legacy(gpu, output_dir, width, height, result)
 	else:
-		print("  ⚠️ water_mask texture not available")
+		print("  ⚠️ water_colored texture not available, falling back to water_mask")
+		# Fallback vers l'ancienne méthode
+		_export_water_classification_legacy(gpu, output_dir, width, height, result)
 	
 	# === EXPORT RIVER_FLUX (R32F) - Carte river_map.png ===
 	if gpu.textures.has("river_flux") and gpu.textures["river_flux"].is_valid():
@@ -984,6 +970,129 @@ func _export_water_classification(gpu: GPUContext, output_dir: String, width: in
 		print("  ⚠️ river_flux texture not available")
 	
 	print("[Exporter] ✅ Water export complete: ", result.size(), " maps")
+	return result
+
+## Méthode legacy pour exporter water_mask si water_colored n'est pas disponible
+func _export_water_classification_legacy(gpu: GPUContext, output_dir: String, width: int, height: int, result: Dictionary) -> void:
+	var rd = gpu.rd
+	
+	if gpu.textures.has("water_mask") and gpu.textures["water_mask"].is_valid():
+		var mask_data = rd.texture_get_data(gpu.textures["water_mask"], 0)
+		
+		if mask_data.size() > 0:
+			# Créer l'image de sortie
+			var water_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
+			
+			# Compteurs pour statistiques
+			var type_counts = [0, 0, 0]
+			
+			# Parcourir les données R8UI (1 byte par pixel)
+			for y in range(height):
+				for x in range(width):
+					var idx = y * width + x
+					var water_type = mask_data.decode_u8(idx)
+					
+					# Limiter au nombre de types connus
+					water_type = mini(water_type, 2)
+					type_counts[water_type] += 1
+					
+					# Couleur selon le type
+					var color = WATER_TYPE_COLORS.get(water_type, Color(0, 0, 0, 0))
+					water_img.set_pixel(x, y, color)
+			
+			# Afficher statistiques
+			print("  Water type distribution (legacy):")
+			for i in range(3):
+				if type_counts[i] > 0:
+					var percent = 100.0 * type_counts[i] / (width * height)
+					print("    - ", WATER_TYPE_NAMES[i], ": ", type_counts[i], " (", "%.2f" % percent, "%)")
+			
+			# Sauvegarder la carte colorée
+			var path_colored = output_dir + "/eaux_map.png"
+			var err_colored = water_img.save_png(path_colored)
+			if err_colored == OK:
+				result["eaux_map"] = path_colored
+				print("  ✅ Saved: ", path_colored, " (legacy water_mask)")
+			else:
+				push_error("[Exporter] ❌ Failed to save eaux_map: ", err_colored)
+		else:
+			print("  ⚠️ water_mask texture empty")
+	else:
+		print("  ⚠️ water_mask texture not available")
+
+# ============================================================================
+# ÉTAPE 6 : EXPORT FINAL MAP
+# ============================================================================
+
+## Export de la carte finale combinée (GPU compute shader)
+##
+## La texture final_map contient la combinaison :
+## - Biome (couleur de base végétation)
+## - Rivières (overlay bleu si flux > seuil)
+## - Relief topographique (ombrage hillshade)
+## - Banquise (overlay prioritaire)
+##
+## @param gpu: Instance GPUContext avec la texture final_map
+## @param output_dir: Dossier de sortie
+## @return Dictionary: Chemin du fichier exporté
+func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
+	print("[Exporter] 🗺️ Exporting final map (GPU compute shader)...")
+	
+	var result = {}
+	var rd = gpu.rd
+	
+	if not rd:
+		push_error("[Exporter] ❌ RenderingDevice not available")
+		return result
+	
+	# Synchroniser le GPU avant lecture
+	rd.submit()
+	rd.sync()
+	
+	var tex_id = "final_map"
+	var filename = "final_map.png"
+	
+	if not gpu.textures.has(tex_id) or not gpu.textures[tex_id].is_valid():
+		print("  ⚠️ Texture 'final_map' non disponible, skip")
+		return result
+	
+	# Lecture directe des données RGBA8 depuis le GPU
+	var data = rd.texture_get_data(gpu.textures[tex_id], 0)
+	
+	if data.size() == 0:
+		push_error("[Exporter] ❌ Empty data for final_map texture")
+		return result
+	
+	# Récupérer les dimensions depuis le format de texture
+	var tex_format = rd.texture_get_format(gpu.textures[tex_id])
+	var width = tex_format.width
+	var height = tex_format.height
+	
+	# Vérifier la taille des données (RGBA8 = 4 bytes par pixel)
+	var expected_size = width * height * 4
+	if data.size() != expected_size:
+		push_error("[Exporter] ❌ Data size mismatch for final_map: expected ", 
+			expected_size, ", got ", data.size())
+		return result
+	
+	# Créer l'image directement à partir des données
+	var img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, data)
+	
+	if not img:
+		push_error("[Exporter] ❌ Failed to create final_map image")
+		return result
+	
+	# Sauvegarder en PNG
+	var filepath = output_dir + "/" + filename
+	var err = img.save_png(filepath)
+	
+	if err == OK:
+		result[tex_id] = filepath
+		print("  ✅ Saved: ", filepath, " (", width, "x", height, ", direct RGBA8)")
+	else:
+		push_error("[Exporter] ❌ Failed to save final_map: ", err)
+	
+	print("[Exporter] ✅ Final map export complete")
 	return result
 
 ## Fusionne les régions isolées (taille 1) avec leurs voisins les plus fréquents

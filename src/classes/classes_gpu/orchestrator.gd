@@ -148,6 +148,9 @@ func _compile_all_shaders() -> bool:
 		{"path": "res://shader/compute/biome/biome_classify.glsl", "name": "biome_classify", "critical": false},
 		{"path": "res://shader/compute/biome/biome_smooth.glsl", "name": "biome_smooth", "critical": false},
 		{"path": "res://shader/compute/biome/biome_border.glsl", "name": "biome_border", "critical": false},
+		# Shaders Final Map (Étape 6)
+		{"path": "res://shader/compute/final_map.glsl", "name": "final_map", "critical": false},
+		{"path": "res://shader/compute/water/water_to_color.glsl", "name": "water_to_color", "critical": false},
 	]
 	
 	var all_critical_loaded = true
@@ -654,6 +657,9 @@ func run_simulation() -> void:
 	
 	# === ÉTAPE 5 : RESSOURCES & PÉTROLE ===
 	run_resources_phase(generation_params, w, h)
+	
+	# === ÉTAPE 6 : FINAL MAP (COMBINAISON) ===
+	run_final_map_phase(generation_params, w, h)
 	
 	print("[Orchestrator] 🧹 Nettoyage de ", _rids_to_free.size(), " ressources temporaires...")
 	if rd:
@@ -1755,19 +1761,32 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	# === PASSE 2 : WATER JFA - Composantes connexes ===
 	print("  • Regroupement en composantes connexes (JFA)...")
 	var max_dim = maxi(w, h)
-	var jfa_passes = int(ceil(log(float(max_dim)) / log(2.0)))
 	
-	for pass_idx in range(jfa_passes):
-		var step_size = int(pow(2, jfa_passes - 1 - pass_idx))
+	# Le JFA démarre avec step_size = max_dim/2, puis divise par 2 jusqu'à step_size=1
+	# C'est CRITIQUE: utiliser des puissances de 2 fixes (pow(2,N)) ne couvre pas la dimension réelle!
+	var pass_idx = 0
+	var step_size = max_dim / 2
+	while step_size >= 1:
 		var use_swap = (pass_idx % 2 == 1)
 		_dispatch_water_jfa(w, h, groups_x, groups_y, step_size, pass_idx, use_swap)
+		step_size = step_size / 2
+		pass_idx += 1
 	
-	# Si nombre impair de passes, copier le résultat vers la texture principale
+	var jfa_passes = pass_idx
+	print("    JFA terminé: ", jfa_passes, " passes")
+	
+	# Si nombre impair de passes, le résultat final est dans temp → copier vers component
 	if jfa_passes % 2 == 1:
 		_copy_texture(gpu.textures["water_component_temp"], gpu.textures["water_component"], w, h)
 	
-	# === PASSE 3 : WATER SIZE CLASSIFY - Classification par taille ===
-	print("  • Classification eau salée/douce par taille...")
+	# === PASSE 3 : WATER TO COLOR - Coloration par taille ===
+	# NOUVEAU SYSTÈME : Génère directement water_colored (RGBA8)
+	# - D'abord comptage des pixels par composante
+	# - Puis coloration : grandes zones = eau salée, petites zones = eau douce
+	print("  • Coloration des eaux (eau salée/douce par taille)...")
+	
+	# Initialiser la texture water_colored
+	gpu.initialize_final_map_textures()  # Crée water_colored et final_map
 	
 	# Créer le buffer de comptage (SSBO)
 	var counter_buffer_size = w * h * 4  # 4 bytes par pixel (uint)
@@ -1777,14 +1796,14 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	var counter_buffer = rd.storage_buffer_create(counter_buffer_size, counter_data)
 	
 	# Passe 1 : Comptage
-	_dispatch_water_size_classify(w, h, groups_x, groups_y, 0, saltwater_min_size, freshwater_max_size, sea_level, counter_buffer)
+	_dispatch_water_to_color(w, h, groups_x, groups_y, 0, sea_level, atmosphere_type, freshwater_max_size, counter_buffer)
 	
 	# SYNCHRONISATION GPU - Attendre que tous les comptages atomiques soient terminés
 	rd.submit()
 	rd.sync()
 	
-	# Passe 2 : Classification
-	_dispatch_water_size_classify(w, h, groups_x, groups_y, 1, saltwater_min_size, freshwater_max_size, sea_level, counter_buffer)
+	# Passe 2 : Coloration
+	_dispatch_water_to_color(w, h, groups_x, groups_y, 1, sea_level, atmosphere_type, freshwater_max_size, counter_buffer)
 	
 	# DEBUG : Lire quelques valeurs du buffer de comptage pour vérifier
 	var counter_bytes = rd.buffer_get_data(counter_buffer)
@@ -1801,9 +1820,9 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 			non_zero_components += 1
 			total_water_pixels += count
 			max_component_size = maxi(max_component_size, count)
-			if count >= saltwater_min_size:
+			if count > freshwater_max_size:
 				saltwater_components += 1
-			elif count <= freshwater_max_size:
+			else:
 				freshwater_components += 1
 	
 	print("  DEBUG - Composantes: ", non_zero_components, " | Pixels eau: ", total_water_pixels)
@@ -1818,9 +1837,9 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# === PASSE 5 : RIVER PROPAGATION - Propagation du flux ===
 	print("  • Propagation des rivières (", river_iterations, " passes)...")
-	for pass_idx in range(river_iterations):
-		var use_swap = (pass_idx % 2 == 1)
-		_dispatch_river_propagation(w, h, groups_x, groups_y, pass_idx, sea_level, river_base_flux, use_swap)
+	for pass_idx_ in range(river_iterations):
+		var use_swap = (pass_idx_ % 2 == 1)
+		_dispatch_river_propagation(w, h, groups_x, groups_y, pass_idx_, sea_level, river_base_flux, use_swap)
 	
 	# Si nombre impair de passes, copier le résultat
 	if river_iterations % 2 == 1:
@@ -1999,6 +2018,80 @@ func _dispatch_water_size_classify(w: int, h: int, groups_x: int, groups_y: int,
 	
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["water_size_classify"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+## Dispatch le shader de coloration de l'eau (remplace water_size_classify pour la sortie visuelle)
+func _dispatch_water_to_color(w: int, h: int, groups_x: int, groups_y: int, pass_type: int, sea_level: float, atmosphere_type: int, freshwater_max_size: int, counter_buffer: RID) -> void:
+	if not gpu.shaders.has("water_to_color") or not gpu.shaders["water_to_color"].is_valid():
+		push_error("Shader water_to_color non disponible")
+		return
+	
+	var tex_uniforms: Array[RDUniform] = []
+	
+	# binding 0 : water_component (rg32i) - lecture seule
+	var comp_uniform = RDUniform.new()
+	comp_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	comp_uniform.binding = 0
+	comp_uniform.add_id(gpu.textures["water_component"])
+	tex_uniforms.append(comp_uniform)
+	
+	# binding 1 : water_mask (r8ui) - lecture seule
+	var mask_uniform = RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 1
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	
+	# binding 2 : geo_texture (rgba32f) - lecture seule
+	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["geo"]))
+	
+	# binding 3 : water_colored (rgba8) - écriture
+	var color_uniform = RDUniform.new()
+	color_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	color_uniform.binding = 3
+	color_uniform.add_id(gpu.textures["water_colored"])
+	tex_uniforms.append(color_uniform)
+	
+	# binding 4 : SSBO comptage
+	var ssbo_uniform = RDUniform.new()
+	ssbo_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	ssbo_uniform.binding = 4
+	ssbo_uniform.add_id(counter_buffer)
+	tex_uniforms.append(ssbo_uniform)
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["water_to_color"], 0)
+	
+	# UBO (32 bytes, std140)
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	buffer_bytes.encode_u32(0, w)                      # width
+	buffer_bytes.encode_u32(4, h)                      # height
+	buffer_bytes.encode_u32(8, pass_type)             # pass_type (0=comptage, 1=coloration)
+	buffer_bytes.encode_u32(12, freshwater_max_size)  # freshwater_max_size
+	buffer_bytes.encode_float(16, sea_level)          # sea_level
+	buffer_bytes.encode_u32(20, atmosphere_type)      # atmosphere_type
+	buffer_bytes.encode_float(24, 0.0)                # padding1
+	buffer_bytes.encode_float(28, 0.0)                # padding2
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["water_to_color"], 1)
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["water_to_color"])
 	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
 	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
@@ -3288,6 +3381,176 @@ func _dispatch_resources(w: int, h: int, groups_x: int, groups_y: int, seed_val:
 	
 	rd.free_rid(param_set)
 	rd.free_rid(param_buffer)
+
+# ============================================================================
+# ÉTAPE 6 : FINAL MAP (COMBINAISON)
+# ============================================================================
+
+## Génère la carte finale combinée et la carte colorée des eaux.
+##
+## Cette phase exécute :
+## 1. Water to Color : Coloration des masses d'eau (eau salée/douce)
+## 2. Final Map : Combinaison biome + rivières + relief + banquise
+##
+## @param params: Dictionnaire contenant les paramètres de génération
+## @param w: Largeur de la texture
+## @param h: Hauteur de la texture
+func run_final_map_phase(params: Dictionary, w: int, h: int) -> void:
+	print("[Orchestrator] 🎨 Phase 6 : Génération Final Map")
+	
+	# Initialiser les textures de final map
+	gpu.initialize_final_map_textures()
+	
+	# === ÉTAPE 6.1 : WATER TO COLOR ===
+	_run_water_to_color_phase(params, w, h)
+	
+	# === ÉTAPE 6.2 : FINAL MAP ===
+	_run_final_map_shader(params, w, h)
+	
+	print("[Orchestrator] ✅ Phase 6 terminée")
+
+## Exécute le shader de coloration des eaux
+func _run_water_to_color_phase(params: Dictionary, w: int, h: int) -> void:
+	if not rd or not gpu.pipelines.has("water_to_color") or not gpu.pipelines["water_to_color"].is_valid():
+		push_warning("[Orchestrator] ⚠️ water_to_color pipeline not ready, skipping")
+		return
+	
+	print("  [Orchestrator] 💧 Coloration des eaux...")
+	
+	var groups_x = int(ceil(float(w) / 16.0))
+	var groups_y = int(ceil(float(h) / 16.0))
+	
+	var seed_val = int(params.get("seed", 12345))
+	var sea_level = float(params.get("sea_level", 0.0))
+	var atmosphere_type = int(params.get("planet_type", 0))
+	var freshwater_max_size = int(params.get("freshwater_max_size", 500))
+	
+	# Créer le buffer de comptage pour les composantes d'eau
+	var buffer_size = w * h * 4  # uint par pixel
+	var counter_data = PackedByteArray()
+	counter_data.resize(buffer_size)
+	counter_data.fill(0)
+	
+	var counter_buffer = rd.storage_buffer_create(buffer_size, counter_data)
+	if not counter_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create water counter buffer")
+		return
+	
+	# === PASSE 1 : COMPTAGE ===
+	_dispatch_water_to_color(w, h, groups_x, groups_y, 0, sea_level, atmosphere_type, freshwater_max_size, counter_buffer)
+	
+	# === PASSE 2 : COLORATION ===
+	_dispatch_water_to_color(w, h, groups_x, groups_y, 1, sea_level, atmosphere_type, freshwater_max_size, counter_buffer)
+	
+	# Nettoyer le buffer de comptage
+	rd.free_rid(counter_buffer)
+	
+	print("  [Orchestrator] ✅ Eaux colorées")
+
+## Exécute le shader de génération de la carte finale
+func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
+	if not rd or not gpu.pipelines.has("final_map") or not gpu.pipelines["final_map"].is_valid():
+		push_warning("[Orchestrator] ⚠️ final_map pipeline not ready, skipping")
+		return
+	
+	print("  [Orchestrator] 🗺️ Génération carte finale...")
+	
+	var groups_x = int(ceil(float(w) / 16.0))
+	var groups_y = int(ceil(float(h) / 16.0))
+	
+	var atmosphere_type = int(params.get("planet_type", 0))
+	var sea_level = float(params.get("sea_level", 0.0))
+	
+	# Valeurs hardcodées pour river_threshold et relief_strength
+	var river_threshold = 5.0
+	var relief_strength = 0.3
+	
+	# Calculer min/max élévation pour normalisation (approximatif)
+	var min_elevation = -10000.0
+	var max_elevation = 10000.0
+	
+	# Créer le buffer de paramètres
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, w)                      # width
+	buffer_bytes.encode_u32(4, h)                      # height
+	buffer_bytes.encode_u32(8, atmosphere_type)       # atmosphere_type
+	buffer_bytes.encode_float(12, river_threshold)    # river_threshold
+	buffer_bytes.encode_float(16, relief_strength)    # relief_strength
+	buffer_bytes.encode_float(20, sea_level)          # sea_level
+	buffer_bytes.encode_float(24, min_elevation)      # min_elevation
+	buffer_bytes.encode_float(28, max_elevation)      # max_elevation
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create final_map param buffer")
+		return
+	
+	# Créer les uniformes pour set 0 (textures)
+	var tex_uniforms: Array[RDUniform] = []
+	
+	# Binding 0: geo_texture (RGBA32F)
+	var u_geo = RDUniform.new()
+	u_geo.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	u_geo.binding = 0
+	u_geo.add_id(gpu.textures["geo"])
+	tex_uniforms.append(u_geo)
+	
+	# Binding 1: biome_colored (RGBA8)
+	var u_biome = RDUniform.new()
+	u_biome.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	u_biome.binding = 1
+	u_biome.add_id(gpu.textures["biome_colored"])
+	tex_uniforms.append(u_biome)
+	
+	# Binding 2: river_flux (R32F)
+	var u_river = RDUniform.new()
+	u_river.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	u_river.binding = 2
+	u_river.add_id(gpu.textures["river_flux"])
+	tex_uniforms.append(u_river)
+	
+	# Binding 3: ice_caps (RGBA8)
+	var u_ice = RDUniform.new()
+	u_ice.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	u_ice.binding = 3
+	u_ice.add_id(gpu.textures["ice_caps"])
+	tex_uniforms.append(u_ice)
+	
+	# Binding 4: final_map (RGBA8) output
+	var u_final = RDUniform.new()
+	u_final.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	u_final.binding = 4
+	u_final.add_id(gpu.textures["final_map"])
+	tex_uniforms.append(u_final)
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["final_map"], 0)
+	
+	# Créer les uniformes pour set 1 (paramètres)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["final_map"], 1)
+	
+	# Dispatcher
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["final_map"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	rd.submit()
+	rd.sync()
+	
+	# Nettoyer
+	rd.free_rid(param_set)
+	rd.free_rid(tex_set)
+	rd.free_rid(param_buffer)
+	
+	print("  [Orchestrator] ✅ Carte finale générée")
 
 # ============================================================================
 # EXPORT

@@ -222,6 +222,19 @@ void main() {
     // === 4. Combiner les bruits ===
     float base_precip = main_value * 0.6 + detail_value * 0.25 + cell_value * 0.15;
     
+    // === 4.5. Clustering et variance pour créer des zones éparses et groupées ===
+    // Bruit de clustering à basse fréquence pour créer des zones humides/sèches distinctes
+    float cluster_noise = fbm(coords * 0.8, 3, 0.5, 2.0, params.seed + 80000u);  // Basse fréquence, 3 octaves
+    cluster_noise = (cluster_noise + 1.0) / 2.0;  // Normaliser [0, 1]
+    // Accentuer avec une courbe de puissance pour créer des zones plus contrastées
+    cluster_noise = pow(cluster_noise, 2.5);  // Rend les zones sèches plus sèches
+    
+    // Variance haute fréquence pour briser l'uniformité
+    float variance = fbm(coords * 8.0 + vec3(123.456, 789.012, 456.789), 2, 0.5, 2.0, params.seed + 90000u) * 0.3;  // ±30%
+    
+    // Appliquer le clustering et la variance
+    base_precip = base_precip * (0.5 + cluster_noise * 0.8) * (1.0 + variance);
+    
     // === 5. Influence de la latitude AMÉLIORÉE ===
     // Basée sur les cellules de Hadley, Ferrel et Polaire
     float lat_influence = 1.0;
