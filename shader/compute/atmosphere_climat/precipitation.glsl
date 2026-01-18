@@ -145,6 +145,63 @@ float cellularNoise3D(vec3 p, uint seed_offset) {
     return minDist;
 }
 
+// Simplex noise (3D) - Ashima implementation (used for two simplex noises)
+vec3 mod289(vec3 x) { return x - floor(x * (1.0/289.0)) * 289.0; }
+vec4 mod289(vec4 x) { return x - floor(x * (1.0/289.0)) * 289.0; }
+vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
+vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+float snoise(vec3 v) {
+    const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+    const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+    // First corner
+    vec3 i = floor(v + dot(v, vec3(C.y)));
+    vec3 x0 = v - i + dot(i, vec3(C.x));
+    // Other corners
+    vec3 g = step(x0.yzx, x0.xyz);
+    vec3 l = 1.0 - g;
+    vec3 i1 = min(g.xyz, l.zxy);
+    vec3 i2 = max(g.xyz, l.zxy);
+    vec3 x1 = x0 - i1 + vec3(C.x);
+    vec3 x2 = x0 - i2 + vec3(2.0 * C.x);
+    vec3 x3 = x0 - 1.0 + vec3(3.0 * C.x);
+    // Permutations
+    i = mod289(i);
+    vec4 p = permute(permute(permute(i.z + vec4(0.0, i1.z, i2.z, 1.0))
+        + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+        + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+    // Gradients
+    float n_ = 1.0/7.0;
+    vec3 ns = n_ * D.wyz - D.xzx;
+    vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+    vec4 x_ = floor(j * ns.z);
+    vec4 y_ = floor(j - 7.0 * x_);
+    vec4 x = x_ * ns.x + ns.y;
+    vec4 y = y_ * ns.x + ns.y;
+    vec4 h = 1.0 - abs(x) - abs(y);
+    vec4 b0 = vec4(x.xy, y.xy);
+    vec4 b1 = vec4(x.zw, y.zw);
+    vec4 s0 = floor(b0) * 2.0 + 1.0;
+    vec4 s1 = floor(b1) * 2.0 + 1.0;
+    vec4 sh = -step(h, vec4(0.0));
+    vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+    vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+    vec3 p0 = vec3(a0.x, a0.y, h.x);
+    vec3 p1 = vec3(a0.z, a0.w, h.y);
+    vec3 p2 = vec3(a1.x, a1.y, h.z);
+    vec3 p3 = vec3(a1.z, a1.w, h.w);
+    // Normalise gradients
+    vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+    p0 *= norm.x;
+    p1 *= norm.y;
+    p2 *= norm.z;
+    p3 *= norm.w;
+    // Mix contributions
+    vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+    m = m * m;
+    return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+}
+
 // ============================================================================
 // CONVERSION COORDONNÉES
 // ============================================================================
@@ -204,102 +261,27 @@ void main() {
     // Latitude normalisée [0, 1] : 0 = équateur, 1 = pôles
     float latitude = abs((float(pixel.y) / float(params.height)) - 0.5) * 2.0;
     
-    // === 1. Bruit principal (zones de pression) ===
+    // === 1. Combine three noises (1 Perlin-FBM + 2 simplex) ===
     float noise_freq_main = 2.5 / params.cylinder_radius;
-    float main_value = fbm(coords * noise_freq_main, 6, 0.55, 2.0, params.seed + 50000u);
-    main_value = (main_value + 1.0) / 2.0; // Normaliser [0, 1]
-    
-    // === 2. Bruit de détail (variations locales) ===
-    float noise_freq_detail = 6.0 / params.cylinder_radius;
-    float detail_value = fbm(coords * noise_freq_detail, 4, 0.5, 2.0, params.seed + 60000u);
-    detail_value = (detail_value + 1.0) / 2.0;
-    
-    // === 3. Bruit cellulaire (fronts météo) ===
-    float noise_freq_cells = 4.0 / params.cylinder_radius;
-    float cell_value = cellularNoise3D(coords * noise_freq_cells, params.seed + 70000u);
-    // Normaliser (cellularNoise retourne [0, ~1])
-    
-    // === 4. Combiner les bruits ===
-    float base_precip = main_value * 0.6 + detail_value * 0.25 + cell_value * 0.15;
-    
-    // === 4.5. Clustering et variance pour créer des zones éparses et groupées ===
-    // Bruit de clustering à basse fréquence pour créer des zones humides/sèches distinctes
-    float cluster_noise = fbm(coords * 0.8, 3, 0.5, 2.0, params.seed + 80000u);  // Basse fréquence, 3 octaves
-    cluster_noise = (cluster_noise + 1.0) / 2.0;  // Normaliser [0, 1]
-    // Accentuer avec une courbe de puissance pour créer des zones plus contrastées
-    cluster_noise = pow(cluster_noise, 2.5);  // Rend les zones sèches plus sèches
-    
-    // Variance haute fréquence pour briser l'uniformité
-    float variance = fbm(coords * 8.0 + vec3(123.456, 789.012, 456.789), 2, 0.5, 2.0, params.seed + 90000u) * 0.3;  // ±30%
-    
-    // Appliquer le clustering et la variance
-    base_precip = base_precip * (0.5 + cluster_noise * 0.8) * (1.0 + variance);
-    
-    // === 5. Influence de la latitude AMÉLIORÉE ===
-    // Basée sur les cellules de Hadley, Ferrel et Polaire
-    float lat_influence = 1.0;
-    
-    // Équateur (ITCZ) : Zone de convergence intertropicale - TRÈS humide
-    if (latitude < 0.15) {
-        lat_influence = 1.0 + 0.6 * (1.0 - latitude / 0.15);  // +60% à l'équateur (était +15%)
-    }
-    // Subtropiques (cellule de Hadley descendante) : Déserts - TRÈS sec
-    else if (latitude > 0.2 && latitude < 0.35) {
-        float t = (latitude - 0.2) / 0.15;
-        lat_influence = 1.0 - 0.55 * sin(t * PI);  // -55% aux subtropiques (était -20%)
-    }
-    // Zone tempérée (vents d'ouest) : Relativement humide
-    else if (latitude > 0.35 && latitude < 0.6) {
-        float t = (latitude - 0.35) / 0.25;
-        lat_influence = 0.75 + 0.25 * sin(t * PI);  // Zone tempérée humide
-    }
-    // Zone subpolaire : Plus humide (fronts polaires)
-    else if (latitude > 0.6 && latitude < 0.75) {
-        lat_influence = 0.85;
-    }
-    // Pôles : TRÈS sec (air froid = peu d'humidité)
-    else if (latitude > 0.75) {
-        lat_influence = 0.85 - 0.55 * (latitude - 0.75) / 0.25;  // -55% aux pôles (était -30%)
-    }
-    
-    // === 6. EFFET OROGRAPHIQUE (pluie sur montagnes) ===
-    // Les masses d'air humides s'élèvent contre les montagnes et produisent plus de pluie
-    vec4 geo = imageLoad(geo_texture, pixel);
-    float height = geo.r;
-    float orographic_factor = 1.0;
-    
-    if (height > params.sea_level) {
-        // Calculer la pente en regardant les voisins (simplifiée : vers l'ouest pour vents dominants)
-        int nx_west = (pixel.x - 1 + int(params.width)) % int(params.width);
-        vec4 geo_west = imageLoad(geo_texture, ivec2(nx_west, pixel.y));
-        float height_west = geo_west.r;
-        float slope = height - height_west;
-        
-        // Pente positive (versant au vent) = plus de pluie (effet orographique)
-        if (slope > 10.0) {
-            orographic_factor = 1.0 + clamp(slope / 500.0, 0.0, 0.8);  // +0-80% pluie sur pentes ascendantes
-        }
-        // Pente négative (versant sous le vent) = moins de pluie (rain shadow)
-        else if (slope < -10.0) {
-            orographic_factor = max(0.3, 1.0 + slope / 1000.0);  // -0-70% pluie en zone d'ombre
-        }
-        
-        // Altitude élevée = généralement plus de précipitations (jusqu'à un seuil)
-        float altitude_above_sea = height - params.sea_level;
-        if (altitude_above_sea > 0.0 && altitude_above_sea < 3000.0) {
-            orographic_factor *= 1.0 + (altitude_above_sea / 3000.0) * 0.3;  // +30% max pour altitude modérée
-        }
-        // Très haute altitude = moins de précipitations (air trop sec)
-        else if (altitude_above_sea >= 3000.0) {
-            orographic_factor *= max(0.5, 1.0 - (altitude_above_sea - 3000.0) / 5000.0);
-        }
-    }
-    
-    // === 7. Application du facteur global ===
-    float value = base_precip * lat_influence * orographic_factor;
-    value = value * (0.4 + params.avg_precipitation * 0.6);
+    float main_value = fbm(coords * noise_freq_main, 6, 0.5, 2.0, params.seed + 50000u);
+    main_value = (main_value + 1.0) * 0.5; // Normaliser [0, 1]
+
+    float noise_freq_s1 = 4.0 / params.cylinder_radius;
+    float s1 = snoise(coords * noise_freq_s1 + vec3(float(params.seed + 60000u)));
+    s1 = (s1 + 1.0) * 0.5; // Normaliser [0, 1]
+
+    float noise_freq_s2 = 8.0 / params.cylinder_radius;
+    float s2 = snoise(coords * noise_freq_s2 + vec3(float(params.seed + 70000u)));
+    s2 = (s2 + 1.0) * 0.5; // Normaliser [0, 1]
+
+    // Pondérations : main influence forte, deux simplex moins influents
+    float value = clamp(main_value * 0.7 + s1 * 0.15 + s2 * 0.15, 0.0, 1.0);
+
+    // Application du facteur global d'humidité
+    value *= params.avg_precipitation;
     value = clamp(value, 0.0, 1.0);
-    
+
+    // === 8. Écriture des résultats ===    
     // === 8. Écriture des résultats ===
     
     // Lire la température existante

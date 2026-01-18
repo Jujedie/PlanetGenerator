@@ -82,19 +82,22 @@ void main() {
     }
     
     // Collect neighbor colors and count occurrences
-    // We use a simple approach: store up to 8 unique colors with counts
-    vec4 unique_colors[8];
-    uint color_counts[8];
+    // Use an extended 5x5 neighborhood (radius 2) to approximate two passes
+    // of 3x3 majority voting from the legacy generator.
+    // Store up to 24 unique neighbor colors (5x5 - center)
+    vec4 unique_colors[24];
+    uint color_counts[24];
     uint num_unique = 0u;
     
     // Initialize
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 24; i++) {
         color_counts[i] = 0u;
     }
     
-    // Sample 8 neighbors
-    for (int dy = -1; dy <= 1; dy++) {
-        for (int dx = -1; dx <= 1; dx++) {
+    int neighbors_sampled = 0;
+    // Sample neighbors within radius 2
+    for (int dy = -2; dy <= 2; dy++) {
+        for (int dx = -2; dx <= 2; dx++) {
             if (dx == 0 && dy == 0) continue;
             
             ivec2 n_pos = getNeighbor(pos, dx, dy);
@@ -104,6 +107,7 @@ void main() {
             if (n_flux > river_threshold) continue;
             
             vec4 n_color = imageLoad(biome_source, n_pos);
+            neighbors_sampled++;
             
             // Find or add this color
             bool found = false;
@@ -115,7 +119,7 @@ void main() {
                 }
             }
             
-            if (!found && num_unique < 8u) {
+            if (!found && num_unique < 24u) {
                 unique_colors[num_unique] = n_color;
                 color_counts[num_unique] = 1u;
                 num_unique++;
@@ -134,9 +138,19 @@ void main() {
         }
     }
     
-    // Apply majority voting if threshold is met
+    // Scale the legacy majority threshold (baseline of 5/8 neighbors)
+    // to the number of sampled neighbors so that behavior approximates
+    // two passes of 3x3 voting. If no neighbors sampled, keep current.
+    uint scaled_threshold = 1u;
+    if (neighbors_sampled > 0) {
+        // majority_threshold is expressed for an 8-neighbor 3x3 kernel
+        // Scale proportionally to neighbors_sampled and round
+        scaled_threshold = uint(max(1, int(floor((float(majority_threshold) / 8.0) * float(neighbors_sampled) + 0.5))));
+    }
+    
+    // Apply majority voting if scaled threshold is met
     vec4 final_color = current_color;
-    if (max_count >= majority_threshold) {
+    if (max_count >= scaled_threshold) {
         final_color = best_color;
     }
     
