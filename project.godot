@@ -36,7 +36,6 @@ Enum="*res://src/enum.gd"
 
 window/size/viewport_width=1400
 window/size/viewport_height=700
-window/size/resizable=false
 window/size/maximize_disabled=true
 window/stretch/mode="viewport"
 
