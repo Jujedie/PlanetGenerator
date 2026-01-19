@@ -944,11 +944,13 @@ func _export_water_classification(gpu: GPUContext, output_dir: String, width: in
 	
 	print("  Water pixels found: ", water_pixels.size(), " / ", width * height)
 	
+	var water_img: Image
+	var path_water: String
 	if water_pixels.size() == 0:
 		print("  ⚠️ No water pixels found, creating empty water map")
-		var water_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
+		water_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
 		water_img.fill(Color(0, 0, 0, 0))
-		var path_water = output_dir + "/eaux_map.png"
+		path_water = output_dir + "/eaux_map.png"
 		water_img.save_png(path_water)
 		result["eaux_map"] = path_water
 		return result
@@ -1023,7 +1025,7 @@ func _export_water_classification(gpu: GPUContext, output_dir: String, width: in
 	print("  Freshwater: ", freshwater_components, " components, ", freshwater_pixels_count, " pixels")
 	
 	# Créer l'image finale avec les couleurs
-	var water_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
+	water_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	water_img.fill(Color(0, 0, 0, 0))  # Transparent par défaut (terre)
 	
 	for y in range(height):
@@ -1041,7 +1043,7 @@ func _export_water_classification(gpu: GPUContext, output_dir: String, width: in
 					water_img.set_pixel(x, y, saltwater_color)
 	
 	# Sauvegarder
-	var path_water = output_dir + "/eaux_map.png"
+	path_water = output_dir + "/eaux_map.png"
 	var err = water_img.save_png(path_water)
 	if err == OK:
 		result["eaux_map"] = path_water
@@ -1126,12 +1128,14 @@ func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: 
 	print("    - Non-zero pixels: ", non_zero_count, " / ", width * height)
 	print("    - Max flux: ", max_flux)
 	
+	var river_img : Image
+	var path_river: String
 	if max_flux < 0.001:
 		print("  ⚠️ No significant river flux detected")
 		# Créer une carte vide
-		var river_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
+		river_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
 		river_img.fill(Color(0, 0, 0, 0))
-		var path_river = output_dir + "/river_map.png"
+		path_river = output_dir + "/river_map.png"
 		river_img.save_png(path_river)
 		result["river_map"] = path_river
 		return result
@@ -1143,7 +1147,7 @@ func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: 
 	var riviere_threshold = max_flux * 0.15  # Seuil pour rivière (15% du max)
 	
 	# Créer l'image de sortie
-	var river_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
+	river_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	river_img.fill(Color(0, 0, 0, 0))  # Transparent par défaut
 	
 	var river_pixel_count = 0
@@ -1189,7 +1193,7 @@ func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: 
 		print("    - ", biome_name, ": ", biome_counts[biome_name])
 	
 	# Sauvegarder
-	var path_river = output_dir + "/river_map.png"
+	path_river = output_dir + "/river_map.png"
 	var err = river_img.save_png(path_river)
 	if err == OK:
 		result["river_map"] = path_river
