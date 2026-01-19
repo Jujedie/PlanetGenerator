@@ -1,36 +1,127 @@
-[gd_scene load_steps=2 format=3 uid="uid://j6dp7dc7d3ov"]
+[gd_scene load_steps=13 format=3 uid="uid://j6dp7dc7d3ov"]
 
 [ext_resource type="Script" uid="uid://dk0bs7ewymaua" path="res://src/scenes/master.gd" id="1_aofsj"]
+[ext_resource type="Texture2D" uid="uid://bnneke6c3rmba" path="res://data/img/fond_machine.png" id="2_otvel"]
+[ext_resource type="Texture2D" path="res://data/img/can.png" id="3_jrfl5"]
+[ext_resource type="Texture2D" path="res://data/img/can_pressed.png" id="4_mxbnf"]
+[ext_resource type="Texture2D" path="res://data/img/can_hover.png" id="5_hhkdg"]
+[ext_resource type="Texture2D" path="res://data/img/deu.png" id="6_plelj"]
+[ext_resource type="Texture2D" path="res://data/img/deu_pressed.png" id="7_sir6q"]
+[ext_resource type="Texture2D" path="res://data/img/deu_hover.png" id="8_ek0r4"]
+[ext_resource type="Texture2D" path="res://data/img/fra.png" id="9_u8p5j"]
+[ext_resource type="Texture2D" path="res://data/img/fra_pressed.png" id="10_ay3np"]
+[ext_resource type="Texture2D" path="res://data/img/fra_hover.png" id="11_l6ria"]
+
+[sub_resource type="CompressedTexture2D" id="CompressedTexture2D_h2q0r"]
+load_path = "res://.godot/imported/region_map.png-a225add29218489be6f01d24d13463a9.ctex"
 
 [node name="Master" type="Node2D"]
 script = ExtResource("1_aofsj")
+
+[node name="ImageFrame" type="Sprite2D" parent="."]
+scale = Vector2(1.389, 1.389)
+texture = ExtResource("2_otvel")
+centered = false
 metadata/_edit_lock_ = true
 
-[node name="Control" type="Control" parent="."]
-layout_mode = 3
-anchors_preset = 0
-offset_right = 43.0
-offset_bottom = 40.0
+[node name="ImageMenu" type="Sprite2D" parent="ImageFrame"]
 
-[node name="Frame Map" type="AspectRatioContainer" parent="Control"]
+[node name="Control" type="Control" parent="ImageFrame/ImageMenu"]
+layout_mode = 3
+anchor_left = 2.16
+anchor_top = 91.55601
+anchor_right = 961.84906
+anchor_bottom = 697.23804
+offset_left = 5.759366
+offset_top = 6.356163
+offset_right = -913.9297
+offset_bottom = -559.3258
+
+[node name="Frame Map" type="AspectRatioContainer" parent="ImageFrame/ImageMenu/Control"]
 layout_mode = 1
 anchors_preset = -1
 anchor_left = 0.17400001
 anchor_top = 0.71000004
 anchor_right = 0.17400001
 anchor_bottom = 0.71000004
-offset_left = -7.4820004
+offset_left = -6.9600005
 offset_top = -28.400002
-offset_right = 32.518005
-offset_bottom = 12.599998
+offset_right = 33.04
+offset_bottom = -6.4000015
 ratio = 2.0
 metadata/_edit_lock_ = true
 
-[node name="Map" type="TextureRect" parent="Control/Frame Map"]
+[node name="Map" type="TextureRect" parent="ImageFrame/ImageMenu/Control/Frame Map"]
 layout_mode = 2
+texture = SubResource("CompressedTexture2D_h2q0r")
+expand_mode = 1
 metadata/_edit_lock_ = true
 
-[node name="VBoxContainer" type="VBoxContainer" parent="Control"]
+[node name="Control" type="Control" parent="ImageFrame"]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 43.0
+offset_bottom = 40.0
+metadata/_edit_lock_ = true
+
+[node name="Parameters_container" type="VBoxContainer" parent="ImageFrame/Control"]
 layout_mode = 0
 offset_right = 40.0
 offset_bottom = 40.0
+metadata/_edit_lock_ = true
+
+[node name="Region_categorie" type="Label" parent="ImageFrame/Control/Parameters_container"]
+layout_mode = 2
+metadata/_edit_lock_ = true
+
+[node name="Region_parameters" type="VBoxContainer" parent="ImageFrame/Control/Parameters_container/Region_categorie"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+metadata/_edit_lock_ = true
+
+[node name="Eaux_categorie" type="Label" parent="ImageFrame/Control/Parameters_container"]
+layout_mode = 2
+metadata/_edit_lock_ = true
+
+[node name="Eaux_parameters" type="VBoxContainer" parent="ImageFrame/Control/Parameters_container/Eaux_categorie"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+metadata/_edit_lock_ = true
+
+[node name="CAN" type="TextureButton" parent="ImageFrame/Control"]
+layout_mode = 0
+offset_left = 1207.3434
+offset_top = 13.678905
+offset_right = 1297.3434
+offset_bottom = 63.678905
+texture_normal = ExtResource("3_jrfl5")
+texture_pressed = ExtResource("4_mxbnf")
+texture_hover = ExtResource("5_hhkdg")
+texture_disabled = ExtResource("4_mxbnf")
+texture_focused = ExtResource("3_jrfl5")
+
+[node name="DEU" type="TextureButton" parent="ImageFrame/Control"]
+layout_mode = 0
+offset_left = 1308.1354
+offset_top = 14.398848
+offset_right = 1378.1354
+offset_bottom = 64.39885
+texture_normal = ExtResource("6_plelj")
+texture_pressed = ExtResource("7_sir6q")
+texture_hover = ExtResource("8_ek0r4")
+texture_disabled = ExtResource("7_sir6q")
+texture_focused = ExtResource("6_plelj")
+
+[node name="FRA" type="TextureButton" parent="ImageFrame/Control"]
+layout_mode = 0
+offset_left = 1123.8301
+offset_top = 13.6789055
+offset_right = 1193.8301
+offset_bottom = 63.678905
+texture_normal = ExtResource("9_u8p5j")
+texture_pressed = ExtResource("10_ay3np")
+texture_hover = ExtResource("11_l6ria")
+texture_disabled = ExtResource("10_ay3np")
+texture_focused = ExtResource("9_u8p5j")

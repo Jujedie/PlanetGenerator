@@ -20,7 +20,7 @@ config/description="Application de génération de carte planétaire
 "
 config/version="v1.5.1"
 config/tags=PackedStringArray("generation_procedurale", "logiciel", "pixel")
-run/main_scene="res://data/scn/master.tscn"
+run/main_scene="uid://j6dp7dc7d3ov"
 config/features=PackedStringArray("4.5", "Forward Plus")
 boot_splash/bg_color=Color(0.12955844, 0.12955847, 0.12955844, 1)
 boot_splash/fullsize=false
@@ -34,10 +34,11 @@ Enum="*res://src/enum.gd"
 
 [display]
 
-window/size/viewport_width=1600
-window/size/viewport_height=900
+window/size/viewport_width=1400
+window/size/viewport_height=700
 window/size/resizable=false
 window/size/maximize_disabled=true
+window/stretch/mode="viewport"
 
 [internationalization]
 
