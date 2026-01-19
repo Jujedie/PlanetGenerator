@@ -3,46 +3,17 @@ extends RefCounted
 class_name PlanetGenerator
 
 signal finished
-signal progress_updated(value: float, status: String)
 
 ## ============================================================================
 ## PLANET GENERATOR
 ## ============================================================================
 
-# Constants
-const BASE_EROSION_ITERATIONS = 100
-const BASE_TECTONIC_YEARS     = 100_000_000
-const BASE_ATMOSPHERE_STEPS   = 1000
-
-# Original properties (unchanged)
 var nom             : String
 var circonference   : int
-var renderProgress  : ProgressBar
 var mapStatusLabel  : Label
 var cheminSauvegarde: String
+var nb_thread       : int
 
-var avg_temperature   : float
-var water_elevation   : int
-var avg_precipitation : float
-var elevation_modifier: int
-var nb_thread         : int
-var atmosphere_type   : int
-var nb_avg_cases      : int
-var densite_planete   : float
-var erosion_iterations: int
-var tectonic_nb_years : int
-var atmosphere_steps  : int
-var ocean_ratio       : float  # Pourcentage de couverture océanique (40-90%)
-
-var erosion_rate : float
-var rain_rate    : float
-var evap_rate    : float
-var flow_rate    : float
-var deposition_rate    : float
-var capacity_multiplier: float
-var flux_iterations    : int
-var base_flux          : float
-var propagation_rate   : float
 
 # GPU acceleration components
 var gpu_orchestrator    : GPUOrchestrator = null
@@ -68,12 +39,8 @@ var generation_params: Dictionary = {}
 ## @param mapStatusLabel_param: Référence au label de statut de l'UI.
 ## @param nb_avg_cases_param: Nombre de sites de Voronoi pour les plaques tectoniques/régions.
 ## @param cheminSauvegarde_param: Dossier racine pour la sauvegarde temporaire.
-func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 15.0, water_elevation_param: int = 0, avg_precipitation_param: float = 0.5, erosion_iterations_param: int = BASE_EROSION_ITERATIONS,
- 	tectonic_nb_years_param: int = BASE_TECTONIC_YEARS, atmosphere_steps_param: int = BASE_ATMOSPHERE_STEPS, elevation_modifier_param: int = 0, nb_thread_param: int = 8, atmosphere_type_param: int = 0, renderProgress_param: ProgressBar = null, 
-	mapStatusLabel_param: Label = null, nb_avg_cases_param: int = 50, cheminSauvegarde_param: String = "user://temp/", densite_planete_param: float = 5.51, seed_param: int = 0,
-	ocean_ratio_param: float = 70.0,
-	erosion_rate_param: float = 0.05, rain_rate_param: float = 0.005, evap_rate_param: float = 0.02, flow_rate_param: float = 0.25, deposition_rate_param: float = 0.05, capacity_multiplier_param: float = 1.0,
-	flux_iterations_param: int = 10, base_flux_param: float = 1.0, propagation_rate_param: float = 0.8) -> void:
+func _init(nom_param: String, generation_param : Dictionary, cheminSauvegarde_param: String = "user://temp/", mapStatusLabel_param: Label = null):
+
 	"""
 	PlanetGenerator constructor
 	Initializes all parameters and references
@@ -82,106 +49,14 @@ func _init(nom_param: String, rayon: int = 512, avg_temperature_param: float = 1
 
 	# Store all parameters
 	self.nom                  = nom_param
-	self.circonference        = int(rayon * 2 * PI)
-	self.renderProgress       = renderProgress_param
-
-	if self.renderProgress:
-		self.renderProgress.value = 0.0
+	self.generation_params    = generation_param
 
 	self.mapStatusLabel       = mapStatusLabel_param
 	self.cheminSauvegarde     = cheminSauvegarde_param
-	self.nb_avg_cases         = nb_avg_cases_param
-	self.densite_planete      = densite_planete_param
-	self.avg_temperature      = avg_temperature_param
-	self.water_elevation      = water_elevation_param
-	self.avg_precipitation    = avg_precipitation_param
-	self.elevation_modifier   = elevation_modifier_param
-	self.nb_thread            = nb_thread_param
-	self.atmosphere_type      = atmosphere_type_param
-
-	self.erosion_iterations   = erosion_iterations_param
-	self.tectonic_nb_years    = tectonic_nb_years_param
-	self.atmosphere_steps     = atmosphere_steps_param
-	self.ocean_ratio          = clamp(ocean_ratio_param, 40.0, 90.0)  # Clamp 40-90%
-
-	self.erosion_rate         = erosion_rate_param
-	self.rain_rate            = rain_rate_param
-	self.evap_rate            = evap_rate_param
-	self.flow_rate            = flow_rate_param
-	self.deposition_rate      = deposition_rate_param
-	self.capacity_multiplier  = capacity_multiplier_param
-	self.flux_iterations      = flux_iterations_param
-	self.base_flux            = base_flux_param
-	self.propagation_rate     = propagation_rate_param
-
-	if seed_param == 0:
-		randomize()
-		seed_param = randi()
-
-	# Compile generation parameters
-	_compile_generation_params(seed_param)
 	
 	# Initialize GPU system
 	_init_gpu_system()
 
-## Compile et normalise les paramètres de génération pour le GPU.
-##
-## Cette méthode transforme les entrées utilisateur (UI) en un dictionnaire de constantes physiques
-## strictes utilisables par le [GPUOrchestrator].
-## Elle calcule notamment la densité de l'atmosphère, la gravité de surface et le rayon planétaire.
-##
-## @return Dictionary: Un dictionnaire contenant 'seed', 'planet_radius', 'atmo_density', 'gravity', etc.
-func _compile_generation_params(seed_param: int) -> void:
-	"""
-	Compile all generation parameters into a single dictionary
-	This is passed to the GPU orchestrator and shaders
-	"""
-	
-	generation_params = {
-		"seed"              : seed_param,
-		"nb_thread"         : nb_thread,
-
-		# Planet properties
-		"planet_name"       : nom,
-		"planet_radius"     : circonference / (2.0 * PI),
-		"planet_density"    : densite_planete, # Earth-like density in g/cm³
-		"planet_type"       : atmosphere_type,
-		"resolution"        : Vector2i(circonference, circonference / 2),
-		"base_temp"         : avg_temperature,
-		"sea_level"         : float(water_elevation),
-		"global_humidity"   : avg_precipitation,
-		"terrain_scale"     : float(elevation_modifier),
-		"nb_cases_regions"  : nb_avg_cases,
-		"ocean_ratio"       : ocean_ratio,  # Pourcentage couverture océanique
-
-		# Erosion and tectonics
-		"erosion_iterations" : erosion_iterations,
-		"erosion_rate"       : erosion_rate,
-		"rain_rate"          : rain_rate,
-		"evap_rate"          : evap_rate,
-		"flow_rate"          : flow_rate,
-		"deposition_rate"    : deposition_rate,
-		"capacity_multiplier": capacity_multiplier,
-		"flux_iterations"    : flux_iterations,
-		"base_flux"          : base_flux,
-		"propagation_rate"   : propagation_rate,
- 
-		"tectonic_years"    : tectonic_nb_years,
-		"atmosphere_steps"  : atmosphere_steps,
-		
-		# Water classification & Rivers (Étape 2.5)
-		# Les seuils sont calculés proportionnellement à la résolution (base: 2048x1024)
-		"saltwater_min_size"       : 3000,   # Taille min pour eau salée (pixels) - ~3000 @ 2048x1024
-		"freshwater_max_size"      : 500,    # Taille max pour eau douce (pixels) - ~500 @ 2048x1024
-		"lake_threshold"           : 20.0,   # Profondeur min pour lac d'altitude
-		"river_iterations"         : 2000,   # Passes de propagation des rivières (augmenté 4x pour traverser la carte)
-		"river_min_altitude"       : 20.0,   # Altitude min (réduit pour plus de sources)
-		"river_min_precipitation"  : 0.08,   # Précipitation min (réduit pour plus de sources)
-		"river_base_flux"          : 1.0,    # Flux initial (réduit, accumulé sur plus d'itérations)
-	}
-	
-	print("[PlanetGenerator] Parameters compiled:")
-	print("  Seed: ", generation_params["seed"])
 
 ## Initialise le sous-système de rendu GPU.
 ##
@@ -214,18 +89,6 @@ func update_map_status(map_key: String) -> void:
 		var map_name = tr(map_key)
 		var text = tr("CREATING").format({"map": map_name})
 		mapStatusLabel.call_deferred("set_text", text)
-	
-	emit_signal("progress_updated", renderProgress.value if renderProgress else 0.0, map_key)
-
-## Incrémente la barre de progression.
-##
-## Ajoute une valeur au pourcentage actuel de génération. Thread-safe.
-##
-## @param value: La valeur à ajouter (ex: 10.0 pour 10%).
-func addProgress(value: float) -> void:
-	"""Update progress bar"""
-	if self.renderProgress != null:
-		self.renderProgress.call_deferred("set_value", self.renderProgress.value + value)
 
 # ============================================================================
 # MAIN GENERATION ENTRY POINT
