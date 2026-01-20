@@ -4,4 +4,4 @@
 
 [resource]
 default_font = ExtResource("1_msech")
-default_font_size = 1000
+default_font_size = 10
