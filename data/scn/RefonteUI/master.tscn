@@ -68,7 +68,7 @@ offset_right = 44.141735
 offset_bottom = -3.3578033
 theme = ExtResource("4_y32wk")
 theme_override_colors/font_color = Color(0.21996303, 0.21996303, 0.21996303, 1)
-text = "LIVE FEED"
+text = "L I V E  F E E D"
 metadata/_edit_lock_ = true
 
 [node name="LabelDataCoord" type="Label" parent="ImageFrame/ImageMenu/Control"]
@@ -79,9 +79,9 @@ offset_right = 60.141735
 offset_bottom = 49.84702
 theme = ExtResource("4_y32wk")
 theme_override_colors/font_color = Color(0.9246135, 0.7560525, 0, 1)
-text = "PLACEHOLDER
-PLACEHOLDER
-PLACEHOLDER"
+text = "PL A C E H O L D ER 
+PL A C E H O L D ER
+PL A C E H O L D ER"
 metadata/_edit_lock_ = true
 
 [node name="LabelBrand" type="Label" parent="ImageFrame/ImageMenu/Control"]
@@ -107,6 +107,17 @@ theme_override_colors/font_color = Color(0.21996303, 0.21996303, 0.21996303, 1)
 theme_override_font_sizes/font_size = 25
 text = "VIEW MODE"
 
+[node name="LabelSoftware" type="Label" parent="ImageFrame/ImageMenu/Control"]
+layout_mode = 0
+offset_left = -131.12683
+offset_top = -167.34894
+offset_right = 67.87317
+offset_bottom = -106.93225
+theme = ExtResource("4_y32wk")
+theme_override_colors/font_color = Color(0.9098039, 0.74509805, 0, 1)
+theme_override_font_sizes/font_size = 50
+text = "PLANET GENERATOR"
+
 [node name="ImageMenu" type="Sprite2D" parent="ImageFrame/ImageMenu"]
 texture = ExtResource("5_b7xdj")
 centered = false
@@ -128,12 +139,13 @@ offset_bottom = 568.9008
 [node name="Parameters_container" type="VBoxContainer" parent="ImageFrame/Control/ScrollContainer"]
 layout_mode = 2
 
-[node name="PanelSeed" type="Panel" parent="ImageFrame/Control/ScrollContainer/Parameters_container"]
+[node name="PanelSeed" type="PanelContainer" parent="ImageFrame/Control/ScrollContainer/Parameters_container"]
 layout_mode = 2
 
 [node name="General_Propriete_categorie" type="Label" parent="ImageFrame/Control/ScrollContainer/Parameters_container"]
 layout_mode = 2
 theme = ExtResource("4_y32wk")
+theme_override_font_sizes/font_size = 25
 text = "GENERAL_PROPRIETE_CATEGORIE"
 metadata/_edit_lock_ = true
 
@@ -146,6 +158,7 @@ metadata/_edit_lock_ = true
 [node name="Erosion_Tectonic_categorie" type="Label" parent="ImageFrame/Control/ScrollContainer/Parameters_container"]
 layout_mode = 2
 theme = ExtResource("4_y32wk")
+theme_override_font_sizes/font_size = 25
 text = "EROSION_TECTONIQUE_CATEGORIE"
 metadata/_edit_lock_ = true
 
@@ -158,6 +171,7 @@ metadata/_edit_lock_ = true
 [node name="Crater_categorie" type="Label" parent="ImageFrame/Control/ScrollContainer/Parameters_container"]
 layout_mode = 2
 theme = ExtResource("4_y32wk")
+theme_override_font_sizes/font_size = 25
 text = "CRATER_CATEGORIE"
 metadata/_edit_lock_ = true
 
@@ -170,6 +184,7 @@ metadata/_edit_lock_ = true
 [node name="Eaux_categorie" type="Label" parent="ImageFrame/Control/ScrollContainer/Parameters_container"]
 layout_mode = 2
 theme = ExtResource("4_y32wk")
+theme_override_font_sizes/font_size = 25
 text = "EAU_CATEGORIE"
 metadata/_edit_lock_ = true
 
@@ -182,6 +197,7 @@ metadata/_edit_lock_ = true
 [node name="Nuages_categorie" type="Label" parent="ImageFrame/Control/ScrollContainer/Parameters_container"]
 layout_mode = 2
 theme = ExtResource("4_y32wk")
+theme_override_font_sizes/font_size = 25
 text = "NUAGE_CATEGORIE"
 metadata/_edit_lock_ = true
 
@@ -194,6 +210,7 @@ metadata/_edit_lock_ = true
 [node name="Region_categorie" type="Label" parent="ImageFrame/Control/ScrollContainer/Parameters_container"]
 layout_mode = 2
 theme = ExtResource("4_y32wk")
+theme_override_font_sizes/font_size = 25
 text = "REGION_CATEGORIE"
 metadata/_edit_lock_ = true
 
@@ -206,6 +223,7 @@ metadata/_edit_lock_ = true
 [node name="Region_Ocean_categorie" type="Label" parent="ImageFrame/Control/ScrollContainer/Parameters_container"]
 layout_mode = 2
 theme = ExtResource("4_y32wk")
+theme_override_font_sizes/font_size = 25
 text = "REGION_OCEAN_CATEGORIE"
 metadata/_edit_lock_ = true
 
@@ -218,6 +236,7 @@ metadata/_edit_lock_ = true
 [node name="Ressources_categorie" type="Label" parent="ImageFrame/Control/ScrollContainer/Parameters_container"]
 layout_mode = 2
 theme = ExtResource("4_y32wk")
+theme_override_font_sizes/font_size = 25
 text = "RESSOURCES_CATEGORIE"
 metadata/_edit_lock_ = true
 
@@ -225,45 +244,6 @@ metadata/_edit_lock_ = true
 layout_mode = 0
 offset_right = 40.0
 offset_bottom = 40.0
-metadata/_edit_lock_ = true
-
-[node name="CAN" type="TextureButton" parent="ImageFrame/Control"]
-layout_mode = 0
-offset_left = 1207.3434
-offset_top = 13.678905
-offset_right = 1297.3434
-offset_bottom = 63.678905
-texture_normal = ExtResource("2_oiuwg")
-texture_pressed = ExtResource("3_kok31")
-texture_hover = ExtResource("4_epigh")
-texture_disabled = ExtResource("3_kok31")
-texture_focused = ExtResource("2_oiuwg")
-metadata/_edit_lock_ = true
-
-[node name="DEU" type="TextureButton" parent="ImageFrame/Control"]
-layout_mode = 0
-offset_left = 1308.1354
-offset_top = 14.398848
-offset_right = 1378.1354
-offset_bottom = 64.39885
-texture_normal = ExtResource("5_y32wk")
-texture_pressed = ExtResource("6_b7xdj")
-texture_hover = ExtResource("7_wy1fj")
-texture_disabled = ExtResource("6_b7xdj")
-texture_focused = ExtResource("5_y32wk")
-metadata/_edit_lock_ = true
-
-[node name="FRA" type="TextureButton" parent="ImageFrame/Control"]
-layout_mode = 0
-offset_left = 1123.8301
-offset_top = 13.6789055
-offset_right = 1193.8301
-offset_bottom = 63.678905
-texture_normal = ExtResource("8_cvxn3")
-texture_pressed = ExtResource("9_r4a8s")
-texture_hover = ExtResource("10_01x1m")
-texture_disabled = ExtResource("9_r4a8s")
-texture_focused = ExtResource("8_cvxn3")
 metadata/_edit_lock_ = true
 
 [node name="LabelBrand" type="Label" parent="ImageFrame/Control"]
@@ -275,4 +255,43 @@ offset_bottom = 147.5297
 theme = ExtResource("4_y32wk")
 theme_override_colors/font_color = Color(0.2509804, 0.2627451, 0.26666668, 1)
 theme_override_font_sizes/font_size = 50
-text = "PARAMETERS"
+text = "PARAMETRES"
+
+[node name="HBoxContainer" type="HBoxContainer" parent="ImageFrame/Control"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 1133.9093
+offset_top = 14.398848
+offset_right = -25.502563
+offset_bottom = -633.45825
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="CAN" type="TextureButton" parent="ImageFrame/Control/HBoxContainer"]
+layout_mode = 2
+texture_normal = ExtResource("2_oiuwg")
+texture_pressed = ExtResource("3_kok31")
+texture_hover = ExtResource("4_epigh")
+texture_disabled = ExtResource("3_kok31")
+texture_focused = ExtResource("2_oiuwg")
+metadata/_edit_lock_ = true
+
+[node name="DEU" type="TextureButton" parent="ImageFrame/Control/HBoxContainer"]
+layout_mode = 2
+texture_normal = ExtResource("5_y32wk")
+texture_pressed = ExtResource("6_b7xdj")
+texture_hover = ExtResource("7_wy1fj")
+texture_disabled = ExtResource("6_b7xdj")
+texture_focused = ExtResource("5_y32wk")
+metadata/_edit_lock_ = true
+
+[node name="FRA" type="TextureButton" parent="ImageFrame/Control/HBoxContainer"]
+layout_mode = 2
+texture_normal = ExtResource("8_cvxn3")
+texture_pressed = ExtResource("9_r4a8s")
+texture_hover = ExtResource("10_01x1m")
+texture_disabled = ExtResource("9_r4a8s")
+texture_focused = ExtResource("8_cvxn3")
+metadata/_edit_lock_ = true
