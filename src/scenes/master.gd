@@ -124,20 +124,12 @@ func _compile_generation_params() -> Dictionary:
 		"nb_thread"         : $Node2D/Control/sldThread.value,
 
 		# Planet properties
-		"spreading_rate"    : $Node2D/Control/sldSpreadingRate.value, # 50.0
-		"max_crust_age"     : $Node2D/Control/sldMaxCrustAge.value, # 200.0
-		"subsidence_coeff"  : $Node2D/Control/sldSubsidenceCoefficient.value, # 2800.0
 		"planet_radius"     : circonference / (2.0 * PI),
 		"planet_density"    : $Node2D/Control/sldDensitePlanetaire.value, # Earth-like density in g/cm³ 5.51
 		"planet_type"       : typePlanete, # 0: Earth-like, 1: Thin, 2: Thick
 		"resolution"        : Vector2i(circonference, circonference / 2),
 		"avg_temperature"   : $Node2D/Control/sldTemperatureMoyenne.value, # 15.0
-		"sea_level"         : $Node2D/Control/sldNiveauEau.value, # 0.0
-		"global_humidity"   : $Node2D/Control/sldHumiditeGlobale.value, # 0.5
 		"terrain_scale"     : $Node2D/Control/sldElevation.value, # 0
-		"nb_cases_regions"      : $Node2D/Control/sldNbCasesRegions.value, # 50
-		"nb_cases_ocean_regions": $Node2D/Control/sldNbCasesOceanRegions.value, # 100
-		"ocean_ratio"       : $Node2D/Control/sldOceanRatio.value,  # Pourcentage couverture océanique 70.0
 
 		# Erosion and tectonics
 		"erosion_iterations" : $Node2D/Control/sldErosionIterations.value, # 100
@@ -150,7 +142,11 @@ func _compile_generation_params() -> Dictionary:
 		"flux_iterations"    : $Node2D/Control/sldFluxIterations.value, # 10
 		"base_flux"          : $Node2D/Control/sldBaseFlux.value, #1.0
 		"propagation_rate"   : $Node2D/Control/sldPropagationRate.value, # 0.8
+		"spreading_rate"    : $Node2D/Control/sldSpreadingRate.value, # 50.0
+		"max_crust_age"     : $Node2D/Control/sldMaxCrustAge.value, # 200.0
+		"subsidence_coeff"  : $Node2D/Control/sldSubsidenceCoefficient.value, # 2800.0
 
+		# Craters
 		"crater_density"     : $Node2D/Control/sldCraterDensity.value, # 0.5
 		"crater_max_radius"  : min(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 0.08,
 		"crater_min_radius"  : $Node2D/Control/sldCraterMinRadius.value, # 3.0
@@ -159,8 +155,6 @@ func _compile_generation_params() -> Dictionary:
 		"crater_ejecta_decay": $Node2D/Control/sldCraterEjectaDecay.value, # 3.0
 		"crater_azimuth_var" : $Node2D/Control/sldCraterAzimuthVar.value, # 0.3
 
-		"tectonic_years"    : $Node2D/Control/sldTectonicYears.value, # 100_000_000
-		"atmosphere_steps"  : $Node2D/Control/sldAtmosphereSteps.value, # 1000
 		# Clouds
 		"cloud_coverage"    : $Node2D/Control/sldCloudCoverage.value, # 0.5
 		"cloud_density"     : $Node2D/Control/sldCloudDensity.value,  # 0.8
@@ -169,6 +163,9 @@ func _compile_generation_params() -> Dictionary:
 		"ice_probability" : $Node2D/Control/sldIceProbability.value, # 0.9
 
 		# Water bodies
+		"ocean_ratio"       : $Node2D/Control/sldOceanRatio.value,  # Pourcentage couverture océanique 70.0
+		"global_humidity"   : $Node2D/Control/sldHumiditeGlobale.value, # 0.5
+		"sea_level"         : $Node2D/Control/sldNiveauEau.value, # 0.0
 		"saltwater_min_size" : $Node2D/Control/sldSaltwaterMinSize.value, # 1000
 		"freshwater_max_size": min($Node2D/Control/sldFreshwaterMaxSize.value,$Node2D/Control/sldSaltwaterMinSize.value), # 999
 		"lake_threshold"     : $Node2D/Control/sldLakeThreshold.value, # 5.0
@@ -180,6 +177,7 @@ func _compile_generation_params() -> Dictionary:
 		"river_base_flux"    : $Node2D/Control/sldRiverBaseFlux.value, # 1.0
 
 		# Regions
+		"nb_cases_regions"      : $Node2D/Control/sldNbCasesRegions.value, # 50
 		"region_cost_flat" : $Node2D/Control/sldRegionCostFlat.value, # 1.0
 		"region_cost_hill" : $Node2D/Control/sldRegionCostHill.value, # 2.0
 		"region_cost_river": $Node2D/Control/sldRegionCostRiver.value, # 3.0
@@ -189,6 +187,7 @@ func _compile_generation_params() -> Dictionary:
 		"region_iterations"	     : max(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 2,
 
 		# Regions Ocean 
+		"nb_cases_ocean_regions": $Node2D/Control/sldNbCasesOceanRegions.value, # 100
 		"ocean_cost_flat"   : $Node2D/Control/sldOceanCostFlat.value, # 1.0
 		"ocean_cost_deeper" : $Node2D/Control/sldOceanCostDeeper.value, # 2.0
 		"ocean_noise_strength" : $Node2D/Control/sldOceanNoiseStrength.value, # 0.5

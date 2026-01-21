@@ -155,6 +155,12 @@ offset_right = 40.0
 offset_bottom = 40.0
 metadata/_edit_lock_ = true
 
+[node name="PanelContainer" type="PanelContainer" parent="ImageFrame/Control/ScrollContainer/Parameters_container/General_Propriete_categorie/General_Propriete_parameters"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageFrame/Control/ScrollContainer/Parameters_container/General_Propriete_categorie/General_Propriete_parameters/PanelContainer"]
+layout_mode = 2
+
 [node name="Erosion_Tectonic_categorie" type="Label" parent="ImageFrame/Control/ScrollContainer/Parameters_container"]
 layout_mode = 2
 theme = ExtResource("4_y32wk")
@@ -246,7 +252,7 @@ offset_right = 40.0
 offset_bottom = 40.0
 metadata/_edit_lock_ = true
 
-[node name="LabelBrand" type="Label" parent="ImageFrame/Control"]
+[node name="LabelParameters" type="Label" parent="ImageFrame/Control"]
 layout_mode = 0
 offset_left = 977.68176
 offset_top = 87.11302
