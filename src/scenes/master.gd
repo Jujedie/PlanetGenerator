@@ -129,9 +129,9 @@ func _compile_generation_params() -> Dictionary:
 		"planet_type"       : typePlanete, # 0: Earth-like, 1: Thin, 2: Thick
 		"resolution"        : Vector2i(circonference, circonference / 2),
 		"avg_temperature"   : $Node2D/Control/sldTemperatureMoyenne.value,
-		"terrain_scale"     : $Node2D/Control/sldElevation.value, # 0
-
+		
 		# Erosion and tectonics
+		"terrain_scale"     : $Node2D/Control/sldElevation.value, # 0
 		"erosion_iterations" : $Node2D/Control/sldErosionIterations.value, # 100
 		"erosion_rate"       : $Node2D/Control/sldErosionRate.value, # 0.05
 		"rain_rate"          : $Node2D/Control/sldRainRate.value, # 0.005

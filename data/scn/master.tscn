@@ -1,4 +1,4 @@
-[gd_scene load_steps=29 format=3 uid="uid://j6dp7dc7d3ov"]
+[gd_scene load_steps=31 format=3 uid="uid://j6dp7dc7d3ov"]
 
 [ext_resource type="Texture2D" uid="uid://bk66lt4swbv6k" path="res://data/img/UI/fond_machine.png" id="1_krsn2"]
 [ext_resource type="Texture2D" uid="uid://bxt5lqvtrj7js" path="res://data/img/UI/menu_map_machine.png" id="2_ctyun"]
@@ -21,6 +21,7 @@
 [ext_resource type="FontFile" uid="uid://bkpe48sacfdbi" path="res://data/font/orange kid.ttf" id="14_dfspw"]
 [ext_resource type="Texture2D" uid="uid://3xmyxgyqhqae" path="res://data/img/UI/Flags/deu_hover.png" id="14_i1wak"]
 [ext_resource type="Texture2D" uid="uid://cbi0bj0w3fdda" path="res://data/img/UI/Flags/fra.png" id="15_1512y"]
+[ext_resource type="Texture2D" uid="uid://dbpq1h24f5bf3" path="res://data/img/UI/line_edit_seed.png" id="15_dbnah"]
 [ext_resource type="Texture2D" uid="uid://dq0lw824bn78y" path="res://data/img/UI/Flags/fra_pressed.png" id="16_dg1b0"]
 [ext_resource type="Texture2D" uid="uid://ba6s45bsvkr1w" path="res://data/img/UI/Flags/fra_hover.png" id="17_svf8o"]
 
@@ -35,6 +36,10 @@
 [sub_resource type="Theme" id="Theme_dbnah"]
 default_font = ExtResource("14_dfspw")
 default_font_size = 25
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_hvy7f"]
+content_margin_left = 6.0
+texture = ExtResource("15_dbnah")
 
 [node name="Master" type="Node2D"]
 metadata/_edit_lock_ = true
@@ -157,21 +162,21 @@ offset_right = 1219.6118
 offset_bottom = 660.75714
 metadata/_edit_lock_ = true
 
-[node name="Control" type="Control" parent="ImageFrame/Control General"]
+[node name="Control" type="MarginContainer" parent="ImageFrame/Control General"]
 clip_contents = true
 layout_mode = 1
+anchors_preset = -1
 anchor_right = 0.0050000004
 anchor_bottom = 0.009000001
-offset_left = 979.12164
+offset_left = 969.0425
 offset_top = 153.34773
 offset_right = 1386.1014
 offset_bottom = 562.4738
+theme_override_constants/margin_left = 10
 
 [node name="SC Parameters" type="ScrollContainer" parent="ImageFrame/Control General/Control"]
 clip_contents = false
-layout_mode = 0
-offset_right = 413.96686
-offset_bottom = 415.40677
+layout_mode = 2
 metadata/_edit_lock_ = true
 
 [node name="Parameters_tree" type="VBoxContainer" parent="ImageFrame/Control General/Control/SC Parameters"]
@@ -352,6 +357,18 @@ text = "PLANET_TYPE"
 [node name="LineEdit" type="OptionButton" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Type_Param"]
 layout_mode = 2
 theme = SubResource("Theme_dbnah")
+theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
+theme_override_styles/normal = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/hover = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/disabled = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/focus = SubResource("StyleBoxTexture_hvy7f")
 selected = 0
 item_count = 5
 popup/item_0/text = "TYPE_DEFAUT"
@@ -365,18 +382,340 @@ popup/item_3/id = 3
 popup/item_4/text = "TYPE_MORTE"
 popup/item_4/id = 4
 
-[node name="Erosion_Tectonic_categorie" type="Label" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree"]
+[node name="VBoxContainer" type="VBoxContainer" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree"]
+layout_mode = 2
+
+[node name="Erosion_Tectonic_categorie" type="Label" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer"]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "EROSION_TECTONIQUE_CATEGORIE"
 metadata/_edit_lock_ = true
 
-[node name="Erosion_Tectonic_parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/Erosion_Tectonic_categorie"]
-layout_mode = 0
-offset_right = 40.0
-offset_bottom = 40.0
+[node name="MarginContainer" type="MarginContainer" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+
+[node name="Erosion_Tectonic_parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer"]
+layout_mode = 2
 metadata/_edit_lock_ = true
+
+[node name="Terrain_Scale_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Terrain_Scale_Param"]
+layout_mode = 2
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
+theme_override_font_sizes/font_size = 25
+text = "TERRAIN_SCALE"
+
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Terrain_Scale_Param"]
+layout_mode = 2
+theme_override_icons/grabber = ExtResource("10_gg1ai")
+theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
+theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
+theme_override_styles/slider = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
+max_value = 10000.0
+step = 50.0
+value = 150.0
+allow_greater = true
+tick_count = 10
+ticks_on_borders = true
+ticks_position = 3
+
+[node name="Erosions_Iterations_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Erosions_Iterations_Param"]
+layout_mode = 2
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
+theme_override_font_sizes/font_size = 25
+text = "EROSION_ITERATIONS"
+
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Erosions_Iterations_Param"]
+layout_mode = 2
+theme_override_icons/grabber = ExtResource("10_gg1ai")
+theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
+theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
+theme_override_styles/slider = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
+min_value = 1.0
+max_value = 5000.0
+value = 100.0
+allow_greater = true
+tick_count = 10
+ticks_on_borders = true
+ticks_position = 3
+
+[node name="Erosion_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Erosion_Rate_Param"]
+layout_mode = 2
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
+theme_override_font_sizes/font_size = 25
+text = "EROSION_RATE"
+
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Erosion_Rate_Param"]
+layout_mode = 2
+theme_override_icons/grabber = ExtResource("10_gg1ai")
+theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
+theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
+theme_override_styles/slider = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
+min_value = 0.01
+max_value = 1.0
+step = 0.01
+value = 0.05
+allow_greater = true
+tick_count = 10
+ticks_on_borders = true
+ticks_position = 3
+
+[node name="Rain_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Rain_Rate_Param"]
+layout_mode = 2
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
+theme_override_font_sizes/font_size = 25
+text = "RAIN_RATE"
+
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Rain_Rate_Param"]
+layout_mode = 2
+theme_override_icons/grabber = ExtResource("10_gg1ai")
+theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
+theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
+theme_override_styles/slider = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
+min_value = 0.001
+max_value = 1.0
+step = 0.001
+value = 0.005
+allow_greater = true
+tick_count = 10
+ticks_on_borders = true
+ticks_position = 3
+
+[node name="Evap_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Evap_Rate_Param"]
+layout_mode = 2
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
+theme_override_font_sizes/font_size = 25
+text = "EVAP_RATE"
+
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Evap_Rate_Param"]
+layout_mode = 2
+theme_override_icons/grabber = ExtResource("10_gg1ai")
+theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
+theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
+theme_override_styles/slider = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
+min_value = 0.01
+max_value = 1.0
+step = 0.01
+value = 0.02
+allow_greater = true
+tick_count = 10
+ticks_on_borders = true
+ticks_position = 3
+
+[node name="Flow_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Flow_Rate_Param"]
+layout_mode = 2
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
+theme_override_font_sizes/font_size = 25
+text = "FLOW_RATE"
+
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Flow_Rate_Param"]
+layout_mode = 2
+theme_override_icons/grabber = ExtResource("10_gg1ai")
+theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
+theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
+theme_override_styles/slider = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
+min_value = 0.01
+max_value = 1.0
+step = 0.01
+value = 0.25
+allow_greater = true
+tick_count = 10
+ticks_on_borders = true
+ticks_position = 3
+
+[node name="Deposition_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Deposition_Rate_Param"]
+layout_mode = 2
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
+theme_override_font_sizes/font_size = 25
+text = "DEPOSITION_RATE"
+
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Deposition_Rate_Param"]
+layout_mode = 2
+theme_override_icons/grabber = ExtResource("10_gg1ai")
+theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
+theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
+theme_override_styles/slider = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
+min_value = 0.01
+max_value = 1.0
+step = 0.01
+value = 0.05
+allow_greater = true
+tick_count = 10
+ticks_on_borders = true
+ticks_position = 3
+
+[node name="Capacity_Multiplier_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Capacity_Multiplier_Param"]
+layout_mode = 2
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
+theme_override_font_sizes/font_size = 25
+text = "CAPACITY_MULTIPLIER"
+
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Capacity_Multiplier_Param"]
+layout_mode = 2
+theme_override_icons/grabber = ExtResource("10_gg1ai")
+theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
+theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
+theme_override_styles/slider = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
+min_value = 0.5
+max_value = 10.0
+step = 0.5
+value = 1.0
+allow_greater = true
+tick_count = 10
+ticks_on_borders = true
+ticks_position = 3
+
+[node name="Flux_Iterations_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Flux_Iterations_Param"]
+layout_mode = 2
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
+theme_override_font_sizes/font_size = 25
+text = "FLUX_ITERATIONS"
+
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Flux_Iterations_Param"]
+layout_mode = 2
+theme_override_icons/grabber = ExtResource("10_gg1ai")
+theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
+theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
+theme_override_styles/slider = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
+min_value = 10.0
+step = 10.0
+value = 10.0
+allow_greater = true
+tick_count = 10
+ticks_on_borders = true
+ticks_position = 3
+
+[node name="Base_Flux_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Base_Flux_Param"]
+layout_mode = 2
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
+theme_override_font_sizes/font_size = 25
+text = "BASE_FLUX"
+
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/Base_Flux_Param"]
+layout_mode = 2
+theme_override_icons/grabber = ExtResource("10_gg1ai")
+theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
+theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
+theme_override_styles/slider = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
+min_value = 1.0
+max_value = 5000.0
+value = 100.0
+allow_greater = true
+tick_count = 10
+ticks_on_borders = true
+ticks_position = 3
+
+[node name="_Param2" type="VBoxContainer" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/_Param2"]
+layout_mode = 2
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
+theme_override_font_sizes/font_size = 25
+
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/_Param2"]
+layout_mode = 2
+theme_override_icons/grabber = ExtResource("10_gg1ai")
+theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
+theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
+theme_override_styles/slider = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
+min_value = 1.0
+max_value = 5000.0
+value = 100.0
+allow_greater = true
+tick_count = 10
+ticks_on_borders = true
+ticks_position = 3
+
+[node name="_Param3" type="VBoxContainer" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/_Param3"]
+layout_mode = 2
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
+theme_override_font_sizes/font_size = 25
+
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree/VBoxContainer/MarginContainer/Erosion_Tectonic_parameters/_Param3"]
+layout_mode = 2
+theme_override_icons/grabber = ExtResource("10_gg1ai")
+theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
+theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
+theme_override_styles/slider = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
+min_value = 1.0
+max_value = 5000.0
+value = 100.0
+allow_greater = true
+tick_count = 10
+ticks_on_borders = true
+ticks_position = 3
 
 [node name="Crater_categorie" type="Label" parent="ImageFrame/Control General/Control/SC Parameters/Parameters_tree"]
 layout_mode = 2
