@@ -125,10 +125,10 @@ func _compile_generation_params() -> Dictionary:
 
 		# Planet properties
 		"planet_radius"     : circonference / (2.0 * PI),
-		"planet_density"    : $Node2D/Control/sldDensitePlanetaire.value, # Earth-like density in g/cm³ 5.51
+		"planet_density"    : $Node2D/Control/sldDensitePlanetaire.value,
 		"planet_type"       : typePlanete, # 0: Earth-like, 1: Thin, 2: Thick
 		"resolution"        : Vector2i(circonference, circonference / 2),
-		"avg_temperature"   : $Node2D/Control/sldTemperatureMoyenne.value, # 15.0
+		"avg_temperature"   : $Node2D/Control/sldTemperatureMoyenne.value,
 		"terrain_scale"     : $Node2D/Control/sldElevation.value, # 0
 
 		# Erosion and tectonics
