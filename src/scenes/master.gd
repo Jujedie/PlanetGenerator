@@ -149,7 +149,7 @@ func _compile_generation_params() -> Dictionary:
 		# Craters
 		"crater_density"     : $Node2D/Control/sldCraterDensity.value, # 0.5
 		"crater_max_radius"  : min(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 0.08,
-		"crater_min_radius"  : $Node2D/Control/sldCraterMinRadius.value, # 3.0
+		"crater_min_radius"  : min($Node2D/Control/sldCraterMinRadius.value, min(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 0.08),
 		"crater_depth_ratio" : $Node2D/Control/sldCraterDepthRatio.value, # 0.25
 		"crater_ejecta_extent": $Node2D/Control/sldCraterEjectaExtent.value, # 2.5
 		"crater_ejecta_decay": $Node2D/Control/sldCraterEjectaDecay.value, # 3.0
@@ -166,8 +166,8 @@ func _compile_generation_params() -> Dictionary:
 		"ocean_ratio"       : $Node2D/Control/sldOceanRatio.value,  # Pourcentage couverture océanique 70.0
 		"global_humidity"   : $Node2D/Control/sldHumiditeGlobale.value, # 0.5
 		"sea_level"         : $Node2D/Control/sldNiveauEau.value, # 0.0
-		"saltwater_min_size" : $Node2D/Control/sldSaltwaterMinSize.value, # 1000
-		"freshwater_max_size": min($Node2D/Control/sldFreshwaterMaxSize.value,$Node2D/Control/sldSaltwaterMinSize.value), # 999
+		"saltwater_min_size" : $Node2D/Control/sldFreshwaterMaxSize.value+1, # 1000
+		"freshwater_max_size": $Node2D/Control/sldFreshwaterMaxSize.value, # 999
 		"lake_threshold"     : $Node2D/Control/sldLakeThreshold.value, # 5.0
 
 		"river_iterations"   : $Node2D/Control/sldRiverIterations.value, # 2000
