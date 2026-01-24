@@ -1,14 +1,18 @@
-[gd_scene load_steps=45 format=3 uid="uid://j6dp7dc7d3ov"]
+[gd_scene load_steps=64 format=3 uid="uid://j6dp7dc7d3ov"]
 
 [ext_resource type="Texture2D" uid="uid://bk66lt4swbv6k" path="res://data/img/UI/fond_machine.png" id="1_krsn2"]
 [ext_resource type="Texture2D" uid="uid://bxt5lqvtrj7js" path="res://data/img/UI/menu_map_machine.png" id="2_ctyun"]
 [ext_resource type="Texture2D" uid="uid://bxloh61jfgunl" path="res://data/img/region_map.png" id="3_gg1ai"]
 [ext_resource type="StyleBox" uid="uid://drou36ra2vb7i" path="res://data/styles/lineEdit.tres" id="4_i0hn2"]
+[ext_resource type="Texture2D" uid="uid://5rhhd771dqru" path="res://data/img/UI/button/left_btn.png" id="5_4smu3"]
 [ext_resource type="Theme" uid="uid://bdbapd43uy2gd" path="res://data/font/font.tres" id="5_e2i44"]
-[ext_resource type="Texture2D" uid="uid://d3n4jnsyawop0" path="res://data/img/Legende_Elevation_Coloré.png" id="5_i1wak"]
 [ext_resource type="Texture2D" uid="uid://b5i5opr4x8t52" path="res://data/img/UI/menu_map_machine_bar_jaune.png" id="5_lb8ov"]
+[ext_resource type="Texture2D" uid="uid://dx2wpv57n767g" path="res://data/img/UI/button/left_btn_hover.png" id="6_7eaih"]
 [ext_resource type="Texture2D" uid="uid://05cgsscpwcv2" path="res://data/img/UI/box.png" id="6_gihwl"]
+[ext_resource type="Texture2D" uid="uid://dy228j2rt426r" path="res://data/img/UI/label.png" id="7_7eaih"]
+[ext_resource type="Texture2D" uid="uid://dd0e84odwseev" path="res://data/img/UI/button/right_btn.png" id="7_o3yh3"]
 [ext_resource type="Texture2D" uid="uid://e4muyhsa1c45" path="res://data/img/UI/button/random_seed_btn.png" id="8_dfspw"]
+[ext_resource type="Texture2D" uid="uid://ftnswkgkcy2e" path="res://data/img/UI/button/right_btn_hover.png" id="8_k8o41"]
 [ext_resource type="Texture2D" uid="uid://csa4fftdxwsnr" path="res://data/img/UI/button/random_seed_btn_pressed.png" id="9_ctyun"]
 [ext_resource type="Texture2D" uid="uid://8x5ar6wn6thw" path="res://data/img/UI/Flags/can.png" id="9_dbnah"]
 [ext_resource type="Texture2D" uid="uid://bcwqacic6q2c5" path="res://data/img/UI/Range/Grabber.png" id="10_gg1ai"]
@@ -28,7 +32,17 @@
 [ext_resource type="Texture2D" uid="uid://dbpq1h24f5bf3" path="res://data/img/UI/line_edit_seed.png" id="15_dbnah"]
 [ext_resource type="Texture2D" uid="uid://dq0lw824bn78y" path="res://data/img/UI/Flags/fra_pressed.png" id="16_dg1b0"]
 [ext_resource type="Texture2D" uid="uid://ba6s45bsvkr1w" path="res://data/img/UI/Flags/fra_hover.png" id="17_svf8o"]
-[ext_resource type="Texture2D" uid="uid://ry4rfalmg4ju" path="res://data/img/Legende_Elevation.png" id="29_1512y"]
+[ext_resource type="Texture2D" uid="uid://dnarp836rq2h4" path="res://data/img/UI/button/red_btn.png" id="29_iijg3"]
+[ext_resource type="Texture2D" uid="uid://dh5q4rd2pdhwi" path="res://data/img/UI/button/red_btn_pressed.png" id="30_a0y5r"]
+[ext_resource type="Texture2D" uid="uid://cruhbbnm2sqta" path="res://data/img/UI/button/random_btn.png" id="30_svf8o"]
+[ext_resource type="Texture2D" uid="uid://dg0d3pwitlh5w" path="res://data/img/UI/button/random_btn_pressed.png" id="31_gnqa1"]
+[ext_resource type="Texture2D" uid="uid://nb4amu2omgpi" path="res://data/img/UI/button/red_btn_hover.png" id="31_syvc8"]
+[ext_resource type="Texture2D" uid="uid://d00rk2qqtvjo7" path="res://data/img/UI/button/random_btn_hover.png" id="32_23ir5"]
+[ext_resource type="Texture2D" uid="uid://c1shapl500fux" path="res://data/img/UI/button/red_black_btn.png" id="32_syvc8"]
+[ext_resource type="Texture2D" uid="uid://bfejthja5rbtf" path="res://data/img/UI/button/red_black_btn_pressed.png" id="33_wim0k"]
+[ext_resource type="Texture2D" uid="uid://bqa62hnonwr33" path="res://data/img/UI/button/red_black_btn_hover.png" id="34_xtfv3"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_7eaih"]
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_dbnah"]
 
@@ -64,6 +78,24 @@ default_font_size = 25
 content_margin_left = 6.0
 texture = ExtResource("15_dbnah")
 
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_wim0k"]
+texture = ExtResource("29_iijg3")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_xtfv3"]
+texture = ExtResource("30_a0y5r")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_4smu3"]
+texture = ExtResource("31_syvc8")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_7eaih"]
+texture = ExtResource("32_syvc8")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_o3yh3"]
+texture = ExtResource("33_wim0k")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_k8o41"]
+texture = ExtResource("34_xtfv3")
+
 [node name="Master" type="Node2D"]
 metadata/_edit_lock_ = true
 
@@ -81,6 +113,11 @@ metadata/_edit_lock_ = true
 [node name="ImageMenu" type="Sprite2D" parent="ImageFrame"]
 texture = ExtResource("2_ctyun")
 centered = false
+metadata/_edit_lock_ = true
+
+[node name="ImageNameLabel" type="Sprite2D" parent="ImageFrame/ImageMenu"]
+position = Vector2(482.3614, 655.1475)
+texture = ExtResource("7_7eaih")
 metadata/_edit_lock_ = true
 
 [node name="Control Images" type="Control" parent="ImageFrame/ImageMenu"]
@@ -111,91 +148,115 @@ texture = ExtResource("3_gg1ai")
 expand_mode = 1
 metadata/_edit_lock_ = true
 
-[node name="LabelFeed" type="Label" parent="ImageFrame/ImageMenu/Control Images"]
+[node name="Labels" type="Control" parent="ImageFrame/ImageMenu/Control Images"]
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="LabelFeed" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels"]
 layout_mode = 0
-offset_left = 12.141734
-offset_top = -15.441136
-offset_right = 44.141735
-offset_bottom = -3.3578033
+offset_left = 12.141739
+offset_top = -15.441147
+offset_right = 57.14174
+offset_bottom = -2.4411469
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.21996303, 0.21996303, 0.21996303, 1)
 text = "L I V E  F E E D"
 metadata/_edit_lock_ = true
 
-[node name="LabelDataCoord" type="Label" parent="ImageFrame/ImageMenu/Control Images"]
+[node name="LabelDataCoord" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels"]
 layout_mode = 0
-offset_left = 12.141734
-offset_top = 7.5970206
-offset_right = 60.141735
-offset_bottom = 49.84702
+offset_left = 12.141739
+offset_top = 7.5970154
+offset_right = 74.14174
+offset_bottom = 52.597015
 theme = ExtResource("5_e2i44")
-theme_override_colors/font_color = Color(0.9246135, 0.7560525, 0, 1)
+theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
 text = "PL A C E H O L D ER 
 PL A C E H O L D ER
 PL A C E H O L D ER"
 metadata/_edit_lock_ = true
 
-[node name="LabelBrand" type="Label" parent="ImageFrame/ImageMenu/Control Images"]
+[node name="LabelBrand" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels"]
 layout_mode = 0
 offset_left = 219.48514
 offset_top = 333.011
 offset_right = 418.48514
-offset_bottom = 393.42764
+offset_bottom = 394.011
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.21996303, 0.21996303, 0.21996303, 1)
 theme_override_font_sizes/font_size = 50
 text = "JUJEDIE INC."
 metadata/_edit_lock_ = true
 
-[node name="LabelBtn" type="Label" parent="ImageFrame/ImageMenu/Control Images"]
+[node name="LabelBtn" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels"]
 layout_mode = 0
-offset_left = 270.601
-offset_top = 416.52426
-offset_right = 364.601
-offset_bottom = 446.7326
+offset_left = 280.68024
+offset_top = 411.4847
+offset_right = 381.68024
+offset_bottom = 442.4847
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.21996303, 0.21996303, 0.21996303, 1)
 theme_override_font_sizes/font_size = 25
-text = "VIEW MODE"
+text = "VIEW_MODE"
+metadata/_edit_lock_ = true
 
-[node name="LabelSoftware" type="Label" parent="ImageFrame/ImageMenu/Control Images"]
+[node name="LabelSoftware" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels"]
 layout_mode = 0
 offset_left = -131.12683
 offset_top = -167.34894
-offset_right = 67.87317
-offset_bottom = -106.93225
+offset_right = 202.87317
+offset_bottom = -106.34894
 theme = ExtResource("5_e2i44")
-theme_override_colors/font_color = Color(0.9098039, 0.74509805, 0, 1)
+theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
 theme_override_font_sizes/font_size = 50
 text = "PLANET GENERATOR"
+metadata/_edit_lock_ = true
 
 [node name="btnPrecedent" type="TextureButton" parent="ImageFrame/ImageMenu/Control Images"]
 layout_mode = 0
-offset_left = 156.13019
-offset_top = 447.4818
-offset_right = 459.1302
-offset_bottom = 640.4818
-texture_normal = ExtResource("5_i1wak")
-
-[node name="btnSuivant" type="TextureButton" parent="ImageFrame/ImageMenu/Control Images"]
-layout_mode = 0
-offset_left = 418.18924
-offset_top = 447.4818
-offset_right = 721.1892
-offset_bottom = 640.4818
-texture_normal = ExtResource("5_i1wak")
+offset_left = 184.92792
+offset_top = 454.68127
+offset_right = 232.92792
+offset_bottom = 502.68127
+texture_normal = ExtResource("5_4smu3")
+texture_pressed = ExtResource("6_7eaih")
+texture_hover = ExtResource("6_7eaih")
+texture_disabled = ExtResource("6_7eaih")
+texture_focused = ExtResource("5_4smu3")
+metadata/_edit_lock_ = true
 
 [node name="LabelNomMap" type="Label" parent="ImageFrame/ImageMenu/Control Images"]
 layout_mode = 0
-offset_left = 303.7184
-offset_top = 416.52426
-offset_right = 544.1792
-offset_bottom = 474.11963
-text = "MAPX"
+offset_left = 238.20364
+offset_top = 457.56097
+offset_right = 422.5089
+offset_bottom = 500.7575
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.8784314, 0.5882353, 0, 1)
+theme_override_font_sizes/font_size = 30
+theme_override_styles/focus = SubResource("StyleBoxEmpty_7eaih")
+text = "TEST_TEST_TEST"
+clip_text = true
+metadata/_edit_lock_ = true
+
+[node name="btnSuivant" type="TextureButton" parent="ImageFrame/ImageMenu/Control Images"]
+layout_mode = 0
+offset_left = 426.82855
+offset_top = 454.68124
+offset_right = 474.82855
+offset_bottom = 502.68124
+texture_normal = ExtResource("7_o3yh3")
+texture_pressed = ExtResource("8_k8o41")
+texture_hover = ExtResource("8_k8o41")
+texture_disabled = ExtResource("8_k8o41")
+texture_focused = ExtResource("7_o3yh3")
+metadata/_edit_lock_ = true
 
 [node name="ImageMenu" type="Sprite2D" parent="ImageFrame/ImageMenu"]
 texture = ExtResource("5_lb8ov")
 centered = false
+metadata/_edit_lock_ = true
 
 [node name="Control General" type="Control" parent="ImageFrame"]
 layout_mode = 3
@@ -247,7 +308,7 @@ metadata/_edit_lock_ = true
 [node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed"]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
-theme_override_colors/font_color = Color(0.36226547, 0.37745485, 0.38251907, 1)
+theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
 theme_override_font_sizes/font_size = 25
 text = "GENERATION_SEED"
 metadata/_edit_lock_ = true
@@ -285,9 +346,11 @@ metadata/_edit_lock_ = true
 
 [node name="General_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"]
 layout_mode = 2
+metadata/_edit_lock_ = true
 
 [node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie"]
 layout_mode = 2
+metadata/_edit_lock_ = true
 
 [node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/Title"]
 layout_mode = 2
@@ -466,6 +529,7 @@ layout_mode = 2
 
 [node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie"]
 layout_mode = 2
+metadata/_edit_lock_ = true
 
 [node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/Title"]
 layout_mode = 2
@@ -1948,37 +2012,93 @@ texture_disabled = ExtResource("16_dg1b0")
 texture_focused = ExtResource("15_1512y")
 metadata/_edit_lock_ = true
 
-[node name="Obsolete" type="Node2D" parent="ImageFrame/Control General"]
-visible = false
-
-[node name="btnQuitter" type="TextureButton" parent="ImageFrame/Control General"]
+[node name="btnQuitter" type="Button" parent="ImageFrame/Control General"]
 layout_mode = 0
-offset_left = 874.01
+offset_left = 843.77246
 offset_top = 8.639309
-offset_right = 1177.01
-offset_bottom = 201.63931
-texture_normal = ExtResource("5_i1wak")
+offset_right = 1112.7725
+offset_bottom = 70.63931
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
+theme_override_colors/font_focus_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
+theme_override_colors/font_pressed_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
+theme_override_colors/font_hover_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
+theme_override_font_sizes/font_size = 50
+theme_override_styles/normal = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
+text = "LEAVE"
+metadata/_edit_lock_ = true
 
-[node name="btnGenerer" type="TextureButton" parent="ImageFrame/Control General"]
+[node name="btnGenerer" type="Button" parent="ImageFrame/Control General"]
 layout_mode = 0
-offset_left = 1061.1951
-offset_top = 586.0331
-offset_right = 1282.9374
-offset_bottom = 635.7091
-texture_normal = ExtResource("29_1512y")
+offset_left = 1028.7977
+offset_top = 587.473
+offset_right = 1297.7979
+offset_bottom = 634.473
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.8357474, 0.84530276, 0.8484986, 1)
+theme_override_colors/font_focus_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_pressed_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
+theme_override_colors/font_hover_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
+theme_override_font_sizes/font_size = 38
+theme_override_styles/normal = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
+text = "GENERER"
 
-[node name="btnSauvegarder" type="TextureButton" parent="ImageFrame/Control General"]
+[node name="btnSauvegarder" type="Button" parent="ImageFrame/Control General"]
 layout_mode = 0
-offset_left = 1061.1951
-offset_top = 640.02875
-offset_right = 1282.9374
-offset_bottom = 689.7048
-texture_normal = ExtResource("5_i1wak")
+offset_left = 1028.7976
+offset_top = 639.30884
+offset_right = 1297.7976
+offset_bottom = 686.30884
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_focus_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_pressed_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_hover_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_font_sizes/font_size = 38
+theme_override_styles/normal = SubResource("StyleBoxTexture_7eaih")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_7eaih")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_o3yh3")
+theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_o3yh3")
+theme_override_styles/hover = SubResource("StyleBoxTexture_k8o41")
+theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_k8o41")
+theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_o3yh3")
+theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_o3yh3")
+theme_override_styles/disabled = SubResource("StyleBoxTexture_o3yh3")
+theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_o3yh3")
+theme_override_styles/focus = SubResource("StyleBoxTexture_7eaih")
+text = "SAUVEGARDER"
 
 [node name="btnRandomiser" type="TextureButton" parent="ImageFrame/Control General"]
 layout_mode = 0
-offset_left = 1290.8567
-offset_top = 586.0331
-offset_right = 1342.6926
-offset_bottom = 635.7091
-texture_normal = ExtResource("29_1512y")
+offset_left = 1309.5752
+offset_top = 596.8322
+offset_right = 1339.5752
+offset_bottom = 626.8322
+texture_normal = ExtResource("30_svf8o")
+texture_pressed = ExtResource("31_gnqa1")
+texture_hover = ExtResource("32_23ir5")
+texture_disabled = ExtResource("32_23ir5")
+texture_focused = ExtResource("30_svf8o")
