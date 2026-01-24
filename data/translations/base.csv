@@ -1,41 +1,102 @@
-key,en,fr,de,ru
-LEAVE,Leave,Quitter,Verlassen,Выйти
-NAME,Planet name,Nom de la planète,Name des Planeten,Название планеты
-NB_CASE_REGION,Number of cases per region : {val},Nombre de cases par régions : {val},Anzahl der Felder pro Region: {val},Количество ячеек на регион: {val}
-RAYON_PLANET,Planetary radius : {val},Rayon planétaire : {val},Planetarischer Radius: {val},Планетарный радиус: {val}
-AVG_TEMP,Average temperature : {val},Température moyenne : {val},Durchschnittstemperatur: {val},Средняя температура: {val}
-WATER_ELEVATION,Elevation of water : {val},Élévation des mers : {val},Wasserstand: {val},Уровень воды: {val}
-AVG_PRECIPITATION,Average precipitations : {val},Précipitation moyenne : {val},Durchschnittliche Niederschläge: {val},Среднее количество осадков: {val}
-BONUS_ELEVATION,Elevation additionnal : {val},Élévation additionnelle : {val},Zusätzliche Erhöhung: {val},Дополнительное повышение: {val}
-THREAD_NUMBER,Number of Thread : {val},Nombre de Thread : {val},Anzahl der Threads: {val},Количество потоков: {val}
-PLANET_TYPE,Planet type,Type de planète,Planetenart,Тип планеты
-SAUVEGARDER,Save,Sauvegarder,Speichern,Сохранить
-GENERER,Generate,Générer,Generieren,Создать
-VUE_SUIVANTE,Next map,Vue Suivante,Weiteres Kartenbild,Следующая карта
-VUE_PRECEDANTE,Previous map,Vue Précédente,Vorheriges Kartenbild,Предыдущая карта
-TYPE_DEFAUT,Standard,Défaut,Standard,Стандартный
-TYPE_TOXIQUE,Toxic,Toxique,Giftig,Токсичный
-TYPE_VOLCAN,Volcanic,Volcanique,Vulkanisch,Вулканический
-TYPE_MORTE,Dead,Morte,Tot,Мёртвый
-TYPE_NO_ATMOSPHERE,No Atmosphere,Sans Atmosphère,Ohne Atmosphäre,Без атмосферы
-RANDOMISE,Randomise,Aléatoire,Zufällig,Случайный
-CREATING,Creating {map}...,Création de {map}...,Erstelle {map}...,Создание {map}...
-MAP_TOPOGRAPHIE,Topography,Topographie,Topographie,Топография
-MAP_TOPOGRAPHIE_GREY,Topography (Grey),Topographie (Gris),Topographie (Grau),Топография (Серая)
-MAP_EAUX,Water Map,Carte des Eaux,Wasserkarte,Карта воды
-MAP_PLAQUES,Tectonic Plates,Plaques Tectoniques,Tektonische Platten,Тектонические плиты
-MAP_PLAQUES_BORDURES,Plate Boundaries,Bordures de Plaques,Plattengrenzen,Границы плит
-MAP_FINAL,Final Map,Carte Finale,Endkarte,Финальная карта
-MAP_CLOUDS,Clouds,Nuages,Wolken,Облака
-MAP_PRECIPITATION,Precipitation,Précipitations,Niederschlag,Осадки
-MAP_WATER,Seas,Mers,Meere,Моря
-MAP_PETROLE,Petroleum,Pétrole,Öl,Нефть
-MAP_RESOURCES,Resources,Ressources,Ressourcen,Ресурсы
-MAP_TEMPERATURE,Temperature,Température,Temperatur,Температура
-MAP_RIVERS,Rivers/Lakes,Rivières/Lacs,Flüsse/Seen,Реки/Озёра
-MAP_ICE,Ice Sheet,Banquise,Eisschicht,Ледовый покров
-MAP_BIOMES,Biomes,Biomes,Biome,Биомы
-MAP_REGIONS,Regions,Régions,Regionen,Регионы
-MAP_PREVIEW,Preview,Aperçu,Vorschau,Предпросмотр
-OCEAN_RATIO,Ocean coverage : {val}%,Couverture océanique : {val}%,Ozeanbedeckung: {val}%,Покрытие океаном: {val}%
-MAP_DONE,Done!,Terminé !,Fertig!,Готово!
+key,en,fr,de
+LEAVE,LEAVE,QUITTER,VERLASSEN
+NAME,Planet name,Nom de la planète,Planetname
+TERRAIN_SCALE,Additional elevation : {val},Élévation additionnelle : {val},Zusätzliche Erhöhung : {val}
+THREAD_NUMBER,Number of threads : {val},Nombre de threads : {val},Anzahl der Threads : {val}
+PLANET_TYPE,Planet type,Type de planète,Planetentyp
+SAUVEGARDER,SAVE,SAUVEGARDER,SPEICHERN
+GENERER,GENERATE,GENERER,GENERIEREN
+
+TYPE_DEFAUT,Default,Défaut,Standard
+TYPE_TOXIQUE,Toxic,Toxique,Giftig
+TYPE_VOLCAN,Volcanic,Volcanique,Vulkanisch
+TYPE_MORTE,Dead,Morte,Tot
+TYPE_NO_ATMOSPHERE,No atmosphere,Sans atmosphère,Ohne Atmosphäre
+
+CREATING,Creating,Création en cours,Erstellung
+
+MAP_TOPOGRAPHIE,Topography,Topographie,Topographie
+MAP_TOPOGRAPHIE_GREY,Topography (Grey),Topographie (Gris),Topographie (Grau)
+MAP_EAUX,Water map,Carte des eaux,Wasserkarte
+MAP_PLAQUES,Tectonic plates,Plaques tectoniques,Tektonische Platten
+MAP_PLAQUES_BORDURES,Plate boundaries,Bordures de plaques,Plattengrenzen
+MAP_FINAL,Final map,Carte finale,Endkarte
+MAP_CLOUDS,Clouds,Nuages,Wolken
+MAP_PRECIPITATION,Precipitation,Précipitations,Niederschlag
+MAP_WATER,Seas,Mers,Meere
+MAP_PETROLE,Petroleum,Pétrole,Öl
+MAP_RESOURCES,Resources,Ressources,Ressourcen
+MAP_TEMPERATURE,Temperature,Température,Temperatur
+MAP_RIVERS,Rivers/Lakes,Rivières/Lacs,Flüsse/Seen
+MAP_ICE,Ice sheet,Banquise,Eisschicht
+MAP_BIOMES,Biomes,Biomes,Biome
+MAP_REGIONS,Regions,Régions,Regionen
+MAP_PREVIEW,Preview,Aperçu,Vorschau
+OCEAN_RATIO,Ocean coverage : {val},Couverture océanique : {val},Ozeanbedeckung : {val}
+
+MAP_DONE,Done!,Terminé !,Fertig !
+
+VIEW_MODE,VIEW MODE,MODE D'AFFICHAGE,ANSICHTSMODUS
+GENERATION_SEED,Generation seed,Graine de génération,Generierungs-Seed
+GENERAL_PROPRIETE_CATEGORIE,General properties,Propriétés générales,Allgemeine Eigenschaften
+PLANET_NAME,Planet name,Nom de la planète,Planetname
+PLANET_RADIUS,Planet radius : {val},Rayon de la planète : {val},Planetenradius : {val}
+PLANET_DENSITY,Planet density : {val},Densité de la planète : {val},Planetendichte : {val}
+PLANET_TEMPERATURE_AVG,Average planet temperature : {val},Température moyenne : {val},Durchschnittstemperatur : {val}
+EROSION_TECTONIQUE_CATEGORIE,Erosion & tectonics,Érosion et tectonique,Erosion und Tektonik
+EROSION_ITERATIONS,Erosion iterations : {val},Itérations d'érosion : {val},Erosionsiterationen : {val}
+EROSION_RATE,Erosion rate : {val},Taux d'érosion : {val},Erosionsrate : {val}
+RAIN_RATE,Rain rate : {val},Taux de pluie : {val},Niederschlagsrate : {val}
+EVAP_RATE,Evaporation rate : {val},Taux d'évaporation : {val},Verdunstungsrate : {val}
+FLOW_RATE,Flow rate : {val},Taux d'écoulement : {val},Durchflussrate : {val}
+DEPOSITION_RATE,Deposition rate : {val},Taux de dépôt : {val},Ablagerungsrate : {val}
+CAPACITY_MULTIPLIER,Capacity multiplier : {val},Multiplicateur de capacité : {val},Kapazitätsmultiplikator : {val}
+FLUX_ITERATIONS,Flux iterations : {val},Itérations de flux : {val},Flux-Iterationen : {val}
+BASE_FLUX,Base flux : {val},Flux de base : {val},Basisfluss : {val}
+PROPAGATION_RATE,Propagation rate : {val},Taux de propagation : {val},Ausbreitungsrate : {val}
+SPREADING_RATE,Spreading rate : {val},Taux d'étalement : {val},Ausbreitungsrate : {val}
+MAX_CRUST_AGE,Max crust age : {val},Âge max de la croûte : {val},Maximales Alter der Kruste : {val}
+SUBSIDENCE_COEFF,Subsidence coefficient : {val},Coefficient d'affaissement : {val},Setzungskoeffizient : {val}
+CRATER_CATEGORIE,Crater category,Catégorie cratère,Kraterkategorie
+CRATER_DENSITY,Crater density : {val},Densité de cratères : {val},Kraterdichte : {val}
+CRATER_MIN_RADIUS,Crater min radius : {val},Rayon min du cratère : {val},Min. Kraterradius : {val}
+CRATER_DEPTH_RATIO,Crater depth ratio : {val},Rapport profondeur/diamètre : {val},Verhältnis Tiefe/Durchmesser : {val}
+CRATER_EJECTA_EXTENT,Crater ejecta extent : {val},Étendue de l'éjecta : {val},Auswurfweite : {val}
+CRATER_EJECTA_DECAY,Crater ejecta decay : {val},Décroissance de l'éjecta : {val},Abklingverhalten des Auswurfs : {val}
+CRATER_AZIMUTH_VAR,Crater azimuth variation : {val},Variation d'azimut du cratère : {val},Azimutvariation des Kraters : {val}
+
+EAU_CATEGORIE,Water category,Catégorie eau,Wasserkategorie
+ICE_PROBABILITY,Ice probability : {val},Probabilité de glace : {val},Eiswahrscheinlichkeit : {val}
+GLOBAL_HUMIDITY,Global humidity : {val},Humidité globale : {val},Globale Luftfeuchtigkeit : {val}
+SEA_LEVEL,Sea level : {val},Niveau de la mer : {val},Meeresspiegel : {val}
+FRESHWATER_MAX_SIZE,Freshwater max size : {val},Taille max des eaux douces : {val},Maximale Süßwassergröße : {val}
+LAKE_THRESHOLD,Lake threshold : {val},Seuil pour les lacs : {val},Seeschwelle : {val}
+RIVER_ITERATIONS,River iterations : {val},Itérations de rivières : {val},Flussiterationen : {val}
+RIVER_MIN_ALTITUDE,River min altitude : {val},Altitude min pour rivières : {val},Minimale Flusshöhe : {val}
+RIVER_MIN_PRECIPITATION,River min precipitation : {val},Précipitation min pour rivières : {val},Minimale Niederschlagsmenge für Flüsse : {val}
+RIVER_THRESHOLD,River threshold : {val},Seuil de rivière : {val},Fluss-Schwelle : {val}
+RIVER_BASE_FLUX,River base flux : {val},Flux de base des rivières : {val},Basisfluss der Flüsse : {val}
+
+NUAGE_CATEGORIE,Cloud category,Catégorie nuage,Wolkekategorie
+CLOUD_COVERAGE,Cloud coverage : {val},Couverture nuageuse : {val},Bedeckung : {val}
+CLOUD_DENSITY,Cloud density : {val},Densité des nuages : {val},Wolkendichte : {val}
+
+REGION_CATEGORIE,Region category,Catégorie région,Regionkategorie
+NB_CASES_REGIONS,Number of region tiles : {val},Nombre de cases régions : {val},Anzahl der Regionenfelder : {val}
+REGION_COST_FLAT,Region cost (flat) : {val},Coût région (plat) : {val},Regionenkosten (flach) : {val}
+REGION_COST_HILL,Region cost (hill) : {val},Coût région (colline) : {val},Regionenkosten (Hügel) : {val}
+REGION_COST_RIVER,Region cost (river) : {val},Coût région (rivière) : {val},Regionenkosten (Fluss) : {val}
+REGION_RIVER_THRESHOLD,Region river threshold : {val},Seuil rivière région : {val},Fluss-Schwelle (région) : {val}
+REGION_BUDGET_VARIATION,Region budget variation : {val},Variation du budget régional : {val},Regionale Budgetvariation : {val}
+REGION_NOISE_STRENGTH,Region noise strength : {val},Force du bruit régional : {val},Regionale Rauschstärke : {val}
+REGION_OCEAN_CATEGORIE,Region ocean category,Catégorie océan région,Ozean-Kategorie Region
+NB_CASES_OCEAN_REGIONS,Number of ocean region tiles : {val},Nombre de cases océan : {val},Anzahl der Ozeanregionenfelder : {val}
+OCEAN_COST_FLAT,Ocean cost (flat) : {val},Coût océan (plat) : {val},Ozeankosten (flach) : {val}
+OCEAN_COST_RIVER,Ocean cost (river) : {val},Coût océan (rivière) : {val},Ozeankosten (Fluss) : {val}
+OCEAN_NOISE_STRENGTH,Ocean noise strength : {val},Force du bruit océan : {val},Ozeanrauschstärke : {val}
+
+RESSOURCES_CATEGORIE,Resources category,Catégorie ressources,Ressourcenkategorie
+PETROLE_PROBABILITY,Petroleum probability : {val},Probabilité de pétrole : {val},Ölwahrscheinlichkeit : {val}
+PETROLE_DEPOSIT_SIZE,Petroleum deposit size : {val},Taille du dépôt de pétrole : {val},Größe der Ölvorkommen : {val}
+GLOBAL_RICHNESS,Global richness : {val},Richesse globale : {val},Gesamtvorkommen : {val}
+PARAMETRES,Parameters,Paramètres,Parameter

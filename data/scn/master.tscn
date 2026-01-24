@@ -236,7 +236,7 @@ theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.8784314, 0.5882353, 0, 1)
 theme_override_font_sizes/font_size = 30
 theme_override_styles/focus = SubResource("StyleBoxEmpty_7eaih")
-text = "TEST_TEST_TEST"
+text = "Topographie (Gris)"
 clip_text = true
 metadata/_edit_lock_ = true
 
@@ -523,6 +523,32 @@ popup/item_3/text = "TYPE_NO_ATMOSPHERE"
 popup/item_3/id = 3
 popup/item_4/text = "TYPE_MORTE"
 popup/item_4/id = 4
+
+[node name="THREAD_NUMBER" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/THREAD_NUMBER"]
+layout_mode = 2
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
+theme_override_font_sizes/font_size = 25
+text = "THREAD_NUMBER"
+
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/THREAD_NUMBER"]
+layout_mode = 2
+theme_override_icons/grabber = ExtResource("10_gg1ai")
+theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
+theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
+theme_override_styles/slider = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
+min_value = 1.0
+max_value = 16.0
+value = 1.0
+allow_greater = true
+tick_count = 10
+ticks_on_borders = true
+ticks_position = 3
 
 [node name="Erosion_Tectonic_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"]
 layout_mode = 2
