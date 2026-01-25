@@ -7,6 +7,19 @@ var map_index: int = 0
 var langue: String = "fr"
 
 # --- Constants ---
+const BASE_PATH_SLIDERS = "ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"
+
+const CATEGORIES_PATHS = {
+	"GENERAL" : BASE_PATH_SLIDERS+"/General_Categorie/MarginContainer/Parameters/",
+	"EROSION" : BASE_PATH_SLIDERS+"/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/",
+	"CRATER" : BASE_PATH_SLIDERS+"/Crater_Categorie/MarginContainer/Crater_parameters/",
+	"EAU" : BASE_PATH_SLIDERS+"/Eau_Categorie/MarginContainer/Eaux_parameters/",
+	"NUAGE" : BASE_PATH_SLIDERS+"/Nuages_Categorie/MarginContainer/nuage_parameters/",
+	"REGION" : BASE_PATH_SLIDERS+"/Region_Categorie/MarginContainer/Region_parameters/",
+	"OCEAN" : BASE_PATH_SLIDERS+"/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/",
+	"RESSOURCES" : BASE_PATH_SLIDERS+"/Ressources_Categorie/MarginContainer/Ressources_parameters/",
+}
+
 const MAP_NAME_TO_KEY = {
 	"topographie_map.png": "MAP_TOPOGRAPHIE",
 	"topographie_map_grey.png": "MAP_TOPOGRAPHIE_GREY",
@@ -45,13 +58,13 @@ func _ready() -> void:
 
 func _on_btn_comfirme_pressed() -> void:
 	# UI Gather Data
-	var nom          = $Node2D/Control/planeteName/LineEdit
-	var lblMapStatus = $Node2D/Control/renderProgress/Node2D/lblMapStatus
+	var nom          = get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Name_Param/HBoxContainer/LineEdit")
+	var lblMapStatus = $"ImageFrame/ImageMenu/Control Images/LabelNomMap"
 
 	# Reset state
 	maps      = []
 	map_index = 0
-	$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = null
+	$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = load("res://data/img/UI/no_data.png")
 
 	# Initialize Generator
 	planetGenerator = PlanetGenerator.new(
@@ -83,7 +96,7 @@ func _on_planetGenerator_finished_main() -> void:
 	var err = img.load(maps[map_index])
 	if err == OK:
 		var tex = ImageTexture.create_from_image(img)
-		$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = tex
+		$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = tex
 		update_map_label()
 	else:
 		print("Erreur lors du chargement de l'image: ", maps[map_index])
@@ -92,10 +105,11 @@ func _on_planetGenerator_finished_main() -> void:
 	_set_buttons_enabled(true)
 
 func _set_buttons_enabled(enabled: bool) -> void:
-	$Node2D/Control/btnComfirmer/btnComfirme.disabled = !enabled
-	$Node2D/Control/btnSauvegarder/btnSauvegarder.disabled = !enabled
-	$Node2D/Control/btnSuivant/btnSuivant.disabled = !enabled
-	$Node2D/Control/btnPrecedant/btnPrecedant.disabled = !enabled
+	$"ImageFrame/Control General/btnGenerer".disabled = !enabled
+	$"ImageFrame/Control General/btnSauvegarder".disabled = !enabled
+	$"ImageFrame/Control General/btnRandomiser".disabled  = !enabled
+	$"ImageFrame/ImageMenu/Control Images/btnSuivant".disabled   = !enabled
+	$"ImageFrame/ImageMenu/Control Images/btnPrecedent".disabled = !enabled
 
 ## Compile et normalise les paramètres de génération pour le GPU.
 ##
@@ -109,94 +123,95 @@ func _compile_generation_params() -> Dictionary:
 	Compile all generation parameters into a single dictionary
 	This is passed to the GPU orchestrator and shaders
 	"""
-	var _seed = $Node2D/Control/sldSeed.value
+	var _seed = get_node(BASE_PATH_SLIDERS+"/PanelSeed/seed/LineEdit").value
 	if _seed == 0:
 		randomize()
 		_seed = randi()
 	
-	var circonference = int($Node2D/Control/sldRayonPlanetaire.value) * 2 * PI
-	var typePlanete         = $Node2D/Control/typePlanete/ItemList.get_selected_id()
+	var circonference = int(get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Radius_Param/LineEdit").value) * 2 * PI
+	var typePlanete   = get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Type_Param/LineEdit").get_selected_id()
 	if typePlanete == -1:
 		typePlanete = 0  # Default to Earth-like if none selected
 
 	var generation_params = {
 		"seed"              : _seed,
-		"nb_thread"         : $Node2D/Control/sldThread.value,
+		"nb_thread"         : get_node(CATEGORIES_PATHS["GENERAL"]+"Thread_Number_Param/LineEdit").value,
 
 		# Planet properties
 		"planet_radius"     : circonference / (2.0 * PI),
-		"planet_density"    : $Node2D/Control/sldDensitePlanetaire.value,
+		"planet_density"    : get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Density_Param/LineEdit").value,
 		"planet_type"       : typePlanete, # 0: Earth-like, 1: Thin, 2: Thick
 		"resolution"        : Vector2i(circonference, circonference / 2),
-		"avg_temperature"   : $Node2D/Control/sldTemperatureMoyenne.value,
+		"avg_temperature"   : get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Temperature_Param/LineEdit").value,
 		
 		# Erosion and tectonics
-		"terrain_scale"     : $Node2D/Control/sldElevation.value, # 0
-		"erosion_iterations" : $Node2D/Control/sldErosionIterations.value, # 100
-		"erosion_rate"       : $Node2D/Control/sldErosionRate.value, # 0.05
-		"rain_rate"          : $Node2D/Control/sldRainRate.value, # 0.005
-		"evap_rate"          : $Node2D/Control/sldEvapRate.value, # 0.02
-		"flow_rate"          : $Node2D/Control/sldFlowRate.value, # 0.25
-		"deposition_rate"    : $Node2D/Control/sldDepositionRate.value, # 0.05
-		"capacity_multiplier": $Node2D/Control/sldCapacityMultiplier.value, # 1.0
-		"flux_iterations"    : $Node2D/Control/sldFluxIterations.value, # 10
-		"base_flux"          : $Node2D/Control/sldBaseFlux.value, #1.0
-		"propagation_rate"   : $Node2D/Control/sldPropagationRate.value, # 0.8
-		"spreading_rate"    : $Node2D/Control/sldSpreadingRate.value, # 50.0
-		"max_crust_age"     : $Node2D/Control/sldMaxCrustAge.value, # 200.0
-		"subsidence_coeff"  : $Node2D/Control/sldSubsidenceCoefficient.value, # 2800.0
+		"terrain_scale"      : get_node(CATEGORIES_PATHS["EROSION"]+"Terrain_Scale_Param/LineEdit").value, # 0
+		"erosion_iterations" : get_node(CATEGORIES_PATHS["EROSION"]+"Erosions_Iterations_Param/LineEdit").value, # 100
+		"erosion_rate"       : get_node(CATEGORIES_PATHS["EROSION"]+"Erosion_Rate_Param/LineEdit").value, # 0.05
+		"rain_rate"          : get_node(CATEGORIES_PATHS["EROSION"]+"Rain_Rate_Param/LineEdit").value, # 0.005
+		"evap_rate"          : get_node(CATEGORIES_PATHS["EROSION"]+"Evap_Rate_Param/LineEdit").value, # 0.02
+		"flow_rate"          : get_node(CATEGORIES_PATHS["EROSION"]+"Flow_Rate_Param/LineEdit").value, # 0.25
+		"deposition_rate"    : get_node(CATEGORIES_PATHS["EROSION"]+"Deposition_Rate_Param/LineEdit").value, # 0.05
+		"capacity_multiplier": get_node(CATEGORIES_PATHS["EROSION"]+"Capacity_Multiplier_Param/LineEdit").value, # 1.0
+		"flux_iterations"    : get_node(CATEGORIES_PATHS["EROSION"]+"Flux_Iterations_Param/LineEdit").value, # 10
+		"base_flux"          : get_node(CATEGORIES_PATHS["EROSION"]+"Base_Flux_Param/LineEdit").value, #1.0
+		"propagation_rate"   : get_node(CATEGORIES_PATHS["EROSION"]+"Propagation_Rate_Param/LineEdit").value, # 0.8
+		"spreading_rate"    : get_node(CATEGORIES_PATHS["EROSION"]+"Spreading_Rate_Param/LineEdit").value, # 50.0
+		"max_crust_age"     : get_node(CATEGORIES_PATHS["EROSION"]+"Max_Crust_Age_Param/LineEdit").value, # 200.0
+		"subsidence_coeff"  : get_node(CATEGORIES_PATHS["EROSION"]+"Subsidence_Coeff_Param/LineEdit").value, # 2800.0
 
 		# Craters
-		"crater_density"     : $Node2D/Control/sldCraterDensity.value, # 0.5
+		"crater_density"     : get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Density_Param/LineEdit").value, # 0.5
 		"crater_max_radius"  : min(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 0.08,
-		"crater_min_radius"  : min($Node2D/Control/sldCraterMinRadius.value, min(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 0.08),
-		"crater_depth_ratio" : $Node2D/Control/sldCraterDepthRatio.value, # 0.25
-		"crater_ejecta_extent": $Node2D/Control/sldCraterEjectaExtent.value, # 2.5
-		"crater_ejecta_decay": $Node2D/Control/sldCraterEjectaDecay.value, # 3.0
-		"crater_azimuth_var" : $Node2D/Control/sldCraterAzimuthVar.value, # 0.3
+		"crater_min_radius"  : min(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Min_Radius_Param/LineEdit").value, min(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 0.08),
+		"crater_depth_ratio" : get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Depth_Ratio_Param/LineEdit").value, # 0.25
+		"crater_ejecta_extent": get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Ejecta_Extent_Param/LineEdit").value, # 2.5
+		"crater_ejecta_decay" : get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Ejecta_Decay_Param/LineEdit").value, # 3.0
+		"crater_azimuth_var"  : get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Azimuth_Var_Param/LineEdit").value, # 0.3
 
 		# Clouds
-		"cloud_coverage"    : $Node2D/Control/sldCloudCoverage.value, # 0.5
-		"cloud_density"     : $Node2D/Control/sldCloudDensity.value,  # 0.8
+		"cloud_coverage"    : get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Coverage_Param/LineEdit").value, # 0.5
+		"cloud_density"     : get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Density_Param/LineEdit").value,  # 0.8
 
 		# Ice caps
-		"ice_probability" : $Node2D/Control/sldIceProbability.value, # 0.9
+		"ice_probability" : get_node(CATEGORIES_PATHS["EAU"]+"Ice_Probability_Param/LineEdit").value, # 0.9
 
 		# Water bodies
-		"ocean_ratio"       : $Node2D/Control/sldOceanRatio.value,  # Pourcentage couverture océanique 70.0
-		"global_humidity"   : $Node2D/Control/sldHumiditeGlobale.value, # 0.5
-		"sea_level"         : $Node2D/Control/sldNiveauEau.value, # 0.0
-		"saltwater_min_size" : $Node2D/Control/sldFreshwaterMaxSize.value+1, # 1000
-		"freshwater_max_size": $Node2D/Control/sldFreshwaterMaxSize.value, # 999
-		"lake_threshold"     : $Node2D/Control/sldLakeThreshold.value, # 5.0
+		"ocean_ratio"       : get_node(CATEGORIES_PATHS["EAU"]+"Ocean_Ratio_Param/LineEdit").value,  # Pourcentage couverture océanique 70.0
+		"global_humidity"   : get_node(CATEGORIES_PATHS["EAU"]+"Global_Humidity_Param/LineEdit").value, # 0.5
+		"sea_level"         : get_node(CATEGORIES_PATHS["EAU"]+"Sea_Level_Param/LineEdit").value, # 0.0
+		"saltwater_min_size" : get_node(CATEGORIES_PATHS["EAU"]+"Freshwater_Max_Size_Param/LineEdit").value+1, # 1000
+		"freshwater_max_size": get_node(CATEGORIES_PATHS["EAU"]+"Freshwater_Max_Size_Param/LineEdit").value, # 999
+		"lake_threshold"     : get_node(CATEGORIES_PATHS["EAU"]+"Lake_Threshold_Param/LineEdit").value, # 5.0
 
-		"river_iterations"   : $Node2D/Control/sldRiverIterations.value, # 2000
-		"river_min_altitude" : $Node2D/Control/sldRiverMinAltitude.value, # 20.0
-		"river_min_precipitation": $Node2D/Control/sldRiverMinPrecipitation.value, # 0.08
-		"river_threshold"    : $Node2D/Control/sldRiverThreshold.value, # 1.0
-		"river_base_flux"    : $Node2D/Control/sldRiverBaseFlux.value, # 1.0
+		"river_iterations"   : get_node(CATEGORIES_PATHS["EAU"]+"River_Iterations_Param/LineEdit").value, # 2000
+		"river_min_altitude" : get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Altitude_Param/LineEdit").value, # 20.0
+		"river_min_precipitation": get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Precipitation_Param/LineEdit").value, # 0.08
+		"river_threshold"    : get_node(CATEGORIES_PATHS["EAU"]+"River_Threshold_Param/LineEdit").value, # 1.0
+		"river_base_flux"    : get_node(CATEGORIES_PATHS["EAU"]+"River_Base_Flux_Param/LineEdit").value, # 1.0
 
 		# Regions
-		"nb_cases_regions"      : $Node2D/Control/sldNbCasesRegions.value, # 50
-		"region_cost_flat" : $Node2D/Control/sldRegionCostFlat.value, # 1.0
-		"region_cost_hill" : $Node2D/Control/sldRegionCostHill.value, # 2.0
-		"region_cost_river": $Node2D/Control/sldRegionCostRiver.value, # 3.0
-		"region_river_threshold" : $Node2D/Control/sldRegionRiverThreshold.value, # 1.0
-		"region_budget_variation": $Node2D/Control/sldRegionBudgetVariation.value, # 0.5
-		"region_noise_strength"  : $Node2D/Control/sldRegionNoiseStrength.value, # 0.5
+		"nb_cases_regions" : get_node(CATEGORIES_PATHS["REGION"]+"Nb_Cases_Regions_Param/LineEdit").value, # 50
+		"region_cost_flat" : get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_Flat_Param/LineEdit").value, # 1.0
+		"region_cost_hill" : get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_Hill_Param/LineEdit").value, # 2.0
+		"region_cost_river": get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_River_Param/LineEdit").value, # 3.0
+		"region_river_threshold" : get_node(CATEGORIES_PATHS["REGION"]+"Region_River_Threshold_Param/LineEdit").value, # 1.0
+		"region_budget_variation": get_node(CATEGORIES_PATHS["REGION"]+"Region_Budget_Variation_Param/LineEdit").value, # 0.5
+		"region_noise_strength"  : get_node(CATEGORIES_PATHS["REGION"]+"Region_Noise_Strength_Param/LineEdit").value, # 0.5
+		"region_generation_optimised" : get_node(CATEGORIES_PATHS["REGION"]+"Region_Generation_Optimised_Param/LineEdit").button_pressed,
 		"region_iterations"	     : max(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 2,
 
 		# Regions Ocean 
-		"nb_cases_ocean_regions": $Node2D/Control/sldNbCasesOceanRegions.value, # 100
-		"ocean_cost_flat"   : $Node2D/Control/sldOceanCostFlat.value, # 1.0
-		"ocean_cost_deeper" : $Node2D/Control/sldOceanCostDeeper.value, # 2.0
-		"ocean_noise_strength" : $Node2D/Control/sldOceanNoiseStrength.value, # 0.5
+		"nb_cases_ocean_regions": get_node(CATEGORIES_PATHS["OCEAN"]+"Nb_Cases_Ocean_Regions_Param/LineEdit").value, # 100
+		"ocean_cost_flat"   : get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Cost_Flat_Param/LineEdit").value, # 1.0
+		"ocean_cost_deeper" : get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Cost_Deeper_Param/LineEdit").value, # 2.0
+		"ocean_noise_strength" : get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Noise_Strength_Param/LineEdit").value, # 0.5
 		"ocean_iterations"	   : max(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 2,
 
 		# Resources
-		"petrole_probability"  : $Node2D/Control/sldPetroleProbability.value, # 0.025
-		"petrole_deposit_size" : $Node2D/Control/sldPetroleDepositSize.value, # 200.0
-		"global_richness"      : $Node2D/Control/sldGlobalRichness.value, # 1.0
+		"petrole_probability"  : get_node(CATEGORIES_PATHS["RESSOURCES"]+"Petrole_Probability_Param/LineEdit").value, # 0.025
+		"petrole_deposit_size" : get_node(CATEGORIES_PATHS["RESSOURCES"]+"Petrole_Deposit_Size_Param/LineEdit").value, # 200.0
+		"global_richness"      : get_node(CATEGORIES_PATHS["RESSOURCES"]+"Global_Richness_Param/LineEdit").value, # 1.0
 	}
 	
 	print("[PlanetGenerator] Parameters compiled:")
@@ -236,64 +251,236 @@ func _load_current_map() -> void:
 	var img = Image.new()
 	if img.load(maps[map_index]) == OK:
 		var tex = ImageTexture.create_from_image(img)
-		$Node2D/Control/SubViewportContainer/SubViewport/Fond/Map.texture = tex
+		$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = tex
 		update_map_label()
 
 # ============================================================================
 # SLIDER CALLBACKS
 # ============================================================================
 
-func _on_sld_rayon_planetaire_value_changed(value: float) -> void:
-	var label = $Node2D/Control/sldRayonPlanetaire/Node2D/Label
-	label.text = tr("RAYON_PLANET").format({"val": str(value)})
+func _set_slider_label(slider_label: Label, tr_key: String, value, unit: String = "") -> void:
+	slider_label.text = tr(tr_key).format({"val": str(value) + unit})
 
-func _on_sld_temp_moy_value_changed(value: float) -> void:
-	var label = $Node2D/Control/sldTempMoy/Node2D/Label
-	label.text = tr("AVG_TEMP").format({"val": str(value)})
 
-func _on_sld_haut_eau_value_changed(value: float) -> void:
-	var label = $Node2D/Control/sldHautEau/Node2D/Label
-	label.text = tr("WATER_ELEVATION").format({"val": str(value)})
+func _on_range_change_terrain_scale(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Terrain_Scale_Param/Label"), "TERRAIN_SCALE", value, " m")
 
-func _on_sld_precipitation_moy_value_changed(value: float) -> void:
-	var label = $Node2D/Control/sldPrecipitationMoy/Node2D/Label
-	var value_str = str(value)
-	if len(value_str) != 4: value_str += "0"
-	label.text = tr("AVG_PRECIPITATION").format({"val": value_str})
+func _on_range_change_thread_number(value: int) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["GENERAL"]+"Thread_Number_Param/Label"), "THREAD_NUMBER", value)
 
-func _on_sld_percent_eau_value_changed(value: float) -> void:
-	var label = $Node2D/Control/sldPercentEau/Node2D/Label
-	var value_str = str(value)
-	if len(value_str) != 4: value_str += "0"
-	label.text = tr("WATER_ELEVATION").format({"val": value_str})
+func _on_range_change_ocean_ratio(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"Ocean_Ratio_Param/Label"), "OCEAN_RATIO", value, "%")
 
-func _on_sld_elevation_value_changed(value: float) -> void:
-	var label = $Node2D/Control/sldElevation/Node2D/Label
-	label.text = tr("BONUS_ELEVATION").format({"val": str(value)})
+func _on_range_change_planet_radius(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Radius_Param/Label"), "PLANET_RADIUS", value, " km")
 
-func _on_sld_thread_value_changed(value: float) -> void:    
-	var label = $Node2D/Control/sldThread/Node2D/Label
-	label.text = tr("THREAD_NUMBER").format({"val": str(value)})
+func _on_range_change_planet_density(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Density_Param/Label"), "PLANET_DENSITY", value, " g/cm³")
 
-func _on_sld_nb_cases_regions_value_changed(value: float) -> void:
-	var label = $Node2D/Control/sldNbCasesRegions/Node2D/Label
-	label.text = tr("NB_CASE_REGION").format({"val": str(value)})
+func _on_range_change_planet_temperature_avg(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Temperature_Param/Label"), "PLANET_TEMPERATURE_AVG", value, " °C")
 
-func _on_sld_ocean_ratio_value_changed(value: float) -> void:
-	var label = $Node2D/Control/sldOceanRatio/Node2D/Label
-	label.text = tr("OCEAN_RATIO").format({"val": str(int(value))})
+
+func _on_range_change_erosion_iterations(value: int) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Erosions_Iterations_Param/Label"), "EROSION_ITERATIONS", value)
+
+func _on_range_change_erosion_rate(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Erosion_Rate_Param/Label"), "EROSION_RATE", value)
+
+func _on_range_change_rain_rate(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Rain_Rate_Param/Label"), "RAIN_RATE", value)
+
+func _on_range_change_evap_rate(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Evap_Rate_Param/Label"), "EVAP_RATE", value)
+
+func _on_range_change_flow_rate(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Flow_Rate_Param/Label"), "FLOW_RATE", value)
+
+func _on_range_change_deposition_rate(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Deposition_Rate_Param/Label"), "DEPOSITION_RATE", value)
+
+func _on_range_change_capacity_multiplier(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Capacity_Multiplier_Param/Label"), "CAPACITY_MULTIPLIER", value)
+
+func _on_range_change_flux_iterations(value: int) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Flux_Iterations_Param/Label"), "FLUX_ITERATIONS", value)
+
+func _on_range_change_base_flux(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Base_Flux_Param/Label"), "BASE_FLUX", value)
+
+func _on_range_change_propagation_rate(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Propagation_Rate_Param/Label"), "PROPAGATION_RATE", value)
+
+func _on_range_change_spreading_rate(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Spreading_Rate_Param/Label"), "SPREADING_RATE", value)
+
+func _on_range_change_max_crust_age(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Max_Crust_Age_Param/Label"), "MAX_CRUST_AGE", value, " Myr")
+
+func _on_range_change_subsidence_coefficient(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Subsidence_Coeff_Param/Label"), "SUBSIDENCE_COEFFICIENT", value, " m/Myr")
+
+
+func _on_range_change_crater_density(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Density_Param/Label"), "CRATER_DENSITY", value)
+
+func _on_range_change_crater_min_radius(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Min_Radius_Param/Label"), "CRATER_MIN_RADIUS", value, " km")
+
+func _on_range_change_crater_depth_ratio(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Depth_Ratio_Param/Label"), "CRATER_DEPTH_RATIO", value)
+
+func _on_range_change_crater_ejecta_extent(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Ejecta_Extent_Param/Label"), "CRATER_EJECTA_EXTENT", value)
+
+func _on_range_change_crater_ejecta_decay(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Ejecta_Decay_Param/Label"), "CRATER_EJECTA_DECAY", value)
+
+func _on_range_change_crater_azimuth_var(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Azimuth_Var_Param/Label"), "CRATER_AZIMUTH_VAR", value)
+
+
+func _on_range_change_ice_probability(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"Ice_Probability_Param/Label"), "ICE_PROBABILITY", value, "%")
+
+func _on_range_change_global_humidity(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"Global_Humidity_Param/Label"), "GLOBAL_HUMIDITY", value, "%")
+
+func _on_range_change_sea_level(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"Sea_Level_Param/Label"), "SEA_LEVEL", value, " m")
+
+func _on_range_change_freshwater_max_size(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"Freshwater_Max_Size_Param/Label"), "FRESHWATER_MAX_SIZE", value, " km²")
+
+func _on_range_change_lake_threshold(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"Lake_Threshold_Param/Label"), "LAKE_THRESHOLD", value)
+
+func _on_range_change_river_iterations(value: int) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Iterations_Param/Label"), "RIVER_ITERATIONS", value)
+
+func _on_range_change_river_min_altitude(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Altitude_Param/Label"), "RIVER_MIN_ALTITUDE", value, " m")
+
+func _on_range_change_river_min_precipitation(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Precipitation_Param/Label"), "RIVER_MIN_PRECIPITATION", value, "%")
+
+func _on_range_change_river_threshold(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Threshold_Param/Label"), "RIVER_THRESHOLD", value)
+
+func _on_range_change_river_base_flux(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Base_Flux_Param/Label"), "RIVER_BASE_FLUX", value)
+
+
+func _on_range_change_cloud_coverage(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Coverage_Param/Label"), "CLOUD_COVERAGE", value, "%")
+
+func _on_range_change_cloud_density(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Density_Param/Label"), "CLOUD_DENSITY", value, "%")
+
+
+func _on_range_change_nb_cases_regions(value: int) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["REGION"]+"Nb_Cases_Regions_Param/Label"), "NB_CASES_REGIONS", value)
+
+func _on_range_change_region_cost_flat(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_Flat_Param/Label"), "REGION_COST_FLAT", value)
+
+func _on_range_change_region_cost_hill(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_Hill_Param/Label"), "REGION_COST_HILL", value)
+
+func _on_range_change_region_cost_river(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_River_Param/Label"), "REGION_COST_RIVER", value)
+
+func _on_range_change_region_river_threshold(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["REGION"]+"Region_River_Threshold_Param/Label"), "REGION_RIVER_THRESHOLD", value)
+
+func _on_range_change_region_budget_variation(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["REGION"]+"Region_Budget_Variation_Param/Label"), "REGION_BUDGET_VARIATION", value)
+
+func _on_range_change_region_noise_strength(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["REGION"]+"Region_Noise_Strength_Param/Label"), "REGION_NOISE_STRENGTH", value)
+
+
+func _on_range_change_nb_cases_ocean_regions(value: int) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["OCEAN"]+"Nb_Cases_Ocean_Regions_Param/Label"), "NB_CASES_OCEAN_REGIONS", value)
+
+func _on_range_change_ocean_cost_flat(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Cost_Flat_Param/Label"), "OCEAN_COST_FLAT", value)
+
+func _on_range_change_ocean_cost_deeper(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Cost_Deeper_Param/Label"), "OCEAN_COST_DEEPER", value)
+
+func _on_range_change_ocean_noise_strength(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Noise_Strength_Param/Label"), "OCEAN_NOISE_STRENGTH", value)
+
+
+func _on_range_change_petrole_probability(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["RESSOURCES"]+"Petrole_Probability_Param/Label"), "PETROLE_PROBABILITY", value, "%")
+
+func _on_range_change_petrole_deposit_size(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["RESSOURCES"]+"Petrole_Deposit_Size_Param/Label"), "PETROLE_DEPOSIT_SIZE", value, " km²")
+
+func _on_range_change_global_richness(value: float) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["RESSOURCES"]+"Global_Richness_Param/Label"), "GLOBAL_RICHNESS", value)
 
 func maj_labels() -> void:
-	_on_sld_rayon_planetaire_value_changed($Node2D/Control/sldRayonPlanetaire.value)
-	_on_sld_temp_moy_value_changed($Node2D/Control/sldTempMoy.value)
-	_on_sld_haut_eau_value_changed($Node2D/Control/sldHautEau.value)
-	_on_sld_precipitation_moy_value_changed($Node2D/Control/sldPrecipitationMoy.value)
-	_on_sld_elevation_value_changed($Node2D/Control/sldElevation.value)
-	_on_sld_thread_value_changed($Node2D/Control/sldThread.value)
-	_on_sld_nb_cases_regions_value_changed($Node2D/Control/sldNbCasesRegions.value)
-	# Slider optionnel - vérifier existence avant appel
-	if has_node("Node2D/Control/sldOceanRatio"):
-		_on_sld_ocean_ratio_value_changed($Node2D/Control/sldOceanRatio.value)
+	# TODO : REPLACE THE NODE PATH WITH CORRECT ONES
+	_on_range_change_thread_number($Node2D/Control/sldThread.value)
+	_on_range_change_planet_radius($Node2D/Control/sldRayonPlanetaire.value)
+	_on_range_change_planet_density($Node2D/Control/sldDensitePlanetaire.value)
+	_on_range_change_planet_temperature_avg($Node2D/Control/sldTemperatureMoyenne.value)
+
+	_on_range_change_terrain_scale($Node2D/Control/sldElevation.value)
+	_on_range_change_erosion_iterations($Node2D/Control/sldErosionIterations.value)
+	_on_range_change_erosion_rate($Node2D/Control/sldErosionRate.value)
+	_on_range_change_rain_rate($Node2D/Control/sldRainRate.value)
+	_on_range_change_evap_rate($Node2D/Control/sldEvapRate.value)
+	_on_range_change_flow_rate($Node2D/Control/sldFlowRate.value)
+	_on_range_change_deposition_rate($Node2D/Control/sldDepositionRate.value)
+	_on_range_change_capacity_multiplier($Node2D/Control/sldCapacityMultiplier.value)
+	_on_range_change_flux_iterations($Node2D/Control/sldFluxIterations.value)
+	_on_range_change_base_flux($Node2D/Control/sldBaseFlux.value)
+	_on_range_change_propagation_rate($Node2D/Control/sldPropagationRate.value)
+	_on_range_change_spreading_rate($Node2D/Control/sldSpreadingRate.value)
+	_on_range_change_max_crust_age($Node2D/Control/sldMaxCrustAge.value)
+	_on_range_change_subsidence_coefficient($Node2D/Control/sldSubsidenceCoefficient.value)
+	
+	_on_range_change_crater_density($Node2D/Control/sldCraterDensity.value)
+	_on_range_change_crater_min_radius($Node2D/Control/sldCraterMinRadius.value)
+	_on_range_change_crater_depth_ratio($Node2D/Control/sldCraterDepthRatio.value)
+	_on_range_change_crater_ejecta_extent($Node2D/Control/sldCraterEjectaExtent.value)
+	_on_range_change_crater_ejecta_decay($Node2D/Control/sldCraterEjectaDecay.value)
+	_on_range_change_crater_azimuth_var($Node2D/Control/sldCraterAzimuthVar.value)
+
+	_on_range_change_ice_probability($Node2D/Control/sldIceProbability.value)
+	_on_range_change_global_humidity($Node2D/Control/sldHumiditeGlobale.value)
+	_on_range_change_sea_level($Node2D/Control/sldNiveauEau.value)
+	_on_range_change_freshwater_max_size($Node2D/Control/sldFreshwaterMaxSize.value)
+	_on_range_change_lake_threshold($Node2D/Control/sldLakeThreshold.value)
+	_on_range_change_river_iterations($Node2D/Control/sldRiverIterations.value)
+	_on_range_change_river_min_altitude($Node2D/Control/sldRiverMinAltitude.value)
+	_on_range_change_river_min_precipitation($Node2D/Control/sldRiverMinPrecipitation.value)
+	_on_range_change_river_threshold($Node2D/Control/sldRiverThreshold.value)
+	_on_range_change_river_base_flux($Node2D/Control/sldRiverBaseFlux.value)
+
+	_on_range_change_cloud_coverage($Node2D/Control/sldCloudCoverage.value)
+	_on_range_change_cloud_density($Node2D/Control/sldCloudDensity.value)
+
+	_on_range_change_nb_cases_regions($Node2D/Control/sldNbCasesRegions.value)
+	_on_range_change_region_cost_flat($Node2D/Control/sldRegionCostFlat.value)
+	_on_range_change_region_cost_hill($Node2D/Control/sldRegionCostHill.value)
+	_on_range_change_region_cost_river($Node2D/Control/sldRegionCostRiver.value)
+	_on_range_change_region_river_threshold($Node2D/Control/sldRegionRiverThreshold.value)
+	_on_range_change_region_budget_variation($Node2D/Control/sldRegionBudgetVariation.value)
+	_on_range_change_region_noise_strength($Node2D/Control/sldRegionNoiseStrength.value)
+
+	_on_range_change_nb_cases_ocean_regions($Node2D/Control/sldNbCasesOceanRegions.value)
+	_on_range_change_ocean_cost_flat($Node2D/Control/sldOceanCostFlat.value)
+	_on_range_change_ocean_cost_deeper($Node2D/Control/sldOceanCostDeeper.value)
+	_on_range_change_ocean_noise_strength($Node2D/Control/sldOceanNoiseStrength.value)
+
+	_on_range_change_petrole_probability($Node2D/Control/sldPetroleProbability.value)
+	_on_range_change_petrole_deposit_size($Node2D/Control/sldPetroleDepositSize.value)
+	_on_range_change_global_richness($Node2D/Control/sldGlobalRichness.value)
 
 # ============================================================================
 # LANGUAGE & SYSTEM

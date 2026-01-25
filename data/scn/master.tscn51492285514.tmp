@@ -1,6 +1,7 @@
-[gd_scene load_steps=63 format=3 uid="uid://j6dp7dc7d3ov"]
+[gd_scene load_steps=64 format=3 uid="uid://j6dp7dc7d3ov"]
 
 [ext_resource type="Texture2D" uid="uid://bk66lt4swbv6k" path="res://data/img/UI/fond_machine.png" id="1_krsn2"]
+[ext_resource type="Script" uid="uid://dk0bs7ewymaua" path="res://src/scenes/master.gd" id="1_o3yh3"]
 [ext_resource type="Texture2D" uid="uid://bxt5lqvtrj7js" path="res://data/img/UI/menu_map_machine.png" id="2_ctyun"]
 [ext_resource type="StyleBox" uid="uid://drou36ra2vb7i" path="res://data/styles/lineEdit.tres" id="4_i0hn2"]
 [ext_resource type="Texture2D" uid="uid://5rhhd771dqru" path="res://data/img/UI/button/left_btn.png" id="5_4smu3"]
@@ -96,6 +97,7 @@ texture = ExtResource("33_wim0k")
 texture = ExtResource("34_xtfv3")
 
 [node name="Master" type="Node2D"]
+script = ExtResource("1_o3yh3")
 metadata/_edit_lock_ = true
 
 [node name="Camera2D" type="Camera2D" parent="."]
@@ -1716,7 +1718,7 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Region_Generation_Optimised_Param" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters"]
+[node name="Region_Generation_Optimised_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters"]
 layout_mode = 2
 
 [node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Generation_Optimised_Param"]
@@ -1726,7 +1728,7 @@ theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "REGION_GENERATION_OPTIMISED"
 
-[node name="LineEdit" type="CheckButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Generation_Optimised_Param"]
+[node name="LineEdit" type="CheckBox" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Generation_Optimised_Param"]
 layout_mode = 2
 
 [node name="Region_Noise_Strength_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters"]

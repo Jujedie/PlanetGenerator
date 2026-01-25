@@ -92,7 +92,7 @@ REGION_NOISE_STRENGTH,Region noise strength : {val},Force du bruit régional : {
 REGION_OCEAN_CATEGORIE,Region ocean category,Catégorie océan région,Ozean-Kategorie Region
 NB_CASES_OCEAN_REGIONS,Number of ocean region tiles : {val},Nombre de cases océan : {val},Anzahl der Ozeanregionenfelder : {val}
 OCEAN_COST_FLAT,Ocean cost (flat) : {val},Coût océan (plat) : {val},Ozeankosten (flach) : {val}
-OCEAN_COST_RIVER,Ocean cost (river) : {val},Coût océan (rivière) : {val},Ozeankosten (Fluss) : {val}
+OCEAN_COST_DEEPER,Ocean cost (deeper) : {val},Coût océan (profond) : {val},Ozeankosten (tief) : {val}
 OCEAN_NOISE_STRENGTH,Ocean noise strength : {val},Force du bruit océan : {val},Ozeanrauschstärke : {val}
 
 RESSOURCES_CATEGORIE,Resources category,Catégorie ressources,Ressourcenkategorie
