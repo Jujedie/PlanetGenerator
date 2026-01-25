@@ -88,6 +88,7 @@ REGION_COST_HILL,Region cost (hill) : {val},Coût région (colline) : {val},Regi
 REGION_COST_RIVER,Region cost (river) : {val},Coût région (rivière) : {val},Regionenkosten (Fluss) : {val}
 REGION_RIVER_THRESHOLD,Region river threshold : {val},Seuil rivière région : {val},Fluss-Schwelle (région) : {val}
 REGION_BUDGET_VARIATION,Region budget variation : {val},Variation du budget régional : {val},Regionale Budgetvariation : {val}
+REGION_GENERATION_OPTIMISED,Region generation optimized,Génération de régions optimisée,Optimierte Regionengenerierung
 REGION_NOISE_STRENGTH,Region noise strength : {val},Force du bruit régional : {val},Regionale Rauschstärke : {val}
 REGION_OCEAN_CATEGORIE,Region ocean category,Catégorie océan région,Ozean-Kategorie Region
 NB_CASES_OCEAN_REGIONS,Number of ocean region tiles : {val},Nombre de cases océan : {val},Anzahl der Ozeanregionenfelder : {val}
