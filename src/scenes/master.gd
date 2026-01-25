@@ -61,7 +61,7 @@ func _ready() -> void:
 func _on_btn_comfirme_pressed() -> void:
 	# UI Gather Data
 	var nom          = get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Name_Param/HBoxContainer/LineEdit")
-	var lblMapStatus = $"ImageFrame/ImageMenu/Control Images/LabelNomMap"
+	var lblMapStatus = $"ImageFrame/LabelNomMap"
 
 	# Reset state
 	maps      = []
@@ -110,8 +110,8 @@ func _set_buttons_enabled(enabled: bool) -> void:
 	$"ImageFrame/Control General/btnGenerer".disabled = !enabled
 	$"ImageFrame/Control General/btnSauvegarder".disabled = !enabled
 	$"ImageFrame/Control General/btnRandomiser".disabled  = !enabled
-	$"ImageFrame/ImageMenu/Control Images/btnSuivant".disabled   = !enabled
-	$"ImageFrame/ImageMenu/Control Images/btnPrecedent".disabled = !enabled
+	$"ImageFrame/btnSuivant".disabled   = !enabled
+	$"ImageFrame/btnPrecedent".disabled = !enabled
 
 ## Compile et normalise les paramètres de génération pour le GPU.
 ##
@@ -235,7 +235,7 @@ func get_map_display_name(file_path: String) -> String:
 func update_map_label() -> void:
 	if maps.is_empty():
 		return
-	var lbl = $"ImageFrame/ImageMenu/Control Images/LabelNomMap"
+	var lbl = $"ImageFrame/LabelNomMap"
 	lbl.text = get_map_display_name(maps[map_index])
 
 func _on_btn_suivant_pressed() -> void:

@@ -154,7 +154,7 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		exported_files[key] = region_result[key]
 	
 	# === EXPORT RÉGIONS OCÉANIQUES (Step 4.5) ===
-	var ocean_region_result = _export_ocean_region_map(gpu, output_dir)
+	var ocean_region_result = _export_ocean_region_map(gpu, output_dir,params.get("region_generation_optimised",true))
 	for key in ocean_region_result.keys():
 		exported_files[key] = ocean_region_result[key]
 	
@@ -566,6 +566,7 @@ func _export_region_map(gpu: GPUContext, output_dir: String, optimised_region_ge
 		return result
 
 	if not optimised_region_generation:
+		print("  Merging isolated regions of size 1...")
 		# Fusion des régions de taille 1 avec des voisins
 		var land_color = Color(0x16 / 255.0, 0x1a / 255.0, 0x1f / 255.0)  # 0x161a1f
 		img = _merge_isolated_regions(img, width, height, land_color)
@@ -637,9 +638,10 @@ func _export_ocean_region_map(gpu: GPUContext, output_dir: String, optimised_reg
 		return result
 	
 	if not optimised_region_generation:
+		print("  Merging isolated regions of size 1...")
 		# Fusion des régions de taille 1 avec des voisins
 		var ocean_color = Color(0x2a / 255.0, 0x2a / 255.0, 0x2a / 255.0)  # 0x2a2a2a
-		img = _merge_isolated_regions(img, width, height, ocean_color)
+		img = _merge_isolated_regions(img, width, height, ocean_color,true)
 
 	# Sauvegarder en PNG
 	var filepath = output_dir + "/" + filename
@@ -1315,16 +1317,17 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 
 ## Fusionne les régions isolées (taille 1) avec leurs voisins les plus fréquents
 ##
-## Pour chaque pixel qui n'a AUCUN voisin de sa couleur, remplit récursivement
-## tous les pixels voisins avec sa propre couleur (flood-fill).
+## Pour la terre: assigne le pixel isolé à la région voisine dominante
+## Pour l'eau: fait un flood-fill expansif jusqu'à rencontrer 2x la même couleur
 ##
 ## @param img: Image source (modifiée)
 ## @param width: Largeur de l'image
 ## @param height: Hauteur de l'image
 ## @param ignore_color: Couleur à ignorer (terre pour régions, océan pour régions océaniques)
+## @param merge_ocean: Si true, on fusionne les océans (comportement flood-fill)
 ## @return Image: Image avec régions isolées fusionnées
-func _merge_isolated_regions(img: Image, width: int, height: int, ignore_color: Color) -> Image:
-	print("  • Fusion des régions isolées (flood-fill récursif)...")
+func _merge_isolated_regions(img: Image, width: int, height: int, ignore_color: Color, merge_ocean: bool = false) -> Image:
+	print("  • Fusion des régions isolées...")
 	
 	# Voisinage 4-connecté (nord, ouest, est, sud)
 	var neighbors = [
@@ -1334,7 +1337,7 @@ func _merge_isolated_regions(img: Image, width: int, height: int, ignore_color: 
 		Vector2i(0, 1)     # Sud
 	]
 	
-	var total_filled = 0
+	var total_merged = 0
 	
 	for y in range(height):
 		for x in range(width):
@@ -1370,25 +1373,87 @@ func _merge_isolated_regions(img: Image, width: int, height: int, ignore_color: 
 				else:
 					neighbor_colors[color_key] = {"color": neighbor_color, "count": 1}
 			
-			# Si pas de voisin de la même couleur
-			if not has_same_neighbor:
-				# Vérifier s'il y a 2 voisins ou plus avec la même couleur
-				var should_stop = false
-				for color_data in neighbor_colors.values():
-					if color_data.count >= 2:
-						# Adopter cette couleur au lieu de faire le flood-fill
-						img.set_pixel(x, y, color_data.color)
-						total_filled += 1
-						should_stop = true
-						break
-				
-				# Si pas de couleur dominante (>=2 voisins), faire le flood-fill
-				if not should_stop:
+			# Si pas de voisin de la même couleur → pixel isolé
+			if not has_same_neighbor and neighbor_colors.size() > 0:
+				if merge_ocean:
+					# OCÉAN : Flood-fill expansif jusqu'à rencontrer 2x la même couleur
 					var filled = _flood_fill_neighbors(img, x, y, my_color, ignore_color, width, height, neighbors)
-					total_filled += filled
+					total_merged += filled
+				else:
+					# TERRE : Assigner uniquement ce pixel à la région voisine dominante
+					var best_color = null
+					var best_count = 0
+					
+					for color_data in neighbor_colors.values():
+						if color_data.count > best_count:
+							best_count = color_data.count
+							best_color = color_data.color
+					
+					if best_color != null:
+						img.set_pixel(x, y, best_color)
+						total_merged += 1
 	
-	print("    Fusion terminée : ", total_filled, " pixels colorés")
+	print("    Fusion terminée : ", total_merged, " pixels fusionnés")
 	return img
+
+
+## Flood-fill expansif pour l'océan : occupe tout le territoire jusqu'à
+## rencontrer deux fois la même couleur de région océanique établie
+##
+## @param img: Image à modifier
+## @param start_x: Position X de départ
+## @param start_y: Position Y de départ
+## @param fill_color: Couleur à propager
+## @param ignore_color: Couleur à ne pas traverser (terre)
+## @param width: Largeur de l'image
+## @param height: Hauteur de l'image
+## @param neighbors: Tableau des offsets de voisinage
+## @return int: Nombre de pixels remplis
+func _flood_fill_ocean_expansion(img: Image, start_x: int, start_y: int, fill_color: Color, ignore_color: Color, width: int, height: int, neighbors: Array) -> int:
+	var queue = [Vector2i(start_x, start_y)]
+	var visited = {}
+	var filled_count = 0
+	var color_encounters = {}  # Compte les rencontres de chaque couleur
+	
+	while queue.size() > 0:
+		var pos = queue.pop_front()
+		var key = "%d,%d" % [pos.x, pos.y]
+		
+		if visited.has(key):
+			continue
+		
+		visited[key] = true
+		var current_color = img.get_pixel(pos.x, pos.y)
+		
+		# Si c'est la terre, ne pas traverser
+		if _colors_equal(current_color, ignore_color):
+			continue
+		
+		# Si c'est une autre couleur d'océan (région établie)
+		if not _colors_equal(current_color, fill_color):
+			var color_key = _color_to_key(current_color)
+			if color_encounters.has(color_key):
+				color_encounters[color_key] += 1
+				# Si on rencontre 2x cette couleur, STOP : c'est une région établie
+				if color_encounters[color_key] >= 2:
+					continue
+			else:
+				color_encounters[color_key] = 1
+		
+		# Remplir ce pixel
+		img.set_pixel(pos.x, pos.y, fill_color)
+		filled_count += 1
+		
+		# Ajouter les voisins à la queue
+		for offset in neighbors:
+			var nx = (pos.x + offset.x + width) % width
+			var ny = clampi(pos.y + offset.y, 0, height - 1)
+			var neighbor_key = "%d,%d" % [nx, ny]
+			
+			if not visited.has(neighbor_key):
+				queue.push_back(Vector2i(nx, ny))
+	
+	return filled_count
 
 ## Remplit récursivement tous les pixels voisins (non-ignore_color) avec fill_color
 ##

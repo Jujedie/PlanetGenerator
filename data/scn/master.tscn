@@ -42,8 +42,6 @@
 [ext_resource type="Texture2D" uid="uid://bfejthja5rbtf" path="res://data/img/UI/button/red_black_btn_pressed.png" id="33_wim0k"]
 [ext_resource type="Texture2D" uid="uid://bqa62hnonwr33" path="res://data/img/UI/button/red_black_btn_hover.png" id="34_xtfv3"]
 
-[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_7eaih"]
-
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_dbnah"]
 
 [sub_resource type="Theme" id="Theme_7eaih"]
@@ -101,6 +99,8 @@ texture = ExtResource("33_wim0k")
 
 [sub_resource type="StyleBoxTexture" id="StyleBoxTexture_k8o41"]
 texture = ExtResource("34_xtfv3")
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_7eaih"]
 
 [node name="Master" type="Node2D"]
 script = ExtResource("1_7eaih")
@@ -172,6 +172,7 @@ text = "L I V E  F E E D"
 metadata/_edit_lock_ = true
 
 [node name="LabelDataCoord" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels"]
+visible = false
 layout_mode = 0
 offset_left = 12.141739
 offset_top = 7.5970154
@@ -206,59 +207,6 @@ theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.21996303, 0.21996303, 0.21996303, 1)
 theme_override_font_sizes/font_size = 25
 text = "VIEW_MODE"
-metadata/_edit_lock_ = true
-
-[node name="LabelSoftware" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels"]
-layout_mode = 0
-offset_left = -131.12683
-offset_top = -167.34894
-offset_right = 202.87317
-offset_bottom = -106.34894
-theme = ExtResource("5_e2i44")
-theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
-theme_override_font_sizes/font_size = 50
-text = "PLANET GENERATOR"
-metadata/_edit_lock_ = true
-
-[node name="btnPrecedent" type="TextureButton" parent="ImageFrame/ImageMenu/Control Images"]
-layout_mode = 0
-offset_left = 184.92792
-offset_top = 454.68127
-offset_right = 232.92792
-offset_bottom = 502.68127
-texture_normal = ExtResource("5_4smu3")
-texture_pressed = ExtResource("6_7eaih")
-texture_hover = ExtResource("6_7eaih")
-texture_disabled = ExtResource("6_7eaih")
-texture_focused = ExtResource("5_4smu3")
-metadata/_edit_lock_ = true
-
-[node name="LabelNomMap" type="Label" parent="ImageFrame/ImageMenu/Control Images"]
-layout_mode = 0
-offset_left = 238.20364
-offset_top = 457.56097
-offset_right = 422.5089
-offset_bottom = 500.7575
-theme = ExtResource("5_e2i44")
-theme_override_colors/font_color = Color(0.8784314, 0.5882353, 0, 1)
-theme_override_font_sizes/font_size = 30
-theme_override_styles/focus = SubResource("StyleBoxEmpty_7eaih")
-text = "Topographie (Gris)"
-horizontal_alignment = 1
-clip_text = true
-metadata/_edit_lock_ = true
-
-[node name="btnSuivant" type="TextureButton" parent="ImageFrame/ImageMenu/Control Images"]
-layout_mode = 0
-offset_left = 426.82855
-offset_top = 454.68124
-offset_right = 474.82855
-offset_bottom = 502.68124
-texture_normal = ExtResource("7_o3yh3")
-texture_pressed = ExtResource("8_k8o41")
-texture_hover = ExtResource("8_k8o41")
-texture_disabled = ExtResource("8_k8o41")
-texture_focused = ExtResource("7_o3yh3")
 metadata/_edit_lock_ = true
 
 [node name="ImageMenu" type="Sprite2D" parent="ImageFrame/ImageMenu"]
@@ -347,6 +295,7 @@ metadata/_edit_lock_ = true
 
 [node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed/seed"]
 layout_mode = 2
+focus_mode = 0
 texture_normal = ExtResource("8_dfspw")
 texture_pressed = ExtResource("9_ctyun")
 texture_hover = ExtResource("9_ctyun")
@@ -372,6 +321,7 @@ metadata/_edit_lock_ = true
 
 [node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/Title"]
 layout_mode = 2
+focus_mode = 0
 texture_normal = ExtResource("10_n06j4")
 texture_pressed = ExtResource("11_s305m")
 texture_hover = ExtResource("12_i1wak")
@@ -411,6 +361,7 @@ theme_override_styles/focus = SubResource("StyleBoxEmpty_gihwl")
 
 [node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Name_Param/HBoxContainer"]
 layout_mode = 2
+focus_mode = 0
 texture_normal = ExtResource("8_dfspw")
 texture_pressed = ExtResource("9_ctyun")
 texture_hover = ExtResource("9_ctyun")
@@ -577,6 +528,7 @@ metadata/_edit_lock_ = true
 
 [node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/Title"]
 layout_mode = 2
+focus_mode = 0
 texture_normal = ExtResource("10_n06j4")
 texture_pressed = ExtResource("11_s305m")
 texture_hover = ExtResource("12_i1wak")
@@ -971,6 +923,7 @@ metadata/_edit_lock_ = true
 
 [node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/Title"]
 layout_mode = 2
+focus_mode = 0
 texture_normal = ExtResource("10_n06j4")
 texture_pressed = ExtResource("11_s305m")
 texture_hover = ExtResource("12_i1wak")
@@ -1156,6 +1109,7 @@ metadata/_edit_lock_ = true
 
 [node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/Title"]
 layout_mode = 2
+focus_mode = 0
 texture_normal = ExtResource("10_n06j4")
 texture_pressed = ExtResource("11_s305m")
 texture_hover = ExtResource("12_i1wak")
@@ -1473,6 +1427,7 @@ metadata/_edit_lock_ = true
 
 [node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/Title"]
 layout_mode = 2
+focus_mode = 0
 texture_normal = ExtResource("10_n06j4")
 texture_pressed = ExtResource("11_s305m")
 texture_hover = ExtResource("12_i1wak")
@@ -1557,6 +1512,7 @@ metadata/_edit_lock_ = true
 
 [node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/Title"]
 layout_mode = 2
+focus_mode = 0
 texture_normal = ExtResource("10_n06j4")
 texture_pressed = ExtResource("11_s305m")
 texture_hover = ExtResource("12_i1wak")
@@ -1734,7 +1690,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Generation_Optimised_Param"]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
-theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
+theme_override_colors/font_color = Color(0.46, 0.14904, 0.101200014, 1)
 theme_override_font_sizes/font_size = 25
 text = "REGION_GENERATION_OPTIMISED"
 
@@ -1784,6 +1740,7 @@ metadata/_edit_lock_ = true
 
 [node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/Title"]
 layout_mode = 2
+focus_mode = 0
 texture_normal = ExtResource("10_n06j4")
 texture_pressed = ExtResource("11_s305m")
 texture_hover = ExtResource("12_i1wak")
@@ -1919,6 +1876,7 @@ metadata/_edit_lock_ = true
 
 [node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/Title"]
 layout_mode = 2
+focus_mode = 0
 texture_normal = ExtResource("10_n06j4")
 texture_pressed = ExtResource("11_s305m")
 texture_hover = ExtResource("12_i1wak")
@@ -2012,6 +1970,18 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
+[node name="LabelSoftware" type="Label" parent="ImageFrame/Control General"]
+layout_mode = 0
+offset_left = 20.878296
+offset_top = 8.639354
+offset_right = 354.8783
+offset_bottom = 69.63935
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_font_sizes/font_size = 50
+text = "PLANET GENERATOR"
+metadata/_edit_lock_ = true
+
 [node name="LabelParameters" type="Label" parent="ImageFrame/Control General"]
 layout_mode = 0
 offset_left = 977.68176
@@ -2068,6 +2038,7 @@ offset_left = 843.77246
 offset_top = 8.639309
 offset_right = 1112.7725
 offset_bottom = 70.63931
+focus_mode = 0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
 theme_override_colors/font_focus_color = Color(0.9254902, 0.61960787, 0, 1)
@@ -2095,6 +2066,7 @@ offset_left = 1028.7977
 offset_top = 587.473
 offset_right = 1297.7979
 offset_bottom = 634.473
+focus_mode = 0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
 theme_override_colors/font_focus_color = Color(0.9254902, 0.61960787, 0, 1)
@@ -2122,6 +2094,7 @@ offset_left = 1028.7976
 offset_top = 639.30884
 offset_right = 1297.7976
 offset_bottom = 686.30884
+focus_mode = 0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
 theme_override_colors/font_focus_color = Color(0.9254902, 0.61960787, 0, 1)
@@ -2149,6 +2122,7 @@ offset_left = 1309.5752
 offset_top = 596.8322
 offset_right = 1339.5752
 offset_bottom = 626.8322
+focus_mode = 0
 texture_normal = ExtResource("30_svf8o")
 texture_pressed = ExtResource("31_gnqa1")
 texture_hover = ExtResource("32_23ir5")
@@ -2156,8 +2130,48 @@ texture_disabled = ExtResource("32_23ir5")
 texture_focused = ExtResource("30_svf8o")
 metadata/_edit_lock_ = true
 
-[connection signal="pressed" from="ImageFrame/ImageMenu/Control Images/btnPrecedent" to="." method="_on_btn_precedant_pressed"]
-[connection signal="pressed" from="ImageFrame/ImageMenu/Control Images/btnSuivant" to="." method="_on_btn_suivant_pressed"]
+[node name="btnPrecedent" type="TextureButton" parent="ImageFrame"]
+offset_left = 336.21307
+offset_top = 631.38947
+offset_right = 384.21307
+offset_bottom = 679.38947
+focus_mode = 0
+action_mode = 0
+texture_normal = ExtResource("5_4smu3")
+texture_pressed = ExtResource("6_7eaih")
+texture_hover = ExtResource("6_7eaih")
+texture_disabled = ExtResource("6_7eaih")
+texture_focused = ExtResource("5_4smu3")
+metadata/_edit_lock_ = true
+
+[node name="LabelNomMap" type="Label" parent="ImageFrame"]
+offset_left = 388.7689
+offset_top = 633.5493
+offset_right = 575.9539
+offset_bottom = 676.74585
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.8784314, 0.5882353, 0, 1)
+theme_override_font_sizes/font_size = 30
+theme_override_styles/focus = SubResource("StyleBoxEmpty_7eaih")
+text = "Topographie (Gris)"
+horizontal_alignment = 1
+clip_text = true
+metadata/_edit_lock_ = true
+
+[node name="btnSuivant" type="TextureButton" parent="ImageFrame"]
+offset_left = 579.5536
+offset_top = 631.38947
+offset_right = 627.5536
+offset_bottom = 679.38947
+focus_mode = 0
+action_mode = 0
+texture_normal = ExtResource("7_o3yh3")
+texture_pressed = ExtResource("8_k8o41")
+texture_hover = ExtResource("8_k8o41")
+texture_disabled = ExtResource("8_k8o41")
+texture_focused = ExtResource("7_o3yh3")
+metadata/_edit_lock_ = true
+
 [connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed/seed/TextureButton" to="." method="_on_random_seed_pressed"]
 [connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/Title/TextureButton" to="." method="_on_fold_button_pressed" binds= ["ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer"]]
 [connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Name_Param/HBoxContainer/TextureButton" to="." method="_on_random_name_pressed"]
@@ -2226,3 +2240,5 @@ metadata/_edit_lock_ = true
 [connection signal="pressed" from="ImageFrame/Control General/btnGenerer" to="." method="_on_btn_comfirme_pressed"]
 [connection signal="pressed" from="ImageFrame/Control General/btnSauvegarder" to="." method="_on_btn_sauvegarder_pressed"]
 [connection signal="pressed" from="ImageFrame/Control General/btnRandomiser" to="." method="_on_btn_randomise_pressed"]
+[connection signal="pressed" from="ImageFrame/btnPrecedent" to="." method="_on_btn_precedant_pressed"]
+[connection signal="pressed" from="ImageFrame/btnSuivant" to="." method="_on_btn_suivant_pressed"]
