@@ -49,6 +49,8 @@ func _ready() -> void:
 		langue = "en"
 	TranslationServer.set_locale(langue)
 
+	$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = load("res://data/img/UI/no_data.png")
+
 	# 2. UI Initialization
 	maj_labels()
 
