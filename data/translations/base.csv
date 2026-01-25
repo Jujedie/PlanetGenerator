@@ -31,6 +31,7 @@ MAP_RIVERS,Rivers/Lakes,Rivières/Lacs,Flüsse/Seen
 MAP_ICE,Ice sheet,Banquise,Eisschicht
 MAP_BIOMES,Biomes,Biomes,Biome
 MAP_REGIONS,Regions,Régions,Regionen
+MAP_OCEAN_REGIONS,Ocean regions,Régions océaniques,Ozeanregionen
 MAP_PREVIEW,Preview,Aperçu,Vorschau
 OCEAN_RATIO,Ocean coverage : {val},Couverture océanique : {val},Ozeanbedeckung : {val}
 
