@@ -1396,65 +1396,6 @@ func _merge_isolated_regions(img: Image, width: int, height: int, ignore_color: 
 	print("    Fusion terminée : ", total_merged, " pixels fusionnés")
 	return img
 
-
-## Flood-fill expansif pour l'océan : occupe tout le territoire jusqu'à
-## rencontrer deux fois la même couleur de région océanique établie
-##
-## @param img: Image à modifier
-## @param start_x: Position X de départ
-## @param start_y: Position Y de départ
-## @param fill_color: Couleur à propager
-## @param ignore_color: Couleur à ne pas traverser (terre)
-## @param width: Largeur de l'image
-## @param height: Hauteur de l'image
-## @param neighbors: Tableau des offsets de voisinage
-## @return int: Nombre de pixels remplis
-func _flood_fill_ocean_expansion(img: Image, start_x: int, start_y: int, fill_color: Color, ignore_color: Color, width: int, height: int, neighbors: Array) -> int:
-	var queue = [Vector2i(start_x, start_y)]
-	var visited = {}
-	var filled_count = 0
-	var color_encounters = {}  # Compte les rencontres de chaque couleur
-	
-	while queue.size() > 0:
-		var pos = queue.pop_front()
-		var key = "%d,%d" % [pos.x, pos.y]
-		
-		if visited.has(key):
-			continue
-		
-		visited[key] = true
-		var current_color = img.get_pixel(pos.x, pos.y)
-		
-		# Si c'est la terre, ne pas traverser
-		if _colors_equal(current_color, ignore_color):
-			continue
-		
-		# Si c'est une autre couleur d'océan (région établie)
-		if not _colors_equal(current_color, fill_color):
-			var color_key = _color_to_key(current_color)
-			if color_encounters.has(color_key):
-				color_encounters[color_key] += 1
-				# Si on rencontre 2x cette couleur, STOP : c'est une région établie
-				if color_encounters[color_key] >= 2:
-					continue
-			else:
-				color_encounters[color_key] = 1
-		
-		# Remplir ce pixel
-		img.set_pixel(pos.x, pos.y, fill_color)
-		filled_count += 1
-		
-		# Ajouter les voisins à la queue
-		for offset in neighbors:
-			var nx = (pos.x + offset.x + width) % width
-			var ny = clampi(pos.y + offset.y, 0, height - 1)
-			var neighbor_key = "%d,%d" % [nx, ny]
-			
-			if not visited.has(neighbor_key):
-				queue.push_back(Vector2i(nx, ny))
-	
-	return filled_count
-
 ## Remplit récursivement tous les pixels voisins (non-ignore_color) avec fill_color
 ##
 ## @param img: Image à modifier
