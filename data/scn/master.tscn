@@ -1,5 +1,6 @@
-[gd_scene load_steps=63 format=3 uid="uid://j6dp7dc7d3ov"]
+[gd_scene load_steps=66 format=3 uid="uid://j6dp7dc7d3ov"]
 
+[ext_resource type="Script" uid="uid://dk0bs7ewymaua" path="res://src/scenes/master.gd" id="1_7eaih"]
 [ext_resource type="Texture2D" uid="uid://bk66lt4swbv6k" path="res://data/img/UI/fond_machine.png" id="1_krsn2"]
 [ext_resource type="Texture2D" uid="uid://bxt5lqvtrj7js" path="res://data/img/UI/menu_map_machine.png" id="2_ctyun"]
 [ext_resource type="StyleBox" uid="uid://drou36ra2vb7i" path="res://data/styles/lineEdit.tres" id="4_i0hn2"]
@@ -45,6 +46,10 @@
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_dbnah"]
 
+[sub_resource type="Theme" id="Theme_7eaih"]
+default_font = ExtResource("14_dfspw")
+default_font_size = 20
+
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_n06j4"]
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_s305m"]
@@ -77,6 +82,8 @@ default_font_size = 25
 content_margin_left = 6.0
 texture = ExtResource("15_dbnah")
 
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_o3yh3"]
+
 [sub_resource type="StyleBoxTexture" id="StyleBoxTexture_wim0k"]
 texture = ExtResource("29_iijg3")
 
@@ -96,6 +103,7 @@ texture = ExtResource("33_wim0k")
 texture = ExtResource("34_xtfv3")
 
 [node name="Master" type="Node2D"]
+script = ExtResource("1_7eaih")
 metadata/_edit_lock_ = true
 
 [node name="Camera2D" type="Camera2D" parent="."]
@@ -236,6 +244,7 @@ theme_override_colors/font_color = Color(0.8784314, 0.5882353, 0, 1)
 theme_override_font_sizes/font_size = 30
 theme_override_styles/focus = SubResource("StyleBoxEmpty_7eaih")
 text = "Topographie (Gris)"
+horizontal_alignment = 1
 clip_text = true
 metadata/_edit_lock_ = true
 
@@ -295,11 +304,12 @@ metadata/_edit_lock_ = true
 
 [node name="PanelSeed" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"]
 layout_mode = 2
+size_flags_horizontal = 0
 metadata/_edit_lock_ = true
 
 [node name="GenerationMenu" type="Sprite2D" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed"]
 position = Vector2(-7.199402, 2.8797607)
-scale = Vector2(1.1065749, 1)
+scale = Vector2(0.60741484, 1.028489)
 texture = ExtResource("6_gihwl")
 centered = false
 metadata/_edit_lock_ = true
@@ -313,13 +323,14 @@ text = "GENERATION_SEED"
 metadata/_edit_lock_ = true
 
 [node name="seed" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed"]
+layout_direction = 2
 layout_mode = 2
 metadata/_edit_lock_ = true
 
 [node name="LineEdit" type="SpinBox" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed/seed"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme = ExtResource("5_e2i44")
+theme = SubResource("Theme_7eaih")
 theme_override_styles/up_background = SubResource("StyleBoxEmpty_n06j4")
 theme_override_styles/up_background_hovered = SubResource("StyleBoxEmpty_s305m")
 theme_override_styles/up_background_pressed = SubResource("StyleBoxEmpty_i1wak")
@@ -925,7 +936,7 @@ layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
-text = "SUBSIDENCE_COEFF"
+text = "SUBSIDENCE_COEFFICIENT"
 
 [node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Subsidence_Coeff_Param"]
 layout_mode = 2
@@ -1729,6 +1740,7 @@ text = "REGION_GENERATION_OPTIMISED"
 
 [node name="LineEdit" type="CheckButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Generation_Optimised_Param"]
 layout_mode = 2
+theme_override_styles/focus = SubResource("StyleBoxEmpty_o3yh3")
 
 [node name="Region_Noise_Strength_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters"]
 layout_mode = 2
@@ -2057,11 +2069,11 @@ offset_top = 8.639309
 offset_right = 1112.7725
 offset_bottom = 70.63931
 theme = ExtResource("5_e2i44")
-theme_override_colors/font_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
-theme_override_colors/font_focus_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
-theme_override_colors/font_pressed_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
-theme_override_colors/font_hover_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
-theme_override_colors/font_hover_pressed_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
+theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_focus_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_pressed_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.9254902, 0.61960787, 0, 1)
 theme_override_font_sizes/font_size = 50
 theme_override_styles/normal = SubResource("StyleBoxTexture_wim0k")
 theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_wim0k")
@@ -2084,11 +2096,11 @@ offset_top = 587.473
 offset_right = 1297.7979
 offset_bottom = 634.473
 theme = ExtResource("5_e2i44")
-theme_override_colors/font_color = Color(0.8357474, 0.84530276, 0.8484986, 1)
-theme_override_colors/font_focus_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
-theme_override_colors/font_pressed_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
-theme_override_colors/font_hover_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
-theme_override_colors/font_hover_pressed_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
+theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_focus_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_pressed_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.9254902, 0.61960787, 0, 1)
 theme_override_font_sizes/font_size = 38
 theme_override_styles/normal = SubResource("StyleBoxTexture_wim0k")
 theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_wim0k")
@@ -2102,6 +2114,7 @@ theme_override_styles/disabled = SubResource("StyleBoxTexture_xtfv3")
 theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_xtfv3")
 theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
 text = "GENERER"
+metadata/_edit_lock_ = true
 
 [node name="btnSauvegarder" type="Button" parent="ImageFrame/Control General"]
 layout_mode = 0
@@ -2128,6 +2141,7 @@ theme_override_styles/disabled = SubResource("StyleBoxTexture_o3yh3")
 theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_o3yh3")
 theme_override_styles/focus = SubResource("StyleBoxTexture_7eaih")
 text = "SAUVEGARDER"
+metadata/_edit_lock_ = true
 
 [node name="btnRandomiser" type="TextureButton" parent="ImageFrame/Control General"]
 layout_mode = 0
@@ -2140,3 +2154,75 @@ texture_pressed = ExtResource("31_gnqa1")
 texture_hover = ExtResource("32_23ir5")
 texture_disabled = ExtResource("32_23ir5")
 texture_focused = ExtResource("30_svf8o")
+metadata/_edit_lock_ = true
+
+[connection signal="pressed" from="ImageFrame/ImageMenu/Control Images/btnPrecedent" to="." method="_on_btn_precedant_pressed"]
+[connection signal="pressed" from="ImageFrame/ImageMenu/Control Images/btnSuivant" to="." method="_on_btn_suivant_pressed"]
+[connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed/seed/TextureButton" to="." method="_on_random_seed_pressed"]
+[connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/Title/TextureButton" to="." method="_on_fold_button_pressed" binds= ["ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer"]]
+[connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Name_Param/HBoxContainer/TextureButton" to="." method="_on_random_name_pressed"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Radius_Param/LineEdit" to="." method="_on_range_change_planet_radius"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Density_Param/LineEdit" to="." method="_on_range_change_planet_density"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Temperature_Param/LineEdit" to="." method="_on_range_change_planet_temperature_avg"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Thread_Number_Param/LineEdit" to="." method="_on_range_change_thread_number"]
+[connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/Title/TextureButton" to="." method="_on_fold_button_pressed" binds= ["ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer"]]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Terrain_Scale_Param/LineEdit" to="." method="_on_range_change_terrain_scale"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Erosions_Iterations_Param/LineEdit" to="." method="_on_range_change_erosion_iterations"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Erosion_Rate_Param/LineEdit" to="." method="_on_range_change_erosion_rate"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Rain_Rate_Param/LineEdit" to="." method="_on_range_change_rain_rate"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Evap_Rate_Param/LineEdit" to="." method="_on_range_change_evap_rate"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Flow_Rate_Param/LineEdit" to="." method="_on_range_change_flow_rate"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Deposition_Rate_Param/LineEdit" to="." method="_on_range_change_deposition_rate"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Capacity_Multiplier_Param/LineEdit" to="." method="_on_range_change_capacity_multiplier"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Flux_Iterations_Param/LineEdit" to="." method="_on_range_change_flux_iterations"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Base_Flux_Param/LineEdit" to="." method="_on_range_change_base_flux"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Propagation_Rate_Param/LineEdit" to="." method="_on_range_change_propagation_rate"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Spreading_Rate_Param/LineEdit" to="." method="_on_range_change_spreading_rate"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Max_Crust_Age_Param/LineEdit" to="." method="_on_range_change_max_crust_age"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Subsidence_Coeff_Param/LineEdit" to="." method="_on_range_change_subsidence_coefficient"]
+[connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/Title/TextureButton" to="." method="_on_fold_button_pressed" binds= ["ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer"]]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Density_Param/LineEdit" to="." method="_on_range_change_crater_density"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Min_Radius_Param/LineEdit" to="." method="_on_range_change_crater_min_radius"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Depth_Ratio_Param/LineEdit" to="." method="_on_range_change_crater_depth_ratio"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Ejecta_Extent_Param/LineEdit" to="." method="_on_range_change_crater_ejecta_extent"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Ejecta_Decay_Param/LineEdit" to="." method="_on_range_change_crater_ejecta_decay"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Azimuth_Var_Param/LineEdit" to="." method="_on_range_change_crater_azimuth_var"]
+[connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/Title/TextureButton" to="." method="_on_fold_button_pressed" binds= ["ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer"]]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Ocean_Ratio_Param/LineEdit" to="." method="_on_range_change_ocean_ratio"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Ice_Probability_Param/LineEdit" to="." method="_on_range_change_ice_probability"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Global_Humidity_Param/LineEdit" to="." method="_on_range_change_global_humidity"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Sea_Level_Param/LineEdit" to="." method="_on_range_change_sea_level"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Freshwater_Max_Size_Param/LineEdit" to="." method="_on_range_change_freshwater_max_size"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Lake_Threshold_Param/LineEdit" to="." method="_on_range_change_lake_threshold"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Iterations_Param/LineEdit" to="." method="_on_range_change_river_iterations"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Min_Altitude_Param/LineEdit" to="." method="_on_range_change_river_min_altitude"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Min_Precipitation_Param/LineEdit" to="." method="_on_range_change_river_min_precipitation"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Threshold_Param/LineEdit" to="." method="_on_range_change_river_threshold"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Base_Flux_Param/LineEdit" to="." method="_on_range_change_river_base_flux"]
+[connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/Title/TextureButton" to="." method="_on_fold_button_pressed" binds= ["ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer"]]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer/nuage_parameters/Cloud_Coverage_Param/LineEdit" to="." method="_on_range_change_cloud_coverage"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer/nuage_parameters/Cloud_Density_Param/LineEdit" to="." method="_on_range_change_cloud_density"]
+[connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/Title/TextureButton" to="." method="_on_fold_button_pressed" binds= ["ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer"]]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Nb_Cases_Regions_Param/LineEdit" to="." method="_on_range_change_nb_cases_regions"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Cost_Flat_Param/LineEdit" to="." method="_on_range_change_region_cost_flat"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Cost_Hill_Param/LineEdit" to="." method="_on_range_change_region_cost_hill"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Cost_River_Param/LineEdit" to="." method="_on_range_change_region_cost_river"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_River_Threshold_Param/LineEdit" to="." method="_on_range_change_region_river_threshold"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Budget_Variation_Param/LineEdit" to="." method="_on_range_change_region_budget_variation"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Noise_Strength_Param/LineEdit" to="." method="_on_range_change_region_noise_strength"]
+[connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/Title/TextureButton" to="." method="_on_fold_button_pressed" binds= ["ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer"]]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Nb_Cases_Ocean_Regions_Param/LineEdit" to="." method="_on_range_change_nb_cases_ocean_regions"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Ocean_Cost_Flat_Param/LineEdit" to="." method="_on_range_change_ocean_cost_flat"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Ocean_Cost_Deeper_Param/LineEdit" to="." method="_on_range_change_ocean_cost_deeper"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Ocean_Noise_Strength_Param/LineEdit" to="." method="_on_range_change_ocean_noise_strength"]
+[connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/Title/TextureButton" to="." method="_on_fold_button_pressed" binds= ["ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer"]]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters/Petrole_Probability_Param/LineEdit" to="." method="_on_range_change_petrole_probability"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters/Petrole_Deposit_Size_Param/LineEdit" to="." method="_on_range_change_petrole_deposit_size"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters/Global_Richness_Param/LineEdit" to="." method="_on_range_change_global_richness"]
+[connection signal="pressed" from="ImageFrame/Control General/HBoxContainer/CAN" to="." method="_on_btn_english_pressed"]
+[connection signal="pressed" from="ImageFrame/Control General/HBoxContainer/DEU" to="." method="_on_btn_german_pressed"]
+[connection signal="pressed" from="ImageFrame/Control General/HBoxContainer/FRA" to="." method="_on_btn_french_pressed"]
+[connection signal="pressed" from="ImageFrame/Control General/btnQuitter" to="." method="_on_btn_quitter_pressed"]
+[connection signal="pressed" from="ImageFrame/Control General/btnGenerer" to="." method="_on_btn_comfirme_pressed"]
+[connection signal="pressed" from="ImageFrame/Control General/btnSauvegarder" to="." method="_on_btn_sauvegarder_pressed"]
+[connection signal="pressed" from="ImageFrame/Control General/btnRandomiser" to="." method="_on_btn_randomise_pressed"]

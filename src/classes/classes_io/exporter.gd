@@ -149,7 +149,7 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		exported_files[key] = river_result[key]
 	
 	# === EXPORT RÉGIONS (Step 4) - Régions administratives ===
-	var region_result = _export_region_map(gpu, output_dir)
+	var region_result = _export_region_map(gpu, output_dir,params.get("region_generation_optimised",true))
 	for key in region_result.keys():
 		exported_files[key] = region_result[key]
 	

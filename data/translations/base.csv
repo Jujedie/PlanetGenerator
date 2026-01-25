@@ -56,7 +56,7 @@ BASE_FLUX,Base flux : {val},Flux de base : {val},Basisfluss : {val}
 PROPAGATION_RATE,Propagation rate : {val},Taux de propagation : {val},Ausbreitungsrate : {val}
 SPREADING_RATE,Spreading rate : {val},Taux d'étalement : {val},Ausbreitungsrate : {val}
 MAX_CRUST_AGE,Max crust age : {val},Âge max de la croûte : {val},Maximales Alter der Kruste : {val}
-SUBSIDENCE_COEFF,Subsidence coefficient : {val},Coefficient d'affaissement : {val},Setzungskoeffizient : {val}
+SUBSIDENCE_COEFFICIENT,Subsidence coefficient : {val},Coefficient d'affaissement : {val},Setzungskoeffizient : {val}
 CRATER_CATEGORIE,Crater category,Catégorie cratère,Kraterkategorie
 CRATER_DENSITY,Crater density : {val},Densité de cratères : {val},Kraterdichte : {val}
 CRATER_MIN_RADIUS,Crater min radius : {val},Rayon min du cratère : {val},Min. Kraterradius : {val}
