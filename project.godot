@@ -22,7 +22,7 @@ config/name_localized={
 }
 config/description="Application de génération de carte planétaire
 "
-config/version="v1.5.1"
+config/version="v2.0.0"
 config/tags=PackedStringArray("generation_procedurale", "logiciel", "pixel")
 run/main_scene="uid://j6dp7dc7d3ov"
 config/features=PackedStringArray("4.6", "Forward Plus")
