@@ -748,6 +748,11 @@ func initialize_final_map_textures() -> void:
 
 # === CHARGEMENT DES SHADERS (SÉCURISÉ) ===
 func load_compute_shader(glsl_path: String, shader_name: String) -> bool:
+	# Désactiver la vérification d'existence du fichier pour compatibilité pour les versions prod
+	#if not FileAccess.file_exists(glsl_path):
+	#	push_error("❌ SHADER NOT FOUND: " + glsl_path)
+	#	return false
+
 	var shader_file = load(glsl_path)
 	if not shader_file:
 		push_error("❌ Échec chargement fichier: " + glsl_path)
