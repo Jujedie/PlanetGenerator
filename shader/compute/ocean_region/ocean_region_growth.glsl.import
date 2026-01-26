@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://b4wehludwcmbj"
+path="res://.godot/imported/ocean_region_growth.glsl-47e76a109505b7c81e1d3f6f9b5f58bf.res"
+
+[deps]
+
+source_file="res://shader/compute/ocean_region/ocean_region_growth.glsl"
+dest_files=["res://.godot/imported/ocean_region_growth.glsl-47e76a109505b7c81e1d3f6f9b5f58bf.res"]
+
+[params]
+

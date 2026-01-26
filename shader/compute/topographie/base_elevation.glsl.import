@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://3gq86cc6mufj"
+path="res://.godot/imported/base_elevation.glsl-857a14b559c03d491ea045bfef5a43ce.res"
+
+[deps]
+
+source_file="res://shader/compute/topographie/base_elevation.glsl"
+dest_files=["res://.godot/imported/base_elevation.glsl-857a14b559c03d491ea045bfef5a43ce.res"]
+
+[params]
+

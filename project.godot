@@ -8,6 +8,10 @@
 
 config_version=5
 
+[animation]
+
+compatibility/default_parent_skeleton_in_mesh_instance_3d=true
+
 [application]
 
 config/name="Planet Generator"
@@ -18,12 +22,12 @@ config/name_localized={
 }
 config/description="Application de génération de carte planétaire
 "
-config/version="v1.5.1"
+config/version="v2.0.0"
 config/tags=PackedStringArray("generation_procedurale", "logiciel", "pixel")
-run/main_scene="res://data/scn/master.tscn"
-config/features=PackedStringArray("4.5", "Forward Plus")
-boot_splash/bg_color=Color(0.13682574, 0.13682574, 0.13682568, 1)
-boot_splash/fullsize=false
+run/main_scene="uid://j6dp7dc7d3ov"
+config/features=PackedStringArray("4.6", "Forward Plus")
+boot_splash/bg_color=Color(0.12955844, 0.12955847, 0.12955844, 1)
+boot_splash/stretch_mode=0
 boot_splash/image="uid://1nqqy1krp4q5"
 config/icon="uid://1nqqy1krp4q5"
 config/windows_native_icon="res://icon.ico"
@@ -34,10 +38,12 @@ Enum="*res://src/enum.gd"
 
 [display]
 
-window/size/viewport_width=1600
-window/size/viewport_height=900
-window/size/resizable=false
+window/size/viewport_width=1400
+window/size/viewport_height=700
 window/size/maximize_disabled=true
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/stretch/scale_mode="integer"
 
 [internationalization]
 

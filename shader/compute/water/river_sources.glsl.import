@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bgsalycto00je"
+path="res://.godot/imported/river_sources.glsl-181f439b969d5b44a58b47eb206097b0.res"
+
+[deps]
+
+source_file="res://shader/compute/water/river_sources.glsl"
+dest_files=["res://.godot/imported/river_sources.glsl-181f439b969d5b44a58b47eb206097b0.res"]
+
+[params]
+

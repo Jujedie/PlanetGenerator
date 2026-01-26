@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://cm065yao0b4xd"
+path="res://.godot/imported/precipitation.glsl-5a0be60f7d7e6e7613e4237e679dc6a2.res"
+
+[deps]
+
+source_file="res://shader/compute/atmosphere_climat/precipitation.glsl"
+dest_files=["res://.godot/imported/precipitation.glsl-5a0be60f7d7e6e7613e4237e679dc6a2.res"]
+
+[params]
+

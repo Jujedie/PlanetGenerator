@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://vqnskfuwiios"
+path="res://.godot/imported/region_seed_placement.glsl-4e027375dbe7d89f52a53497956284be.res"
+
+[deps]
+
+source_file="res://shader/compute/region/region_seed_placement.glsl"
+dest_files=["res://.godot/imported/region_seed_placement.glsl-4e027375dbe7d89f52a53497956284be.res"]
+
+[params]
+

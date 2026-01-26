@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://1jxih3lspdmq"
+path="res://.godot/imported/water_size_classify.glsl-aa572d1a9498c1f7a40353d7ae7b8208.res"
+
+[deps]
+
+source_file="res://shader/compute/water/water_size_classify.glsl"
+dest_files=["res://.godot/imported/water_size_classify.glsl-aa572d1a9498c1f7a40353d7ae7b8208.res"]
+
+[params]
+

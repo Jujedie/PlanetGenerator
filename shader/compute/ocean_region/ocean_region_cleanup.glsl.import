@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bkbxdc5px27k3"
+path="res://.godot/imported/ocean_region_cleanup.glsl-30e1195758803c51c9aee620030d3542.res"
+
+[deps]
+
+source_file="res://shader/compute/ocean_region/ocean_region_cleanup.glsl"
+dest_files=["res://.godot/imported/ocean_region_cleanup.glsl-30e1195758803c51c9aee620030d3542.res"]
+
+[params]
+

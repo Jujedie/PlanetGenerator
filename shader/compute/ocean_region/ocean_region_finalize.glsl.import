@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://cimhtxjl845ko"
+path="res://.godot/imported/ocean_region_finalize.glsl-063bd3bbb595cd900bdcc73a5e44d254.res"
+
+[deps]
+
+source_file="res://shader/compute/ocean_region/ocean_region_finalize.glsl"
+dest_files=["res://.godot/imported/ocean_region_finalize.glsl-063bd3bbb595cd900bdcc73a5e44d254.res"]
+
+[params]
+

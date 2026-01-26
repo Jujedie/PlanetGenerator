@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://cq0vxylw668qj"
+path="res://.godot/imported/crust_age_jfa.glsl-b621a3da4644b887df4a0845032a08d4.res"
+
+[deps]
+
+source_file="res://shader/compute/topographie/crust_age_jfa.glsl"
+dest_files=["res://.godot/imported/crust_age_jfa.glsl-b621a3da4644b887df4a0845032a08d4.res"]
+
+[params]
+

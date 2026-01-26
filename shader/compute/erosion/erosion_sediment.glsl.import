@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bglo5rxd5k4nu"
+path="res://.godot/imported/erosion_sediment.glsl-6d06578a81a8e8d29bb66eb4316be3dd.res"
+
+[deps]
+
+source_file="res://shader/compute/erosion/erosion_sediment.glsl"
+dest_files=["res://.godot/imported/erosion_sediment.glsl-6d06578a81a8e8d29bb66eb4316be3dd.res"]
+
+[params]
+
