@@ -1,4 +1,4 @@
-[gd_scene load_steps=66 format=3 uid="uid://j6dp7dc7d3ov"]
+[gd_scene format=3 uid="uid://j6dp7dc7d3ov"]
 
 [ext_resource type="Script" uid="uid://dk0bs7ewymaua" path="res://src/scenes/master.gd" id="1_7eaih"]
 [ext_resource type="Texture2D" uid="uid://bk66lt4swbv6k" path="res://data/img/UI/fond_machine.png" id="1_krsn2"]
@@ -102,32 +102,30 @@ texture = ExtResource("34_xtfv3")
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_7eaih"]
 
-[node name="Master" type="Node2D"]
+[node name="Master" type="Node2D" unique_id=1847100083]
 script = ExtResource("1_7eaih")
 metadata/_edit_lock_ = true
 
-[node name="Camera2D" type="Camera2D" parent="."]
+[node name="Camera2D" type="Camera2D" parent="." unique_id=262822038]
 anchor_mode = 0
 zoom = Vector2(0.72, 0.72)
-metadata/_edit_lock_ = true
 
-[node name="ImageFrame" type="Sprite2D" parent="."]
+[node name="ImageFrame" type="Sprite2D" parent="." unique_id=734937168]
 scale = Vector2(1.389, 1.389)
 texture = ExtResource("1_krsn2")
 centered = false
-metadata/_edit_lock_ = true
 
-[node name="ImageMenu" type="Sprite2D" parent="ImageFrame"]
+[node name="ImageMenu" type="Sprite2D" parent="ImageFrame" unique_id=1713802134]
 texture = ExtResource("2_ctyun")
 centered = false
 metadata/_edit_lock_ = true
 
-[node name="ImageNameLabel" type="Sprite2D" parent="ImageFrame/ImageMenu"]
+[node name="ImageNameLabel" type="Sprite2D" parent="ImageFrame/ImageMenu" unique_id=454676289]
 position = Vector2(482.3614, 655.1475)
 texture = ExtResource("7_7eaih")
 metadata/_edit_lock_ = true
 
-[node name="Control Images" type="Control" parent="ImageFrame/ImageMenu"]
+[node name="Control Images" type="Control" parent="ImageFrame/ImageMenu" unique_id=1194335819]
 layout_mode = 3
 anchor_left = 2.16
 anchor_top = 91.55601
@@ -139,7 +137,7 @@ offset_right = -1345777.6
 offset_bottom = -487562.63
 metadata/_edit_lock_ = true
 
-[node name="Frame Map" type="AspectRatioContainer" parent="ImageFrame/ImageMenu/Control Images"]
+[node name="Frame Map" type="AspectRatioContainer" parent="ImageFrame/ImageMenu/Control Images" unique_id=1112529435]
 layout_mode = 1
 anchors_preset = -1
 anchor_right = 1.0
@@ -149,18 +147,18 @@ offset_bottom = 0.005859375
 ratio = 2.0
 metadata/_edit_lock_ = true
 
-[node name="Map" type="TextureRect" parent="ImageFrame/ImageMenu/Control Images/Frame Map"]
+[node name="Map" type="TextureRect" parent="ImageFrame/ImageMenu/Control Images/Frame Map" unique_id=1302183771]
 layout_mode = 2
 expand_mode = 1
 metadata/_edit_lock_ = true
 
-[node name="Labels" type="Control" parent="ImageFrame/ImageMenu/Control Images"]
+[node name="Labels" type="Control" parent="ImageFrame/ImageMenu/Control Images" unique_id=1819325419]
 anchors_preset = 0
 offset_right = 40.0
 offset_bottom = 40.0
 metadata/_edit_lock_ = true
 
-[node name="LabelFeed" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels"]
+[node name="LabelFeed" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels" unique_id=1568433128]
 layout_mode = 0
 offset_left = 12.141739
 offset_top = -15.441147
@@ -171,7 +169,7 @@ theme_override_colors/font_color = Color(0.21996303, 0.21996303, 0.21996303, 1)
 text = "L I V E  F E E D"
 metadata/_edit_lock_ = true
 
-[node name="LabelDataCoord" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels"]
+[node name="LabelDataCoord" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels" unique_id=1110231136]
 visible = false
 layout_mode = 0
 offset_left = 12.141739
@@ -185,7 +183,7 @@ PL A C E H O L D ER
 PL A C E H O L D ER"
 metadata/_edit_lock_ = true
 
-[node name="LabelBrand" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels"]
+[node name="LabelBrand" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels" unique_id=1761630903]
 layout_mode = 0
 offset_left = 219.48514
 offset_top = 333.011
@@ -197,24 +195,26 @@ theme_override_font_sizes/font_size = 50
 text = "JUJEDIE INC."
 metadata/_edit_lock_ = true
 
-[node name="LabelBtn" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels"]
+[node name="LabelBtn" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels" unique_id=1998272192]
 layout_mode = 0
-offset_left = 280.68024
-offset_top = 411.4847
-offset_right = 381.68024
-offset_bottom = 442.4847
+offset_left = 177.00851
+offset_top = 411.48468
+offset_right = 482.2641
+offset_bottom = 442.48468
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.21996303, 0.21996303, 0.21996303, 1)
 theme_override_font_sizes/font_size = 25
 text = "VIEW_MODE"
+horizontal_alignment = 1
 metadata/_edit_lock_ = true
 
-[node name="ImageMenu" type="Sprite2D" parent="ImageFrame/ImageMenu"]
+[node name="ImageMenu" type="Sprite2D" parent="ImageFrame/ImageMenu" unique_id=1330868936]
+visible = false
 texture = ExtResource("5_lb8ov")
 centered = false
 metadata/_edit_lock_ = true
 
-[node name="Control General" type="Control" parent="ImageFrame"]
+[node name="Control General" type="Control" parent="ImageFrame" unique_id=1881616454]
 layout_mode = 3
 anchor_left = 0.127
 anchor_top = 0.053000003
@@ -226,7 +226,7 @@ offset_right = 1219.6118
 offset_bottom = 660.75714
 metadata/_edit_lock_ = true
 
-[node name="Control_Parameters" type="MarginContainer" parent="ImageFrame/Control General"]
+[node name="Control_Parameters" type="MarginContainer" parent="ImageFrame/Control General" unique_id=55540780]
 clip_contents = true
 layout_mode = 1
 anchors_preset = -1
@@ -239,30 +239,30 @@ offset_bottom = 562.4738
 theme_override_constants/margin_left = 10
 metadata/_edit_lock_ = true
 
-[node name="SC Parameters" type="ScrollContainer" parent="ImageFrame/Control General/Control_Parameters"]
+[node name="SC Parameters" type="ScrollContainer" parent="ImageFrame/Control General/Control_Parameters" unique_id=1325546065]
 clip_contents = false
 layout_mode = 2
 theme_override_styles/focus = SubResource("StyleBoxEmpty_dbnah")
 metadata/_edit_lock_ = true
 
-[node name="Parameters_tree" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters"]
+[node name="Parameters_tree" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters" unique_id=645746628]
 layout_mode = 2
 theme_override_constants/separation = 10
 metadata/_edit_lock_ = true
 
-[node name="PanelSeed" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"]
+[node name="PanelSeed" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree" unique_id=1146206969]
 layout_mode = 2
 size_flags_horizontal = 0
 metadata/_edit_lock_ = true
 
-[node name="GenerationMenu" type="Sprite2D" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed"]
+[node name="GenerationMenu" type="Sprite2D" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed" unique_id=1154642879]
 position = Vector2(-7.199402, 2.8797607)
 scale = Vector2(0.60741484, 1.028489)
 texture = ExtResource("6_gihwl")
 centered = false
 metadata/_edit_lock_ = true
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed" unique_id=1746789606]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
@@ -270,12 +270,12 @@ theme_override_font_sizes/font_size = 25
 text = "GENERATION_SEED"
 metadata/_edit_lock_ = true
 
-[node name="seed" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed"]
+[node name="seed" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed" unique_id=1697701079]
 layout_direction = 2
 layout_mode = 2
 metadata/_edit_lock_ = true
 
-[node name="LineEdit" type="SpinBox" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed/seed"]
+[node name="LineEdit" type="SpinBox" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed/seed" unique_id=1044073219]
 layout_mode = 2
 size_flags_horizontal = 3
 theme = SubResource("Theme_7eaih")
@@ -293,7 +293,7 @@ max_value = 1000000000000.0
 allow_greater = true
 metadata/_edit_lock_ = true
 
-[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed/seed"]
+[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed/seed" unique_id=685830508]
 layout_mode = 2
 focus_mode = 0
 texture_normal = ExtResource("8_dfspw")
@@ -303,15 +303,15 @@ texture_disabled = ExtResource("9_ctyun")
 texture_focused = ExtResource("8_dfspw")
 metadata/_edit_lock_ = true
 
-[node name="General_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"]
+[node name="General_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree" unique_id=916959143]
 layout_mode = 2
 metadata/_edit_lock_ = true
 
-[node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie"]
+[node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie" unique_id=1708391751]
 layout_mode = 2
 metadata/_edit_lock_ = true
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/Title"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/Title" unique_id=1419329068]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
@@ -319,7 +319,7 @@ theme_override_font_sizes/font_size = 25
 text = "GENERAL_PROPRIETE_CATEGORIE"
 metadata/_edit_lock_ = true
 
-[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/Title"]
+[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/Title" unique_id=449431010]
 layout_mode = 2
 focus_mode = 0
 texture_normal = ExtResource("10_n06j4")
@@ -328,28 +328,28 @@ texture_hover = ExtResource("12_i1wak")
 texture_disabled = ExtResource("12_i1wak")
 texture_focused = ExtResource("10_n06j4")
 
-[node name="MarginContainer" type="MarginContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie"]
+[node name="MarginContainer" type="MarginContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie" unique_id=1269391728]
 layout_mode = 2
 theme_override_constants/margin_left = 20
 
-[node name="Parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer"]
+[node name="Parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer" unique_id=507717168]
 layout_mode = 2
 metadata/_edit_lock_ = true
 
-[node name="Planet_Name_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters"]
+[node name="Planet_Name_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters" unique_id=1293745116]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Name_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Name_Param" unique_id=1919143947]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "PLANET_NAME"
 
-[node name="HBoxContainer" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Name_Param"]
+[node name="HBoxContainer" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Name_Param" unique_id=220986286]
 layout_mode = 2
 
-[node name="LineEdit" type="LineEdit" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Name_Param/HBoxContainer"]
+[node name="LineEdit" type="LineEdit" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Name_Param/HBoxContainer" unique_id=697771370]
 layout_mode = 2
 size_flags_horizontal = 3
 theme = ExtResource("5_e2i44")
@@ -359,7 +359,7 @@ theme_override_styles/normal = ExtResource("4_i0hn2")
 theme_override_styles/read_only = SubResource("StyleBoxEmpty_lb8ov")
 theme_override_styles/focus = SubResource("StyleBoxEmpty_gihwl")
 
-[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Name_Param/HBoxContainer"]
+[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Name_Param/HBoxContainer" unique_id=1479991655]
 layout_mode = 2
 focus_mode = 0
 texture_normal = ExtResource("8_dfspw")
@@ -369,17 +369,17 @@ texture_disabled = ExtResource("9_ctyun")
 texture_focused = ExtResource("8_dfspw")
 metadata/_edit_lock_ = true
 
-[node name="Planet_Radius_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters"]
+[node name="Planet_Radius_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters" unique_id=73774846]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Radius_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Radius_Param" unique_id=447972653]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "PLANET_RADIUS"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Radius_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Radius_Param" unique_id=296169184]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -396,17 +396,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Planet_Density_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters"]
+[node name="Planet_Density_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters" unique_id=618265926]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Density_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Density_Param" unique_id=1641981962]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "PLANET_DENSITY"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Density_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Density_Param" unique_id=1118031757]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -422,17 +422,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Planet_Temperature_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters"]
+[node name="Planet_Temperature_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters" unique_id=146875767]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Temperature_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Temperature_Param" unique_id=791398552]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "PLANET_TEMPERATURE_AVG"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Temperature_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Temperature_Param" unique_id=454870877]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -447,17 +447,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Planet_Type_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters"]
+[node name="Planet_Type_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters" unique_id=2110360901]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Type_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Type_Param" unique_id=1888059326]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "PLANET_TYPE"
 
-[node name="LineEdit" type="OptionButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Type_Param"]
+[node name="LineEdit" type="OptionButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Type_Param" unique_id=1154548458]
 layout_mode = 2
 theme = SubResource("Theme_dbnah")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
@@ -485,17 +485,17 @@ popup/item_3/id = 3
 popup/item_4/text = "TYPE_MORTE"
 popup/item_4/id = 4
 
-[node name="Thread_Number_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters"]
+[node name="Thread_Number_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters" unique_id=442686978]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Thread_Number_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Thread_Number_Param" unique_id=1375704874]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "THREAD_NUMBER"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Thread_Number_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Thread_Number_Param" unique_id=1492925423]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -511,14 +511,14 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Erosion_Tectonic_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"]
+[node name="Erosion_Tectonic_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree" unique_id=212580489]
 layout_mode = 2
 
-[node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie"]
+[node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie" unique_id=1017253725]
 layout_mode = 2
 metadata/_edit_lock_ = true
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/Title"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/Title" unique_id=1100479012]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
@@ -526,7 +526,7 @@ theme_override_font_sizes/font_size = 25
 text = "EROSION_TECTONIQUE_CATEGORIE"
 metadata/_edit_lock_ = true
 
-[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/Title"]
+[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/Title" unique_id=1866612348]
 layout_mode = 2
 focus_mode = 0
 texture_normal = ExtResource("10_n06j4")
@@ -535,25 +535,25 @@ texture_hover = ExtResource("12_i1wak")
 texture_disabled = ExtResource("12_i1wak")
 texture_focused = ExtResource("10_n06j4")
 
-[node name="MarginContainer" type="MarginContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie"]
+[node name="MarginContainer" type="MarginContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie" unique_id=975706948]
 layout_mode = 2
 theme_override_constants/margin_left = 20
 
-[node name="Erosion_Tectonic_parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer"]
+[node name="Erosion_Tectonic_parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer" unique_id=275879427]
 layout_mode = 2
 metadata/_edit_lock_ = true
 
-[node name="Terrain_Scale_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters"]
+[node name="Terrain_Scale_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters" unique_id=1424010663]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Terrain_Scale_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Terrain_Scale_Param" unique_id=1600642037]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "TERRAIN_SCALE"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Terrain_Scale_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Terrain_Scale_Param" unique_id=1993935531]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -569,17 +569,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Erosions_Iterations_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters"]
+[node name="Erosions_Iterations_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters" unique_id=97752352]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Erosions_Iterations_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Erosions_Iterations_Param" unique_id=714869004]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "EROSION_ITERATIONS"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Erosions_Iterations_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Erosions_Iterations_Param" unique_id=2056178973]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -595,17 +595,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Erosion_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters"]
+[node name="Erosion_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters" unique_id=535329700]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Erosion_Rate_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Erosion_Rate_Param" unique_id=887722729]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "EROSION_RATE"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Erosion_Rate_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Erosion_Rate_Param" unique_id=1942495911]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -621,17 +621,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Rain_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters"]
+[node name="Rain_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters" unique_id=2078841381]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Rain_Rate_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Rain_Rate_Param" unique_id=22058584]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "RAIN_RATE"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Rain_Rate_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Rain_Rate_Param" unique_id=1983096839]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -647,17 +647,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Evap_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters"]
+[node name="Evap_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters" unique_id=778633567]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Evap_Rate_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Evap_Rate_Param" unique_id=1764738293]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "EVAP_RATE"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Evap_Rate_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Evap_Rate_Param" unique_id=389448264]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -673,17 +673,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Flow_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters"]
+[node name="Flow_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters" unique_id=238116620]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Flow_Rate_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Flow_Rate_Param" unique_id=1080553844]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "FLOW_RATE"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Flow_Rate_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Flow_Rate_Param" unique_id=1859043217]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -699,17 +699,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Deposition_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters"]
+[node name="Deposition_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters" unique_id=583363998]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Deposition_Rate_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Deposition_Rate_Param" unique_id=1802341787]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "DEPOSITION_RATE"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Deposition_Rate_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Deposition_Rate_Param" unique_id=678233]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -725,17 +725,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Capacity_Multiplier_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters"]
+[node name="Capacity_Multiplier_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters" unique_id=2074047813]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Capacity_Multiplier_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Capacity_Multiplier_Param" unique_id=1445461104]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "CAPACITY_MULTIPLIER"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Capacity_Multiplier_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Capacity_Multiplier_Param" unique_id=401434136]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -751,17 +751,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Flux_Iterations_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters"]
+[node name="Flux_Iterations_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters" unique_id=760014619]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Flux_Iterations_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Flux_Iterations_Param" unique_id=1671598729]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "FLUX_ITERATIONS"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Flux_Iterations_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Flux_Iterations_Param" unique_id=1516009471]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -777,17 +777,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Base_Flux_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters"]
+[node name="Base_Flux_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters" unique_id=248799808]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Base_Flux_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Base_Flux_Param" unique_id=390261051]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "BASE_FLUX"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Base_Flux_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Base_Flux_Param" unique_id=152880418]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -803,17 +803,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Propagation_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters"]
+[node name="Propagation_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters" unique_id=765043042]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Propagation_Rate_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Propagation_Rate_Param" unique_id=84542648]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "PROPAGATION_RATE"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Propagation_Rate_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Propagation_Rate_Param" unique_id=2076860308]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -829,17 +829,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Spreading_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters"]
+[node name="Spreading_Rate_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters" unique_id=1915542644]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Spreading_Rate_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Spreading_Rate_Param" unique_id=1360806161]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "SPREADING_RATE"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Spreading_Rate_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Spreading_Rate_Param" unique_id=1110973687]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -854,17 +854,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Max_Crust_Age_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters"]
+[node name="Max_Crust_Age_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters" unique_id=1782836162]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Max_Crust_Age_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Max_Crust_Age_Param" unique_id=357929484]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "MAX_CRUST_AGE"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Max_Crust_Age_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Max_Crust_Age_Param" unique_id=2117659770]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -880,17 +880,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Subsidence_Coeff_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters"]
+[node name="Subsidence_Coeff_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters" unique_id=771525499]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Subsidence_Coeff_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Subsidence_Coeff_Param" unique_id=1131928205]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "SUBSIDENCE_COEFFICIENT"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Subsidence_Coeff_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/Subsidence_Coeff_Param" unique_id=1054508023]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -907,13 +907,13 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Crater_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"]
+[node name="Crater_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree" unique_id=48548560]
 layout_mode = 2
 
-[node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie"]
+[node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie" unique_id=719200363]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/Title"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/Title" unique_id=1807977703]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.35686275, 0.37254903, 0.37254903, 1)
@@ -921,7 +921,7 @@ theme_override_font_sizes/font_size = 25
 text = "CRATER_CATEGORIE"
 metadata/_edit_lock_ = true
 
-[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/Title"]
+[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/Title" unique_id=1476459887]
 layout_mode = 2
 focus_mode = 0
 texture_normal = ExtResource("10_n06j4")
@@ -930,25 +930,25 @@ texture_hover = ExtResource("12_i1wak")
 texture_disabled = ExtResource("12_i1wak")
 texture_focused = ExtResource("10_n06j4")
 
-[node name="MarginContainer" type="MarginContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie"]
+[node name="MarginContainer" type="MarginContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie" unique_id=483874365]
 layout_mode = 2
 theme_override_constants/margin_left = 20
 
-[node name="Crater_parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer"]
+[node name="Crater_parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer" unique_id=1664143414]
 layout_mode = 2
 metadata/_edit_lock_ = true
 
-[node name="Crater_Density_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters"]
+[node name="Crater_Density_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters" unique_id=311102242]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Density_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Density_Param" unique_id=738673687]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "CRATER_DENSITY"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Density_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Density_Param" unique_id=558507440]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -964,17 +964,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Crater_Min_Radius_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters"]
+[node name="Crater_Min_Radius_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters" unique_id=174435870]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Min_Radius_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Min_Radius_Param" unique_id=1315147980]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "CRATER_MIN_RADIUS"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Min_Radius_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Min_Radius_Param" unique_id=891696601]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -989,17 +989,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Crater_Depth_Ratio_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters"]
+[node name="Crater_Depth_Ratio_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters" unique_id=163678025]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Depth_Ratio_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Depth_Ratio_Param" unique_id=293441842]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "CRATER_DEPTH_RATIO"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Depth_Ratio_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Depth_Ratio_Param" unique_id=105694707]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1015,17 +1015,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Crater_Ejecta_Extent_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters"]
+[node name="Crater_Ejecta_Extent_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters" unique_id=772774887]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Ejecta_Extent_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Ejecta_Extent_Param" unique_id=1656839096]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "CRATER_EJECTA_EXTENT"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Ejecta_Extent_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Ejecta_Extent_Param" unique_id=29002797]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1041,17 +1041,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Crater_Ejecta_Decay_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters"]
+[node name="Crater_Ejecta_Decay_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters" unique_id=1988143051]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Ejecta_Decay_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Ejecta_Decay_Param" unique_id=1602017727]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "CRATER_EJECTA_DECAY"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Ejecta_Decay_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Ejecta_Decay_Param" unique_id=1599804928]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1067,17 +1067,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Crater_Azimuth_Var_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters"]
+[node name="Crater_Azimuth_Var_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters" unique_id=1122116072]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Azimuth_Var_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Azimuth_Var_Param" unique_id=1573430495]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "CRATER_AZIMUTH_VAR"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Azimuth_Var_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Crater_Categorie/MarginContainer/Crater_parameters/Crater_Azimuth_Var_Param" unique_id=1040902338]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1093,13 +1093,13 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Eau_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"]
+[node name="Eau_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree" unique_id=1185737245]
 layout_mode = 2
 
-[node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie"]
+[node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie" unique_id=434388700]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/Title"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/Title" unique_id=344118666]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
@@ -1107,7 +1107,7 @@ theme_override_font_sizes/font_size = 25
 text = "EAU_CATEGORIE"
 metadata/_edit_lock_ = true
 
-[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/Title"]
+[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/Title" unique_id=1628695712]
 layout_mode = 2
 focus_mode = 0
 texture_normal = ExtResource("10_n06j4")
@@ -1116,25 +1116,25 @@ texture_hover = ExtResource("12_i1wak")
 texture_disabled = ExtResource("12_i1wak")
 texture_focused = ExtResource("10_n06j4")
 
-[node name="MarginContainer" type="MarginContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie"]
+[node name="MarginContainer" type="MarginContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie" unique_id=139306481]
 layout_mode = 2
 theme_override_constants/margin_left = 20
 
-[node name="Eaux_parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer"]
+[node name="Eaux_parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer" unique_id=386489995]
 layout_mode = 2
 metadata/_edit_lock_ = true
 
-[node name="Ocean_Ratio_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters"]
+[node name="Ocean_Ratio_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters" unique_id=812916206]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Ocean_Ratio_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Ocean_Ratio_Param" unique_id=459195764]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "OCEAN_RATIO"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Ocean_Ratio_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Ocean_Ratio_Param" unique_id=1798330237]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1150,17 +1150,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Ice_Probability_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters"]
+[node name="Ice_Probability_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters" unique_id=609242363]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Ice_Probability_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Ice_Probability_Param" unique_id=374862616]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "ICE_PROBABILITY"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Ice_Probability_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Ice_Probability_Param" unique_id=859615369]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1175,17 +1175,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Global_Humidity_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters"]
+[node name="Global_Humidity_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters" unique_id=1647106049]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Global_Humidity_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Global_Humidity_Param" unique_id=1147657245]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "GLOBAL_HUMIDITY"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Global_Humidity_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Global_Humidity_Param" unique_id=541655996]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1200,17 +1200,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Sea_Level_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters"]
+[node name="Sea_Level_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters" unique_id=2089797891]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Sea_Level_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Sea_Level_Param" unique_id=96408921]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "SEA_LEVEL"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Sea_Level_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Sea_Level_Param" unique_id=1125009960]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1227,17 +1227,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Freshwater_Max_Size_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters"]
+[node name="Freshwater_Max_Size_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters" unique_id=697227661]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Freshwater_Max_Size_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Freshwater_Max_Size_Param" unique_id=893644189]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "FRESHWATER_MAX_SIZE"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Freshwater_Max_Size_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Freshwater_Max_Size_Param" unique_id=1336889330]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1252,17 +1252,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Lake_Threshold_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters"]
+[node name="Lake_Threshold_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters" unique_id=2057405945]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Lake_Threshold_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Lake_Threshold_Param" unique_id=774496298]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "LAKE_THRESHOLD"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Lake_Threshold_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Lake_Threshold_Param" unique_id=1374749948]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1278,17 +1278,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="River_Iterations_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters"]
+[node name="River_Iterations_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters" unique_id=1605084142]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Iterations_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Iterations_Param" unique_id=1874878589]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "RIVER_ITERATIONS"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Iterations_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Iterations_Param" unique_id=284684582]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1305,17 +1305,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="River_Min_Altitude_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters"]
+[node name="River_Min_Altitude_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters" unique_id=308179150]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Min_Altitude_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Min_Altitude_Param" unique_id=1320739697]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "RIVER_MIN_ALTITUDE"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Min_Altitude_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Min_Altitude_Param" unique_id=142793057]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1333,17 +1333,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="River_Min_Precipitation_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters"]
+[node name="River_Min_Precipitation_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters" unique_id=1756923840]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Min_Precipitation_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Min_Precipitation_Param" unique_id=624233393]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "RIVER_MIN_PRECIPITATION"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Min_Precipitation_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Min_Precipitation_Param" unique_id=1146552612]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1359,17 +1359,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="River_Threshold_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters"]
+[node name="River_Threshold_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters" unique_id=1634540394]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Threshold_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Threshold_Param" unique_id=45128366]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "RIVER_THRESHOLD"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Threshold_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Threshold_Param" unique_id=402629244]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1385,17 +1385,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="River_Base_Flux_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters"]
+[node name="River_Base_Flux_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters" unique_id=2021786975]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Base_Flux_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Base_Flux_Param" unique_id=1218578291]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "RIVER_BASE_FLUX"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Base_Flux_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Base_Flux_Param" unique_id=1789157734]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1411,13 +1411,13 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Nuages_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"]
+[node name="Nuages_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree" unique_id=1863925836]
 layout_mode = 2
 
-[node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie"]
+[node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie" unique_id=2006624685]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/Title"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/Title" unique_id=1042712726]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
@@ -1425,7 +1425,7 @@ theme_override_font_sizes/font_size = 25
 text = "NUAGE_CATEGORIE"
 metadata/_edit_lock_ = true
 
-[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/Title"]
+[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/Title" unique_id=44078452]
 layout_mode = 2
 focus_mode = 0
 texture_normal = ExtResource("10_n06j4")
@@ -1434,25 +1434,25 @@ texture_hover = ExtResource("12_i1wak")
 texture_disabled = ExtResource("12_i1wak")
 texture_focused = ExtResource("10_n06j4")
 
-[node name="MarginContainer" type="MarginContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie"]
+[node name="MarginContainer" type="MarginContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie" unique_id=82166951]
 layout_mode = 2
 theme_override_constants/margin_left = 20
 
-[node name="nuage_parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer"]
+[node name="nuage_parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer" unique_id=1465001422]
 layout_mode = 2
 metadata/_edit_lock_ = true
 
-[node name="Cloud_Coverage_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer/nuage_parameters"]
+[node name="Cloud_Coverage_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer/nuage_parameters" unique_id=510647050]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer/nuage_parameters/Cloud_Coverage_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer/nuage_parameters/Cloud_Coverage_Param" unique_id=1454316746]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "CLOUD_COVERAGE"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer/nuage_parameters/Cloud_Coverage_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer/nuage_parameters/Cloud_Coverage_Param" unique_id=736287484]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1469,17 +1469,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Cloud_Density_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer/nuage_parameters"]
+[node name="Cloud_Density_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer/nuage_parameters" unique_id=1974937861]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer/nuage_parameters/Cloud_Density_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer/nuage_parameters/Cloud_Density_Param" unique_id=2125931943]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "CLOUD_DENSITY"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer/nuage_parameters/Cloud_Density_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer/nuage_parameters/Cloud_Density_Param" unique_id=1608549167]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1496,13 +1496,13 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Region_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"]
+[node name="Region_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree" unique_id=1497810130]
 layout_mode = 2
 
-[node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie"]
+[node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie" unique_id=553827558]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/Title"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/Title" unique_id=860150439]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
@@ -1510,7 +1510,7 @@ theme_override_font_sizes/font_size = 25
 text = "REGION_CATEGORIE"
 metadata/_edit_lock_ = true
 
-[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/Title"]
+[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/Title" unique_id=2013500486]
 layout_mode = 2
 focus_mode = 0
 texture_normal = ExtResource("10_n06j4")
@@ -1519,25 +1519,25 @@ texture_hover = ExtResource("12_i1wak")
 texture_disabled = ExtResource("12_i1wak")
 texture_focused = ExtResource("10_n06j4")
 
-[node name="MarginContainer" type="MarginContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie"]
+[node name="MarginContainer" type="MarginContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie" unique_id=1911854083]
 layout_mode = 2
 theme_override_constants/margin_left = 20
 
-[node name="Region_parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer"]
+[node name="Region_parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer" unique_id=686417694]
 layout_mode = 2
 metadata/_edit_lock_ = true
 
-[node name="Nb_Cases_Regions_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters"]
+[node name="Nb_Cases_Regions_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters" unique_id=675340004]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Nb_Cases_Regions_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Nb_Cases_Regions_Param" unique_id=489580809]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "NB_CASES_REGIONS"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Nb_Cases_Regions_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Nb_Cases_Regions_Param" unique_id=302598972]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1554,17 +1554,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Region_Cost_Flat_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters"]
+[node name="Region_Cost_Flat_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters" unique_id=2000430081]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Cost_Flat_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Cost_Flat_Param" unique_id=1121433850]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "REGION_COST_FLAT"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Cost_Flat_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Cost_Flat_Param" unique_id=1746437712]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1580,17 +1580,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Region_Cost_Hill_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters"]
+[node name="Region_Cost_Hill_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters" unique_id=1635534543]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Cost_Hill_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Cost_Hill_Param" unique_id=1778265960]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "REGION_COST_HILL"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Cost_Hill_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Cost_Hill_Param" unique_id=1330349948]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1606,17 +1606,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Region_Cost_River_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters"]
+[node name="Region_Cost_River_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters" unique_id=1455180603]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Cost_River_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Cost_River_Param" unique_id=1587811984]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "REGION_COST_RIVER"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Cost_River_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Cost_River_Param" unique_id=2078823015]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1632,17 +1632,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Region_River_Threshold_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters"]
+[node name="Region_River_Threshold_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters" unique_id=883599202]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_River_Threshold_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_River_Threshold_Param" unique_id=1640144331]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "REGION_RIVER_THRESHOLD"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_River_Threshold_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_River_Threshold_Param" unique_id=2030578309]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1658,17 +1658,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Region_Budget_Variation_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters"]
+[node name="Region_Budget_Variation_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters" unique_id=950481085]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Budget_Variation_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Budget_Variation_Param" unique_id=435239536]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "REGION_BUDGET_VARIATION"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Budget_Variation_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Budget_Variation_Param" unique_id=1509855785]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1684,31 +1684,31 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Region_Generation_Optimised_Param" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters"]
+[node name="Region_Generation_Optimised_Param" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters" unique_id=13991043]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Generation_Optimised_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Generation_Optimised_Param" unique_id=1477692319]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.46, 0.14904, 0.101200014, 1)
 theme_override_font_sizes/font_size = 25
 text = "REGION_GENERATION_OPTIMISED"
 
-[node name="LineEdit" type="CheckButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Generation_Optimised_Param"]
+[node name="LineEdit" type="CheckButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Generation_Optimised_Param" unique_id=1538634471]
 layout_mode = 2
 theme_override_styles/focus = SubResource("StyleBoxEmpty_o3yh3")
 
-[node name="Region_Noise_Strength_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters"]
+[node name="Region_Noise_Strength_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters" unique_id=2123742186]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Noise_Strength_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Noise_Strength_Param" unique_id=1755917335]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "REGION_NOISE_STRENGTH"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Noise_Strength_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Noise_Strength_Param" unique_id=1517664071]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1724,13 +1724,13 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Region_Ocean_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"]
+[node name="Region_Ocean_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree" unique_id=755702140]
 layout_mode = 2
 
-[node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie"]
+[node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie" unique_id=1227272566]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/Title"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/Title" unique_id=1352875754]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
@@ -1738,7 +1738,7 @@ theme_override_font_sizes/font_size = 25
 text = "REGION_OCEAN_CATEGORIE"
 metadata/_edit_lock_ = true
 
-[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/Title"]
+[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/Title" unique_id=535540657]
 layout_mode = 2
 focus_mode = 0
 texture_normal = ExtResource("10_n06j4")
@@ -1747,25 +1747,25 @@ texture_hover = ExtResource("12_i1wak")
 texture_disabled = ExtResource("12_i1wak")
 texture_focused = ExtResource("10_n06j4")
 
-[node name="MarginContainer" type="MarginContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie"]
+[node name="MarginContainer" type="MarginContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie" unique_id=859530906]
 layout_mode = 2
 theme_override_constants/margin_left = 20
 
-[node name="Region_Ocean_parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer"]
+[node name="Region_Ocean_parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer" unique_id=257737480]
 layout_mode = 2
 metadata/_edit_lock_ = true
 
-[node name="Nb_Cases_Ocean_Regions_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters"]
+[node name="Nb_Cases_Ocean_Regions_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters" unique_id=68940994]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Nb_Cases_Ocean_Regions_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Nb_Cases_Ocean_Regions_Param" unique_id=1730140515]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "NB_CASES_OCEAN_REGIONS"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Nb_Cases_Ocean_Regions_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Nb_Cases_Ocean_Regions_Param" unique_id=2002800211]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1782,17 +1782,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Ocean_Cost_Flat_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters"]
+[node name="Ocean_Cost_Flat_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters" unique_id=1439394219]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Ocean_Cost_Flat_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Ocean_Cost_Flat_Param" unique_id=1467643739]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "OCEAN_COST_FLAT"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Ocean_Cost_Flat_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Ocean_Cost_Flat_Param" unique_id=1749089098]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1808,17 +1808,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Ocean_Cost_Deeper_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters"]
+[node name="Ocean_Cost_Deeper_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters" unique_id=457697597]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Ocean_Cost_Deeper_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Ocean_Cost_Deeper_Param" unique_id=2032995371]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "OCEAN_COST_DEEPER"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Ocean_Cost_Deeper_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Ocean_Cost_Deeper_Param" unique_id=624717274]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1834,17 +1834,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Ocean_Noise_Strength_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters"]
+[node name="Ocean_Noise_Strength_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters" unique_id=1068385766]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Ocean_Noise_Strength_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Ocean_Noise_Strength_Param" unique_id=669331496]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "OCEAN_NOISE_STRENGTH"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Ocean_Noise_Strength_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/Ocean_Noise_Strength_Param" unique_id=1405269583]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1860,13 +1860,13 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Ressources_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"]
+[node name="Ressources_Categorie" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree" unique_id=378919694]
 layout_mode = 2
 
-[node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie"]
+[node name="Title" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie" unique_id=890475508]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/Title"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/Title" unique_id=592347329]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
@@ -1874,7 +1874,7 @@ theme_override_font_sizes/font_size = 25
 text = "RESSOURCES_CATEGORIE"
 metadata/_edit_lock_ = true
 
-[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/Title"]
+[node name="TextureButton" type="TextureButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/Title" unique_id=510312593]
 layout_mode = 2
 focus_mode = 0
 texture_normal = ExtResource("10_n06j4")
@@ -1883,25 +1883,25 @@ texture_hover = ExtResource("12_i1wak")
 texture_disabled = ExtResource("12_i1wak")
 texture_focused = ExtResource("10_n06j4")
 
-[node name="MarginContainer" type="MarginContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie"]
+[node name="MarginContainer" type="MarginContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie" unique_id=80621188]
 layout_mode = 2
 theme_override_constants/margin_left = 20
 
-[node name="Ressources_parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer"]
+[node name="Ressources_parameters" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer" unique_id=812405899]
 layout_mode = 2
 metadata/_edit_lock_ = true
 
-[node name="Petrole_Probability_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters"]
+[node name="Petrole_Probability_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters" unique_id=1057085832]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters/Petrole_Probability_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters/Petrole_Probability_Param" unique_id=1300825422]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "PETROLE_PROBABILITY"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters/Petrole_Probability_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters/Petrole_Probability_Param" unique_id=522716877]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1917,17 +1917,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Petrole_Deposit_Size_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters"]
+[node name="Petrole_Deposit_Size_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters" unique_id=1642173650]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters/Petrole_Deposit_Size_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters/Petrole_Deposit_Size_Param" unique_id=205847514]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "PETROLE_DEPOSIT_SIZE"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters/Petrole_Deposit_Size_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters/Petrole_Deposit_Size_Param" unique_id=319899050]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1943,17 +1943,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="Global_Richness_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters"]
+[node name="Global_Richness_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters" unique_id=1605429805]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters/Global_Richness_Param"]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters/Global_Richness_Param" unique_id=96660856]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
 text = "GLOBAL_RICHNESS"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters/Global_Richness_Param"]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Ressources_Categorie/MarginContainer/Ressources_parameters/Global_Richness_Param" unique_id=1444813478]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1970,7 +1970,7 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="LabelSoftware" type="Label" parent="ImageFrame/Control General"]
+[node name="LabelSoftware" type="Label" parent="ImageFrame/Control General" unique_id=1400787360]
 layout_mode = 0
 offset_left = 20.878296
 offset_top = 8.639354
@@ -1982,7 +1982,7 @@ theme_override_font_sizes/font_size = 50
 text = "PLANET GENERATOR"
 metadata/_edit_lock_ = true
 
-[node name="LabelParameters" type="Label" parent="ImageFrame/Control General"]
+[node name="LabelParameters" type="Label" parent="ImageFrame/Control General" unique_id=856854223]
 layout_mode = 0
 offset_left = 977.68176
 offset_top = 87.11302
@@ -1993,7 +1993,7 @@ theme_override_colors/font_color = Color(0.2509804, 0.2627451, 0.26666668, 1)
 theme_override_font_sizes/font_size = 50
 text = "PARAMETRES"
 
-[node name="HBoxContainer" type="HBoxContainer" parent="ImageFrame/Control General"]
+[node name="HBoxContainer" type="HBoxContainer" parent="ImageFrame/Control General" unique_id=1740787907]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -2005,7 +2005,7 @@ offset_bottom = -633.45825
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="CAN" type="TextureButton" parent="ImageFrame/Control General/HBoxContainer"]
+[node name="CAN" type="TextureButton" parent="ImageFrame/Control General/HBoxContainer" unique_id=1559100294]
 layout_mode = 2
 texture_normal = ExtResource("9_dbnah")
 texture_pressed = ExtResource("10_hvy7f")
@@ -2014,7 +2014,7 @@ texture_disabled = ExtResource("10_hvy7f")
 texture_focused = ExtResource("9_dbnah")
 metadata/_edit_lock_ = true
 
-[node name="DEU" type="TextureButton" parent="ImageFrame/Control General/HBoxContainer"]
+[node name="DEU" type="TextureButton" parent="ImageFrame/Control General/HBoxContainer" unique_id=1109791710]
 layout_mode = 2
 texture_normal = ExtResource("12_n06j4")
 texture_pressed = ExtResource("13_s305m")
@@ -2023,7 +2023,7 @@ texture_disabled = ExtResource("13_s305m")
 texture_focused = ExtResource("12_n06j4")
 metadata/_edit_lock_ = true
 
-[node name="FRA" type="TextureButton" parent="ImageFrame/Control General/HBoxContainer"]
+[node name="FRA" type="TextureButton" parent="ImageFrame/Control General/HBoxContainer" unique_id=418635682]
 layout_mode = 2
 texture_normal = ExtResource("15_1512y")
 texture_pressed = ExtResource("16_dg1b0")
@@ -2032,7 +2032,7 @@ texture_disabled = ExtResource("16_dg1b0")
 texture_focused = ExtResource("15_1512y")
 metadata/_edit_lock_ = true
 
-[node name="btnQuitter" type="Button" parent="ImageFrame/Control General"]
+[node name="btnQuitter" type="Button" parent="ImageFrame/Control General" unique_id=1612279212]
 layout_mode = 0
 offset_left = 843.77246
 offset_top = 8.639309
@@ -2060,7 +2060,7 @@ theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
 text = "LEAVE"
 metadata/_edit_lock_ = true
 
-[node name="btnGenerer" type="Button" parent="ImageFrame/Control General"]
+[node name="btnGenerer" type="Button" parent="ImageFrame/Control General" unique_id=1429739835]
 layout_mode = 0
 offset_left = 1028.7977
 offset_top = 587.473
@@ -2088,7 +2088,7 @@ theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
 text = "GENERER"
 metadata/_edit_lock_ = true
 
-[node name="btnSauvegarder" type="Button" parent="ImageFrame/Control General"]
+[node name="btnSauvegarder" type="Button" parent="ImageFrame/Control General" unique_id=1585738532]
 layout_mode = 0
 offset_left = 1028.7976
 offset_top = 639.30884
@@ -2116,7 +2116,7 @@ theme_override_styles/focus = SubResource("StyleBoxTexture_7eaih")
 text = "SAUVEGARDER"
 metadata/_edit_lock_ = true
 
-[node name="btnRandomiser" type="TextureButton" parent="ImageFrame/Control General"]
+[node name="btnRandomiser" type="TextureButton" parent="ImageFrame/Control General" unique_id=1871259447]
 layout_mode = 0
 offset_left = 1309.5752
 offset_top = 596.8322
@@ -2130,7 +2130,7 @@ texture_disabled = ExtResource("32_23ir5")
 texture_focused = ExtResource("30_svf8o")
 metadata/_edit_lock_ = true
 
-[node name="btnPrecedent" type="TextureButton" parent="ImageFrame"]
+[node name="btnPrecedent" type="TextureButton" parent="ImageFrame" unique_id=1620452075]
 offset_left = 336.21307
 offset_top = 631.38947
 offset_right = 384.21307
@@ -2144,7 +2144,7 @@ texture_disabled = ExtResource("6_7eaih")
 texture_focused = ExtResource("5_4smu3")
 metadata/_edit_lock_ = true
 
-[node name="LabelNomMap" type="Label" parent="ImageFrame"]
+[node name="LabelNomMap" type="Label" parent="ImageFrame" unique_id=203585700]
 offset_left = 388.7689
 offset_top = 633.5493
 offset_right = 575.9539
@@ -2158,7 +2158,7 @@ horizontal_alignment = 1
 clip_text = true
 metadata/_edit_lock_ = true
 
-[node name="btnSuivant" type="TextureButton" parent="ImageFrame"]
+[node name="btnSuivant" type="TextureButton" parent="ImageFrame" unique_id=858032159]
 offset_left = 579.5536
 offset_top = 631.38947
 offset_right = 627.5536
