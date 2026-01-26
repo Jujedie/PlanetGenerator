@@ -14,6 +14,7 @@ A procedural planet surface generator that creates detailed planetary maps based
 - **Cases per Region**: Political/geographical region subdivision
 - **Thread Count**: Parallel processing optimization (4-20 threads)
 - **Randomize Button**: Instantly randomize all parameters
+- And many others ...
 
 ### Planet Types
 - **Standard**: Earth-like biomes with forests, deserts, oceans
@@ -35,18 +36,18 @@ A procedural planet surface generator that creates detailed planetary maps based
 | Ice Cap Map | Frozen water regions |
 | Cloud Map | Atmospheric cloud coverage |
 | Oil Map | Petroleum deposit locations |
-| Resource Map | Mineral and resource deposits |
-| Region Map | Political/geographical subdivisions |
+| Resources Map | A map for each Mineral and resource deposits |
+| Region Map | Political/geographical subdivisions and a region map for oceanic regions |
 | Final Map | Combined rendered view |
-| Preview | Spherical planet preview with clouds |
 
 ### Technical Features
 - **Cylindrical Projection**: Seamless horizontal wrapping for realistic globe mapping
-- **Multi-threaded Generation**: Parallel processing for faster map creation
 - **Modular Architecture**: Each map type uses its own generator class
 - **Noise-based Terrain**: FastNoiseLite for realistic procedural generation
 - **Tectonic Simulation**: Mountain ranges and canyons along fault lines
-- **River System**: Realistic water flow from mountains to oceans with tributaries
+- **Hydraulic Erosion**: Realistic but not time consuming hydraulic erosion.
+- **River System**: Realistic water flow from mountains to oceans with tributaries (WIP)
+- **Computes Shaders**: Computes shaders improving time complexity up 10 times
 
 ### Supported Languages
 - English
@@ -74,25 +75,12 @@ The generator uses a modular class-based architecture:
 ```
 src/
 ├── planetGenerator.gd      # Main orchestrator
-├── generators/
-│   ├── MapGenerator.gd     # Abstract base class
-│   ├── ElevationMapGenerator.gd
-│   ├── BiomeMapGenerator.gd
-│   ├── TemperatureMapGenerator.gd
-│   ├── PrecipitationMapGenerator.gd
-│   ├── WaterMapGenerator.gd
-│   ├── RiverMapGenerator.gd
-│   ├── BanquiseMapGenerator.gd
-│   ├── NuageMapGenerator.gd
-│   ├── OilMapGenerator.gd
-│   ├── RessourceMapGenerator.gd
-│   ├── RegionMapGenerator.gd
-│   └── BiomeMapGenerator.gd
-├── Biome.gd
-├── Region.gd
+├── shaders/
+├── classes/
+├── scenes
 └── enum.gd
 ```
 
 ## Version
 
-v1.5.0
+v2.0.0
