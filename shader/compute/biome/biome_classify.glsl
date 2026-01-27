@@ -152,7 +152,6 @@ vec2 apply_domain_warp(vec2 p, uint s) {
 // ============================================================================
 
 // === DEFAULT TYPE (0) - Non-river biomes ===
-const vec4 COL_BANQUISE = vec4(0.749, 0.745, 0.733, 1.0);           // 0xbfbebb
 const vec4 COL_OCEAN = vec4(0.145, 0.322, 0.541, 1.0);              // 0x25528a
 const vec4 COL_LAC = vec4(0.271, 0.518, 0.824, 1.0);                // 0x4584d2
 const vec4 COL_ZONE_COTIERE = vec4(0.157, 0.376, 0.647, 1.0);       // 0x2860a5
@@ -189,7 +188,6 @@ const vec4 COL_LAC_GELE = vec4(0.659, 0.831, 0.902, 1.0);           // 0xA8D4E6
 const vec4 COL_RIVIERE_GLACIAIRE = vec4(0.494, 0.784, 0.890, 1.0);  // 0x7EC8E3
 
 // === TOXIC TYPE (1) ===
-const vec4 COL_BANQUISE_TOXIC = vec4(0.282, 0.839, 0.231, 1.0);     // 0x48d63b
 const vec4 COL_OCEAN_TOXIC = vec4(0.196, 0.608, 0.514, 1.0);        // 0x329b83
 const vec4 COL_MARECAGE_ACIDE = vec4(0.208, 0.608, 0.227, 1.0);     // 0x359b3a
 const vec4 COL_DESERT_SOUFRE = vec4(0.471, 0.553, 0.161, 1.0);      // 0x788d29
@@ -222,7 +220,6 @@ const vec4 COL_LAVE_SOLIDIFIEE = vec4(0.627, 0.322, 0.176, 1.0);    // 0xA0522D
 const vec4 COL_BASSIN_REFROIDI = vec4(0.545, 0.271, 0.075, 1.0);    // 0x8B4513
 
 // === DEAD TYPE (4) ===
-const vec4 COL_BANQUISE_MORTE = vec4(0.851, 0.820, 0.800, 1.0);     // 0xd9d1cc
 const vec4 COL_MARECAGE_LUMINESCENT = vec4(0.380, 0.624, 0.388, 1.0);// 0x619f63
 const vec4 COL_OCEAN_MORT = vec4(0.286, 0.475, 0.290, 1.0);         // 0x49794a
 const vec4 COL_DESERT_SEL = vec4(0.851, 0.796, 0.627, 1.0);         // 0xd9cba0
@@ -278,20 +275,6 @@ vec4 classifyRiverBiome(int temp, float flux, float max_flux, uint atmo) {
         return COL_RIVIERE_STAGNANTE;
     }
     return COL_RIVIERE;  // Fallback
-}
-
-// ============================================================================
-// BANQUISE BIOME
-// Matching enum.gd getBanquiseBiome()
-// ============================================================================
-
-vec4 getBanquiseColor(uint atmo) {
-    if (atmo == 0u) return COL_BANQUISE;
-    if (atmo == 1u) return COL_BANQUISE_TOXIC;
-    if (atmo == 2u) return COL_LAVE_REFROIDIE;
-    if (atmo == 3u) return COL_BANQUISE_MORTE;  // No atmo uses dead banquise
-    if (atmo == 4u) return COL_BANQUISE_MORTE;
-    return COL_BANQUISE;
 }
 
 // ============================================================================

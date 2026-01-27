@@ -674,14 +674,6 @@ func getBiomeByColor(color: Color) -> Biome:
 			return biome
 	return null
 
-func getBanquiseBiome( typePlanete : int) -> Biome:
-	for biome in BIOMES:
-		if typePlanete in biome.get_type_planete():
-			if biome.get_nom().find("Banquise") != -1 or biome.get_nom().find("Refroidis") != -1:
-				return biome
-	# Fallback: retourner un biome de glace générique
-	return Biome.new("Banquise", Color.hex(0xE8F4F8FF), Color.hex(0xFFFFFFFF), [-100, 0], [0.0, 1.0], [-10000, 10000], false)
-
 func getRiverBiome(temperature_val: int, precipitation_val: float, type_planete: int) -> Biome:
 	# Chercher les biomes rivière/lac appropriés selon la température
 	var best_biome : Biome = null
@@ -788,61 +780,3 @@ func getRiverBiomeBySize(temperature_val: int, type_planete: int, size: int) -> 
 		best_biome = getRiverBiome(temperature_val, 0.5, type_planete)
 	
 	return best_biome
-
-func getLakeBiome(temperature_val: int, type_planete: int) -> Biome:
-	var lake_names = ["Lac", "Lac d'eau douce", "Lac gelé", "Lac d'acide", "Lac toxique gelé", "Lac de lave", "Lac irradié", "Lac de boue", "Mare stagnante", "Bassin de magma refroidi"]
-	
-	var best_biome: Biome = null
-	var best_score: float = -1.0
-	
-	for biome in BIOMES:
-		if not biome.get_river_lake_only():
-			continue
-		
-		# Vérifier le type de planète
-		if type_planete not in biome.get_type_planete():
-			continue
-		
-		var nom = biome.get_nom()
-		var is_lake = false
-		for lake_name in lake_names:
-			if nom.begins_with(lake_name) or nom == lake_name or nom.find("Lac") != -1 or nom.find("Mare") != -1 or nom.find("Bassin") != -1:
-				is_lake = true
-				break
-		
-		if not is_lake:
-			continue
-		
-		# Vérifier la température
-		var temp_range = biome.get_interval_temp()
-		if temperature_val < temp_range[0] or temperature_val > temp_range[1]:
-			continue
-		
-		# Score basé sur la correspondance de température
-		var temp_center = (temp_range[0] + temp_range[1]) / 2.0
-		var temp_score = 1.0 - abs(temperature_val - temp_center) / max(1, temp_range[1] - temp_range[0])
-		
-		if temp_score > best_score:
-			best_score = temp_score
-			best_biome = biome
-	
-	# Fallback
-	if best_biome == null:
-		# Chercher un lac par défaut pour ce type
-		for biome in BIOMES:
-			if biome.get_river_lake_only() and type_planete in biome.get_type_planete():
-				if biome.get_nom().find("Lac") != -1:
-					return biome
-		# Dernier recours
-		best_biome = getRiverBiome(temperature_val, 0.5, type_planete)
-	
-	return best_biome
-
-func getRessourceByProbabilite() -> Ressource:
-	var rand_val = randf()
-	var cumulative_prob = 0.0
-	for ressource in RESSOURCES:
-		cumulative_prob += ressource.probabilite
-		if rand_val <= cumulative_prob:
-			return ressource
-	return RESSOURCES[-1] # Retourne la dernière ressource si aucune n'a été trouvée
