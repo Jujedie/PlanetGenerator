@@ -216,7 +216,7 @@ vec3 getCylindricalCoords(ivec2 pixel, uint w, uint h, float cylinder_radius) {
 
 // ============================================================================
 // PALETTE DE COULEURS PRÉCIPITATION (Hard-coded depuis Enum.gd)
-// 8 seuils de 0.0 à 1.0
+// 11 seuils de 0.0 à 1.0
 // ============================================================================
 
 vec4 getPrecipitationColor(float precip) {
@@ -227,10 +227,13 @@ vec4 getPrecipitationColor(float precip) {
     if (precip <= 0.1) return vec4(0.553, 0.078, 0.565, 1.0); // 0x8d1490
     if (precip <= 0.2) return vec4(0.424, 0.086, 0.635, 1.0); // 0x6c16a2
     if (precip <= 0.3) return vec4(0.290, 0.094, 0.686, 1.0); // 0x4a18af
-    if (precip <= 0.4) return vec4(0.173, 0.106, 0.773, 1.0); // 0x2c1bc5
-    if (precip <= 0.5) return vec4(0.114, 0.200, 0.827, 1.0); // 0x1d33d3
-    if (precip <= 0.7) return vec4(0.122, 0.310, 0.878, 1.0); // 0x1f4fe0
-    return vec4(0.208, 0.514, 0.890, 1.0); // 0x3583e3 (1.0)
+    if (precip <= 0.4) return vec4(0.322, 0.102, 0.757, 1.0); // 0x521ac1
+    if (precip <= 0.5) return vec4(0.173, 0.106, 0.773, 1.0); // 0x2c1bc5
+    if (precip <= 0.6) return vec4(0.114, 0.200, 0.827, 1.0); // 0x1d33d3
+    if (precip <= 0.7) return vec4(0.141, 0.224, 0.859, 1.0); // 0x2439db
+    if (precip <= 0.8) return vec4(0.110, 0.286, 0.808, 1.0); // 0x1c49ce
+    if (precip <= 0.9) return vec4(0.122, 0.310, 0.878, 1.0); // 0x1f4fe0
+    return vec4(0.192, 0.365, 0.890, 1.0); // 0x315de3 (1.0)
 }
 
 // ============================================================================

@@ -12,7 +12,6 @@ const TYPE_DEAD = 4         # Mort / Irradié
 # NOTE SUR LES DONNÉES :
 # Température : En degrés Celsius (approximatif pour la logique du jeu)
 # Précipitation : 0.0 (Sec) à 1.0 (Humide/Saturé)
-# Altitude : < 0 = Sous l'eau, > 0 = Terre émergée
 
 var BIOMES = [
 	# ==========================================================================
@@ -321,10 +320,13 @@ var COULEUR_PRECIPITATION = {
 	0.1: Color.hex(0x8d1490FF),
 	0.2: Color.hex(0x6c16a2FF),
 	0.3: Color.hex(0x4a18afFF),
-	0.4: Color.hex(0x2c1bc5FF),
-	0.5: Color.hex(0x1d33d3FF),
-	0.7: Color.hex(0x1f4fe0FF),
-	1.0: Color.hex(0x3583e3FF)
+	0.4: Color.hex(0x521ac1FF),
+	0.5: Color.hex(0x2c1bc5FF),
+	0.6: Color.hex(0x1d33d3F),
+	0.7: Color.hex(0x2439dbFF),
+	0.8: Color.hex(0x1c49ceFF),
+	0.9: Color.hex(0x1f4fe0FF),
+	1.0: Color.hex(0x315de3FF)
 }
 
 var RESSOURCES = [
@@ -512,36 +514,11 @@ func getElevationColor(elevation: int, grey_version : bool = false) -> Color:
 				return COULEURS_ELEVATIONS_GREY[key]
 		return COULEURS_ELEVATIONS_GREY[ALTITUDE_MAX]
 
-func getElevationViaColor(color: Color) -> int:
-	# Comparaison approximative par distance de couleur
-	# (la comparaison exacte échoue à cause des imprécisions de flottants)
-	var best_key = 0
-	var best_distance = 999.0
-	
-	for key in COULEURS_ELEVATIONS.keys():
-		var ref_color = COULEURS_ELEVATIONS[key]
-		var distance = sqrt(
-			pow(color.r - ref_color.r, 2) +
-			pow(color.g - ref_color.g, 2) +
-			pow(color.b - ref_color.b, 2)
-		)
-		if distance < best_distance:
-			best_distance = distance
-			best_key = key
-	
-	return best_key
-
 func getTemperatureColor(temperature: float) -> Color:
 	for key in COULEURS_TEMPERATURE.keys():
 		if temperature <= key:
 			return COULEURS_TEMPERATURE[key]
 	return COULEURS_TEMPERATURE[100]
-
-func getTemperatureViaColor(color: Color) -> float:
-	for key in COULEURS_TEMPERATURE.keys():
-		if COULEURS_TEMPERATURE[key] == color:
-			return key
-	return 0.0
 
 func getBiome(type_planete : int, elevation_val : int, precipitation_val : float, temperature_val : int, is_water : bool, img_biome: Image, x:int, y:int, generator = null) -> Biome:
 	var corresponding_biome : Array[Biome] = []
@@ -589,52 +566,6 @@ func getBiome(type_planete : int, elevation_val : int, precipitation_val : float
 	
 	return Biome.new("Aucun", Color.hex(0xFF0000FF), Color.hex(0xFF0000FF), [0, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false)
 
-func getSuroundingBiomes(img_biome: Image, x:int, y:int, _generator = null) -> Array:
-	var surrounding_biomes = []
-	var width = img_biome.get_width()
-	var height = img_biome.get_height()
-	
-	for i in range(-1, 2):
-		for j in range(-1, 2):
-			if i == 0 and j == 0:
-				continue
-			# Wrap horizontal pour la continuité torique
-			var new_x = posmod(x + i, width)
-			var new_y = y + j
-			# Pas de wrap vertical (les pôles ne se rejoignent pas)
-			if new_y >= 0 and new_y < height:
-				var color = img_biome.get_pixel(new_x, new_y)
-				for biome in BIOMES:
-					if biome.get_couleur() == color:
-						surrounding_biomes.append(biome)
-						break
-	
-	return surrounding_biomes
-
-func getMostCommonSurroundingBiome(biomes : Array) -> Biome:
-	var biome_count = {}
-	for biome in biomes:
-		if biome.get_nom() in biome_count:
-			biome_count[biome.get_nom()] += 1
-		else:
-			biome_count[biome.get_nom()] = 1
-	
-	var most_common_biome = ""
-	var max_count = 0
-	for biome_name in biome_count.keys():
-		if biome_count[biome_name] > max_count:
-			max_count = biome_count[biome_name]
-			most_common_biome = biome_name
-	
-	for biome in BIOMES:
-		if biome.get_nom() == most_common_biome:
-			return biome
-	
-	# Retourner le premier biome disponible comme fallback
-	if BIOMES.size() > 0:
-		return BIOMES[0]
-	return Biome.new("Fallback", Color.hex(0x808080FF), Color.hex(0x808080FF), [-100, 100], [0.0, 1.0], [-10000, 10000], false)
-
 func getPrecipitationColor(precipitation: float) -> Color:
 	for key in COULEUR_PRECIPITATION.keys():
 		if precipitation <= key:
@@ -666,13 +597,6 @@ func getBiomeByNoise(type_planete: int, elevation_val: int, precipitation_val: f
 		return corresponding_biome[index]
 	
 	return Biome.new("Aucun", Color.hex(0xFF0000FF), Color.hex(0xFF0000FF), [0, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false)
-
-func getBiomeByColor(color: Color) -> Biome:
-	# Trouve un biome par sa couleur
-	for biome in BIOMES:
-		if biome.get_couleur() == color:
-			return biome
-	return null
 
 func getRiverBiome(temperature_val: int, precipitation_val: float, type_planete: int) -> Biome:
 	# Chercher les biomes rivière/lac appropriés selon la température
