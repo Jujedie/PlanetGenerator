@@ -20,13 +20,13 @@ var BIOMES = [
 
 	# --- OCÉANS & BATHYMÉTRIE ---
 	# Plus on descend, plus c'est sombre et froid.
-	Biome.new("Fosse des Mariannes (Abysses)", Color.hex(0x050a14FF), Color.hex(0x050a14FF), [-5, 4], [0.0, 1.0], [-ALTITUDE_MAX, -6000], true, [TYPE_TERRAN]),
+i	Biome.new("Abysses", Color.hex(0x050a14FF), Color.hex(0x050a14FF), [-5, 4], [0.0, 1.0], [-ALTITUDE_MAX, -6000], true, [TYPE_TERRAN]),
 	Biome.new("Plaine Abyssale", Color.hex(0x0f1e3cFF), Color.hex(0x0f1e3cFF), [-2, 10], [0.0, 1.0], [-6000, -2000], true, [TYPE_TERRAN]),
 	Biome.new("Océan Profond", Color.hex(0x1a3666FF), Color.hex(0x1a3666FF), [5, 25], [0.0, 1.0], [-2000, -200], true, [TYPE_TERRAN]),
 	Biome.new("Plateau Continental", Color.hex(0x2d5aa3FF), Color.hex(0x2d5aa3FF), [10, 30], [0.0, 1.0], [-200, -50], true, [TYPE_TERRAN]),
 	
 	# --- CÔTES & EAUX PEU PROFONDES ---
-	Biome.new("Récif Corallien", Color.hex(0x00a896FF), Color.hex(0xff7f50FF), [24, 35], [0.0, 1.0], [-50, -2], true, [TYPE_TERRAN]),
+	Biome.new("Récif Corallien", Color.hex(0x00a896FF), Color.hex(0xIFF), [24, 35], [0.0, 1.0], [-50, -2], true, [TYPE_TERRAN]),
 	Biome.new("Lagon Tropical", Color.hex(0x40e0d0FF), Color.hex(0x40e0d0FF), [24, 35], [0.0, 1.0], [-20, 0], true, [TYPE_TERRAN]),
 	Biome.new("Fjord Glacé", Color.hex(0x2f4f4fFF), Color.hex(0x2f4f4fFF), [-20, 5], [0.0, 1.0], [-200, 0], true, [TYPE_TERRAN]),
 	Biome.new("Littoral / Plage", Color.hex(0xe3d9a6FF), Color.hex(0x8fbc8fFF), [10, 35], [0.0, 1.0], [-5, 5], false, [TYPE_TERRAN]),
@@ -40,6 +40,7 @@ var BIOMES = [
 	Biome.new("Toundra Alpine", Color.hex(0x708090FF), Color.hex(0xa9a9a9FF), [-20, 10], [0.0, 1.0], [2500, ALTITUDE_MAX], false, [TYPE_TERRAN]),
 	Biome.new("Taïga (Forêt Boréale)", Color.hex(0x2f4f4fFF), Color.hex(0x103025FF), [-10, 15], [0.4, 0.8], [0, 2500], false, [TYPE_TERRAN]),
 	Biome.new("Prairie Alpine (Alpage)", Color.hex(0x8cb04eFF), Color.hex(0x658c35FF), [0, 15], [0.4, 0.8], [1500, 3000], false, [TYPE_TERRAN]),
+	Biome.new("Forêt de montagne", Color.hex(0x4f8a40FF), Color.hex(0x3f533cFF), [-15, 20], [0.0, 1.0], [300, ALTITUDE_MAX], false, [TYPE_TERRAN]),
 
 	# --- TERRES : CLIMATS TEMPÉRÉS ---
 	Biome.new("Forêt Tempérée (Décidue)", Color.hex(0x228b22FF), Color.hex(0x006400FF), [5, 22], [0.4, 0.7], [0, 2000], false, [TYPE_TERRAN]),
@@ -47,7 +48,8 @@ var BIOMES = [
 	Biome.new("Forêt Humide (Rainforest)", Color.hex(0x004225FF), Color.hex(0x013220FF), [10, 25], [0.7, 1.0], [0, 1500], false, [TYPE_TERRAN]),
 	Biome.new("Prairie Verdoyante", Color.hex(0x7cfc00FF), Color.hex(0x32cd32FF), [10, 25], [0.3, 0.6], [0, 1500], false, [TYPE_TERRAN]),
 	Biome.new("Maquis Méditerranéen", Color.hex(0x808000FF), Color.hex(0x556b2fFF), [15, 30], [0.1, 0.4], [0, 1000], false, [TYPE_TERRAN]),
-	Biome.new("Steppe", Color.hex(0xc2b280FF), Color.hex(0x8b4513FF), [-5, 25], [0.1, 0.35], [0, 2000], false, [TYPE_TERRAN]),
+	Biome.new("Steppes sèches", Color.hex(0xc2b280FF), Color.hex(0x8b4513FF), [-5, 25], [0.1, 0.35], [0, 2000], false, [TYPE_TERRAN]),
+	Biome.new("Steppes tempérées", Color.hex(0xc2b280FF), Color.hex(0x8b4513FF), [-5, 25], [0.1, 0.35], [0, 2000], false, [TYPE_TERRAN]),
 	Biome.new("Marécage Tempéré", Color.hex(0x556b2fFF), Color.hex(0x2f4f4fFF), [10, 25], [0.8, 1.0], [0, 100], true, [TYPE_TERRAN], true), # Eau douce
 
 	# --- TERRES : CLIMATS CHAUDS & ARIDES ---
@@ -55,8 +57,10 @@ var BIOMES = [
 	Biome.new("Bambouseraie", Color.hex(0x76894cFF), Color.hex(0x567d46FF), [20, 35], [0.6, 0.9], [0, 2000], false, [TYPE_TERRAN]),
 	Biome.new("Savane", Color.hex(0xe9ddafFF), Color.hex(0x808000FF), [25, 40], [0.2, 0.5], [0, 2000], false, [TYPE_TERRAN]),
 	Biome.new("Brousse (Bush)", Color.hex(0xbdb76bFF), Color.hex(0x6b8e23FF), [25, 40], [0.1, 0.3], [0, 1500], false, [TYPE_TERRAN]),
+	Biome.new("Désert semi-aride", Color.hex(0xbe9e5cFF), Color.hex(0xbca46cFF), [25, 50], [0.0, 0.4], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
 	Biome.new("Désert de Sable", Color.hex(0xedc9afFF), Color.hex(0xd2b48cFF), [30, 60], [0.0, 0.1], [0, 1500], false, [TYPE_TERRAN]),
 	Biome.new("Désert Rocheux (Badlands)", Color.hex(0xcd853fFF), Color.hex(0x8b4513FF), [20, 50], [0.0, 0.2], [500, 2500], false, [TYPE_TERRAN]),
+	Biome.new("Désert Extrême", Color.hex(0x6e3825FF), Color.hex(0xab986dFF), [70, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false),
 	
 	# --- EAUX DOUCES INTÉRIEURES (Surface) ---
 	Biome.new("Oasis", Color.hex(0x98fb98FF), Color.hex(0x228b22FF), [30, 50], [0.8, 1.0], [-500, 500], true, [TYPE_TERRAN], true), # Eau douce
@@ -65,10 +69,10 @@ var BIOMES = [
 
 	# --- RIVIÈRES & LACS (Type 0 - Requis pour river_map) ---
 	# Données ajustées : les rivières ont une tolérance large d'altitude et de température
-	Biome.new("Rivière", Color.hex(0x4A90D9FF), Color.hex(0x3f5978FF), [-30, 50], [0.1, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
-	Biome.new("Fleuve", Color.hex(0x3E7FC4FF), Color.hex(0x3f5978FF), [-20, 50], [0.2, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
-	Biome.new("Affluent", Color.hex(0x6BAAE5FF), Color.hex(0x3e5675FF), [-30, 50], [0.1, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
-	Biome.new("Lac d'eau douce", Color.hex(0x5BA3E0FF), Color.hex(0x3c5472FF), [0, 45], [0.3, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
+	Biome.new("Rivière", Color.hex(0x4A90D9FF), Color.hex(0x3f5978FF), [-30, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
+	Biome.new("Fleuve", Color.hex(0x3E7FC4FF), Color.hex(0x3f5978FF), [-20, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
+	Biome.new("Affluent", Color.hex(0x6BAAE5FF), Color.hex(0x3e5675FF), [-30, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
+	Biome.new("Lac d'eau douce", Color.hex(0x5BA3E0FF), Color.hex(0x3c5472FF), [0, 45], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
 	Biome.new("Lac gelé", Color.hex(0xd0f0ffFF), Color.hex(0xaecbd6FF), [-50, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
 	Biome.new("Rivière glaciaire", Color.hex(0xa4d8e8FF), Color.hex(0x7caebdFF), [-30, 10], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
 
