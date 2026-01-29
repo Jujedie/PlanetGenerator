@@ -84,7 +84,6 @@ i	Biome.new("Abysses", Color.hex(0x050a14FF), Color.hex(0x050a14FF), [-5, 4], [0
 	# --- AQUATIQUE TOXIQUE ---
 	Biome.new("Océan Acide", Color.hex(0x4b6e4bFF), Color.hex(0x2f4f2fFF), [10, 80], [0.0, 1.0], [-ALTITUDE_MAX, -500], true, [TYPE_TOXIC]),
 	Biome.new("Lagon de Boue Toxique", Color.hex(0x6b8c42FF), Color.hex(0x556b2fFF), [20, 60], [0.0, 1.0], [-500, 0], true, [TYPE_TOXIC]),
-	Biome.new("Banquise Radioactive", Color.hex(0xccffccFF), Color.hex(0x99ff99FF), [-100, -10], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [TYPE_TOXIC]),
 
 	# --- TERRESTRE TOXIQUE ---
 	Biome.new("Désert de Soufre", Color.hex(0xe3e359FF), Color.hex(0xcaca4bFF), [40, 100], [0.0, 0.2], [0, ALTITUDE_MAX], false, [TYPE_TOXIC]),
