@@ -8,6 +8,8 @@ const TYPE_TOXIC = 1        # Toxique
 const TYPE_VOLCANIC = 2     # Volcanique
 const TYPE_NO_ATMOS = 3     # Sans Atmosphère
 const TYPE_DEAD = 4         # Mort / Irradié
+const TYPE_STERILE = 5      # Stérile
+const TYPE_GAZEUZE = 6      # Gazeuze (Non utilisé pour l'instant)
 
 # NOTE SUR LES DONNÉES :
 # Température : En degrés Celsius (approximatif pour la logique du jeu)
@@ -133,7 +135,6 @@ i	Biome.new("Abysses", Color.hex(0x050a14FF), Color.hex(0x050a14FF), [-5, 4], [0
 	Biome.new("Hauts Plateaux Lunaires", Color.hex(0xd3d3d3FF), Color.hex(0xd3d3d3FF), [-200, 200], [0.0, 1.0], [1000, ALTITUDE_MAX], false, [TYPE_NO_ATMOS]),
 	Biome.new("Glace de Cratère Polaire", Color.hex(0xe0ffffFF), Color.hex(0xe0ffffFF), [-273, -150], [0.0, 1.0], [-2000, 0], false, [TYPE_NO_ATMOS]), # Glace éternelle à l'ombre
 
-
 	# ==========================================================================
 	# TYPE 4 : MORT / POST-APOCALYPTIQUE (Fallout / Mars terraformé échoué)
 	# ==========================================================================
@@ -153,6 +154,28 @@ i	Biome.new("Abysses", Color.hex(0x050a14FF), Color.hex(0x050a14FF), [-5, 4], [0
 	Biome.new("Rivière de Boue", Color.hex(0x8b4513FF), Color.hex(0x5c4033FF), [-10, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
 	Biome.new("Fleuve Pollué", Color.hex(0x556b2fFF), Color.hex(0x2f4f2fFF), [-10, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
 	Biome.new("Lac Irradié", Color.hex(0xadff2fFF), Color.hex(0x7cfc00FF), [-10, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
+
+	# ==========================================================================
+	# TYPE 5 : STÉRILE
+	# ==========================================================================
+
+	# Pas d'eau liquide, pas de végétation réelle, contrastes extrêmes
+	Biome.new("Désert Stérile", Color.hex(0x7f7f7fFF), Color.hex(0x7f7f7fFF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE])
+	Biome.new("Plaine Rocheuse", Color.hex(0x5a5a5aFF), Color.hex(0x5a5a5aFF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE]),
+	Biome.new("Montagnes Rocheuses", Color.hex(0x4a4a4aFF), Color.hex(0x4a4a4aFF), [-200, 200], [0.0, 1.0], [5000, ALTITUDE_MAX], false, [TYPE_STERILE]),
+	Biome.new("Vallées Profondes", Color.hex(0x3a3a3aFF), Color.hex(0x3a3a3aFF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, -5000], false, [TYPE_STERILE]),
+	Biome.new("Désert de Pierre", Color.hex(0x6a6a6aFF), Color.hex(0x6a6a6aFF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE]),
+	Biome.new("Glaciers Stériles", Color.hex(0xccccccFF), Color.hex(0xccccccFF), [-200, -50], [0.0, 1.0], [0, ALTITUDE_MAX], false, [TYPE_STERILE]),
+	Biome.new("Plateaux Érodés", Color.hex(0x5f5f5fFF), Color.hex(0x5f5f5fFF), [-200, 200], [0.0, 1.0], [2000, 8000], false, [TYPE_STERILE]),
+	Biome.new("Cratères Secs", Color.hex(0x4f4f4fFF), Color.hex(0x4f4f4fFF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE]),
+	
+	# ==========================================================================
+	# TYPE 6 : GAZEUSE
+	# ==========================================================================
+
+	# Pas de surface solide ni d'eau liquide, biomes non applicables
+	Biome.new("Atmosphère Gazeuse", Color.hex(0x000000FF), Color.hex(0x000000FF), [-273, 500], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_GAZEUZE]),
+
 ]
 
 # Définition des couleurs pour les élévations
