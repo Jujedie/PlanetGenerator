@@ -3485,6 +3485,13 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 	u_final.add_id(gpu.textures["final_map"])
 	tex_uniforms.append(u_final)
 	
+	# Binding 6: biome_id (R32UI) - IDs des biomes pour lookup SSBO végétation
+	var u_biome_id = RDUniform.new()
+	u_biome_id.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	u_biome_id.binding = 6
+	u_biome_id.add_id(gpu.textures["biome_id"])
+	tex_uniforms.append(u_biome_id)
+	
 	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["final_map"], 0)
 	
 	# Créer les uniformes pour set 1 (paramètres)
@@ -3495,17 +3502,38 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 	
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["final_map"], 1)
 	
+	# Créer le SSBO des biomes avec couleurs végétation pour set 2
+	var biomes_veg_data = Enum.build_biomes_gpu_buffer(atmosphere_type, true)  # is_vegetation = true
+	var biomes_veg_ssbo = rd.storage_buffer_create(biomes_veg_data.size(), biomes_veg_data)
+	
+	if not biomes_veg_ssbo.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create vegetation biomes SSBO")
+		rd.free_rid(param_set)
+		rd.free_rid(tex_set)
+		rd.free_rid(param_buffer)
+		return
+	
+	var ssbo_uniform = RDUniform.new()
+	ssbo_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	ssbo_uniform.binding = 0
+	ssbo_uniform.add_id(biomes_veg_ssbo)
+	
+	var ssbo_set = rd.uniform_set_create([ssbo_uniform], gpu.shaders["final_map"], 2)
+	
 	# Dispatcher
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["final_map"])
 	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
 	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_bind_uniform_set(compute_list, ssbo_set, 2)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	rd.submit()
 	rd.sync()
 	
 	# Nettoyer
+	rd.free_rid(ssbo_set)
+	rd.free_rid(biomes_veg_ssbo)
 	rd.free_rid(param_set)
 	rd.free_rid(tex_set)
 	rd.free_rid(param_buffer)

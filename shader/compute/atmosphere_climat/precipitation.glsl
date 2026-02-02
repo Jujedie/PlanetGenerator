@@ -264,28 +264,108 @@ void main() {
     // Latitude normalisée [0, 1] : 0 = équateur, 1 = pôles
     float latitude = abs((float(pixel.y) / float(params.height)) - 0.5) * 2.0;
     
-    // === 1. Combine three noises (1 Perlin-FBM + 2 simplex) ===
+    // Lire géométrie pour effet océanique
+    vec4 geo = imageLoad(geo_texture, pixel);
+    float elevation = geo.r;
+    bool is_water = (elevation < params.sea_level);
+    
+    // === 1. BRUIT DE BASE (Multi-échelles pour variété) ===
     float noise_freq_main = 2.5 / params.cylinder_radius;
     float main_value = fbm(coords * noise_freq_main, 6, 0.5, 2.0, params.seed + 50000u);
     main_value = (main_value + 1.0) * 0.5; // Normaliser [0, 1]
 
     float noise_freq_s1 = 4.0 / params.cylinder_radius;
     float s1 = snoise(coords * noise_freq_s1 + vec3(float(params.seed + 60000u)));
-    s1 = (s1 + 1.0) * 0.5; // Normaliser [0, 1]
+    s1 = (s1 + 1.0) * 0.5;
 
     float noise_freq_s2 = 8.0 / params.cylinder_radius;
     float s2 = snoise(coords * noise_freq_s2 + vec3(float(params.seed + 70000u)));
-    s2 = (s2 + 1.0) * 0.5; // Normaliser [0, 1]
+    s2 = (s2 + 1.0) * 0.5;
 
-    // Pondérations : main influence forte, deux simplex moins influents
-    float value = clamp(main_value * 0.7 + s1 * 0.15 + s2 * 0.15, 0.0, 1.0);
+    // Combiner les bruits (équilibré pour plus de variété)
+    float base_humidity = clamp(main_value * 0.5 + s1 * 0.3 + s2 * 0.2, 0.0, 1.0);
 
+    // === 2. ZONATION LATITUDINALE (Cellules de Hadley) ===
+    // Modèle simplifié de circulation atmosphérique :
+    // - 0-0.15 : Zone équatoriale humide (ITCZ)
+    // - 0.15-0.4 : Tropiques variables
+    // - 0.4-0.55 : Déserts subtropicaux (cellules descendantes à 30°N/S)
+    // - 0.55-0.8 : Zones tempérées humides
+    // - 0.8-1.0 : Régions polaires sèches
+    
+    float lat_factor = 1.0;
+    
+    // Zone équatoriale très humide (ITCZ)
+    if (latitude < 0.15) {
+        lat_factor = mix(1.3, 1.1, latitude / 0.15);
+    }
+    // Tropiques
+    else if (latitude < 0.4) {
+        lat_factor = mix(1.1, 0.6, (latitude - 0.15) / 0.25);
+    }
+    // Déserts subtropicaux (30° N/S)
+    else if (latitude < 0.55) {
+        lat_factor = mix(0.6, 0.4, (latitude - 0.4) / 0.15);
+    }
+    // Zones tempérées humides
+    else if (latitude < 0.8) {
+        lat_factor = mix(0.4, 0.9, (latitude - 0.55) / 0.25);
+    }
+    // Régions polaires sèches
+    else {
+        lat_factor = mix(0.9, 0.3, (latitude - 0.8) / 0.2);
+    }
+    
+    // === 3. EFFET OCÉANIQUE (Distance à l'eau = continentalité) ===
+    // Les océans apportent de l'humidité aux terres adjacentes
+    float ocean_influence = 1.0;
+    
+    if (!is_water) {
+        // Calculer distance approximative à l'océan (échantillonnage)
+        float min_dist = 999999.0;
+        int search_radius = 40; // Rayon de recherche en pixels
+        
+        for (int dy = -search_radius; dy <= search_radius; dy += 4) {
+            for (int dx = -search_radius; dx <= search_radius; dx += 4) {
+                ivec2 sample_pos = pixel + ivec2(dx, dy);
+                
+                // Wrapping horizontal (cylindre)
+                sample_pos.x = sample_pos.x % int(params.width);
+                if (sample_pos.x < 0) sample_pos.x += int(params.width);
+                
+                // Clamping vertical
+                sample_pos.y = clamp(sample_pos.y, 0, int(params.height) - 1);
+                
+                vec4 sample_geo = imageLoad(geo_texture, sample_pos);
+                if (sample_geo.r < params.sea_level) {
+                    float dist = length(vec2(dx, dy));
+                    min_dist = min(min_dist, dist);
+                }
+            }
+        }
+        
+        // Convertir distance en influence (plus proche = plus humide)
+        // Distance max ~50 pixels = continentalité forte
+        float normalized_dist = min(min_dist / 50.0, 1.0);
+        ocean_influence = mix(1.4, 0.5, normalized_dist); // Côtes 1.4x, intérieur 0.5x
+    } else {
+        // Sur l'eau : humidité maximale
+        ocean_influence = 1.5;
+    }
+    
+    // === 4. COMBINAISON FINALE ===
+    float value = base_humidity * lat_factor * ocean_influence;
+    
     // Application du facteur global d'humidité
     value *= params.avg_precipitation;
+    
+    // Légère redistribution pour réduire la surreprésentation des basses valeurs
+    // tout en gardant la plage complète [0.0, 1.0]
+    value = pow(value, 0.8); // Légère courbe vers le haut
+    
     value = clamp(value, 0.0, 1.0);
 
-    // === 8. Écriture des résultats ===    
-    // === 8. Écriture des résultats ===
+    // === 5. ÉCRITURE DES RÉSULTATS ===
     
     // Lire la température existante
     vec4 climate = imageLoad(climate_texture, pixel);
