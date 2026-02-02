@@ -40,17 +40,22 @@ layout(set = 1, binding = 0, std140) uniform BiomeParams {
 };
 
 // === SET 2 : SSBO BIOMES DATA ===
-// Structure alignée std430 (32 bytes par biome)
+// Structure alignée std430 (64 bytes par biome)
 struct BiomeData {
-    vec4 color;              // RGB + alpha (couleur du biome)
-    float temp_min;          // Température minimale (°C)
-    float temp_max;          // Température maximale (°C)
-    float humid_min;         // Humidité minimale (0-1)
-    float humid_max;         // Humidité maximale (0-1)
-    float elev_min;          // Élévation minimale (m)
-    float elev_max;          // Élévation maximale (m)
-    uint water_need;         // 1 si nécessite eau, 0 sinon
-    uint planet_type_mask;   // Bitmask des types de planètes valides
+    vec4 color;              // RGB + alpha (couleur du biome) - 16 bytes
+    float temp_min;          // Température minimale (°C) - 4 bytes
+    float temp_max;          // Température maximale (°C) - 4 bytes
+    float humid_min;         // Humidité minimale (0-1) - 4 bytes
+    float humid_max;         // Humidité maximale (0-1) - 4 bytes
+    float elev_min;          // Élévation minimale (m) - 4 bytes
+    float elev_max;          // Élévation maximale (m) - 4 bytes
+    uint water_need;         // 0=pas d'eau, 1=eau salée, 2=eau douce - 4 bytes
+    uint planet_type_mask;   // Bitmask des types de planètes valides - 4 bytes
+    uint is_freshwater_only; // 1 si biome eau douce uniquement - 4 bytes
+    uint is_saltwater_only;  // 1 si biome eau salée uniquement - 4 bytes
+    uint padding1;           // Alignement - 4 bytes
+    uint padding2;           // Alignement - 4 bytes
+    // Total: 64 bytes
 };
 
 layout(set = 2, binding = 0, std430) readonly buffer BiomeLUT {
@@ -68,6 +73,19 @@ const uint TYPE_VOLCANIC = 2u;
 const uint TYPE_NO_ATMOS = 3u;
 const uint TYPE_DEAD = 4u;
 const uint TYPE_STERILE = 5u;
+const uint TYPE_GAZEUZE = 6u;
+
+// Types de planètes sans eau (comme sans atmosphère)
+// Gazeuse = pas de surface solide, donc pas d'eau liquide
+// Stérile = CAN have water (exception demandée par l'utilisateur)
+bool is_waterless_planet_type(uint ptype) {
+    return (ptype == TYPE_NO_ATMOS) || (ptype == TYPE_GAZEUZE);
+}
+
+// Types de planètes sans atmosphère (affecte l'humidité)
+bool is_airless_planet_type(uint ptype) {
+    return (ptype == TYPE_NO_ATMOS) || (ptype == TYPE_GAZEUZE);
+}
 
 const float ALTITUDE_MAX = 25000.0;
 
@@ -114,6 +132,7 @@ float compute_biome_score(
     float elevation,
     bool is_water,
     bool is_freshwater,
+    bool is_saltwater,
     uint planet_type
 ) {
     // Vérifier le type de planète (bitmask)
@@ -122,10 +141,36 @@ float compute_biome_score(
         return 0.0;
     }
     
-    // Vérifier le besoin en eau
-    bool biome_needs_water = (biome.water_need == 1u);
+    // === GESTION EAU DOUCE / EAU SALÉE ===
+    // water_need: 0=pas d'eau, 1=eau salée préférée, 2=eau douce préférée
+    bool biome_needs_water = (biome.water_need > 0u);
+    bool biome_prefers_freshwater = (biome.is_freshwater_only == 1u);
+    bool biome_prefers_saltwater = (biome.is_saltwater_only == 1u);
+    
+    // Si le biome nécessite de l'eau mais le pixel n'en a pas
     if (biome_needs_water && !is_water) {
         return 0.0;
+    }
+    
+    // LOGIQUE STRICTE : Un biome d'eau DOIT correspondre au type d'eau du pixel
+    if (biome_needs_water && is_water) {
+        // Si le biome est marqué eau douce uniquement
+        if (biome_prefers_freshwater) {
+            // Le pixel DOIT être eau douce
+            if (!is_freshwater) {
+                return 0.0;  // Pixel eau salée sur biome eau douce → REJET
+            }
+        }
+        // Si le biome est marqué eau salée uniquement
+        else if (biome_prefers_saltwater) {
+            // Le pixel DOIT être eau salée
+            if (is_freshwater) {
+                return 0.0;  // Pixel eau douce sur biome eau salée → REJET
+            }
+        }
+        // Si le biome n'a ni flag freshwater ni saltwater
+        // C'est un biome "générique" qui accepte les deux types d'eau
+        // (cas rare, normalement tous les biomes d'eau devraient avoir un flag)
     }
     
     // Vérifier si le pixel est dans les plages acceptables
@@ -161,9 +206,15 @@ float compute_biome_score(
     // Score inversé (plus proche du centre = meilleur score)
     float score = 3.0 - (temp_dist + humid_dist + elev_dist);
     
-    // Bonus pour les biomes qui correspondent parfaitement au type d'eau
+    // Bonus pour correspondance exacte du type d'eau
     if (biome_needs_water && is_water) {
         score += 0.5;
+        // Bonus supplémentaire si le type d'eau correspond exactement
+        if (biome_prefers_freshwater && is_freshwater) {
+            score += 1.0;  // Gros bonus pour eau douce sur biome eau douce
+        } else if (biome_prefers_saltwater && is_saltwater) {
+            score += 1.0;  // Gros bonus pour eau salée sur biome eau salée
+        }
     }
     
     // Pénalité légère pour les plages très larges (favorise la spécificité)
@@ -193,14 +244,42 @@ void main() {
     float temperature = climate.r;     // Température en °C
     float humidity = climate.g;        // Humidité 0-1
     
+    // === GESTION DES TYPES DE PLANÈTES SPÉCIAUX ===
+    // Planètes gazeuses et sans atmosphère : pas d'eau liquide
+    bool waterless_planet = is_waterless_planet_type(atmosphere_type);
+    bool airless_planet = is_airless_planet_type(atmosphere_type);
+    
+    // Pour les planètes sans eau, forcer water_type à 0
+    if (waterless_planet) {
+        water_type = 0u;
+        water_height = 0.0;
+    }
+    
+    // Pour les planètes sans atmosphère, l'humidité n'a pas de sens
+    if (airless_planet) {
+        humidity = 0.0;
+    }
+    
     // Boost d'humidité près des flux d'eau (zones humides, pas rivières)
-    float flux_boost = min(flux * flux_humidity_boost, 0.3);
-    humidity = min(humidity + flux_boost, 1.0);
+    // Seulement si la planète a de l'eau et une atmosphère
+    if (!waterless_planet && !airless_planet) {
+        float flux_boost = min(flux * flux_humidity_boost, 0.3);
+        humidity = min(humidity + flux_boost, 1.0);
+    }
     
     // Déterminer le type d'eau
+    // water_mask: 0=terre, 1=eau salée, 2=eau douce
     bool is_water = (water_type > 0u) || (water_height > 0.1);
     bool is_freshwater = (water_type == 2u);
+    bool is_saltwater = (water_type == 1u) || (is_water && !is_freshwater);
     bool is_underwater = (elevation < sea_level && water_height > 0.1);
+    
+    // Forcer pas d'eau si planète sans eau
+    if (waterless_planet) {
+        is_water = false;
+        is_freshwater = false;
+        is_saltwater = false;
+    }
     
     // Ajuster l'élévation pour les zones sous-marines (profondeur)
     float effective_elevation = elevation;
@@ -213,13 +292,21 @@ void main() {
     float noise = snoise(noise_pos) * 5.0;  // ±5°C de variation
     float temp_with_noise = temperature + noise * 0.1;
     
-    float humid_noise = snoise(noise_pos * 0.5 + vec2(100.0)) * 0.05;
-    float humid_with_noise = clamp(humidity + humid_noise, 0.0, 1.0);
+    // Pour les planètes sans atmosphère, pas de bruit d'humidité
+    float humid_with_noise = humidity;
+    if (!airless_planet) {
+        float humid_noise = snoise(noise_pos * 0.5 + vec2(100.0)) * 0.05;
+        humid_with_noise = clamp(humidity + humid_noise, 0.0, 1.0);
+    }
     
     // === RECHERCHE DU MEILLEUR BIOME ===
-    uint best_biome_id = 0u;
+    // Constante spéciale pour "aucun biome trouvé"
+    const uint NO_BIOME_FOUND = 0xFFFFFFFFu;
+    const vec4 ERROR_COLOR = vec4(1.0, 0.0, 0.0, 1.0);  // ROUGE = erreur/pas de biome
+    
+    uint best_biome_id = NO_BIOME_FOUND;
     float best_score = 0.0;
-    vec4 best_color = vec4(0.5, 0.5, 0.5, 1.0);  // Gris par défaut
+    vec4 best_color = ERROR_COLOR;  // Rouge par défaut si aucun biome trouvé
     
     for (uint i = 0u; i < biome_count; i++) {
         BiomeData biome = biomes[i];
@@ -231,6 +318,7 @@ void main() {
             effective_elevation,
             is_water,
             is_freshwater,
+            is_saltwater,
             atmosphere_type
         );
         
@@ -243,6 +331,13 @@ void main() {
             best_biome_id = i;
             best_color = biome.color;
         }
+    }
+    
+    // Si aucun biome trouvé, garder le rouge et un ID spécial
+    // Cela indique un problème de configuration des biomes pour ce type de planète
+    if (best_biome_id == NO_BIOME_FOUND) {
+        best_biome_id = 0xFFFFu;  // ID invalide pour debug
+        // best_color reste rouge
     }
     
     // === ÉCRITURE DES RÉSULTATS ===

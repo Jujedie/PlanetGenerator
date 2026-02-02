@@ -69,6 +69,14 @@ var BIOMES = [
 	Biome.new("Cénote (Gouffre)", Color.hex(0x1e5959FF), Color.hex(0x00ced1FF), [20, 35], [0.5, 1.0], [-1000, 0], true, [TYPE_TERRAN], true), # Eau douce
 	Biome.new("Bayou (Marais Chaud)", Color.hex(0x4b5320FF), Color.hex(0x556b2fFF), [25, 35], [0.8, 1.0], [0, 50], true, [TYPE_TERRAN], true), # Eau douce
 
+	# --- LACS D'EAU DOUCE (non-rivières, pour classification biome GPU) ---
+	# Ces biomes couvrent les grandes étendues d'eau douce (lacs) à différentes profondeurs
+	Biome.new("Lac Abyssal (Eau douce)", Color.hex(0x0a2040FF), Color.hex(0x0a2040FF), [-5, 15], [0.0, 1.0], [-ALTITUDE_MAX, -2000], true, [TYPE_TERRAN], true), # Très profond
+	Biome.new("Lac Profond (Eau douce)", Color.hex(0x1a4070FF), Color.hex(0x1a4070FF), [0, 25], [0.0, 1.0], [-2000, -500], true, [TYPE_TERRAN], true), # Profond
+	Biome.new("Lac (Eau douce)", Color.hex(0x3a80c0FF), Color.hex(0x3a80c0FF), [5, 30], [0.0, 1.0], [-500, -50], true, [TYPE_TERRAN], true), # Normal
+	Biome.new("Lac Peu Profond (Eau douce)", Color.hex(0x5BA3E0FF), Color.hex(0x5BA3E0FF), [5, 35], [0.0, 1.0], [-50, 0], true, [TYPE_TERRAN], true), # Peu profond
+	Biome.new("Lac Gelé (Eau douce)", Color.hex(0xd0f0ffFF), Color.hex(0xd0f0ffFF), [-50, 0], [0.0, 1.0], [-ALTITUDE_MAX, 0], true, [TYPE_TERRAN], true), # Gelé
+
 	# --- RIVIÈRES & LACS (Type 0 - Requis pour river_map) ---
 	# Données ajustées : les rivières ont une tolérance large d'altitude et de température
 	Biome.new("Rivière", Color.hex(0x4A90D9FF), Color.hex(0x3f5978FF), [-30, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
@@ -537,18 +545,26 @@ var RESSOURCES = [
 # - BiomeData[] : couleur (vec4), temp_min/max, humid_min/max, elev_min/max, water_need, planet_mask
 # ============================================================================
 
-## Filtre les biomes pour le GPU (exclut rivières et calottes glaciaires)
-func get_biomes_for_gpu() -> Array:
+## Filtre les biomes pour le GPU (exclut rivières et ne garde que ceux du type de planète)
+## @param planet_type: Type de planète (0=Terran, 1=Toxic, etc.)
+## @return Array des biomes filtrés
+func get_biomes_for_gpu(planet_type: int = 0) -> Array:
 	var filtered = []
 	for biome in BIOMES:
 		# Exclure les rivières
 		if biome.isRiver():
 			continue
+		
+		# Ne garder que les biomes compatibles avec le type de planète
+		var planet_types = biome.get_type_planete()
+		if planet_type not in planet_types:
+			continue
+		
 		filtered.append(biome)
 	return filtered
 
 ## Construit un PackedByteArray aligné std430 pour le SSBO des biomes
-## Structure par biome (32 bytes alignés):
+## Structure par biome (64 bytes alignés std430):
 ## - color: vec4 (16 bytes) - RGBA couleur du biome
 ## - temp_min: float (4 bytes)
 ## - temp_max: float (4 bytes)
@@ -556,25 +572,29 @@ func get_biomes_for_gpu() -> Array:
 ## - humid_max: float (4 bytes)
 ## - elev_min: float (4 bytes)
 ## - elev_max: float (4 bytes)
-## - water_need: uint (4 bytes)
+## - water_need: uint (4 bytes) - 0=pas d'eau, 1=eau salée, 2=eau douce
 ## - planet_type_mask: uint (4 bytes)
-## Total: 48 bytes par biome (aligné sur 16 bytes pour std430)
-func build_biomes_gpu_buffer() -> PackedByteArray:
-	var filtered_biomes = get_biomes_for_gpu()
-	var biome_count = filtered_biomes.size()
+## - is_freshwater_only: uint (4 bytes) - 1 si biome eau douce uniquement
+## - is_saltwater_only: uint (4 bytes) - 1 si biome eau salée uniquement
+## - padding: uvec2 (8 bytes) pour alignement 16 bytes
+## Total: 64 bytes par biome (aligné sur 16 bytes pour std430)
+## @param planet_type: Type de planète pour filtrer les biomes (0=Terran, 1=Toxic, etc.)
+func build_biomes_gpu_buffer(planet_type: int = 0) -> PackedByteArray:
+	var filtered_biomes = get_biomes_for_gpu(planet_type)
+	var biome_count_val = filtered_biomes.size()
 	
 	# Header: biome_count (4 bytes) + 3x padding (12 bytes) = 16 bytes
-	# Biomes: 48 bytes par biome
+	# Biomes: 64 bytes par biome (aligné std430)
 	var header_size = 16
-	var biome_size = 48
-	var total_size = header_size + biome_count * biome_size
+	var biome_size = 64
+	var total_size = header_size + biome_count_val * biome_size
 	
 	var buffer = PackedByteArray()
 	buffer.resize(total_size)
 	buffer.fill(0)
 	
 	# Écrire le header
-	buffer.encode_u32(0, biome_count)
+	buffer.encode_u32(0, biome_count_val)
 	# padding1, padding2, padding3 déjà à 0
 	
 	# Écrire chaque biome
@@ -602,8 +622,10 @@ func build_biomes_gpu_buffer() -> PackedByteArray:
 		buffer.encode_float(offset + 32, float(elev[0]))
 		buffer.encode_float(offset + 36, float(elev[1]))
 		
-		# water_need (4 bytes)
-		var water_need: int = 1 if biome.get_water_need() else 0
+		# water_need (4 bytes) - 0=pas d'eau, 1=eau (générique), 2=eau douce spécifique
+		var water_need: int = 0
+		if biome.get_water_need():
+			water_need = 2 if biome.isEauDouce() else 1
 		buffer.encode_u32(offset + 40, water_need)
 		
 		# planet_type_mask (4 bytes) - bitmask des types valides
@@ -613,14 +635,26 @@ func build_biomes_gpu_buffer() -> PackedByteArray:
 			mask |= (1 << pt)
 		buffer.encode_u32(offset + 44, mask)
 		
+		# is_freshwater_only (4 bytes) - 1 si biome d'eau douce uniquement
+		var is_freshwater: int = 1 if (biome.get_water_need() and biome.isEauDouce()) else 0
+		buffer.encode_u32(offset + 48, is_freshwater)
+		
+		# is_saltwater_only (4 bytes) - 1 si biome d'eau salée uniquement
+		# Un biome est "salé" s'il nécessite de l'eau mais n'est PAS marqué eau douce
+		var is_saltwater: int = 1 if (biome.get_water_need() and not biome.isEauDouce()) else 0
+		buffer.encode_u32(offset + 52, is_saltwater)
+		
+		# padding (8 bytes) pour alignement 64 bytes - déjà à 0
+		
 		offset += biome_size
 	
-	print("[Enum] ✅ Buffer biomes GPU construit: ", biome_count, " biomes, ", total_size, " bytes")
+	print("[Enum] ✅ Buffer biomes GPU construit: ", biome_count_val, " biomes, ", total_size, " bytes")
 	return buffer
 
 ## Retourne le nombre de biomes filtrés pour le GPU
-func get_biome_gpu_count() -> int:
-	return get_biomes_for_gpu().size()
+## @param planet_type: Type de planète (0=Terran, 1=Toxic, etc.)
+func get_biome_gpu_count(planet_type: int = 0) -> int:
+	return get_biomes_for_gpu(planet_type).size()
 
 ## Retourne l'ID GPU d'un biome par son nom (pour debug)
 func get_biome_gpu_id_by_name(biome_name: String) -> int:

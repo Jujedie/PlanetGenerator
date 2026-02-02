@@ -2285,15 +2285,15 @@ func run_biome_phase(params: Dictionary, w: int, h: int) -> void:
 	# Initialiser les textures de biome
 	gpu.initialize_biome_textures()
 	
-	# Construire le SSBO des biomes depuis enum.gd
-	var biomes_buffer_data = Enum.build_biomes_gpu_buffer()
+	# Construire le SSBO des biomes depuis enum.gd (filtrés par type de planète)
+	var biomes_buffer_data = Enum.build_biomes_gpu_buffer(atmosphere_type)
 	var biomes_ssbo = rd.storage_buffer_create(biomes_buffer_data.size(), biomes_buffer_data)
 	
 	if not biomes_ssbo.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create biomes SSBO")
 		return
 	
-	print("  ✅ SSBO biomes créé: ", Enum.get_biome_gpu_count(), " biomes")
+	print("  ✅ SSBO biomes créé: ", Enum.get_biome_gpu_count(atmosphere_type), " biomes (type=", atmosphere_type, ")")
 	
 	# === PASSE 1 : CLASSIFICATION INITIALE ===
 	print("  • Classification des biomes...")
