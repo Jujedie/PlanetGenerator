@@ -22,13 +22,13 @@ var BIOMES = [
 
 	# --- OCÉANS & BATHYMÉTRIE ---
 	# Plus on descend, plus c'est sombre et froid.
-i	Biome.new("Abysses", Color.hex(0x050a14FF), Color.hex(0x050a14FF), [-5, 4], [0.0, 1.0], [-ALTITUDE_MAX, -6000], true, [TYPE_TERRAN]),
+	Biome.new("Abysses", Color.hex(0x050a14FF), Color.hex(0x050a14FF), [-5, 4], [0.0, 1.0], [-ALTITUDE_MAX, -6000], true, [TYPE_TERRAN]),
 	Biome.new("Plaine Abyssale", Color.hex(0x0f1e3cFF), Color.hex(0x0f1e3cFF), [-2, 10], [0.0, 1.0], [-6000, -2000], true, [TYPE_TERRAN]),
 	Biome.new("Océan Profond", Color.hex(0x1a3666FF), Color.hex(0x1a3666FF), [5, 25], [0.0, 1.0], [-2000, -200], true, [TYPE_TERRAN]),
 	Biome.new("Plateau Continental", Color.hex(0x2d5aa3FF), Color.hex(0x2d5aa3FF), [10, 30], [0.0, 1.0], [-200, -50], true, [TYPE_TERRAN]),
 	
 	# --- CÔTES & EAUX PEU PROFONDES ---
-	Biome.new("Récif Corallien", Color.hex(0x00a896FF), Color.hex(0xIFF), [24, 35], [0.0, 1.0], [-50, -2], true, [TYPE_TERRAN]),
+	Biome.new("Récif Corallien", Color.hex(0x00a896FF), Color.hex(0x40e0d0FF), [24, 35], [0.0, 1.0], [-50, -2], true, [TYPE_TERRAN]),
 	Biome.new("Lagon Tropical", Color.hex(0x40e0d0FF), Color.hex(0x40e0d0FF), [24, 35], [0.0, 1.0], [-20, 0], true, [TYPE_TERRAN]),
 	Biome.new("Fjord Glacé", Color.hex(0x2f4f4fFF), Color.hex(0x2f4f4fFF), [-20, 5], [0.0, 1.0], [-200, 0], true, [TYPE_TERRAN]),
 	Biome.new("Littoral / Plage", Color.hex(0xe3d9a6FF), Color.hex(0x8fbc8fFF), [10, 35], [0.0, 1.0], [-5, 5], false, [TYPE_TERRAN]),
@@ -160,7 +160,7 @@ i	Biome.new("Abysses", Color.hex(0x050a14FF), Color.hex(0x050a14FF), [-5, 4], [0
 	# ==========================================================================
 
 	# Pas d'eau liquide, pas de végétation réelle, contrastes extrêmes
-	Biome.new("Désert Stérile", Color.hex(0x7f7f7fFF), Color.hex(0x7f7f7fFF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE])
+	Biome.new("Désert Stérile", Color.hex(0x7f7f7fFF), Color.hex(0x7f7f7fFF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE]),
 	Biome.new("Plaine Rocheuse", Color.hex(0x5a5a5aFF), Color.hex(0x5a5a5aFF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE]),
 	Biome.new("Montagnes Rocheuses", Color.hex(0x4a4a4aFF), Color.hex(0x4a4a4aFF), [-200, 200], [0.0, 1.0], [5000, ALTITUDE_MAX], false, [TYPE_STERILE]),
 	Biome.new("Vallées Profondes", Color.hex(0x3a3a3aFF), Color.hex(0x3a3a3aFF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, -5000], false, [TYPE_STERILE]),
@@ -174,7 +174,7 @@ i	Biome.new("Abysses", Color.hex(0x050a14FF), Color.hex(0x050a14FF), [-5, 4], [0
 	# ==========================================================================
 
 	# Pas de surface solide ni d'eau liquide, biomes non applicables
-	Biome.new("Atmosphère Gazeuse", Color.hex(0x000000FF), Color.hex(0x000000FF), [-273, 500], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_GAZEUZE]),
+	Biome.new("Atmosphère Gazeuse", Color.hex(0x000000FF), Color.hex(0x000000FF), [-273, 500], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_GAZEUZE])
 
 ]
 
@@ -539,194 +539,3 @@ func getElevationColor(elevation: int, grey_version : bool = false) -> Color:
 			if elevation <= key:
 				return COULEURS_ELEVATIONS_GREY[key]
 		return COULEURS_ELEVATIONS_GREY[ALTITUDE_MAX]
-
-func getTemperatureColor(temperature: float) -> Color:
-	for key in COULEURS_TEMPERATURE.keys():
-		if temperature <= key:
-			return COULEURS_TEMPERATURE[key]
-	return COULEURS_TEMPERATURE[100]
-
-func getBiome(type_planete : int, elevation_val : int, precipitation_val : float, temperature_val : int, is_water : bool, img_biome: Image, x:int, y:int, generator = null) -> Biome:
-	var corresponding_biome : Array[Biome] = []
-
-	for biome in BIOMES:
-		# Exclure les biomes exclusifs aux rivières/lacs (ils ne sont utilisés que sur river_map)
-		if biome.get_river_lake_only():
-			continue
-		
-		if (elevation_val >= biome.get_interval_elevation()[0] and
-			elevation_val <= biome.get_interval_elevation()[1] and
-			temperature_val >= biome.get_interval_temp()[0] and
-			temperature_val <= biome.get_interval_temp()[1] and
-			precipitation_val >= biome.get_interval_precipitation()[0] and
-			precipitation_val <= biome.get_interval_precipitation()[1] and
-			is_water == biome.get_water_need() and 
-			type_planete in biome.get_type_planete()):
-			corresponding_biome.append(biome)
-		
-	var taille = corresponding_biome.size()
-	
-	# Récupérer les biomes voisins et le plus courant
-	var surrounding = getSuroundingBiomes(img_biome, x, y, generator)
-	var most_common_biome = getMostCommonSurroundingBiome(surrounding)
-	
-	# Calculer le pourcentage de voisins avec le même biome pour renforcer l'homogénéité
-	var same_biome_count = 0
-	for b in surrounding:
-		if b != null and most_common_biome != null and b.get_nom() == most_common_biome.get_nom():
-			same_biome_count += 1
-	
-	randomize()
-	var chance = randf()
-	
-	# Plus il y a de voisins du même biome, plus on a de chances de le choisir
-	# Cela crée un effet de "blob" naturel
-	if most_common_biome != null and most_common_biome in corresponding_biome:
-		# Base 60% + 5% par voisin identique (max 8 voisins = 100%)
-		var homogeneity_chance = 0.6 + (same_biome_count * 0.05)
-		if chance <= homogeneity_chance:
-			return most_common_biome
-	
-	if taille > 0 :
-		return corresponding_biome[randi() % taille]
-	
-	return Biome.new("Aucun", Color.hex(0xFF0000FF), Color.hex(0xFF0000FF), [0, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false)
-
-func getPrecipitationColor(precipitation: float) -> Color:
-	for key in COULEUR_PRECIPITATION.keys():
-		if precipitation <= key:
-			return COULEUR_PRECIPITATION[key]
-	return COULEUR_PRECIPITATION[1.0]
-
-func getBiomeByNoise(type_planete: int, elevation_val: int, precipitation_val: float, temperature_val: int, is_water: bool, noise_val: float) -> Biome:
-	# Trouve tous les biomes correspondants et en sélectionne un basé sur le bruit
-	var corresponding_biome : Array[Biome] = []
-
-	for biome in BIOMES:
-		if biome.get_river_lake_only():
-			continue
-		
-		if (elevation_val >= biome.get_interval_elevation()[0] and
-			elevation_val <= biome.get_interval_elevation()[1] and
-			temperature_val >= biome.get_interval_temp()[0] and
-			temperature_val <= biome.get_interval_temp()[1] and
-			precipitation_val >= biome.get_interval_precipitation()[0] and
-			precipitation_val <= biome.get_interval_precipitation()[1] and
-			is_water == biome.get_water_need() and 
-			type_planete in biome.get_type_planete()):
-			corresponding_biome.append(biome)
-	
-	var taille = corresponding_biome.size()
-	if taille > 0:
-		# Utiliser le bruit pour sélectionner de façon déterministe
-		var index = int(noise_val * taille) % taille
-		return corresponding_biome[index]
-	
-	return Biome.new("Aucun", Color.hex(0xFF0000FF), Color.hex(0xFF0000FF), [0, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false)
-
-func getRiverBiome(temperature_val: int, precipitation_val: float, type_planete: int) -> Biome:
-	# Chercher les biomes rivière/lac appropriés selon la température
-	var best_biome : Biome = null
-	var best_score : float = -1.0
-	
-	for biome in BIOMES:
-		var nom = biome.get_nom()
-		# Vérifier si c'est un biome de rivière/lac
-		if nom.find("Rivière") == -1 and nom.find("Fleuve") == -1 and nom.find("Lac") == -1:
-			continue
-		
-		# Vérifier le type de planète
-		if type_planete not in biome.get_type_planete():
-			continue
-		
-		# Vérifier la température
-		var temp_range = biome.get_interval_temp()
-		if temperature_val < temp_range[0] or temperature_val > temp_range[1]:
-			continue
-		
-		# Vérifier les précipitations
-		var precip_range = biome.get_interval_precipitation()
-		if precipitation_val < precip_range[0] or precipitation_val > precip_range[1]:
-			continue
-		
-		# Score basé sur la correspondance
-		var temp_center = (temp_range[0] + temp_range[1]) / 2.0
-		var temp_score = 1.0 - abs(temperature_val - temp_center) / max(1, temp_range[1] - temp_range[0])
-		
-		if temp_score > best_score:
-			best_score = temp_score
-			best_biome = biome
-	
-	# Si aucun biome trouvé, retourner un biome par défaut selon le type de planète
-	if best_biome == null:
-		# Chercher un biome lac/rivière pour ce type de planète
-		for biome in BIOMES:
-			if not biome.get_river_lake_only():
-				continue
-			if type_planete not in biome.get_type_planete():
-				continue
-			# Prendre le premier biome rivière/lac valide pour ce type
-			return biome
-		
-		# Dernier recours: Lac gelé si froid, rivière sinon (pour type 0)
-		if temperature_val < 0:
-			for biome in BIOMES:
-				if biome.get_nom() == "Lac gelé":
-					return biome
-		for biome in BIOMES:
-			if biome.get_nom() == "Rivière":
-				return biome
-		# Fallback: créer un biome rivière générique
-		return Biome.new("Rivière", Color.hex(0x4A90D9FF), Color.hex(0x4A90D9FF), [-50, 100], [0.0, 1.0], [-10000, 10000], true, [0, 1, 2, 3], true)
-	
-	return best_biome
-
-func getRiverBiomeBySize(temperature_val: int, type_planete: int, size: int) -> Biome:
-	# size: 0 = Affluent (petit), 1 = Rivière (moyen), 2 = Fleuve (grand)
-	var size_names = {
-		0: ["Affluent", "Affluent toxique", "Affluent de lave", "Affluent pollué"],
-		1: ["Rivière", "Rivière acide", "Rivière de lave", "Rivière stagnante", "Rivière glaciaire", "Cours d'eau contaminé", "Cours de lave solidifiée"],
-		2: ["Fleuve", "Fleuve toxique", "Fleuve de magma", "Fleuve pollué"]
-	}
-	
-	var target_names = size_names.get(size, size_names[1])
-	
-	var best_biome: Biome = null
-	var best_score: float = -1.0
-	
-	for biome in BIOMES:
-		if not biome.get_river_lake_only():
-			continue
-		
-		# Vérifier le type de planète
-		if type_planete not in biome.get_type_planete():
-			continue
-		
-		var nom = biome.get_nom()
-		var is_target_size = false
-		for target_name in target_names:
-			if nom.begins_with(target_name) or nom == target_name:
-				is_target_size = true
-				break
-		
-		if not is_target_size:
-			continue
-		
-		# Vérifier la température
-		var temp_range = biome.get_interval_temp()
-		if temperature_val < temp_range[0] or temperature_val > temp_range[1]:
-			continue
-		
-		# Score basé sur la correspondance de température
-		var temp_center = (temp_range[0] + temp_range[1]) / 2.0
-		var temp_score = 1.0 - abs(temperature_val - temp_center) / max(1, temp_range[1] - temp_range[0])
-		
-		if temp_score > best_score:
-			best_score = temp_score
-			best_biome = biome
-	
-	# Fallback: essayer getRiverBiome standard
-	if best_biome == null:
-		best_biome = getRiverBiome(temperature_val, 0.5, type_planete)
-	
-	return best_biome
