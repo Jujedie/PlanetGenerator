@@ -528,6 +528,108 @@ var RESSOURCES = [
 	Ressource.new("Terres rares mélangées", Color.hex(0x98FB98FF), 0.01, 60) # 0.01% monazite/bastnäsite - Vert pâle
 ]
 
+# ============================================================================
+# SYSTÈME DE BIOMES GPU
+# ============================================================================
+# Construit un buffer SSBO pour les biomes GPU (exclut rivières et calottes)
+# Structure alignée std430 pour GLSL :
+# - header : biome_count (uint), padding x3 (12 bytes)
+# - BiomeData[] : couleur (vec4), temp_min/max, humid_min/max, elev_min/max, water_need, planet_mask
+# ============================================================================
+
+## Filtre les biomes pour le GPU (exclut rivières et calottes glaciaires)
+func get_biomes_for_gpu() -> Array:
+	var filtered = []
+	for biome in BIOMES:
+		# Exclure les rivières
+		if biome.isRiver():
+			continue
+		filtered.append(biome)
+	return filtered
+
+## Construit un PackedByteArray aligné std430 pour le SSBO des biomes
+## Structure par biome (32 bytes alignés):
+## - color: vec4 (16 bytes) - RGBA couleur du biome
+## - temp_min: float (4 bytes)
+## - temp_max: float (4 bytes)
+## - humid_min: float (4 bytes)
+## - humid_max: float (4 bytes)
+## - elev_min: float (4 bytes)
+## - elev_max: float (4 bytes)
+## - water_need: uint (4 bytes)
+## - planet_type_mask: uint (4 bytes)
+## Total: 48 bytes par biome (aligné sur 16 bytes pour std430)
+func build_biomes_gpu_buffer() -> PackedByteArray:
+	var filtered_biomes = get_biomes_for_gpu()
+	var biome_count = filtered_biomes.size()
+	
+	# Header: biome_count (4 bytes) + 3x padding (12 bytes) = 16 bytes
+	# Biomes: 48 bytes par biome
+	var header_size = 16
+	var biome_size = 48
+	var total_size = header_size + biome_count * biome_size
+	
+	var buffer = PackedByteArray()
+	buffer.resize(total_size)
+	buffer.fill(0)
+	
+	# Écrire le header
+	buffer.encode_u32(0, biome_count)
+	# padding1, padding2, padding3 déjà à 0
+	
+	# Écrire chaque biome
+	var offset = header_size
+	for biome in filtered_biomes:
+		# Couleur (vec4 - 16 bytes)
+		var color = biome.get_couleur()
+		buffer.encode_float(offset + 0, color.r)
+		buffer.encode_float(offset + 4, color.g)
+		buffer.encode_float(offset + 8, color.b)
+		buffer.encode_float(offset + 12, color.a)
+		
+		# Température min/max (8 bytes)
+		var temp = biome.get_interval_temp()
+		buffer.encode_float(offset + 16, float(temp[0]))
+		buffer.encode_float(offset + 20, float(temp[1]))
+		
+		# Humidité min/max (8 bytes)
+		var precip = biome.get_interval_precipitation()
+		buffer.encode_float(offset + 24, precip[0])
+		buffer.encode_float(offset + 28, precip[1])
+		
+		# Élévation min/max (8 bytes)
+		var elev = biome.get_interval_elevation()
+		buffer.encode_float(offset + 32, float(elev[0]))
+		buffer.encode_float(offset + 36, float(elev[1]))
+		
+		# water_need (4 bytes)
+		var water_need: int = 1 if biome.get_water_need() else 0
+		buffer.encode_u32(offset + 40, water_need)
+		
+		# planet_type_mask (4 bytes) - bitmask des types valides
+		var planet_types = biome.get_type_planete()
+		var mask: int = 0
+		for pt in planet_types:
+			mask |= (1 << pt)
+		buffer.encode_u32(offset + 44, mask)
+		
+		offset += biome_size
+	
+	print("[Enum] ✅ Buffer biomes GPU construit: ", biome_count, " biomes, ", total_size, " bytes")
+	return buffer
+
+## Retourne le nombre de biomes filtrés pour le GPU
+func get_biome_gpu_count() -> int:
+	return get_biomes_for_gpu().size()
+
+## Retourne l'ID GPU d'un biome par son nom (pour debug)
+func get_biome_gpu_id_by_name(biome_name: String) -> int:
+	var filtered = get_biomes_for_gpu()
+	for i in range(filtered.size()):
+		if filtered[i].get_nom() == biome_name:
+			return i
+	return -1
+
 func getElevationColor(elevation: int, grey_version : bool = false) -> Color:
 	if not grey_version:
 		for key in COULEURS_ELEVATIONS.keys():

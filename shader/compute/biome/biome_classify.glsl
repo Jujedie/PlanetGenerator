@@ -3,50 +3,82 @@
 
 // ============================================================================
 // BIOME CLASSIFICATION SHADER
-// Classifies each pixel into a biome based on climate and terrain data.
-// Logic matching BiomeMapGenerator.gd + enum.gd getBiomeByNoise()
-// Output: biome_colored texture with distinctive colors for map display (get_couleur())
-// Note: Vegetation colors (for realistic rendering) are converted in final_map.glsl
+// ============================================================================
+// Classifie chaque pixel en biome basé sur le diagramme de Whittaker :
+// - Température (climate_texture.R) en °C
+// - Humidité/Précipitations (climate_texture.G) normalisé 0-1
+// - Élévation (geo_texture.R) en mètres
+// - Masque eau (water_mask)
+// - Type de planète (atmosphere_type)
+//
+// EXCLUT explicitement : rivières, calottes glaciaires, régions
+// Utilise des tables Whittaker différentes par type de planète
 // ============================================================================
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
-// === SET 0: TEXTURES ===
-layout(set = 0, binding = 0) uniform texture2D geo_texture;
-layout(set = 0, binding = 1) uniform sampler geo_sampler;
-layout(set = 0, binding = 2) uniform texture2D climate_texture;
-layout(set = 0, binding = 3) uniform sampler climate_sampler;
-layout(set = 0, binding = 4, rgba8) uniform readonly image2D ice_caps;
-layout(set = 0, binding = 5, r32f) uniform readonly image2D river_flux_texture;
-layout(set = 0, binding = 6, rgba8) uniform writeonly image2D biome_colored;
-layout(set = 0, binding = 7, r8ui) uniform readonly uimage2D water_mask_texture;  // 0=terre, 1=salée, 2=douce
+// === SET 0 : TEXTURES D'ENTRÉE ===
+layout(set = 0, binding = 0, rgba32f) uniform readonly image2D geo_texture;       // R=height, G=bedrock, B=sediment, A=water_height
+layout(set = 0, binding = 1, rgba32f) uniform readonly image2D climate_texture;   // R=temperature, G=humidity, B=windX, A=windY
+layout(set = 0, binding = 2, r8ui) uniform readonly uimage2D water_mask;          // 0=terre, 1=eau salée, 2=eau douce
+layout(set = 0, binding = 3, r32f) uniform readonly image2D river_flux;           // Intensité flux (pour humidité sol uniquement)
 
-// === SET 1: PARAMETERS UBO ===
-layout(set = 1, binding = 0) uniform Params {
-    uint seed;
+// === SET 0 : TEXTURES DE SORTIE ===
+layout(set = 0, binding = 4, r32ui) uniform writeonly uimage2D biome_id;          // ID du biome
+layout(set = 0, binding = 5, rgba8) uniform writeonly image2D biome_colored;      // Couleur RGBA8
+
+// === SET 1 : PARAMÈTRES ===
+layout(set = 1, binding = 0, std140) uniform BiomeParams {
     uint width;
     uint height;
-    uint atmosphere_type;  // 0=default, 1=toxic, 2=volcanic, 3=no_atmo, 4=dead
-    float river_threshold;
+    uint atmosphere_type;    // 0=Terran, 1=Toxic, 2=Volcanic, 3=NoAtmo, 4=Dead, 5=Sterile
+    uint seed;
     float sea_level;
-    float biome_noise_frequency;
+    float cylinder_radius;
+    float flux_humidity_boost;  // Boost d'humidité près des flux d'eau
     float padding;
 };
 
-// ============================================================================
-// CONSTANTS
-// ============================================================================
+// === SET 2 : SSBO BIOMES DATA ===
+// Structure alignée std430 (32 bytes par biome)
+struct BiomeData {
+    vec4 color;              // RGB + alpha (couleur du biome)
+    float temp_min;          // Température minimale (°C)
+    float temp_max;          // Température maximale (°C)
+    float humid_min;         // Humidité minimale (0-1)
+    float humid_max;         // Humidité maximale (0-1)
+    float elev_min;          // Élévation minimale (m)
+    float elev_max;          // Élévation maximale (m)
+    uint water_need;         // 1 si nécessite eau, 0 sinon
+    uint planet_type_mask;   // Bitmask des types de planètes valides
+};
 
-const float PI = 3.14159265359;
-const int ALTITUDE_MAX = 25000;
+layout(set = 2, binding = 0, std430) readonly buffer BiomeLUT {
+    uint biome_count;
+    uint padding1;
+    uint padding2;
+    uint padding3;
+    BiomeData biomes[];
+};
 
-// Maximum number of candidate biomes for selection
-const int MAX_CANDIDATES = 16;
+// === CONSTANTES ===
+const uint TYPE_TERRAN = 0u;
+const uint TYPE_TOXIC = 1u;
+const uint TYPE_VOLCANIC = 2u;
+const uint TYPE_NO_ATMOS = 3u;
+const uint TYPE_DEAD = 4u;
+const uint TYPE_STERILE = 5u;
 
-// ============================================================================
-// NOISE FUNCTIONS - Matching FastNoiseLite FBM behavior
-// ============================================================================
+const float ALTITUDE_MAX = 25000.0;
 
+// === FONCTIONS UTILITAIRES ===
+
+// Générateur pseudo-aléatoire simple
+float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+// Bruit Simplex 2D pour irrégularité naturelle des frontières
 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
 vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
 vec3 permute(vec3 x) { return mod289(((x*34.0)+1.0)*x); }
@@ -73,519 +105,147 @@ float snoise(vec2 v) {
     return 130.0 * dot(m, g);
 }
 
-// FBM matching FastNoiseLite with fractal_octaves=3, gain=0.4, lacunarity=2.0
-float fbm_biome(vec2 p, float freq, uint s) {
-    float value = 0.0;
-    float amplitude = 1.0;
-    float max_amp = 0.0;
-    vec2 offset = vec2(float(s) * 0.31, float(s) * 0.47);
-    
-    for (int i = 0; i < 3; i++) {
-        value += amplitude * snoise((p + offset) * freq);
-        max_amp += amplitude;
-        amplitude *= 0.4;
-        freq *= 2.0;
+// Calcule un score de correspondance pour un biome donné
+// Retourne 0.0 si incompatible, > 0 si compatible (plus haut = meilleur match)
+float compute_biome_score(
+    BiomeData biome,
+    float temperature,
+    float humidity,
+    float elevation,
+    bool is_water,
+    bool is_freshwater,
+    uint planet_type
+) {
+    // Vérifier le type de planète (bitmask)
+    uint planet_bit = 1u << planet_type;
+    if ((biome.planet_type_mask & planet_bit) == 0u) {
+        return 0.0;
     }
     
-    return (value / max_amp + 1.0) * 0.5;  // Normalize to [0, 1]
+    // Vérifier le besoin en eau
+    bool biome_needs_water = (biome.water_need == 1u);
+    if (biome_needs_water && !is_water) {
+        return 0.0;
+    }
+    
+    // Vérifier si le pixel est dans les plages acceptables
+    // Température
+    if (temperature < biome.temp_min || temperature > biome.temp_max) {
+        return 0.0;
+    }
+    
+    // Humidité
+    if (humidity < biome.humid_min || humidity > biome.humid_max) {
+        return 0.0;
+    }
+    
+    // Élévation
+    if (elevation < biome.elev_min || elevation > biome.elev_max) {
+        return 0.0;
+    }
+    
+    // Calculer un score basé sur la proximité du centre des plages
+    float temp_center = (biome.temp_min + biome.temp_max) * 0.5;
+    float humid_center = (biome.humid_min + biome.humid_max) * 0.5;
+    float elev_center = (biome.elev_min + biome.elev_max) * 0.5;
+    
+    float temp_range = max(biome.temp_max - biome.temp_min, 1.0);
+    float humid_range = max(biome.humid_max - biome.humid_min, 0.01);
+    float elev_range = max(biome.elev_max - biome.elev_min, 1.0);
+    
+    // Distance normalisée au centre (0 = parfait, 1 = aux bords)
+    float temp_dist = abs(temperature - temp_center) / (temp_range * 0.5);
+    float humid_dist = abs(humidity - humid_center) / (humid_range * 0.5);
+    float elev_dist = abs(elevation - elev_center) / (elev_range * 0.5);
+    
+    // Score inversé (plus proche du centre = meilleur score)
+    float score = 3.0 - (temp_dist + humid_dist + elev_dist);
+    
+    // Bonus pour les biomes qui correspondent parfaitement au type d'eau
+    if (biome_needs_water && is_water) {
+        score += 0.5;
+    }
+    
+    // Pénalité légère pour les plages très larges (favorise la spécificité)
+    float specificity = 1.0 / (1.0 + temp_range / 50.0 + humid_range + elev_range / 5000.0);
+    score += specificity * 0.3;
+    
+    return max(score, 0.001);  // Toujours > 0 si on arrive ici
 }
 
-// Detail noise for border irregularity - matching detail_noise from legacy
-// frequency = 25.0 / width, octaves=4, gain=0.5, lacunarity=2.0
-float fbm_detail(vec2 p, float freq, uint s) {
-    float value = 0.0;
-    float amplitude = 1.0;
-    float max_amp = 0.0;
-    vec2 offset = vec2(float(s) * 0.73, float(s) * 0.19);
-    
-    for (int i = 0; i < 4; i++) {
-        value += amplitude * snoise((p + offset) * freq);
-        max_amp += amplitude;
-        amplitude *= 0.5;
-        freq *= 2.0;
-    }
-    
-    return (value / max_amp + 1.0) * 0.5;
-}
-
-// Additional noise for climate perturbation - creates irregular biome boundaries
-// Uses higher frequency and more octaves for organic boundaries
-float climate_perturb_noise(vec2 p, uint s) {
-    vec2 offset = vec2(float(s) * 1.23, float(s) * 0.89);
-    float freq = 30.0 / float(width);  // Higher frequency for more detailed perturbation
-    
-    float n1 = snoise((p + offset) * freq);
-    float n2 = snoise((p + offset * 1.7) * freq * 2.3);
-    float n3 = snoise((p + offset * 2.3) * freq * 4.7);  // Extra octave for micro-variations
-    float n4 = snoise((p + offset * 3.1) * freq * 7.3);  // Additional octave for even finer details
-    
-    return (n1 + n2 * 0.5 + n3 * 0.25 + n4 * 0.125) / 1.875;  // Returns [-1, 1]
-}
-
-// Domain warping function - displaces coordinates to break up straight isolines
-// This creates organic, flowing boundaries instead of rectangular ones
-// ENHANCED: Increased strength and added third layer for more natural results
-vec2 apply_domain_warp(vec2 p, uint s) {
-    vec2 offset1 = vec2(float(s) * 0.47, float(s) * 0.31);
-    vec2 offset2 = vec2(float(s) * 0.83, float(s) * 0.59);
-    vec2 offset3 = vec2(float(s) * 1.17, float(s) * 0.73);  // New offset for third layer
-    float warp_freq = 8.0 / float(width);  // Scale for warp displacement
-    float warp_strength = 48.0;  // INCREASED: Pixels of displacement (was 12.0)
-    
-    // First layer of warping (large-scale displacement)
-    float warp_x = snoise((p + offset1) * warp_freq);
-    float warp_y = snoise((p + offset2) * warp_freq);
-    
-    // Second layer (medium detail)
-    float warp_x2 = snoise((p + offset1 * 2.1) * warp_freq * 2.0) * 0.5;
-    float warp_y2 = snoise((p + offset2 * 2.1) * warp_freq * 2.0) * 0.5;
-    
-    // Third layer (fine detail) - NEW
-    float warp_x3 = snoise((p + offset3 * 3.7) * warp_freq * 4.0) * 0.25;
-    float warp_y3 = snoise((p + offset3 * 2.9) * warp_freq * 4.0) * 0.25;
-    
-    return p + vec2(warp_x + warp_x2 + warp_x3, warp_y + warp_y2 + warp_y3) * warp_strength;
-}
-
-// ============================================================================
-// BIOME COLOR DEFINITIONS (get_couleur() from enum.gd)
-// ============================================================================
-
-// === DEFAULT TYPE (0) - Non-river biomes ===
-const vec4 COL_OCEAN = vec4(0.145, 0.322, 0.541, 1.0);              // 0x25528a
-const vec4 COL_LAC = vec4(0.271, 0.518, 0.824, 1.0);                // 0x4584d2
-const vec4 COL_ZONE_COTIERE = vec4(0.157, 0.376, 0.647, 1.0);       // 0x2860a5
-const vec4 COL_ZONE_HUMIDE = vec4(0.259, 0.361, 0.482, 1.0);        // 0x425c7b
-const vec4 COL_RECIF = vec4(0.310, 0.541, 0.569, 1.0);              // 0x4f8a91
-const vec4 COL_LAGUNE = vec4(0.227, 0.400, 0.420, 1.0);             // 0x3a666b
-const vec4 COL_DESERT_CRYO = vec4(0.867, 0.875, 0.890, 1.0);        // 0xdddfe3
-const vec4 COL_GLACIER = vec4(0.780, 0.804, 0.839, 1.0);            // 0xc7cdd6
-const vec4 COL_DESERT_ARTIQUE = vec4(0.671, 0.698, 0.745, 1.0);     // 0xabb2be
-const vec4 COL_CALOTTE = vec4(0.580, 0.612, 0.663, 1.0);            // 0x949ca9
-const vec4 COL_TOUNDRA = vec4(0.796, 0.694, 0.373, 1.0);            // 0xcbb15f
-const vec4 COL_TOUNDRA_ALPINE = vec4(0.718, 0.620, 0.314, 1.0);     // 0xb79e50
-const vec4 COL_TAIGA = vec4(0.278, 0.420, 0.243, 1.0);              // 0x476b3e
-const vec4 COL_FORET_MONTAGNE = vec4(0.310, 0.541, 0.251, 1.0);     // 0x4f8a40
-const vec4 COL_FORET_TEMPEREE = vec4(0.396, 0.769, 0.306, 1.0);     // 0x65c44e
-const vec4 COL_PRAIRIE = vec4(0.561, 0.878, 0.486, 1.0);            // 0x8fe07c
-const vec4 COL_MEDITERRANEE = vec4(0.290, 0.384, 0.278, 1.0);       // 0x4a6247
-const vec4 COL_STEPPES_SECHES = vec4(0.624, 0.565, 0.459, 1.0);     // 0x9f9075
-const vec4 COL_STEPPES_TEMPEREES = vec4(0.514, 0.463, 0.373, 1.0);  // 0x83765f
-const vec4 COL_FORET_TROPICALE = vec4(0.106, 0.353, 0.129, 1.0);    // 0x1b5a21
-const vec4 COL_SAVANE = vec4(0.635, 0.455, 0.259, 1.0);             // 0xa27442
-const vec4 COL_SAVANE_ARBRES = vec4(0.580, 0.420, 0.243, 1.0);      // 0x946b3e
-const vec4 COL_DESERT_SEMI = vec4(0.745, 0.620, 0.361, 1.0);        // 0xbe9e5c
-const vec4 COL_DESERT = vec4(0.580, 0.341, 0.141, 1.0);             // 0x945724
-const vec4 COL_DESERT_ARIDE = vec4(0.514, 0.286, 0.169, 1.0);       // 0x83492b
-const vec4 COL_DESERT_MORT = vec4(0.431, 0.220, 0.145, 1.0);        // 0x6e3825
-
-// === DEFAULT TYPE (0) - River biomes ===
-const vec4 COL_RIVIERE = vec4(0.290, 0.565, 0.851, 1.0);            // 0x4A90D9
-const vec4 COL_FLEUVE = vec4(0.243, 0.498, 0.769, 1.0);             // 0x3E7FC4
-const vec4 COL_AFFLUENT = vec4(0.420, 0.667, 0.898, 1.0);           // 0x6BAAE5
-const vec4 COL_LAC_DOUCE = vec4(0.357, 0.639, 0.878, 1.0);          // 0x5BA3E0
-const vec4 COL_LAC_GELE = vec4(0.659, 0.831, 0.902, 1.0);           // 0xA8D4E6
-const vec4 COL_RIVIERE_GLACIAIRE = vec4(0.494, 0.784, 0.890, 1.0);  // 0x7EC8E3
-
-// === TOXIC TYPE (1) ===
-const vec4 COL_OCEAN_TOXIC = vec4(0.196, 0.608, 0.514, 1.0);        // 0x329b83
-const vec4 COL_MARECAGE_ACIDE = vec4(0.208, 0.608, 0.227, 1.0);     // 0x359b3a
-const vec4 COL_DESERT_SOUFRE = vec4(0.471, 0.553, 0.161, 1.0);      // 0x788d29
-const vec4 COL_GLACIER_TOXIC = vec4(0.678, 0.796, 0.271, 1.0);      // 0xadcb45
-const vec4 COL_TOUNDRA_TOXIC = vec4(0.514, 0.580, 0.294, 1.0);      // 0x83944b
-const vec4 COL_FORET_FONGIQUE = vec4(0.192, 0.459, 0.212, 1.0);     // 0x317536
-const vec4 COL_PLAINE_TOXIC = vec4(0.216, 0.553, 0.243, 1.0);       // 0x378d3e
-const vec4 COL_SOLFATARE = vec4(0.239, 0.459, 0.259, 1.0);          // 0x3d7542
-// Toxic rivers
-const vec4 COL_RIVIERE_ACIDE = vec4(0.357, 0.769, 0.353, 1.0);      // 0x5BC45A
-const vec4 COL_FLEUVE_TOXIC = vec4(0.282, 0.722, 0.278, 1.0);       // 0x48B847
-const vec4 COL_LAC_ACIDE = vec4(0.431, 0.851, 0.427, 1.0);          // 0x6ED96D
-const vec4 COL_LAC_TOXIC_GELE = vec4(0.722, 0.902, 0.718, 1.0);     // 0xB8E6B7
-
-// === VOLCANIC TYPE (2) ===
-const vec4 COL_LAVE_REFROIDIE = vec4(0.718, 0.420, 0.055, 1.0);     // 0xb76b0e
-const vec4 COL_CHAMPS_LAVE = vec4(0.839, 0.588, 0.090, 1.0);        // 0xd69617
-const vec4 COL_LAC_MAGMA = vec4(0.718, 0.286, 0.055, 1.0);          // 0xb7490e
-const vec4 COL_DESERT_CENDRES = vec4(0.867, 0.490, 0.075, 1.0);     // 0xdd7d13
-const vec4 COL_PLAINE_ROCHES = vec4(0.812, 0.455, 0.063, 1.0);      // 0xcf7410
-const vec4 COL_MONTAGNE_VOLCANIQUE = vec4(0.608, 0.388, 0.149, 1.0);// 0x9b6326
-const vec4 COL_PLAINE_VOLCANIQUE = vec4(0.596, 0.329, 0.039, 1.0);  // 0x98540a
-const vec4 COL_TERRASSE_MINERALE = vec4(0.580, 0.333, 0.067, 1.0);  // 0x945511
-const vec4 COL_VOLCAN_ACTIF = vec4(0.365, 0.267, 0.157, 1.0);       // 0x5d4428
-const vec4 COL_FUMEROLLE = vec4(0.282, 0.220, 0.145, 1.0);          // 0x483825
-// Volcanic rivers
-const vec4 COL_RIVIERE_LAVE = vec4(1.0, 0.420, 0.102, 1.0);         // 0xFF6B1A
-const vec4 COL_FLEUVE_MAGMA = vec4(0.910, 0.353, 0.059, 1.0);       // 0xE85A0F
-const vec4 COL_LAVE_SOLIDIFIEE = vec4(0.627, 0.322, 0.176, 1.0);    // 0xA0522D
-const vec4 COL_BASSIN_REFROIDI = vec4(0.545, 0.271, 0.075, 1.0);    // 0x8B4513
-
-// === DEAD TYPE (4) ===
-const vec4 COL_MARECAGE_LUMINESCENT = vec4(0.380, 0.624, 0.388, 1.0);// 0x619f63
-const vec4 COL_OCEAN_MORT = vec4(0.286, 0.475, 0.290, 1.0);         // 0x49794a
-const vec4 COL_DESERT_SEL = vec4(0.851, 0.796, 0.627, 1.0);         // 0xd9cba0
-const vec4 COL_PLAINE_CENDRES = vec4(0.161, 0.157, 0.149, 1.0);     // 0x292826
-const vec4 COL_CRATERE_NUCLEAIRE = vec4(0.204, 0.200, 0.192, 1.0);  // 0x343331
-const vec4 COL_TERRE_DESOLEE = vec4(0.502, 0.475, 0.412, 1.0);      // 0x807969
-const vec4 COL_FORET_MUTANTE = vec4(0.525, 0.439, 0.282, 1.0);      // 0x867048
-const vec4 COL_PLAINE_POUSSIERE = vec4(0.663, 0.549, 0.349, 1.0);   // 0xa98c59
-// Dead rivers
-const vec4 COL_RIVIERE_STAGNANTE = vec4(0.353, 0.478, 0.357, 1.0);  // 0x5A7A5B
-const vec4 COL_FLEUVE_POLLUE = vec4(0.290, 0.416, 0.294, 1.0);      // 0x4A6A4B
-const vec4 COL_LAC_IRRADIE = vec4(0.420, 0.545, 0.424, 1.0);        // 0x6B8B6C
-const vec4 COL_LAC_BOUE = vec4(0.545, 0.451, 0.333, 1.0);           // 0x8B7355
-
-// === NO ATMOSPHERE TYPE (3) ===
-const vec4 COL_DESERT_ROCHEUX = vec4(0.459, 0.451, 0.435, 1.0);     // 0x75736f
-const vec4 COL_REGOLITHE = vec4(0.404, 0.400, 0.384, 1.0);          // 0x676662
-const vec4 COL_FOSSE_IMPACT = vec4(0.365, 0.361, 0.349, 1.0);       // 0x5d5c59
-
-// Fallback color (magenta for errors)
-const vec4 COL_FALLBACK = vec4(1.0, 0.0, 1.0, 1.0);
-
-// ============================================================================
-// RIVER BIOME CLASSIFICATION
-// Matching enum.gd getRiverBiome() and getRiverBiomeBySize()
-// ============================================================================
-
-vec4 classifyRiverBiome(int temp, float flux, float max_flux, uint atmo) {
-    // Normalize flux for size classification
-    float flux_ratio = flux / max(max_flux, 0.001);
-    
-    if (atmo == 0u) {  // Default
-        if (temp < -30) return COL_RIVIERE_GLACIAIRE;
-        if (temp < 0) return COL_LAC_GELE;
-        // Size-based selection
-        if (flux_ratio > 0.7) return COL_FLEUVE;
-        if (flux_ratio > 0.3) return COL_RIVIERE;
-        return COL_AFFLUENT;
-    }
-    else if (atmo == 1u) {  // Toxic
-        if (temp < 0) return COL_LAC_TOXIC_GELE;
-        if (flux_ratio > 0.5) return COL_FLEUVE_TOXIC;
-        return COL_RIVIERE_ACIDE;
-    }
-    else if (atmo == 2u) {  // Volcanic
-        if (temp < 30) return COL_LAVE_SOLIDIFIEE;
-        if (temp < 50) return COL_BASSIN_REFROIDI;
-        if (flux_ratio > 0.5) return COL_FLEUVE_MAGMA;
-        return COL_RIVIERE_LAVE;
-    }
-    else if (atmo == 4u) {  // Dead
-        if (flux_ratio > 0.5) return COL_FLEUVE_POLLUE;
-        return COL_RIVIERE_STAGNANTE;
-    }
-    return COL_RIVIERE;  // Fallback
-}
-
-// ============================================================================
-// BIOME CLASSIFICATION
-// Matching enum.gd getBiomeByNoise() logic with noise perturbation
-// for more natural, irregular biome boundaries
-// ============================================================================
-
-vec4 classifyBiome(int elevation, float precipitation, int temperature, 
-                   bool is_water, uint atmo, float noise_val, float perturb_noise) {
-    
-    // Apply noise perturbation to climate values for more natural boundaries
-    // This creates gradual transitions instead of hard rectangular lines
-    // Increased amplitudes for more organic biome borders
-    float temp_perturb = perturb_noise * 16.0;  // +/- 8 degrees (doubled)
-    float precip_perturb = perturb_noise * 0.35;  // +/- 0.175 (increased)
-    float elev_perturb = perturb_noise * 300.0;  // +/- 150m (doubled)
-    
-    int temp = temperature + int(temp_perturb);
-    float precip = clamp(precipitation + precip_perturb, 0.0, 1.0);
-    int elev = elevation + int(elev_perturb);
-    
-    // Candidate biomes and count
-    vec4 candidates[MAX_CANDIDATES];
-    int count = 0;
-    
-    // ========== TYPE 0: DEFAULT ==========
-    if (atmo == 0u) {
-        if (is_water) {
-            // Aquatic biomes matching enum.gd
-            if (temp >= -21 && temp <= 100 && elev >= -1000 && elev <= 0) {
-                candidates[count++] = COL_ZONE_COTIERE;
-            }
-            if (temp >= 5 && temp <= 100 && elev >= -20 && elev <= 20) {
-                candidates[count++] = COL_ZONE_HUMIDE;
-            }
-            if (temp >= 20 && temp <= 35 && elev >= -500 && elev <= 0) {
-                candidates[count++] = COL_RECIF;
-            }
-            if (temp >= 10 && temp <= 100 && elev >= -10 && elev <= 500) {
-                candidates[count++] = COL_LAGUNE;
-            }
-            // Default water: Ocean or Lac based on depth
-            if (elev < -50) {
-                candidates[count++] = COL_OCEAN;
-            } else {
-                candidates[count++] = COL_LAC;
-            }
-        } else {
-            // Terrestrial biomes matching enum.gd exactly
-            if (temp >= -273 && temp <= -150) {
-                candidates[count++] = COL_DESERT_CRYO;
-            }
-            if (temp >= -150 && temp <= -10) {
-                candidates[count++] = COL_GLACIER;
-            }
-            if (temp >= -150 && temp <= -20) {
-                candidates[count++] = COL_DESERT_ARTIQUE;
-            }
-            if (temp >= -100 && temp <= -20) {
-                candidates[count++] = COL_CALOTTE;
-            }
-            if (temp >= -20 && temp <= 4 && elev < 300) {
-                candidates[count++] = COL_TOUNDRA;
-            }
-            if (temp >= -20 && temp <= 4 && elev >= 300) {
-                candidates[count++] = COL_TOUNDRA_ALPINE;
-            }
-            if (temp >= 0 && temp <= 10) {
-                candidates[count++] = COL_TAIGA;
-            }
-            if (temp >= -15 && temp <= 20 && elev >= 300) {
-                candidates[count++] = COL_FORET_MONTAGNE;
-            }
-            if (temp >= 5 && temp <= 25) {
-                candidates[count++] = COL_FORET_TEMPEREE;
-                candidates[count++] = COL_PRAIRIE;
-                candidates[count++] = COL_STEPPES_TEMPEREES;
-            }
-            if (temp >= 15 && temp <= 25) {
-                candidates[count++] = COL_MEDITERRANEE;
-            }
-            if (temp >= 15 && temp <= 25 && precip >= 0.5) {
-                candidates[count++] = COL_FORET_TROPICALE;
-            }
-            if (temp >= 26 && temp <= 40 && precip <= 0.35) {
-                candidates[count++] = COL_STEPPES_SECHES;
-            }
-            if (temp >= 20 && temp <= 35 && precip <= 0.35) {
-                candidates[count++] = COL_SAVANE;
-            }
-            if (temp >= 20 && temp <= 25 && precip > 0.35) {
-                candidates[count++] = COL_SAVANE_ARBRES;
-            }
-            if (temp >= 26 && temp <= 50) {
-                candidates[count++] = COL_DESERT_SEMI;
-            }
-            if (temp >= 35 && temp <= 60) {
-                candidates[count++] = COL_DESERT;
-            }
-            if (temp >= 35 && temp <= 70) {
-                candidates[count++] = COL_DESERT_ARIDE;
-            }
-            if (temp >= 70 && temp <= 200) {
-                candidates[count++] = COL_DESERT_MORT;
-            }
-        }
-    }
-    // ========== TYPE 1: TOXIC ==========
-    else if (atmo == 1u) {
-        if (is_water) {
-            if (temp >= -21 && temp <= 100) {
-                candidates[count++] = COL_OCEAN_TOXIC;
-            }
-            if (temp >= 5 && temp <= 100 && elev >= -20) {
-                candidates[count++] = COL_MARECAGE_ACIDE;
-            }
-        } else {
-            if (temp >= -273 && temp <= -150) {
-                candidates[count++] = COL_GLACIER_TOXIC;
-            }
-            if (temp >= -150 && temp <= 0) {
-                candidates[count++] = COL_TOUNDRA_TOXIC;
-            }
-            if (temp >= -273 && temp <= 50 && precip <= 0.35) {
-                candidates[count++] = COL_DESERT_SOUFRE;
-            }
-            if (temp >= 0 && temp <= 35) {
-                candidates[count++] = COL_FORET_FONGIQUE;
-            }
-            if (temp >= 5 && temp <= 35) {
-                candidates[count++] = COL_PLAINE_TOXIC;
-            }
-            if (temp >= 36 && temp <= 200) {
-                candidates[count++] = COL_SOLFATARE;
-            }
-        }
-    }
-    // ========== TYPE 2: VOLCANIC ==========
-    else if (atmo == 2u) {
-        if (is_water) {
-            if (temp >= -273 && temp <= 0) {
-                candidates[count++] = COL_LAVE_REFROIDIE;
-            }
-            if (temp >= -21 && temp <= 100) {
-                candidates[count++] = COL_CHAMPS_LAVE;
-            }
-            if (temp >= 0 && temp <= 100) {
-                candidates[count++] = COL_LAC_MAGMA;
-            }
-        } else {
-            if (temp >= -273 && temp <= 50 && precip <= 0.35) {
-                candidates[count++] = COL_DESERT_CENDRES;
-            }
-            if (temp >= -273 && temp <= 200) {
-                candidates[count++] = COL_PLAINE_ROCHES;
-            }
-            if (temp >= -20 && temp <= 50) {
-                candidates[count++] = COL_MONTAGNE_VOLCANIQUE;
-            }
-            if (temp >= 5 && temp <= 35) {
-                candidates[count++] = COL_PLAINE_VOLCANIQUE;
-            }
-            if (temp >= 20 && temp <= 35) {
-                candidates[count++] = COL_TERRASSE_MINERALE;
-            }
-            if (temp >= 45 && temp <= 200) {
-                candidates[count++] = COL_VOLCAN_ACTIF;
-            }
-            if (temp >= 70 && temp <= 200) {
-                candidates[count++] = COL_FUMEROLLE;
-            }
-        }
-    }
-    // ========== TYPE 3: NO ATMOSPHERE ==========
-    else if (atmo == 3u) {
-        if (precip <= 0.1) {
-            candidates[count++] = COL_DESERT_ROCHEUX;
-        }
-        candidates[count++] = COL_REGOLITHE;
-        candidates[count++] = COL_FOSSE_IMPACT;
-    }
-    // ========== TYPE 4: DEAD ==========
-    else if (atmo == 4u) {
-        if (is_water) {
-            if (temp >= 0 && temp <= 100 && elev >= -100) {
-                candidates[count++] = COL_MARECAGE_LUMINESCENT;
-            }
-            if (temp >= -21 && temp <= 100) {
-                candidates[count++] = COL_OCEAN_MORT;
-            }
-        } else {
-            if (temp >= -273 && temp <= 50) {
-                candidates[count++] = COL_DESERT_SEL;
-            }
-            if (temp >= 0 && temp <= 35) {
-                candidates[count++] = COL_PLAINE_CENDRES;
-            }
-            if (temp >= 5 && temp <= 35) {
-                candidates[count++] = COL_CRATERE_NUCLEAIRE;
-            }
-            if (temp >= 20 && temp <= 35) {
-                candidates[count++] = COL_TERRE_DESOLEE;
-            }
-            if (temp >= 45 && temp <= 200) {
-                candidates[count++] = COL_FORET_MUTANTE;
-            }
-            if (temp >= 70 && temp <= 200) {
-                candidates[count++] = COL_PLAINE_POUSSIERE;
-            }
-        }
-    }
-    
-    // Select biome using noise (matching getBiomeByNoise logic)
-    if (count == 0) {
-        return COL_FALLBACK;
-    }
-    
-    // Use noise_val to select among candidates
-    int index = int(noise_val * float(count)) % count;
-    return candidates[index];
-}
-
-// ============================================================================
-// MAIN
-// ============================================================================
-
+// === MAIN ===
 void main() {
-    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
     
-    if (pos.x >= int(width) || pos.y >= int(height)) {
+    // Vérification des limites
+    if (pixel.x >= int(width) || pixel.y >= int(height)) {
         return;
     }
     
-    // Sample textures with seamless wrapping
-    vec2 uv = (vec2(pos) + 0.5) / vec2(float(width), float(height));
+    // === LECTURE DES DONNÉES D'ENTRÉE ===
+    vec4 geo = imageLoad(geo_texture, pixel);
+    vec4 climate = imageLoad(climate_texture, pixel);
+    uint water_type = imageLoad(water_mask, pixel).r;
+    float flux = imageLoad(river_flux, pixel).r;
     
-    vec4 geo = texture(sampler2D(geo_texture, geo_sampler), uv);
-    vec4 climate = texture(sampler2D(climate_texture, climate_sampler), uv);
-    vec4 ice = imageLoad(ice_caps, pos);
-    float river_flux = imageLoad(river_flux_texture, pos).r;
+    float elevation = geo.r;           // Hauteur en mètres
+    float water_height = geo.a;        // Colonne d'eau
+    float temperature = climate.r;     // Température en °C
+    float humidity = climate.g;        // Humidité 0-1
     
-    // Read water type from water_mask: 0=terre, 1=eau salée, 2=eau douce
-    uint water_type = imageLoad(water_mask_texture, pos).r;
-    bool is_saltwater = (water_type == 1u);
+    // Boost d'humidité près des flux d'eau (zones humides, pas rivières)
+    float flux_boost = min(flux * flux_humidity_boost, 0.3);
+    humidity = min(humidity + flux_boost, 1.0);
+    
+    // Déterminer le type d'eau
+    bool is_water = (water_type > 0u) || (water_height > 0.1);
     bool is_freshwater = (water_type == 2u);
+    bool is_underwater = (elevation < sea_level && water_height > 0.1);
     
-    // Extract values from textures
-    float height_val = geo.r;
-    float water_height = geo.a;
-    float temperature = climate.r;
-    float precipitation = climate.g;
-    
-    int elevation = int(round(height_val));
-    int temp_int = int(round(temperature));
-    bool is_water = water_height > 0.0 || is_saltwater || is_freshwater;
-    bool is_banquise = ice.a > 0.0;
-    bool is_river = river_flux > river_threshold;
-    
-    // Generate noise values matching FastNoiseLite behavior
-    vec2 world_pos = vec2(pos);
-    
-    // Apply domain warping to break up straight climate isolines
-    // This is the key to organic biome boundaries
-    vec2 warped_pos = apply_domain_warp(world_pos, seed);
-    
-    // Main biome selection noise (frequency = 4.0 / width)
-    float biome_noise = fbm_biome(warped_pos, biome_noise_frequency, seed);
-    
-    // Climate perturbation noise for irregular boundaries (using warped coords)
-    float perturb_noise = climate_perturb_noise(warped_pos, seed + 1u);
-    
-    vec4 biome_color;
-    
-    // NOTE: La banquise n'influence PAS le choix du biome.
-    // Elle sera appliquée en overlay dans final_map.glsl uniquement.
-    // Le biome sous-jacent est toujours calculé normalement.
-    
-    // Priority 1: Rivers on FRESHWATER only (is_river attribute check)
-    // Rivers should only appear on freshwater, not saltwater
-    if (is_river && is_freshwater) {
-        // Estimate max flux for size classification
-        float estimated_max_flux = river_threshold * 100.0;
-        biome_color = classifyRiverBiome(temp_int, river_flux, estimated_max_flux, atmosphere_type);
+    // Ajuster l'élévation pour les zones sous-marines (profondeur)
+    float effective_elevation = elevation;
+    if (is_underwater) {
+        effective_elevation = elevation;  // Garder la profondeur réelle
     }
-    // Priority 2: Saltwater biomes (océans, mers)
-    else if (is_saltwater) {
-        // Use classifyBiome with is_water=true for saltwater classification
-        biome_color = classifyBiome(elevation, precipitation, temp_int, true, 
-                                     atmosphere_type, biome_noise, perturb_noise);
-    }
-    // Priority 3: Freshwater biomes (lacs d'eau douce) - NOT rivers
-    else if (is_freshwater && !is_river) {
-        // Freshwater lakes use specific lake biomes
-        if (atmosphere_type == 0u) {
-            biome_color = COL_LAC_DOUCE;
-        } else if (atmosphere_type == 1u) {
-            biome_color = COL_LAC_ACIDE;
-        } else if (atmosphere_type == 2u) {
-            biome_color = COL_LAC_MAGMA;
-        } else if (atmosphere_type == 4u) {
-            biome_color = COL_LAC_IRRADIE;
-        } else {
-            biome_color = COL_LAC;
+    
+    // Ajouter un peu de bruit pour les frontières naturelles
+    vec2 noise_pos = vec2(pixel) * 0.02 + vec2(float(seed) * 0.1);
+    float noise = snoise(noise_pos) * 5.0;  // ±5°C de variation
+    float temp_with_noise = temperature + noise * 0.1;
+    
+    float humid_noise = snoise(noise_pos * 0.5 + vec2(100.0)) * 0.05;
+    float humid_with_noise = clamp(humidity + humid_noise, 0.0, 1.0);
+    
+    // === RECHERCHE DU MEILLEUR BIOME ===
+    uint best_biome_id = 0u;
+    float best_score = 0.0;
+    vec4 best_color = vec4(0.5, 0.5, 0.5, 1.0);  // Gris par défaut
+    
+    for (uint i = 0u; i < biome_count; i++) {
+        BiomeData biome = biomes[i];
+        
+        float score = compute_biome_score(
+            biome,
+            temp_with_noise,
+            humid_with_noise,
+            effective_elevation,
+            is_water,
+            is_freshwater,
+            atmosphere_type
+        );
+        
+        // Bruit spatial cohérent pour les frontières irrégulières (pas de hash par biome!)
+        // Le bruit est basé uniquement sur la position, pas sur l'ID du biome
+        // pour éviter les artefacts de "lignes"
+        
+        if (score > best_score) {
+            best_score = score;
+            best_biome_id = i;
+            best_color = biome.color;
         }
     }
-    // Priority 4: Regular terrestrial biome classification
-    else {
-        biome_color = classifyBiome(elevation, precipitation, temp_int, is_water, 
-                                     atmosphere_type, biome_noise, perturb_noise);
-    }
     
-    imageStore(biome_colored, pos, biome_color);
+    // === ÉCRITURE DES RÉSULTATS ===
+    imageStore(biome_id, pixel, uvec4(best_biome_id, 0u, 0u, 0u));
+    imageStore(biome_colored, pixel, best_color);
 }

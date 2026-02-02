@@ -53,9 +53,11 @@ static var TextureID_Water : Array[String] = ["water_mask", "water_component", "
 static var TextureID_Region : Array[String] = ["region_map", "region_cost", "region_cost_temp", "region_colored"]
 
 # Textures Étape 4.1 - Biomes
-# biome_colored : (RGBA8) - Couleur du biome par pixel (non-réaliste, get_couleur())
-# biome_temp : (RGBA8) - Buffer ping-pong pour lissage
-static var TextureID_Biome : Array[String] = ["biome_colored", "biome_temp"]
+# biome_id : (R32UI) - ID du biome par pixel
+# biome_id_temp : (R32UI) - Buffer ping-pong pour lissage
+# biome_colored : (RGBA8) - Couleur finale du biome pour export/final_map
+# biome_colored_temp : (RGBA8) - Buffer ping-pong pour lissage
+static var TextureID_Biome : Array[String] = ["biome_id", "biome_id_temp", "biome_colored", "biome_colored_temp"]
 
 # Textures Étape 6 - Final Map & Water Colored
 # final_map : (RGBA8) - Carte finale combinée (biome + rivières + relief + banquise)
@@ -672,16 +674,30 @@ func initialize_ocean_region_textures() -> void:
 # === CRÉATION DES TEXTURES BIOMES (Étape 4.1) ===
 func initialize_biome_textures() -> void:
 	"""
-	Initialise les textures spécifiques à l'étape 4.1 (Biomes).
-	Appelé par l'orchestrateur avant la phase de génération des biomes.
+	Initialise les textures spécifiques à l'étape 4.1 (Classification des Biomes).
+	Appelé par l'orchestrateur avant la phase de classification des biomes.
 	
 	Textures créées:
-	- biome_colored (RGBA8) : Couleur du biome (non-réaliste, get_couleur())
-	- biome_vegetation (RGBA8) : Couleur végétation du biome (réaliste, get_couleur_vegetation())
-	- biome_temp (RGBA8) : Buffer ping-pong pour lissage
+	- biome_id (R32UI) : ID du biome par pixel
+	- biome_id_temp (R32UI) : Buffer ping-pong pour lissage
+	- biome_colored (RGBA8) : Couleur finale du biome pour export
+	- biome_colored_temp (RGBA8) : Buffer ping-pong pour lissage
 	"""
 	
-	# Format RGBA8 pour couleurs de biomes (4 bytes par pixel)
+	# Format R32UI pour IDs de biome (4 bytes par pixel)
+	var format_r32ui := RDTextureFormat.new()
+	format_r32ui.width = resolution.x
+	format_r32ui.height = resolution.y
+	format_r32ui.format = FORMAT_R32UI
+	format_r32ui.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+	
+	# Format RGBA8 pour couleur biome (4 bytes par pixel)
 	var format_rgba8 := RDTextureFormat.new()
 	format_rgba8.width = resolution.x
 	format_rgba8.height = resolution.y
@@ -690,11 +706,25 @@ func initialize_biome_textures() -> void:
 		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
 		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
 		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT |
 		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
 	)
 	
-	# Créer biome_colored, biome_vegetation et biome_temp (RGBA8 - 4 bytes par pixel)
-	for tex_id in ["biome_colored", "biome_vegetation", "biome_temp"]:
+	# Créer biome_id et biome_id_temp (R32UI - 4 bytes par pixel)
+	for tex_id in ["biome_id", "biome_id_temp"]:
+		if not textures.has(tex_id):
+			var data = PackedByteArray()
+			data.resize(resolution.x * resolution.y * 4)
+			data.fill(0)
+			var view := RDTextureView.new()
+			var rid := rd.texture_create(format_r32ui, view, [data])
+			if rid.is_valid():
+				textures[tex_id] = rid
+			else:
+				push_error("❌ Échec création texture " + tex_id)
+	
+	# Créer biome_colored et biome_colored_temp (RGBA8 - 4 bytes par pixel)
+	for tex_id in ["biome_colored", "biome_colored_temp"]:
 		if not textures.has(tex_id):
 			var data = PackedByteArray()
 			data.resize(resolution.x * resolution.y * 4)
@@ -706,7 +736,7 @@ func initialize_biome_textures() -> void:
 			else:
 				push_error("❌ Échec création texture " + tex_id)
 	
-	print("✅ Textures biomes créées (3x RGBA8 - colored, vegetation, temp)")
+	print("✅ Textures biomes créées (2x R32UI + 2x RGBA8)")
 
 # === CRÉATION DES TEXTURES FINAL MAP (Étape 6) ===
 func initialize_final_map_textures() -> void:
