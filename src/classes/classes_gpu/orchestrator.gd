@@ -2556,8 +2556,8 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# === PASSE 2.5 : NETTOYAGE FINAL (assigner toute terre restante) ===
 	print("  • Nettoyage final (couverture complète)...")
-	# Utiliser max(w, h) / 8 passes pour garantir la propagation à travers toute la carte
-	var cleanup_passes = max(w, h) / 8
+	# Chaque passe cherche jusqu'à 16 pixels de rayon, donc max(w,h)/16 passes suffisent
+	var cleanup_passes = max(w, h) / 16 + 1
 	for cleanup_pass in range(cleanup_passes):
 		var use_swap = ((region_iterations + cleanup_pass) % 2 == 1)
 		_dispatch_region_cleanup(w, h, groups_x, groups_y, seed_val, use_swap)
@@ -2908,8 +2908,8 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# === PASSE 2.5 : NETTOYAGE FINAL ===
 	print("  • Nettoyage final (couverture complète)...")
-	# Utiliser max(w, h) / 8 passes pour garantir la propagation à travers toute la carte
-	var cleanup_passes = max(w, h) / 8
+	# Chaque passe cherche jusqu'à 16 pixels de rayon, donc max(w,h)/16 passes suffisent
+	var cleanup_passes = max(w, h) / 16 + 1
 	for cleanup_pass in range(cleanup_passes):
 		var use_swap = ((ocean_iterations + cleanup_pass) % 2 == 1)
 		_dispatch_ocean_region_cleanup(w, h, groups_x, groups_y, seed_val, use_swap)

@@ -2,13 +2,11 @@
 #version 450
 
 // ============================================================================
-// PRECIPITATION SHADER - Génération d'Humidité Diversifiée
+// PRECIPITATION SHADER - Distribution Pure par Bruit
 // ============================================================================
-// Génère une carte d'humidité avec :
-// - Diversité maximale : valeurs RÉELLEMENT de 0.0 à 1.0
-// - avg_precipitation contrôle la MOYENNE, pas un seuil
-// - Motifs réalistes : déserts, forêts tropicales, climats tempérés
-// - Seamless sur cylindre (wrap horizontal)
+// Génère une carte d'humidité UNIQUEMENT basée sur le bruit procédural.
+// Aucune influence latitudinale - distribution uniforme sur toute la planète.
+// avg_precipitation contrôle le centre de la distribution.
 //
 // Sortie : climate_texture.G = humidité [0, 1]
 // ============================================================================
@@ -24,7 +22,7 @@ layout(set = 1, binding = 0, std140) uniform PrecipParams {
     uint seed;
     uint width;
     uint height;
-    float avg_precipitation;  // [0, 1] - moyenne désirée
+    float avg_precipitation;  // [0, 1] - centre de la distribution
     float cylinder_radius;
     uint atmosphere_type;
     float sea_level;
@@ -63,7 +61,7 @@ float rand(uint h) {
 }
 
 // ============================================================================
-// GRADIENT NOISE 3D (Perlin-like)
+// GRADIENT NOISE 3D
 // ============================================================================
 
 vec3 grad3(uint h) {
@@ -91,7 +89,6 @@ float gradientNoise3D(vec3 p, uint seed_offset) {
     uint iy = uint(ii.y);
     uint iz = uint(ii.z);
     
-    // 8 corners
     uint h000 = hash3(ix, iy, iz);
     uint h100 = hash3(ix + 1u, iy, iz);
     uint h010 = hash3(ix, iy + 1u, iz);
@@ -129,7 +126,7 @@ float gradientNoise3D(vec3 p, uint seed_offset) {
     return mix(nxy0, nxy1, u.z);
 }
 
-// Fractal Brownian Motion
+// Fractal Brownian Motion - retourne valeur dans [-1, 1]
 float fbm(vec3 p, int octaves, float persistence, float lacunarity, uint seed_offset) {
     float value = 0.0;
     float amplitude = 1.0;
@@ -142,39 +139,7 @@ float fbm(vec3 p, int octaves, float persistence, float lacunarity, uint seed_of
         p *= lacunarity;
     }
     
-    return value / maxValue;  // [-1, 1]
-}
-
-// ============================================================================
-// CELLULAR/WORLEY NOISE (pour zones distinctes)
-// ============================================================================
-
-float worley3D(vec3 p, uint seed_offset) {
-    vec3 i = floor(p);
-    vec3 f = fract(p);
-    
-    float minDist = 1.0;
-    
-    for (int dz = -1; dz <= 1; dz++) {
-        for (int dy = -1; dy <= 1; dy++) {
-            for (int dx = -1; dx <= 1; dx++) {
-                vec3 neighbor = vec3(float(dx), float(dy), float(dz));
-                ivec3 ii = ivec3(i + neighbor) + ivec3(10000);
-                uint h = hash3(uint(ii.x) + seed_offset, uint(ii.y), uint(ii.z));
-                
-                vec3 point = neighbor + vec3(
-                    rand(h),
-                    rand(hash(h + 1u)),
-                    rand(hash(h + 2u))
-                ) - f;
-                
-                float dist = dot(point, point);  // squared distance
-                minDist = min(minDist, dist);
-            }
-        }
-    }
-    
-    return sqrt(minDist);
+    return value / maxValue;
 }
 
 // ============================================================================
@@ -228,124 +193,59 @@ void main() {
         return;
     }
     
-    // Coordonnées
+    // Coordonnées cylindriques pour seamless wrap
     vec3 coords = getCylindricalCoords(pixel, params.width, params.height, params.cylinder_radius);
-    float latitude = abs((float(pixel.y) / float(params.height)) - 0.5) * 2.0;  // 0=equateur, 1=pôles
-    
-    // Lecture élévation
-    vec4 geo = imageLoad(geo_texture, pixel);
-    float elevation = geo.r;
-    bool is_water = (elevation < params.sea_level);
     
     // =========================================================================
-    // GÉNÉRATION MULTI-ÉCHELLE
+    // GÉNÉRATION PAR BRUIT MULTI-ÉCHELLE
     // =========================================================================
     
-    // Échelle 1: Grandes zones climatiques (continents humides vs déserts)
-    float scale1 = 2.0 / params.cylinder_radius;
-    float n1 = fbm(coords * scale1, 5, 0.55, 2.1, params.seed + 1000u);
-    // n1 ∈ [-1, 1], on garde ainsi pour contraste
+    // Grande échelle : zones climatiques majeures
+    float scale1 = 3.0 / params.cylinder_radius;
+    float n1 = fbm(coords * scale1, 4, 0.5, 2.0, params.seed + 1000u);
     
-    // Échelle 2: Régions (forêts, steppes, etc.)
-    float scale2 = 5.0 / params.cylinder_radius;
-    float n2 = fbm(coords * scale2, 4, 0.5, 2.0, params.seed + 2000u);
+    // Moyenne échelle : régions
+    float scale2 = 8.0 / params.cylinder_radius;
+    float n2 = fbm(coords * scale2, 3, 0.5, 2.0, params.seed + 2000u);
     
-    // Échelle 3: Détails locaux
-    float scale3 = 12.0 / params.cylinder_radius;
-    float n3 = fbm(coords * scale3, 3, 0.45, 2.0, params.seed + 3000u);
-    
-    // Échelle 4: Worley pour zones distinctes (déserts isolés, oasis)
-    float scale4 = 4.0 / params.cylinder_radius;
-    float worley = worley3D(coords * scale4, params.seed + 4000u);
-    // worley ∈ [0, ~0.9], inverser pour avoir des "poches"
-    float w_factor = 1.0 - worley * 1.2;  // [-0.08, 1.0]
+    // Petite échelle : détails locaux
+    float scale3 = 20.0 / params.cylinder_radius;
+    float n3 = fbm(coords * scale3, 2, 0.5, 2.0, params.seed + 3000u);
     
     // =========================================================================
-    // COMBINAISON POUR DIVERSITÉ MAXIMALE
+    // COMBINAISON DES BRUITS
     // =========================================================================
+    // Chaque bruit est dans [-1, 1]
+    // On combine avec des poids décroissants
     
-    // Combiner les bruits avec des poids qui préservent la variance
-    // On veut une distribution qui utilise TOUTE la plage [0, 1]
-    float combined = n1 * 0.45 + n2 * 0.30 + n3 * 0.15 + w_factor * 0.10;
-    // combined ∈ environ [-0.9, 0.9]
-    
-    // Normaliser vers [0, 1] avec étirement
-    combined = (combined + 1.0) * 0.5;  // [0.05, 0.95] approx
-    
-    // Étirer pour atteindre les extrêmes
-    combined = (combined - 0.5) * 1.3 + 0.5;  // étirement autour de 0.5
+    float noise = n1 * 0.6 + n2 * 0.3 + n3 * 0.1;
+    // noise est approximativement dans [-1, 1]
     
     // =========================================================================
-    // APPLICATION DU PARAMÈTRE avg_precipitation
+    // NORMALISATION VERS [0, 1]
     // =========================================================================
-    // avg_precipitation = 0.0 → planète désertique (shift vers le bas)
-    // avg_precipitation = 0.5 → équilibrée
-    // avg_precipitation = 1.0 → planète humide (shift vers le haut)
-    //
-    // On utilise un OFFSET additif pour déplacer la moyenne
-    // tout en préservant la variance (la diversité)
-    
-    float offset = (params.avg_precipitation - 0.5) * 1.0;  // [-0.5, 0.5]
-    combined = combined + offset;
+    // Convertir [-1, 1] vers [0, 1]
+    float humidity = noise * 0.5 + 0.5;
     
     // =========================================================================
-    // MODULATION LATITUDINALE (subtile, ±10%)
+    // APPLICATION DE avg_precipitation
     // =========================================================================
-    // ITCZ (equateur) = plus humide
-    // Subtropiques (lat 0.25-0.35) = plus sec (Hadley descendant)
-    // Tempérées (lat 0.5-0.7) = modéré
-    // Polaires = sec (air froid = peu d'humidité)
+    // avg_precipitation définit le centre de la distribution
+    // On décale la distribution pour que sa moyenne soit avg_precipitation
     
-    float lat_mod = 0.0;
-    
-    if (latitude < 0.1) {
-        // Zone équatoriale: +10%
-        lat_mod = 0.1 * (1.0 - latitude / 0.1);
-    } else if (latitude > 0.2 && latitude < 0.4) {
-        // Zone subtropicale: -10% (déserts)
-        float t = (latitude - 0.2) / 0.2;
-        lat_mod = -0.1 * sin(t * PI);
-    } else if (latitude > 0.8) {
-        // Zone polaire: -8%
-        lat_mod = -0.08 * ((latitude - 0.8) / 0.2);
-    }
-    
-    combined = combined + lat_mod;
+    // Décalage simple : humidity + (avg - 0.5)
+    humidity = humidity + (params.avg_precipitation - 0.5);
     
     // =========================================================================
-    // EFFET OCÉAN/CONTINENT
+    // CLAMP FINAL
     // =========================================================================
-    // L'océan a une humidité atmosphérique plus stable
-    // Les continents ont plus de variance
-    
-    if (is_water) {
-        // Océan: légèrement plus humide, moins de variance
-        combined = combined * 0.8 + 0.15;
-    } else {
-        // Terre: garder la variance, légère réduction si altitude élevée
-        if (elevation > 2000.0) {
-            float alt_factor = min((elevation - 2000.0) / 4000.0, 1.0);
-            combined = combined - alt_factor * 0.15;  // montagnes plus sèches côté sous le vent
-        }
-    }
-    
-    // =========================================================================
-    // CLAMP FINAL ET COURBE DE CONTRASTE
-    // =========================================================================
-    
-    // Appliquer une légère courbe S pour accentuer les extrêmes
-    combined = clamp(combined, 0.0, 1.0);
-    combined = combined * combined * (3.0 - 2.0 * combined);  // smoothstep-like
-    
-    // RE-étirer car smoothstep compresse vers 0.5
-    combined = (combined - 0.5) * 1.1 + 0.5;
-    combined = clamp(combined, 0.0, 1.0);
+    humidity = clamp(humidity, 0.0, 1.0);
     
     // =========================================================================
     // ÉCRITURE
     // =========================================================================
     
     vec4 climate = imageLoad(climate_texture, pixel);
-    imageStore(climate_texture, pixel, vec4(climate.r, combined, 0.0, 0.0));
-    imageStore(precipitation_colored, pixel, getPrecipitationColor(combined));
+    imageStore(climate_texture, pixel, vec4(climate.r, humidity, 0.0, 0.0));
+    imageStore(precipitation_colored, pixel, getPrecipitationColor(humidity));
 }

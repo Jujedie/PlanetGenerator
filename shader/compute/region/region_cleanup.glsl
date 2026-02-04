@@ -87,35 +87,15 @@ void main() {
         return;
     }
     
-    // Pas encore assigné : chercher dans un rayon croissant
+    // Pas encore assigné : chercher dans un rayon croissant (jusqu'à 16 pixels)
     uint assigned_region = 0xFFFFFFFFu;
     
-    // D'abord voisins directs (8-connecté)
-    for (int i = 0; i < 8; i++) {
-        ivec2 neighbor_offset = NEIGHBORS[i];
-        int nx = wrapX(pixel.x + neighbor_offset.x, w);
-        int ny = clampY(pixel.y + neighbor_offset.y, h);
-        
-        if (nx == pixel.x && ny == pixel.y) continue;
-        
-        ivec2 neighbor_pos = ivec2(nx, ny);
-        
-        uint neighbor_water = imageLoad(water_mask, neighbor_pos).r;
-        if (neighbor_water > 0u) continue;
-        
-        uint neighbor_region = imageLoad(region_map_in, neighbor_pos).r;
-        
-        if (neighbor_region != 0xFFFFFFFFu) {
-            assigned_region = neighbor_region;
-            break;
-        }
-    }
-    
-    // Si toujours pas trouvé, chercher dans un rayon de 2
-    if (assigned_region == 0xFFFFFFFFu) {
-        for (int dy = -2; dy <= 2; dy++) {
-            for (int dx = -2; dx <= 2; dx++) {
-                if (dx == 0 && dy == 0) continue;
+    // Chercher en spirale croissante jusqu'à trouver une région
+    for (int radius = 1; radius <= 16 && assigned_region == 0xFFFFFFFFu; radius++) {
+        for (int dy = -radius; dy <= radius; dy++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                // Seulement le bord du carré à ce rayon
+                if (abs(dx) != radius && abs(dy) != radius) continue;
                 
                 int nx = wrapX(pixel.x + dx, w);
                 int ny = clampY(pixel.y + dy, h);
@@ -136,7 +116,7 @@ void main() {
         }
     }
     
-    // Écrire le résultat (même si toujours non assigné, le prochain pass pourrait le résoudre)
+    // Écrire le résultat
     imageStore(region_map_out, pixel, uvec4(assigned_region, 0u, 0u, 0u));
     imageStore(region_cost_out, pixel, vec4(0.0, 0.0, 0.0, 0.0));
 }

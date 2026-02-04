@@ -80,9 +80,9 @@ void main() {
     
     // Seulement sur l'eau (inverse du système terrestre)
     if (water_type > 0u) {
-        // Probabilité qu'un pixel eau soit un seed = 1 / nb_cases_region
-        // Cela garantit qu'en moyenne il y a 1 seed par nb_cases_region pixels
-        float seed_prob = 1.0 / float(params.nb_cases_region);
+        // Probabilité qu'un pixel eau soit un seed
+        // On double pour garantir une bonne couverture
+        float seed_prob = 2.0 / float(params.nb_cases_region);
         
         // Déterminer si ce pixel devient un seed
         uint pixel_hash = hash3(uint(pixel.x), uint(pixel.y), params.seed);

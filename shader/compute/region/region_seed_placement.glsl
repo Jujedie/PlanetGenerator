@@ -99,9 +99,11 @@ void main() {
     // Décider si ce pixel est un seed de région
     // Utiliser une probabilité par pixel pour avoir une distribution régulière
     
-    // Probabilité qu'un pixel terre soit un seed = 1 / nb_cases_region
-    // Cela garantit qu'en moyenne il y a 1 seed par nb_cases_region pixels
-    float seed_probability = 1.0 / float(params.nb_cases_region);
+    // Probabilité qu'un pixel terre soit un seed
+    // On veut BEAUCOUP de seeds pour garantir la couverture
+    // Avec nb_cases_region = 50, on veut 1 seed tous les 50 pixels en moyenne
+    // Mais on ajoute un facteur de sécurité x2 pour éviter les trous
+    float seed_probability = 2.0 / float(params.nb_cases_region);
     
     // Hash déterministe pour ce pixel
     uint pixel_hash = hash3(uint(pixel.x), uint(pixel.y), params.seed);
