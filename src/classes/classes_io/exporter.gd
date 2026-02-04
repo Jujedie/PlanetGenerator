@@ -518,8 +518,8 @@ func _export_climate_maps_optimized(gpu: GPUContext, output_dir: String) -> Dict
 ## @param gpu: Instance GPUContext avec la texture region_colored
 ## @param output_dir: Dossier de sortie
 ## @return Dictionary: Chemin du fichier exporté
-func _export_region_map(gpu: GPUContext, output_dir: String, optimised_region_generation : bool = true) -> Dictionary:
-	print("[Exporter] 🗺️ Exporting region map (optimized RGBA8 direct)...")
+func _export_region_map(gpu: GPUContext, output_dir: String, _optimised_region_generation : bool = true) -> Dictionary:
+	print("[Exporter] 🗺️ Exporting region map (CPU coloration with Region.gd system)...")
 	
 	var result = {}
 	var rd = gpu.rd
@@ -532,14 +532,14 @@ func _export_region_map(gpu: GPUContext, output_dir: String, optimised_region_ge
 	rd.submit()
 	rd.sync()
 	
-	var tex_id = "region_colored"
+	var tex_id = "region_map"  # R32UI - IDs bruts
 	var filename = "region_map.png"
 	
 	if not gpu.textures.has(tex_id) or not gpu.textures[tex_id].is_valid():
-		print("  ⚠️ Texture 'region_colored' non disponible, skip")
+		print("  ⚠️ Texture 'region_map' non disponible, skip")
 		return result
 	
-	# Lecture directe des données RGBA8 depuis le GPU
+	# Lecture directe des données R32UI depuis le GPU
 	var data = rd.texture_get_data(gpu.textures[tex_id], 0)
 	
 	if data.size() == 0:
@@ -551,47 +551,234 @@ func _export_region_map(gpu: GPUContext, output_dir: String, optimised_region_ge
 	var width = tex_format.width
 	var height = tex_format.height
 	
-	# Vérifier la taille des données (RGBA8 = 4 bytes par pixel)
+	# Vérifier la taille des données (R32UI = 4 bytes par pixel)
 	var expected_size = width * height * 4
 	if data.size() != expected_size:
 		push_error("[Exporter] ❌ Data size mismatch for region map: expected ", 
 			expected_size, ", got ", data.size())
 		return result
 	
-	# Créer l'image directement à partir des données
-	var img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, data)
+	# Créer l'image de sortie RGBA8
+	var img = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	
 	if not img:
 		push_error("[Exporter] ❌ Failed to create region image")
 		return result
-
-	if not optimised_region_generation:
-		print("  Merging isolated regions of size 1...")
-		# Fusion des régions de taille 1 avec des voisins
-		var land_color = Color(0x16 / 255.0, 0x1a / 255.0, 0x1f / 255.0)  # 0x161a1f
-		img = _merge_isolated_regions(img, width, height, land_color)
+	
+	# =========================================================================
+	# PHASE 1 : Collecter tous les IDs uniques et gérer le wrapping horizontal
+	# =========================================================================
+	print("  Phase 1: Collecting unique region IDs...")
+	
+	# Dictionnaire: region_id -> premier pixel où on l'a vu
+	var region_first_seen: Dictionary = {}
+	# Pour fusionner les régions qui touchent les bords (wrap horizontal)
+	# On stocke les IDs vus sur la colonne 0 et la colonne width-1
+	var left_edge_ids: Dictionary = {}  # y -> id
+	var right_edge_ids: Dictionary = {}  # y -> id
+	
+	for y in range(height):
+		for x in range(width):
+			var offset = (y * width + x) * 4
+			var region_id = data.decode_u32(offset)
+			
+			# 0xFFFFFFFF = non-assigné (eau ou terre sans région)
+			if region_id == 0xFFFFFFFF:
+				continue
+			
+			if not region_first_seen.has(region_id):
+				region_first_seen[region_id] = Vector2i(x, y)
+			
+			# Enregistrer les IDs sur les bords
+			if x == 0:
+				left_edge_ids[y] = region_id
+			elif x == width - 1:
+				right_edge_ids[y] = region_id
+	
+	# Fusionner les régions qui se touchent via le wrap horizontal
+	# Une région sur le bord droit (x=width-1) est adjacente au bord gauche (x=0)
+	var merge_map: Dictionary = {}  # id_to_merge -> id_target
+	for y in right_edge_ids.keys():
+		if left_edge_ids.has(y):
+			var right_id = right_edge_ids[y]
+			var left_id = left_edge_ids[y]
+			if right_id != left_id and right_id != 0xFFFFFFFF and left_id != 0xFFFFFFFF:
+				# Fusionner le plus grand ID vers le plus petit
+				var keep_id = min(right_id, left_id)
+				var merge_id = max(right_id, left_id)
+				merge_map[merge_id] = keep_id
+	
+	# Appliquer la transitivité des fusions
+	for merge_id in merge_map.keys():
+		var target = merge_map[merge_id]
+		while merge_map.has(target):
+			target = merge_map[target]
+		merge_map[merge_id] = target
+	
+	print("    Found ", region_first_seen.size(), " unique regions, ", merge_map.size(), " to merge via wrap")
+	
+	# =========================================================================
+	# PHASE 2 : Assigner les couleurs séquentiellement (système Region.gd)
+	# =========================================================================
+	print("  Phase 2: Assigning colors (Region.gd step=17 system)...")
+	
+	var id_to_color: Dictionary = {}
+	var color_counter: Array = [0, 0, 0, 255]  # R, G, B, A
+	const STEP = 17  # Identique à Region.gd
+	
+	# Trier les IDs par ordre de première apparition (y puis x) pour consistance
+	var sorted_ids: Array = []
+	for region_id in region_first_seen.keys():
+		# Appliquer la fusion
+		var effective_id = region_id
+		if merge_map.has(region_id):
+			effective_id = merge_map[region_id]
+		sorted_ids.append([effective_id, region_first_seen[region_id]])
+	
+	# Dédupliquer après fusion
+	var seen_effective: Dictionary = {}
+	var unique_sorted: Array = []
+	for item in sorted_ids:
+		var eff_id = item[0]
+		if not seen_effective.has(eff_id):
+			seen_effective[eff_id] = true
+			unique_sorted.append(item)
+	
+	# Trier par position (y * width + x)
+	unique_sorted.sort_custom(func(a, b): 
+		var pos_a = a[1].y * width + a[1].x
+		var pos_b = b[1].y * width + b[1].x
+		return pos_a < pos_b
+	)
+	
+	# Assigner les couleurs dans l'ordre
+	for item in unique_sorted:
+		var eff_id = item[0]
+		if id_to_color.has(eff_id):
+			continue
+		
+		# Créer la couleur actuelle
+		var color = Color(color_counter[0] / 255.0, color_counter[1] / 255.0, 
+						  color_counter[2] / 255.0, color_counter[3] / 255.0)
+		id_to_color[eff_id] = color
+		
+		# Incrémenter le compteur (système Region.gd)
+		color_counter[0] += STEP
+		if color_counter[0] > 255:
+			color_counter[0] = color_counter[0] % 256
+			color_counter[1] += STEP
+		if color_counter[1] > 255:
+			color_counter[1] = color_counter[1] % 256
+			color_counter[2] += STEP
+		if color_counter[2] > 255:
+			color_counter[2] = color_counter[2] % 256
+	
+	print("    Assigned ", id_to_color.size(), " unique colors")
+	
+	# =========================================================================
+	# PHASE 3 : Colorier l'image en parallèle (subdivision par threads)
+	# =========================================================================
+	print("  Phase 3: Coloring image with ", _nb_threads, " threads...")
+	
+	# Créer le buffer de sortie RGBA8 (4 bytes par pixel)
+	var output_data = PackedByteArray()
+	output_data.resize(width * height * 4)
+	
+	var rows_per_thread = ceili(float(height) / float(_nb_threads))
+	var threads: Array[Thread] = []
+	
+	# Couleur pour les pixels sans région (RGBA8) - TRANSPARENT
+	var no_region_rgba = PackedByteArray([0x00, 0x00, 0x00, 0x00])  # Transparent
+	
+	for t in range(_nb_threads):
+		var start_y = t * rows_per_thread
+		var end_y = min(start_y + rows_per_thread, height)
+		
+		if start_y >= height:
+			break
+		
+		var thread = Thread.new()
+		thread.start(_color_region_rows_fast.bind(
+			data, output_data, width, start_y, end_y, 
+			id_to_color, merge_map, no_region_rgba
+		))
+		threads.append(thread)
+	
+	# Attendre tous les threads
+	for thread in threads:
+		thread.wait_to_finish()
+	
+	# Créer l'image à partir du buffer
+	img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, output_data)
+	
+	# Note: _merge_isolated_regions obsolète - les shaders cleanup gèrent maintenant les pixels isolés
 	
 	# Sauvegarder en PNG
 	var filepath = output_dir + "/" + filename
 	var err = img.save_png(filepath)
 	
 	if err == OK:
-		result[tex_id] = filepath
-		print("  ✅ Saved: ", filepath, " (", width, "x", height, ", direct RGBA8)")
+		result["region_colored"] = filepath
+		print("  ✅ Saved: ", filepath, " (", width, "x", height, ", CPU colored)")
 	else:
 		push_error("[Exporter] ❌ Failed to save region map: ", err)
 	
 	print("[Exporter] ✅ Region export complete")
 	return result
 
+## Thread worker pour colorier les lignes de régions (version rapide avec buffer)
+func _color_region_rows_fast(data: PackedByteArray, output_data: PackedByteArray, width: int, 
+							start_y: int, end_y: int, id_to_color: Dictionary, 
+							merge_map: Dictionary, no_region_rgba: PackedByteArray) -> void:
+	for y in range(start_y, end_y):
+		for x in range(width):
+			var in_offset = (y * width + x) * 4
+			var out_offset = (y * width + x) * 4
+			var region_id = data.decode_u32(in_offset)
+			
+			var r: int
+			var g: int
+			var b: int
+			var a: int = 255
+			
+			# 0xFFFFFFFF = non-assigné (eau ou pas de région)
+			if region_id == 0xFFFFFFFF:
+				r = no_region_rgba[0]
+				g = no_region_rgba[1]
+				b = no_region_rgba[2]
+				a = no_region_rgba[3]
+			else:
+				# Appliquer la fusion si nécessaire
+				var eff_id = region_id
+				if merge_map.has(region_id):
+					eff_id = merge_map[region_id]
+				
+				if id_to_color.has(eff_id):
+					var color: Color = id_to_color[eff_id]
+					r = int(color.r * 255.0)
+					g = int(color.g * 255.0)
+					b = int(color.b * 255.0)
+					a = int(color.a * 255.0)
+				else:
+					r = no_region_rgba[0]
+					g = no_region_rgba[1]
+					b = no_region_rgba[2]
+					a = no_region_rgba[3]
+			
+			# Écriture directe dans le buffer (pas de mutex nécessaire car zones disjointes)
+			output_data[out_offset] = r
+			output_data[out_offset + 1] = g
+			output_data[out_offset + 2] = b
+			output_data[out_offset + 3] = a
+
 ## Exporte ocean_region_colored (RGBA8) en PNG
 ## Identique à _export_region_map mais pour les régions océaniques
 ##
-## @param gpu: Instance GPUContext avec la texture ocean_region_colored
+## @param gpu: Instance GPUContext avec la texture ocean_region_map
 ## @param output_dir: Dossier de sortie
 ## @return Dictionary: Chemin du fichier exporté
-func _export_ocean_region_map(gpu: GPUContext, output_dir: String, optimised_region_generation : bool = true) -> Dictionary:
-	print("[Exporter] 🌊 Exporting ocean region map (optimized RGBA8 direct)...")
+func _export_ocean_region_map(gpu: GPUContext, output_dir: String, _optimised_region_generation : bool = true) -> Dictionary:
+	print("[Exporter] 🌊 Exporting ocean region map (CPU coloration with Region.gd system)...")
 	
 	var result = {}
 	var rd = gpu.rd
@@ -604,14 +791,14 @@ func _export_ocean_region_map(gpu: GPUContext, output_dir: String, optimised_reg
 	rd.submit()
 	rd.sync()
 	
-	var tex_id = "ocean_region_colored"
+	var tex_id = "ocean_region_map"  # R32UI - IDs bruts
 	var filename = "ocean_region_map.png"
 	
 	if not gpu.textures.has(tex_id) or not gpu.textures[tex_id].is_valid():
-		print("  ⚠️ Texture 'ocean_region_colored' non disponible, skip")
+		print("  ⚠️ Texture 'ocean_region_map' non disponible, skip")
 		return result
 	
-	# Lecture directe des données RGBA8 depuis le GPU
+	# Lecture directe des données R32UI depuis le GPU
 	var data = rd.texture_get_data(gpu.textures[tex_id], 0)
 	
 	if data.size() == 0:
@@ -623,33 +810,161 @@ func _export_ocean_region_map(gpu: GPUContext, output_dir: String, optimised_reg
 	var width = tex_format.width
 	var height = tex_format.height
 	
-	# Vérifier la taille des données (RGBA8 = 4 bytes par pixel)
+	# Vérifier la taille des données (R32UI = 4 bytes par pixel)
 	var expected_size = width * height * 4
 	if data.size() != expected_size:
 		push_error("[Exporter] ❌ Data size mismatch for ocean region map: expected ", 
 			expected_size, ", got ", data.size())
 		return result
 	
-	# Créer l'image directement à partir des données
-	var img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, data)
+	# Créer l'image de sortie RGBA8
+	var img = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	
 	if not img:
 		push_error("[Exporter] ❌ Failed to create ocean region image")
 		return result
 	
-	if not optimised_region_generation:
-		print("  Merging isolated regions of size 1...")
-		# Fusion des régions de taille 1 avec des voisins
-		var ocean_color = Color(0x2a / 255.0, 0x2a / 255.0, 0x2a / 255.0)  # 0x2a2a2a
-		img = _merge_isolated_regions(img, width, height, ocean_color,true)
+	# =========================================================================
+	# PHASE 1 : Collecter tous les IDs uniques et gérer le wrapping horizontal
+	# =========================================================================
+	print("  Phase 1: Collecting unique ocean region IDs...")
+	
+	var region_first_seen: Dictionary = {}
+	var left_edge_ids: Dictionary = {}
+	var right_edge_ids: Dictionary = {}
+	
+	for y in range(height):
+		for x in range(width):
+			var offset = (y * width + x) * 4
+			var region_id = data.decode_u32(offset)
+			
+			# 0xFFFFFFFF = non-assigné (terre ou océan sans région)
+			if region_id == 0xFFFFFFFF:
+				continue
+			
+			if not region_first_seen.has(region_id):
+				region_first_seen[region_id] = Vector2i(x, y)
+			
+			if x == 0:
+				left_edge_ids[y] = region_id
+			elif x == width - 1:
+				right_edge_ids[y] = region_id
+	
+	# Fusionner les régions via wrap horizontal
+	var merge_map: Dictionary = {}
+	for y in right_edge_ids.keys():
+		if left_edge_ids.has(y):
+			var right_id = right_edge_ids[y]
+			var left_id = left_edge_ids[y]
+			if right_id != left_id and right_id != 0xFFFFFFFF and left_id != 0xFFFFFFFF:
+				var keep_id = min(right_id, left_id)
+				var merge_id = max(right_id, left_id)
+				merge_map[merge_id] = keep_id
+	
+	# Transitivité
+	for merge_id in merge_map.keys():
+		var target = merge_map[merge_id]
+		while merge_map.has(target):
+			target = merge_map[target]
+		merge_map[merge_id] = target
+	
+	print("    Found ", region_first_seen.size(), " unique ocean regions, ", merge_map.size(), " to merge via wrap")
+	
+	# =========================================================================
+	# PHASE 2 : Assigner les couleurs séquentiellement (système Region.gd)
+	# =========================================================================
+	print("  Phase 2: Assigning colors (Region.gd step=17 system)...")
+	
+	var id_to_color: Dictionary = {}
+	var color_counter: Array = [0, 0, 0, 255]
+	const STEP = 17
+	
+	var sorted_ids: Array = []
+	for region_id in region_first_seen.keys():
+		var effective_id = region_id
+		if merge_map.has(region_id):
+			effective_id = merge_map[region_id]
+		sorted_ids.append([effective_id, region_first_seen[region_id]])
+	
+	var seen_effective: Dictionary = {}
+	var unique_sorted: Array = []
+	for item in sorted_ids:
+		var eff_id = item[0]
+		if not seen_effective.has(eff_id):
+			seen_effective[eff_id] = true
+			unique_sorted.append(item)
+	
+	unique_sorted.sort_custom(func(a, b): 
+		var pos_a = a[1].y * width + a[1].x
+		var pos_b = b[1].y * width + b[1].x
+		return pos_a < pos_b
+	)
+	
+	for item in unique_sorted:
+		var eff_id = item[0]
+		if id_to_color.has(eff_id):
+			continue
+		
+		var color = Color(color_counter[0] / 255.0, color_counter[1] / 255.0, 
+						  color_counter[2] / 255.0, color_counter[3] / 255.0)
+		id_to_color[eff_id] = color
+		
+		color_counter[0] += STEP
+		if color_counter[0] > 255:
+			color_counter[0] = color_counter[0] % 256
+			color_counter[1] += STEP
+		if color_counter[1] > 255:
+			color_counter[1] = color_counter[1] % 256
+			color_counter[2] += STEP
+		if color_counter[2] > 255:
+			color_counter[2] = color_counter[2] % 256
+	
+	print("    Assigned ", id_to_color.size(), " unique colors")
+	
+	# =========================================================================
+	# PHASE 3 : Colorier l'image en parallèle
+	# =========================================================================
+	print("  Phase 3: Coloring image with ", _nb_threads, " threads...")
+	
+	# Créer le buffer de sortie RGBA8 (4 bytes par pixel)
+	var output_data = PackedByteArray()
+	output_data.resize(width * height * 4)
+	
+	var rows_per_thread = ceili(float(height) / float(_nb_threads))
+	var threads: Array[Thread] = []
+	
+	# Couleur pour les pixels sans région océanique (RGBA8) - TRANSPARENT
+	var no_region_rgba = PackedByteArray([0x00, 0x00, 0x00, 0x00])  # Transparent
+	
+	for t in range(_nb_threads):
+		var start_y = t * rows_per_thread
+		var end_y = min(start_y + rows_per_thread, height)
+		
+		if start_y >= height:
+			break
+		
+		var thread = Thread.new()
+		thread.start(_color_region_rows_fast.bind(
+			data, output_data, width, start_y, end_y, 
+			id_to_color, merge_map, no_region_rgba
+		))
+		threads.append(thread)
+	
+	for thread in threads:
+		thread.wait_to_finish()
+	
+	# Créer l'image à partir du buffer
+	img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, output_data)
+	
+	# Note: _merge_isolated_regions obsolète - les shaders cleanup gèrent maintenant les pixels isolés
 
 	# Sauvegarder en PNG
 	var filepath = output_dir + "/" + filename
 	var err = img.save_png(filepath)
 	
 	if err == OK:
-		result[tex_id] = filepath
-		print("  ✅ Saved: ", filepath, " (", width, "x", height, ", direct RGBA8)")
+		result["ocean_region_colored"] = filepath
+		print("  ✅ Saved: ", filepath, " (", width, "x", height, ", CPU colored)")
 	else:
 		push_error("[Exporter] ❌ Failed to save ocean region map: ", err)
 	

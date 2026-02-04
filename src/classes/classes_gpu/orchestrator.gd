@@ -2556,12 +2556,14 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# === PASSE 2.5 : NETTOYAGE FINAL (assigner toute terre restante) ===
 	print("  • Nettoyage final (couverture complète)...")
-	for cleanup_pass in range(10):  # 10 passes de nettoyage agressif
+	# Utiliser max(w, h) / 8 passes pour garantir la propagation à travers toute la carte
+	var cleanup_passes = max(w, h) / 8
+	for cleanup_pass in range(cleanup_passes):
 		var use_swap = ((region_iterations + cleanup_pass) % 2 == 1)
 		_dispatch_region_cleanup(w, h, groups_x, groups_y, seed_val, use_swap)
 	
 	# Si nombre impair de passes totales, copier le résultat
-	if (region_iterations + 10) % 2 == 1:
+	if (region_iterations + cleanup_passes) % 2 == 1:
 		_copy_region_textures(w, h)
 	
 	# === PASSE 3 : FINALISATION ET COLORATION ===
@@ -2906,11 +2908,13 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# === PASSE 2.5 : NETTOYAGE FINAL ===
 	print("  • Nettoyage final (couverture complète)...")
-	for cleanup_pass in range(10):
+	# Utiliser max(w, h) / 8 passes pour garantir la propagation à travers toute la carte
+	var cleanup_passes = max(w, h) / 8
+	for cleanup_pass in range(cleanup_passes):
 		var use_swap = ((ocean_iterations + cleanup_pass) % 2 == 1)
 		_dispatch_ocean_region_cleanup(w, h, groups_x, groups_y, seed_val, use_swap)
 	
-	if (ocean_iterations + 10) % 2 == 1:
+	if (ocean_iterations + cleanup_passes) % 2 == 1:
 		_copy_ocean_region_textures(w, h)
 	
 	# === PASSE 3 : FINALISATION ET COLORATION ===

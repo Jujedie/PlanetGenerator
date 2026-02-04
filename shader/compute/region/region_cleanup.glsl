@@ -87,30 +87,52 @@ void main() {
         return;
     }
     
-    // Pas encore assigné : chercher le premier voisin avec une région
+    // Pas encore assigné : chercher dans un rayon croissant
     uint assigned_region = 0xFFFFFFFFu;
     
+    // D'abord voisins directs (8-connecté)
     for (int i = 0; i < 8; i++) {
         ivec2 neighbor_offset = NEIGHBORS[i];
         int nx = wrapX(pixel.x + neighbor_offset.x, w);
         int ny = clampY(pixel.y + neighbor_offset.y, h);
         
-        // Ignorer si même pixel (après wrap)
         if (nx == pixel.x && ny == pixel.y) continue;
         
         ivec2 neighbor_pos = ivec2(nx, ny);
         
-        // Vérifier que le voisin n'est pas de l'eau
         uint neighbor_water = imageLoad(water_mask, neighbor_pos).r;
         if (neighbor_water > 0u) continue;
         
-        // Lire la région du voisin
         uint neighbor_region = imageLoad(region_map_in, neighbor_pos).r;
         
-        // Si le voisin a une région, l'adopter immédiatement
         if (neighbor_region != 0xFFFFFFFFu) {
             assigned_region = neighbor_region;
-            break;  // Première région trouvée suffit
+            break;
+        }
+    }
+    
+    // Si toujours pas trouvé, chercher dans un rayon de 2
+    if (assigned_region == 0xFFFFFFFFu) {
+        for (int dy = -2; dy <= 2; dy++) {
+            for (int dx = -2; dx <= 2; dx++) {
+                if (dx == 0 && dy == 0) continue;
+                
+                int nx = wrapX(pixel.x + dx, w);
+                int ny = clampY(pixel.y + dy, h);
+                
+                ivec2 neighbor_pos = ivec2(nx, ny);
+                
+                uint neighbor_water = imageLoad(water_mask, neighbor_pos).r;
+                if (neighbor_water > 0u) continue;
+                
+                uint neighbor_region = imageLoad(region_map_in, neighbor_pos).r;
+                
+                if (neighbor_region != 0xFFFFFFFFu) {
+                    assigned_region = neighbor_region;
+                    break;
+                }
+            }
+            if (assigned_region != 0xFFFFFFFFu) break;
         }
     }
     
