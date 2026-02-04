@@ -2,11 +2,11 @@
 #version 450
 
 // ============================================================================
-// PRECIPITATION SHADER - Distribution Pure par Bruit
+// PRECIPITATION SHADER - Zones par Bruit Pur
 // ============================================================================
-// Génère une carte d'humidité UNIQUEMENT basée sur le bruit procédural.
-// Aucune influence latitudinale - distribution uniforme sur toute la planète.
-// avg_precipitation contrôle le centre de la distribution.
+// Génère de grandes zones cohérentes (sèches ou humides) via bruit.
+// AUCUN pattern latitudinal.
+// avg_precipitation contrôle l'équilibre global sec/humide.
 //
 // Sortie : climate_texture.G = humidité [0, 1]
 // ============================================================================
@@ -22,7 +22,7 @@ layout(set = 1, binding = 0, std140) uniform PrecipParams {
     uint seed;
     uint width;
     uint height;
-    float avg_precipitation;  // [0, 1] - centre de la distribution
+    float avg_precipitation;  // [0, 1] - équilibre sec/humide global
     float cylinder_radius;
     uint atmosphere_type;
     float sea_level;
@@ -39,6 +39,11 @@ const float TAU = 6.28318530718;
 // HASH FUNCTIONS
 // ============================================================================
 
+// Hash pseudo-aléatoire déterministe
+// Fonctionnement :
+//   Prend un uint en entrée et retourne un uint "aléatoire"
+//   Utilisé pour générer des variations basées sur la position et le seed global
+//   Permet d'avoir des résultats reproductibles
 uint hash(uint x) {
     x ^= x >> 16;
     x *= 0x85ebca6bu;
@@ -197,48 +202,105 @@ void main() {
     vec3 coords = getCylindricalCoords(pixel, params.width, params.height, params.cylinder_radius);
     
     // =========================================================================
-    // GÉNÉRATION PAR BRUIT MULTI-ÉCHELLE
+    // BRUIT MULTI-COUCHES INDÉPENDANTES
+    // =========================================================================
+    // Chaque couche a sa propre échelle, seed, et contribution
+    // Ensemble elles créent une distribution riche qui couvre [0, 1]
+    
+    float total_weight = 0.0;
+    float accumulated = 0.0;
+    
+    // --- COUCHE 1 : Continentale (très grandes masses, 2-3 sur la planète) ---
+    float s1 = 0.15 / params.cylinder_radius;
+    float n1 = fbm(coords * s1, 4, 0.5, 2.0, params.seed + 1000u);
+    accumulated += n1 * 0.20;
+    total_weight += 0.20;
+    
+    // --- COUCHE 2 : Régionale (5-8 zones par planète) ---
+    float s2 = 0.4 / params.cylinder_radius;
+    float n2 = fbm(coords * s2, 4, 0.5, 2.0, params.seed + 2000u);
+    accumulated += n2 * 0.18;
+    total_weight += 0.18;
+    
+    // --- COUCHE 3 : Sous-régionale ---
+    float s3 = 0.8 / params.cylinder_radius;
+    float n3 = fbm(coords * s3, 3, 0.5, 2.0, params.seed + 3000u);
+    accumulated += n3 * 0.14;
+    total_weight += 0.14;
+    
+    // --- COUCHE 4 : Locale majeure ---
+    float s4 = 1.5 / params.cylinder_radius;
+    float n4 = fbm(coords * s4, 3, 0.5, 2.0, params.seed + 4000u);
+    accumulated += n4 * 0.12;
+    total_weight += 0.12;
+    
+    // --- COUCHE 5 : Locale mineure ---
+    float s5 = 2.5 / params.cylinder_radius;
+    float n5 = fbm(coords * s5, 3, 0.5, 2.0, params.seed + 5000u);
+    accumulated += n5 * 0.10;
+    total_weight += 0.10;
+    
+    // --- COUCHE 6 : Mésoscale ---
+    float s6 = 4.0 / params.cylinder_radius;
+    float n6 = fbm(coords * s6, 2, 0.5, 2.0, params.seed + 6000u);
+    accumulated += n6 * 0.08;
+    total_weight += 0.08;
+    
+    // --- COUCHE 7 : Détail majeur ---
+    float s7 = 7.0 / params.cylinder_radius;
+    float n7 = fbm(coords * s7, 2, 0.5, 2.0, params.seed + 7000u);
+    accumulated += n7 * 0.06;
+    total_weight += 0.06;
+    
+    // --- COUCHE 8 : Détail mineur ---
+    float s8 = 12.0 / params.cylinder_radius;
+    float n8 = fbm(coords * s8, 2, 0.5, 2.0, params.seed + 8000u);
+    accumulated += n8 * 0.05;
+    total_weight += 0.05;
+    
+    // --- COUCHE 9 : Micro-variation 1 ---
+    float s9 = 20.0 / params.cylinder_radius;
+    float n9 = fbm(coords * s9, 2, 0.5, 2.0, params.seed + 9000u);
+    accumulated += n9 * 0.04;
+    total_weight += 0.04;
+    
+    // --- COUCHE 10 : Micro-variation 2 (haute fréquence) ---
+    float s10 = 35.0 / params.cylinder_radius;
+    float n10 = gradientNoise3D(coords * s10, params.seed + 10000u);
+    accumulated += n10 * 0.03;
+    total_weight += 0.03;
+    
+    // =========================================================================
+    // NORMALISATION
+    // =========================================================================
+    // accumulated est dans [-total_weight, +total_weight] théoriquement
+    // En pratique la somme de bruits tend vers une distribution plus centrée
+    
+    float noise = accumulated / total_weight;  // [-1, 1] approx
+    
+    // =========================================================================
+    // TRANSFORMATION VERS [0, 1] - PLAGE COMPLÈTE GARANTIE
     // =========================================================================
     
-    // Grande échelle : zones climatiques majeures
-    float scale1 = 3.0 / params.cylinder_radius;
-    float n1 = fbm(coords * scale1, 4, 0.5, 2.0, params.seed + 1000u);
+    // 1. Le bruit FBM produit environ [-0.7, 0.7] en pratique
+    //    On étire pour couvrir [-1, 1] réellement
+    noise = noise * 1.5;
     
-    // Moyenne échelle : régions
-    float scale2 = 8.0 / params.cylinder_radius;
-    float n2 = fbm(coords * scale2, 3, 0.5, 2.0, params.seed + 2000u);
+    // 2. Convertir vers [0, 1]
+    float base = noise * 0.5 + 0.5;
     
-    // Petite échelle : détails locaux
-    float scale3 = 20.0 / params.cylinder_radius;
-    float n3 = fbm(coords * scale3, 2, 0.5, 2.0, params.seed + 3000u);
+    // 3. Appliquer avg_precipitation comme décalage ET contrôle de contraste
+    //    avg=0.0 → planète très sèche
+    //    avg=0.5 → équilibre
+    //    avg=1.0 → planète très humide
+    float shift = (params.avg_precipitation - 0.5) * 0.6;
+    float humidity = base + shift;
     
-    // =========================================================================
-    // COMBINAISON DES BRUITS
-    // =========================================================================
-    // Chaque bruit est dans [-1, 1]
-    // On combine avec des poids décroissants
+    // 4. Étirer FORTEMENT pour garantir que les extrêmes sont atteints
+    //    Centre à 0.5, puis étire de 2.5x
+    humidity = (humidity - 0.5) * 2.5 + 0.5;
     
-    float noise = n1 * 0.6 + n2 * 0.3 + n3 * 0.1;
-    // noise est approximativement dans [-1, 1]
-    
-    // =========================================================================
-    // NORMALISATION VERS [0, 1]
-    // =========================================================================
-    // Convertir [-1, 1] vers [0, 1]
-    float humidity = noise * 0.5 + 0.5;
-    
-    // =========================================================================
-    // APPLICATION DE avg_precipitation
-    // =========================================================================
-    // avg_precipitation définit le centre de la distribution
-    // On décale la distribution pour que sa moyenne soit avg_precipitation
-    
-    // Décalage simple : humidity + (avg - 0.5)
-    humidity = humidity + (params.avg_precipitation - 0.5);
-    
-    // =========================================================================
-    // CLAMP FINAL
-    // =========================================================================
+    // 5. Clamp simple - pas de sigmoïde qui compresse !
     humidity = clamp(humidity, 0.0, 1.0);
     
     // =========================================================================

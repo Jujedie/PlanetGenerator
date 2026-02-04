@@ -223,9 +223,13 @@ float compute_biome_score(
         }
     }
     
-    // Pénalité légère pour les plages très larges (favorise la spécificité)
-    float specificity = 1.0 / (1.0 + temp_range / 50.0 + humid_range + elev_range / 5000.0);
-    score += specificity * 0.3;
+    // PÉNALITÉ FORTE pour les plages très larges (favorise fortement la spécificité)
+    // Un biome avec des plages étroites doit TOUJOURS gagner sur un biome générique
+    float temp_penalty = temp_range / 100.0;      // max ~2.0 pour plage de 200°C
+    float humid_penalty = humid_range * 2.0;      // max 2.0 pour plage de 1.0
+    float elev_penalty = elev_range / 10000.0;    // max ~5.0 pour plage complète
+    
+    score -= (temp_penalty + humid_penalty + elev_penalty);
     
     return max(score, 0.001);  // Toujours > 0 si on arrive ici
 }
@@ -332,9 +336,16 @@ void main() {
             atmosphere_type
         );
         
-        // Bruit spatial cohérent pour les frontières irrégulières (pas de hash par biome!)
-        // Le bruit est basé uniquement sur la position, pas sur l'ID du biome
-        // pour éviter les artefacts de "lignes"
+        // Si le score est > 0 (biome compatible), ajouter une variation spatiale cohérente
+        // pour créer de la diversité entre biomes similaires
+        if (score > 0.0) {
+            // Variation basée sur position + ID du biome (0-1000 scale pour grandes zones cohérentes)
+            vec2 biome_noise_pos = vec2(pixel) * 0.003 + vec2(float(i) * 123.456, float(seed) * 0.234);
+            float biome_variation = snoise(biome_noise_pos) * 0.25;  // ±0.25 de variation (réduit)
+            
+            // Ajouter la variation au score (permet aux biomes compatibles de "se battre")
+            score += biome_variation;
+        }
         
         if (score > best_score) {
             best_score = score;
