@@ -1800,8 +1800,19 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	rd.submit()
 	rd.sync()
 	
-	# Passe 2 : Coloration
+	# Passe 2 : Coloration initiale
 	_dispatch_water_to_color(w, h, groups_x, groups_y, 1, sea_level, atmosphere_type, freshwater_max_size, counter_buffer)
+	
+	rd.submit()
+	rd.sync()
+	
+	# Passe 3 : Fusion eau douce touchant eau salée → eau salée
+	# Répéter plusieurs fois pour propager la conversion
+	print("  • Fusion eau douce adjacente à eau salée...")
+	for i in range(10):  # 10 passes de fusion
+		_dispatch_water_to_color(w, h, groups_x, groups_y, 2, sea_level, atmosphere_type, freshwater_max_size, counter_buffer)
+		rd.submit()
+		rd.sync()
 	
 	# DEBUG : Lire quelques valeurs du buffer de comptage pour vérifier
 	var counter_bytes = rd.buffer_get_data(counter_buffer)

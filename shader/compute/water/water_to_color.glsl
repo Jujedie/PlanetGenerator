@@ -148,7 +148,7 @@ void main() {
         atomicAdd(counters.pixel_counts[label_index], 1u);
     }
     // === PASSE 2 : COLORATION ===
-    else {
+    else if (params.pass_type == 1u) {
         // Lire le nombre de pixels dans cette composante
         uint component_size = counters.pixel_counts[label_index];
         
@@ -159,38 +159,57 @@ void main() {
         // =====================================================================
         // LOGIQUE DE CLASSIFICATION PAR TAILLE
         // =====================================================================
-        // 1. Lac en altitude (au-dessus du niveau mer) = TOUJOURS eau douce
-        // 2. Eau sous le niveau de la mer :
-        //    - Si composante >= freshwater_max_size+1 (saltwater_min_size) = eau salée
-        //    - Sinon = eau douce (petite zone)
-        // =====================================================================
         
         vec4 final_color;
         uint final_water_type;  // 1=salée, 2=douce
         
-        // Cas 1: Lac en altitude = TOUJOURS eau douce
+        // Lac en altitude = TOUJOURS eau douce
         if (height_val >= params.sea_level) {
             final_color = getFreshwaterColor(params.atmosphere_type);
             final_water_type = 2u;  // WATER_FRESHWATER
         }
-        // Cas 2: Eau sous le niveau de la mer - classification par taille
+        // Eau sous le niveau de la mer - classification par taille
         else {
-            // freshwater_max_size = taille max pour eau douce
-            // Si component_size > freshwater_max_size → eau salée
-            // Sinon → eau douce
             if (component_size > params.freshwater_max_size) {
-                // Grande masse d'eau = océan/mer (eau salée)
                 final_color = getSaltwaterColor(params.atmosphere_type);
                 final_water_type = 1u;  // WATER_SALTWATER
             } else {
-                // Petite masse d'eau = lac (eau douce)
                 final_color = getFreshwaterColor(params.atmosphere_type);
                 final_water_type = 2u;  // WATER_FRESHWATER
             }
         }
         
-        // Écrire la couleur ET mettre à jour le type d'eau dans water_mask
         imageStore(water_colored, pixel, final_color);
         imageStore(water_mask, pixel, uvec4(final_water_type, 0u, 0u, 0u));
+    }
+    // === PASSE 3 : FUSION eau douce touchant eau salée → eau salée ===
+    else if (params.pass_type == 2u) {
+        uint my_water_type = imageLoad(water_mask, pixel).r;
+        
+        // Si c'est de l'eau douce (2), vérifier si elle touche de l'eau salée
+        if (my_water_type == 2u) {
+            bool touches_saltwater = false;
+            
+            // Vérifier les 8 voisins
+            for (int dy = -1; dy <= 1 && !touches_saltwater; dy++) {
+                for (int dx = -1; dx <= 1 && !touches_saltwater; dx++) {
+                    if (dx == 0 && dy == 0) continue;
+                    
+                    int nx = (pixel.x + dx + w) % w;  // Wrap X
+                    int ny = clamp(pixel.y + dy, 0, h - 1);
+                    
+                    uint neighbor_type = imageLoad(water_mask, ivec2(nx, ny)).r;
+                    if (neighbor_type == 1u) {  // Eau salée
+                        touches_saltwater = true;
+                    }
+                }
+            }
+            
+            if (touches_saltwater) {
+                // Convertir en eau salée
+                imageStore(water_colored, pixel, getSaltwaterColor(params.atmosphere_type));
+                imageStore(water_mask, pixel, uvec4(1u, 0u, 0u, 0u));
+            }
+        }
     }
 }

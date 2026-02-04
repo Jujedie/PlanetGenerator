@@ -281,144 +281,107 @@ void main() {
     bool is_water = (elevation < params.sea_level);
     
     // =========================================================================
-    // NOUVEAU SYSTÈME : BRUIT DOMINANT, LATITUDE SUBTILE
+    // SYSTÈME DE PRÉCIPITATION - DIVERSITÉ MAXIMALE 0.0 à 1.0
     // =========================================================================
-    // Comme sur la carte de référence :
-    // - Amazon (équateur) = humide, mais Sahara (même latitude) = hyper-aride
-    // - Le bruit définit les GRANDES zones climatiques
-    // - La latitude n'est qu'une légère modulation
+    // avg_precipitation contrôle la PROPORTION de zones humides vs sèches
+    // 0.0 = planète désertique (majorité sèche)
+    // 0.5 = équilibrée
+    // 1.0 = planète humide (majorité humide)
     // =========================================================================
     
-    // === BRUIT 1 : ZONES CLIMATIQUES MAJEURES (très grande échelle) ===
-    // Crée des "continents climatiques" - certains humides, certains secs
-    float major_freq = 1.2 / params.cylinder_radius;
-    float major_zones = fbm(coords * major_freq, 5, 0.55, 2.0, params.seed + 10000u);
-    major_zones = (major_zones + 1.0) * 0.5;  // [0, 1]
+    // === BRUIT PRINCIPAL : Définit les zones climatiques ===
+    float freq1 = 1.5 / params.cylinder_radius;
+    float n1 = fbm(coords * freq1, 6, 0.5, 2.0, params.seed + 10000u);
+    n1 = (n1 + 1.0) * 0.5;  // [0, 1]
     
-    // Pousser vers les extrêmes pour créer des zones franches
-    major_zones = smoothstep(0.2, 0.8, major_zones);
+    // === BRUIT SECONDAIRE : Variation régionale ===
+    float freq2 = 4.0 / params.cylinder_radius;
+    float n2 = fbm(coords * freq2, 4, 0.6, 2.0, params.seed + 20000u);
+    n2 = (n2 + 1.0) * 0.5;
     
-    // === BRUIT 2 : SYSTÈMES MÉTÉO RÉGIONAUX ===
-    // Dépressions, anticyclones, fronts - taille ~500km
-    float regional_freq = 3.5 / params.cylinder_radius;
-    float systems = snoise(coords * regional_freq + vec3(float(params.seed + 20000u)));
-    systems = (systems + 1.0) * 0.5;
+    // === BRUIT TERTIAIRE : Détails locaux ===
+    float freq3 = 10.0 / params.cylinder_radius;
+    float n3 = snoise(coords * freq3 + vec3(float(params.seed + 30000u) * 0.001));
+    n3 = (n3 + 1.0) * 0.5;
     
-    // === BRUIT 3 : VARIABILITÉ LOCALE ===
-    // Micro-climats, vallées - taille ~100km
-    float local_freq = 7.0 / params.cylinder_radius;
-    float local = fbm(coords * local_freq, 3, 0.5, 2.1, params.seed + 30000u);
-    local = (local + 1.0) * 0.5;
-    
-    // === BRUIT 4 : TURBULENCE FINE ===
-    // Variation pixel à pixel naturelle
-    float fine_freq = 15.0 / params.cylinder_radius;
-    float fine = snoise(coords * fine_freq + vec3(float(params.seed + 40000u)));
-    fine = (fine + 1.0) * 0.5;
-    
-    // === BRUIT 5 : CELLULES (zones isolées très sèches ou très humides) ===
-    float cell_freq = 4.0 / params.cylinder_radius;
-    float cells = cellularNoise3D(coords * cell_freq, params.seed + 50000u);
-    cells = smoothstep(0.1, 0.5, cells);  // Créer des "trous" secs ou humides
-    
-    // === BRUIT 6 : GRADIENT LONGITUDINAL (côtes ouest vs est) ===
-    // Simule courants océaniques : ouest subtropical = sec, est = humide
-    float long_pattern = snoise(vec3(longitude * 8.0, latitude * 2.0, float(params.seed + 60000u) * 0.01));
-    long_pattern = (long_pattern + 1.0) * 0.5;
+    // === BRUIT CELLULAIRE : Zones isolées ===
+    float freq4 = 3.0 / params.cylinder_radius;
+    float n4 = cellularNoise3D(coords * freq4, params.seed + 40000u);
     
     // =========================================================================
-    // COMBINAISON PRINCIPALE - Centré autour de 0.0
+    // COMBINAISON - Créer une distribution qui couvre VRAIMENT 0.0 à 1.0
     // =========================================================================
-    // Convertir tous les bruits de [0,1] vers [-0.5, +0.5] pour être centrés
-    float noise_base = 
-        (major_zones - 0.5) * 0.70 +     // Grandes zones (±35%)
-        (systems - 0.5) * 0.40 +         // Systèmes météo (±20%)
-        (local - 0.5) * 0.30 +           // Variabilité locale (±15%)
-        (fine - 0.5) * 0.10 +            // Turbulence (±5%)
-        (cells - 0.5) * 0.20 +           // Cellules (±10%)
-        (long_pattern - 0.5) * 0.30;     // Pattern longitudinal (±15%)
-    // noise_base est maintenant dans [-1, +1] environ, centré sur 0
     
-    // =========================================================================
-    // MODULATION LATITUDINALE SUBTILE (~30% d'influence max)
-    // =========================================================================
-    // La latitude ne FORCE pas, elle BIAISE légèrement
+    // Combiner les bruits avec des poids
+    float raw = n1 * 0.5 + n2 * 0.3 + n3 * 0.15 + n4 * 0.05;
     
-    float lat_bias = 0.0;
+    // raw est dans [0, 1] mais centré autour de 0.5
+    // On veut que avg_precipitation contrôle le seuil entre sec et humide
     
-    // Équateur : légèrement plus humide en moyenne
-    if (latitude < 0.2) {
-        lat_bias = 0.15 * (1.0 - latitude / 0.2);  // +15% max à l'équateur
-    }
-    // Subtropiques : légèrement plus sec en moyenne (mais pas forcé!)
-    else if (latitude > 0.25 && latitude < 0.45) {
-        float t = (latitude - 0.25) / 0.20;
-        float desert_tendency = sin(t * 3.14159);  // Pic au milieu
-        lat_bias = -0.20 * desert_tendency;  // -20% max au cœur subtropical
-    }
-    // Tempéré : neutre à légèrement humide
-    else if (latitude > 0.5 && latitude < 0.75) {
-        lat_bias = 0.05;  // +5% pour tempéré
-    }
-    // Polaire : légèrement plus sec
-    else if (latitude > 0.8) {
-        lat_bias = -0.10 * ((latitude - 0.8) / 0.2);  // -10% aux pôles
-    }
+    // Appliquer une transformation qui:
+    // - Si avg_precipitation = 0.5: distribution uniforme
+    // - Si avg_precipitation < 0.5: plus de valeurs basses
+    // - Si avg_precipitation > 0.5: plus de valeurs hautes
     
-    // =========================================================================
-    // EFFET CÔTIER / CONTINENTALITÉ
-    // =========================================================================
-    float coast_effect = 0.0;
-    
-    if (!is_water) {
-        // Échantillonner autour pour trouver l'eau
-        float min_dist = 999.0;
-        int radius = 40;
-        
-        for (int dy = -radius; dy <= radius; dy += 4) {
-            for (int dx = -radius; dx <= radius; dx += 4) {
-                ivec2 sp = pixel + ivec2(dx, dy);
-                sp.x = (sp.x % int(params.width) + int(params.width)) % int(params.width);
-                sp.y = clamp(sp.y, 0, int(params.height) - 1);
-                
-                if (imageLoad(geo_texture, sp).r < params.sea_level) {
-                    min_dist = min(min_dist, length(vec2(dx, dy)));
-                }
-            }
-        }
-        
-        // Près des côtes : +20% humidité, intérieur continental : -15%
-        float coast_norm = clamp(min_dist / 45.0, 0.0, 1.0);
-        coast_effect = mix(0.20, -0.15, coast_norm);
+    // Utiliser une fonction de puissance pour contrôler la distribution
+    float exponent;
+    if (params.avg_precipitation < 0.5) {
+        // Planète sèche : exposant > 1 pousse vers les basses valeurs
+        exponent = 1.0 + (0.5 - params.avg_precipitation) * 4.0;  // [1, 3]
     } else {
-        // Sur l'eau : légèrement plus humide
-        coast_effect = 0.15;
+        // Planète humide : exposant < 1 pousse vers les hautes valeurs
+        exponent = 1.0 / (1.0 + (params.avg_precipitation - 0.5) * 4.0);  // [1, 0.33]
+    }
+    
+    float value = pow(raw, exponent);
+    
+    // =========================================================================
+    // MODULATION LATITUDINALE LÉGÈRE (±15% max)
+    // =========================================================================
+    float lat_mod = 0.0;
+    
+    // ITCZ équatoriale : légèrement plus humide
+    if (latitude < 0.15) {
+        lat_mod = 0.15 * (1.0 - latitude / 0.15);
+    }
+    // Zone subtropicale : légèrement plus sèche
+    else if (latitude > 0.2 && latitude < 0.4) {
+        float t = (latitude - 0.2) / 0.2;
+        lat_mod = -0.15 * sin(t * 3.14159);
+    }
+    // Zone tempérée : neutre
+    // Zone polaire : légèrement plus sèche
+    else if (latitude > 0.85) {
+        lat_mod = -0.10 * ((latitude - 0.85) / 0.15);
+    }
+    
+    value = value + lat_mod;
+    
+    // =========================================================================
+    // EFFET TERRAIN
+    // =========================================================================
+    if (is_water) {
+        // Océan légèrement plus humide
+        value += 0.05;
+    } else if (elevation > 1000.0) {
+        // Montagnes : effet orographique (vent)
+        float wind = snoise(coords * 2.0 + vec3(float(params.seed + 50000u) * 0.001));
+        float elev_factor = min((elevation - 1000.0) / 3000.0, 1.0);
+        value += wind * elev_factor * 0.2;
     }
     
     // =========================================================================
-    // EFFET OROGRAPHIQUE SIMPLIFIÉ
+    // POST-TRAITEMENT : Assurer la gamme complète
     // =========================================================================
-    float mountain_effect = 0.0;
-    if (!is_water && elevation > 800.0) {
-        float elev_norm = min((elevation - 800.0) / 4000.0, 1.0);
-        // Bruit pour côté au vent vs sous le vent
-        float wind_side = snoise(coords * 3.0 + vec3(float(params.seed + 70000u)));
-        mountain_effect = wind_side * elev_norm * 0.25;  // ±25% max en montagne
-    }
     
-    // =========================================================================
-    // ASSEMBLAGE FINAL
-    // =========================================================================
-    // noise_base est dans [-1, +1], lat_bias dans [-0.2, +0.15], etc.
-    // Total des variations possibles : environ [-1.5, +1.5]
-    float variation = noise_base + lat_bias + coast_effect + mountain_effect;
+    // Étirer vers les extrêmes pour avoir de vraies valeurs 0 et 1
+    // smoothstep avec marges serrées
+    value = smoothstep(-0.1, 1.1, value);
     
-    // avg_precipitation définit le CENTRE de la distribution
-    // variation module autour de ce centre
-    // Facteur 0.5 pour que les variations restent raisonnables
-    float value = params.avg_precipitation + variation * 0.5;
+    // Ajouter du contraste pour éviter les valeurs moyennes partout
+    value = value * value * (3.0 - 2.0 * value);  // Courbe S supplémentaire
     
-    // Clamp final - pas de smoothstep pour garder la pleine gamme
+    // Clamp final
     value = clamp(value, 0.0, 1.0);
 
     // =========================================================================
