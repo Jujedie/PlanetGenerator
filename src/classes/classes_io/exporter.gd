@@ -889,7 +889,7 @@ func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, hei
 ## @param height: Hauteur de l'image
 ## @return Dictionary: Chemins des fichiers exportés
 func _export_water_classification(gpu: GPUContext, output_dir: String, width: int, height: int) -> Dictionary:
-	print("[Exporter] 💧 Exporting water classification maps (CPU flood-fill)...")
+	print("[Exporter] 💧 Exporting water classification map (GPU direct)...")
 	
 	var result = {}
 	var rd = gpu.rd
@@ -902,158 +902,30 @@ func _export_water_classification(gpu: GPUContext, output_dir: String, width: in
 	rd.submit()
 	rd.sync()
 	
-	# Récupérer les paramètres
-	var atmosphere_type = int(params.get("atmosphere_type", 0))
-	var freshwater_max_size = int(params.get("freshwater_max_size", 999))
-	
-	# Récupérer les couleurs selon le type d'atmosphère
-	var water_colors = WATER_COLORS.get(atmosphere_type, WATER_COLORS[0])
-	var saltwater_color: Color = water_colors["saltwater"]
-	var freshwater_color: Color = water_colors["freshwater"]
-	
-	print("  Atmosphere type: ", atmosphere_type)
-	print("  Saltwater color: ", saltwater_color)
-	print("  Freshwater color: ", freshwater_color)
-	print("  Freshwater max size: ", freshwater_max_size)
-	
-	# Lire la texture geo pour l'élévation (RGBA32F)
-	if not gpu.textures.has("geo") or not gpu.textures["geo"].is_valid():
-		push_error("[Exporter] ❌ geo texture not available for water classification")
+	# Vérifier que water_colored existe (généré par water_to_color.glsl)
+	if not gpu.textures.has("water_colored") or not gpu.textures["water_colored"].is_valid():
+		push_error("[Exporter] ❌ water_colored texture not available - run water phase first")
 		return result
 	
-	var geo_data = rd.texture_get_data(gpu.textures["geo"], 0)
-	if geo_data.size() == 0:
-		push_error("[Exporter] ❌ geo texture data is empty")
+	# Lire directement la texture water_colored (RGBA8) déjà calculée par le GPU
+	var water_data = rd.texture_get_data(gpu.textures["water_colored"], 0)
+	if water_data.size() == 0:
+		push_error("[Exporter] ❌ water_colored texture data is empty")
 		return result
 	
-	# Créer un tableau pour stocker l'état de chaque pixel
-	# -1 = terre, 0+ = ID de composante eau
-	var pixel_component: PackedInt32Array = PackedInt32Array()
-	pixel_component.resize(width * height)
-	pixel_component.fill(-1)  # Tout est terre par défaut
-	
-	# Identifier les pixels eau (élévation < 0)
-	var water_pixels: Array[Vector2i] = []
-	
-	for y in range(height):
-		for x in range(width):
-			var idx = (y * width + x) * 16  # RGBA32F = 16 bytes par pixel
-			var elevation = geo_data.decode_float(idx)  # R = élévation
-			
-			if elevation < 0.0:
-				water_pixels.append(Vector2i(x, y))
-				pixel_component[y * width + x] = 0  # Marqué comme eau, composante non assignée
-	
-	print("  Water pixels found: ", water_pixels.size(), " / ", width * height)
-	
-	var water_img: Image
-	var path_water: String
-	if water_pixels.size() == 0:
-		print("  ⚠️ No water pixels found, creating empty water map")
-		water_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
-		water_img.fill(Color(0, 0, 0, 0))
-		path_water = output_dir + "/eaux_map.png"
-		water_img.save_png(path_water)
-		result["eaux_map"] = path_water
-		return result
-	
-	# Flood-fill pour identifier les composantes connexes
-	var neighbors = [
-		Vector2i(0, -1),   # Nord
-		Vector2i(-1, 0),   # Ouest
-		Vector2i(1, 0),    # Est
-		Vector2i(0, 1)     # Sud
-	]
-	
-	var component_sizes: Array[int] = []
-	var current_component_id = 0
-	
-	# Pour chaque pixel eau non visité, faire un flood-fill
-	for start_pos in water_pixels:
-		var start_idx = start_pos.y * width + start_pos.x
-		
-		# Si déjà assigné à une composante, passer
-		if pixel_component[start_idx] > 0:
-			continue
-		
-		# Nouvelle composante
-		current_component_id += 1
-		var component_size = 0
-		
-		# Pile pour flood-fill itératif
-		var stack: Array[Vector2i] = [start_pos]
-		
-		while stack.size() > 0:
-			var pos = stack.pop_back()
-			var idx = pos.y * width + pos.x
-			
-			# Si déjà visité ou terre, passer
-			if pixel_component[idx] != 0:
-				continue
-			
-			# Assigner à cette composante
-			pixel_component[idx] = current_component_id
-			component_size += 1
-			
-			# Ajouter les voisins eau
-			for offset in neighbors:
-				var nx = (pos.x + offset.x + width) % width  # Wrap X
-				var ny = clampi(pos.y + offset.y, 0, height - 1)  # Clamp Y
-				var n_idx = ny * width + nx
-				
-				# Si c'est un pixel eau non visité
-				if pixel_component[n_idx] == 0:
-					stack.append(Vector2i(nx, ny))
-		
-		component_sizes.append(component_size)
-	
-	print("  Components found: ", current_component_id)
-	
-	# Statistiques des composantes
-	var saltwater_components = 0
-	var freshwater_components = 0
-	var saltwater_pixels = 0
-	var freshwater_pixels_count = 0
-	
-	for i in range(component_sizes.size()):
-		if component_sizes[i] <= freshwater_max_size:
-			freshwater_components += 1
-			freshwater_pixels_count += component_sizes[i]
-		else:
-			saltwater_components += 1
-			saltwater_pixels += component_sizes[i]
-	
-	print("  Saltwater: ", saltwater_components, " components, ", saltwater_pixels, " pixels")
-	print("  Freshwater: ", freshwater_components, " components, ", freshwater_pixels_count, " pixels")
-	
-	# Créer l'image finale avec les couleurs
-	water_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
-	water_img.fill(Color(0, 0, 0, 0))  # Transparent par défaut (terre)
-	
-	for y in range(height):
-		for x in range(width):
-			var idx = y * width + x
-			var comp_id = pixel_component[idx]
-			
-			if comp_id > 0:
-				# C'est de l'eau - vérifier si eau douce ou salée
-				var comp_size = component_sizes[comp_id - 1]  # Les IDs commencent à 1
-				
-				if comp_size <= freshwater_max_size:
-					water_img.set_pixel(x, y, freshwater_color)
-				else:
-					water_img.set_pixel(x, y, saltwater_color)
+	# Créer l'image directement depuis les données GPU
+	var water_img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, water_data)
 	
 	# Sauvegarder
-	path_water = output_dir + "/eaux_map.png"
+	var path_water = output_dir + "/eaux_map.png"
 	var err = water_img.save_png(path_water)
 	if err == OK:
 		result["eaux_map"] = path_water
-		print("  ✅ Saved: ", path_water, " (CPU flood-fill)")
+		print("  ✅ Saved: ", path_water, " (GPU direct - water_colored)")
 	else:
 		push_error("[Exporter] ❌ Failed to save eaux_map: ", err)
 	
-	print("[Exporter] ✅ Water classification complete")
+	print("[Exporter] ✅ Water classification export complete")
 	return result
 
 # ============================================================================

@@ -152,6 +152,12 @@ float compute_biome_score(
         return 0.0;
     }
     
+    // ⚠️ CORRECTION CRITIQUE : Si le biome NE nécessite PAS d'eau mais que le pixel EN a
+    // Les biomes terrestres (désert, forêt, etc.) ne doivent JAMAIS être placés sur l'eau
+    if (!biome_needs_water && is_water) {
+        return 0.0;
+    }
+    
     // LOGIQUE STRICTE : Un biome d'eau DOIT correspondre au type d'eau du pixel
     if (biome_needs_water && is_water) {
         // Si le biome est marqué eau douce uniquement
@@ -267,12 +273,16 @@ void main() {
         humidity = min(humidity + flux_boost, 1.0);
     }
     
-    // Déterminer le type d'eau
-    // water_mask: 0=terre, 1=eau salée, 2=eau douce
-    bool is_water = (water_type > 0u) || (water_height > 0.1);
+    // Déterminer le type d'eau UNIQUEMENT depuis water_mask
+    // water_mask est la source de vérité après water_to_color:
+    // - 0 = terre
+    // - 1 = eau salée
+    // - 2 = eau douce
+    // NOTE: On NE se fie plus à water_height car water_mask est maintenant correct
+    bool is_water = (water_type > 0u);
     bool is_freshwater = (water_type == 2u);
-    bool is_saltwater = (water_type == 1u) || (is_water && !is_freshwater);
-    bool is_underwater = (elevation < sea_level && water_height > 0.1);
+    bool is_saltwater = (water_type == 1u);
+    bool is_underwater = (elevation < sea_level && is_water);
     
     // Forcer pas d'eau si planète sans eau
     if (waterless_planet) {

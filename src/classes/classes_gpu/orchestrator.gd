@@ -1757,25 +1757,24 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  • Identification des zones d'eau...")
 	_dispatch_water_fill(w, h, groups_x, groups_y, sea_level, lake_threshold)
 	
-	# === PASSE 2 : WATER JFA - Composantes connexes ===
-	print("  • Regroupement en composantes connexes (JFA)...")
+	# === PASSE 2 : COMPOSANTES CONNEXES - Local + Pointer Jumping ===
+	print("  • Regroupement en composantes connexes...")
 	var max_dim = maxi(w, h)
 	
-	# Le JFA démarre avec step_size = max_dim/2, puis divise par 2 jusqu'à step_size=1
-	# C'est CRITIQUE: utiliser des puissances de 2 fixes (pow(2,N)) ne couvre pas la dimension réelle!
-	var pass_idx = 0
-	var step_size = max_dim / 2
-	while step_size >= 1:
-		var use_swap = (pass_idx % 2 == 1)
-		_dispatch_water_jfa(w, h, groups_x, groups_y, step_size, pass_idx, use_swap)
-		step_size = step_size / 2
-		pass_idx += 1
+	# Avec pointer jumping (3 sauts par passe), chaque passe propage de ~8 pixels
+	# et double/triple la distance de convergence.
+	# log2(max_dim) * 4 passes devrait suffire largement
+	var num_passes = int(ceil(log(float(max_dim)) / log(2.0))) * 4
+	num_passes = maxi(num_passes, 40)  # Minimum 40 passes
 	
-	var jfa_passes = pass_idx
-	print("    JFA terminé: ", jfa_passes, " passes")
+	for pass_idx in range(num_passes):
+		var use_swap = (pass_idx % 2 == 1)
+		_dispatch_water_jfa(w, h, groups_x, groups_y, 1, pass_idx, use_swap)
+	
+	print("    Propagation terminée: ", num_passes, " passes")
 	
 	# Si nombre impair de passes, le résultat final est dans temp → copier vers component
-	if jfa_passes % 2 == 1:
+	if num_passes % 2 == 1:
 		_copy_texture(gpu.textures["water_component_temp"], gpu.textures["water_component"], w, h)
 	
 	# === PASSE 3 : WATER TO COLOR - Coloration par taille ===

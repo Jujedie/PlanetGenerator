@@ -237,7 +237,15 @@ vec4 getPrecipitationColor(float precip) {
 }
 
 // ============================================================================
-// MAIN
+// MAIN - PRÉCIPITATION DIVERSIFIÉE
+// ============================================================================
+// Référence: Carte mondiale de désertification (World Humidity Classes)
+// - L'humidité NE SUIT PAS simplement la latitude
+// - Même latitude : Amazon (humid) vs Sahara (hyper-arid)
+// - Côtes ouest subtropicales = sèches (courants froids)
+// - Côtes est = plus humides (courants chauds, moussons)
+// - Intérieurs continentaux = plus secs
+// - Montagnes = effet orographique (côté vent humide, sous le vent sec)
 // ============================================================================
 
 void main() {
@@ -261,6 +269,9 @@ void main() {
     // Coordonnées cylindriques pour le bruit seamless
     vec3 coords = getCylindricalCoords(pixel, params.width, params.height, params.cylinder_radius);
     
+    // Longitude normalisée [0, 1]
+    float longitude = float(pixel.x) / float(params.width);
+    
     // Latitude normalisée [0, 1] : 0 = équateur, 1 = pôles
     float latitude = abs((float(pixel.y) / float(params.height)) - 0.5) * 2.0;
     
@@ -269,103 +280,150 @@ void main() {
     float elevation = geo.r;
     bool is_water = (elevation < params.sea_level);
     
-    // === 1. BRUIT DE BASE (Multi-échelles pour variété) ===
-    float noise_freq_main = 2.5 / params.cylinder_radius;
-    float main_value = fbm(coords * noise_freq_main, 6, 0.5, 2.0, params.seed + 50000u);
-    main_value = (main_value + 1.0) * 0.5; // Normaliser [0, 1]
-
-    float noise_freq_s1 = 4.0 / params.cylinder_radius;
-    float s1 = snoise(coords * noise_freq_s1 + vec3(float(params.seed + 60000u)));
-    s1 = (s1 + 1.0) * 0.5;
-
-    float noise_freq_s2 = 8.0 / params.cylinder_radius;
-    float s2 = snoise(coords * noise_freq_s2 + vec3(float(params.seed + 70000u)));
-    s2 = (s2 + 1.0) * 0.5;
-
-    // Combiner les bruits (équilibré pour plus de variété)
-    float base_humidity = clamp(main_value * 0.5 + s1 * 0.3 + s2 * 0.2, 0.0, 1.0);
-
-    // === 2. ZONATION LATITUDINALE (Cellules de Hadley) ===
-    // Modèle simplifié de circulation atmosphérique :
-    // - 0-0.15 : Zone équatoriale humide (ITCZ)
-    // - 0.15-0.4 : Tropiques variables
-    // - 0.4-0.55 : Déserts subtropicaux (cellules descendantes à 30°N/S)
-    // - 0.55-0.8 : Zones tempérées humides
-    // - 0.8-1.0 : Régions polaires sèches
+    // =========================================================================
+    // NOUVEAU SYSTÈME : BRUIT DOMINANT, LATITUDE SUBTILE
+    // =========================================================================
+    // Comme sur la carte de référence :
+    // - Amazon (équateur) = humide, mais Sahara (même latitude) = hyper-aride
+    // - Le bruit définit les GRANDES zones climatiques
+    // - La latitude n'est qu'une légère modulation
+    // =========================================================================
     
-    float lat_factor = 1.0;
+    // === BRUIT 1 : ZONES CLIMATIQUES MAJEURES (très grande échelle) ===
+    // Crée des "continents climatiques" - certains humides, certains secs
+    float major_freq = 1.2 / params.cylinder_radius;
+    float major_zones = fbm(coords * major_freq, 5, 0.55, 2.0, params.seed + 10000u);
+    major_zones = (major_zones + 1.0) * 0.5;  // [0, 1]
     
-    // Zone équatoriale très humide (ITCZ)
-    if (latitude < 0.15) {
-        lat_factor = mix(1.3, 1.1, latitude / 0.15);
+    // Pousser vers les extrêmes pour créer des zones franches
+    major_zones = smoothstep(0.2, 0.8, major_zones);
+    
+    // === BRUIT 2 : SYSTÈMES MÉTÉO RÉGIONAUX ===
+    // Dépressions, anticyclones, fronts - taille ~500km
+    float regional_freq = 3.5 / params.cylinder_radius;
+    float systems = snoise(coords * regional_freq + vec3(float(params.seed + 20000u)));
+    systems = (systems + 1.0) * 0.5;
+    
+    // === BRUIT 3 : VARIABILITÉ LOCALE ===
+    // Micro-climats, vallées - taille ~100km
+    float local_freq = 7.0 / params.cylinder_radius;
+    float local = fbm(coords * local_freq, 3, 0.5, 2.1, params.seed + 30000u);
+    local = (local + 1.0) * 0.5;
+    
+    // === BRUIT 4 : TURBULENCE FINE ===
+    // Variation pixel à pixel naturelle
+    float fine_freq = 15.0 / params.cylinder_radius;
+    float fine = snoise(coords * fine_freq + vec3(float(params.seed + 40000u)));
+    fine = (fine + 1.0) * 0.5;
+    
+    // === BRUIT 5 : CELLULES (zones isolées très sèches ou très humides) ===
+    float cell_freq = 4.0 / params.cylinder_radius;
+    float cells = cellularNoise3D(coords * cell_freq, params.seed + 50000u);
+    cells = smoothstep(0.1, 0.5, cells);  // Créer des "trous" secs ou humides
+    
+    // === BRUIT 6 : GRADIENT LONGITUDINAL (côtes ouest vs est) ===
+    // Simule courants océaniques : ouest subtropical = sec, est = humide
+    float long_pattern = snoise(vec3(longitude * 8.0, latitude * 2.0, float(params.seed + 60000u) * 0.01));
+    long_pattern = (long_pattern + 1.0) * 0.5;
+    
+    // =========================================================================
+    // COMBINAISON PRINCIPALE - Centré autour de 0.0
+    // =========================================================================
+    // Convertir tous les bruits de [0,1] vers [-0.5, +0.5] pour être centrés
+    float noise_base = 
+        (major_zones - 0.5) * 0.70 +     // Grandes zones (±35%)
+        (systems - 0.5) * 0.40 +         // Systèmes météo (±20%)
+        (local - 0.5) * 0.30 +           // Variabilité locale (±15%)
+        (fine - 0.5) * 0.10 +            // Turbulence (±5%)
+        (cells - 0.5) * 0.20 +           // Cellules (±10%)
+        (long_pattern - 0.5) * 0.30;     // Pattern longitudinal (±15%)
+    // noise_base est maintenant dans [-1, +1] environ, centré sur 0
+    
+    // =========================================================================
+    // MODULATION LATITUDINALE SUBTILE (~30% d'influence max)
+    // =========================================================================
+    // La latitude ne FORCE pas, elle BIAISE légèrement
+    
+    float lat_bias = 0.0;
+    
+    // Équateur : légèrement plus humide en moyenne
+    if (latitude < 0.2) {
+        lat_bias = 0.15 * (1.0 - latitude / 0.2);  // +15% max à l'équateur
     }
-    // Tropiques
-    else if (latitude < 0.4) {
-        lat_factor = mix(1.1, 0.6, (latitude - 0.15) / 0.25);
+    // Subtropiques : légèrement plus sec en moyenne (mais pas forcé!)
+    else if (latitude > 0.25 && latitude < 0.45) {
+        float t = (latitude - 0.25) / 0.20;
+        float desert_tendency = sin(t * 3.14159);  // Pic au milieu
+        lat_bias = -0.20 * desert_tendency;  // -20% max au cœur subtropical
     }
-    // Déserts subtropicaux (30° N/S)
-    else if (latitude < 0.55) {
-        lat_factor = mix(0.6, 0.4, (latitude - 0.4) / 0.15);
+    // Tempéré : neutre à légèrement humide
+    else if (latitude > 0.5 && latitude < 0.75) {
+        lat_bias = 0.05;  // +5% pour tempéré
     }
-    // Zones tempérées humides
-    else if (latitude < 0.8) {
-        lat_factor = mix(0.4, 0.9, (latitude - 0.55) / 0.25);
-    }
-    // Régions polaires sèches
-    else {
-        lat_factor = mix(0.9, 0.3, (latitude - 0.8) / 0.2);
+    // Polaire : légèrement plus sec
+    else if (latitude > 0.8) {
+        lat_bias = -0.10 * ((latitude - 0.8) / 0.2);  // -10% aux pôles
     }
     
-    // === 3. EFFET OCÉANIQUE (Distance à l'eau = continentalité) ===
-    // Les océans apportent de l'humidité aux terres adjacentes
-    float ocean_influence = 1.0;
+    // =========================================================================
+    // EFFET CÔTIER / CONTINENTALITÉ
+    // =========================================================================
+    float coast_effect = 0.0;
     
     if (!is_water) {
-        // Calculer distance approximative à l'océan (échantillonnage)
-        float min_dist = 999999.0;
-        int search_radius = 40; // Rayon de recherche en pixels
+        // Échantillonner autour pour trouver l'eau
+        float min_dist = 999.0;
+        int radius = 40;
         
-        for (int dy = -search_radius; dy <= search_radius; dy += 4) {
-            for (int dx = -search_radius; dx <= search_radius; dx += 4) {
-                ivec2 sample_pos = pixel + ivec2(dx, dy);
+        for (int dy = -radius; dy <= radius; dy += 4) {
+            for (int dx = -radius; dx <= radius; dx += 4) {
+                ivec2 sp = pixel + ivec2(dx, dy);
+                sp.x = (sp.x % int(params.width) + int(params.width)) % int(params.width);
+                sp.y = clamp(sp.y, 0, int(params.height) - 1);
                 
-                // Wrapping horizontal (cylindre)
-                sample_pos.x = sample_pos.x % int(params.width);
-                if (sample_pos.x < 0) sample_pos.x += int(params.width);
-                
-                // Clamping vertical
-                sample_pos.y = clamp(sample_pos.y, 0, int(params.height) - 1);
-                
-                vec4 sample_geo = imageLoad(geo_texture, sample_pos);
-                if (sample_geo.r < params.sea_level) {
-                    float dist = length(vec2(dx, dy));
-                    min_dist = min(min_dist, dist);
+                if (imageLoad(geo_texture, sp).r < params.sea_level) {
+                    min_dist = min(min_dist, length(vec2(dx, dy)));
                 }
             }
         }
         
-        // Convertir distance en influence (plus proche = plus humide)
-        // Distance max ~50 pixels = continentalité forte
-        float normalized_dist = min(min_dist / 50.0, 1.0);
-        ocean_influence = mix(1.4, 0.5, normalized_dist); // Côtes 1.4x, intérieur 0.5x
+        // Près des côtes : +20% humidité, intérieur continental : -15%
+        float coast_norm = clamp(min_dist / 45.0, 0.0, 1.0);
+        coast_effect = mix(0.20, -0.15, coast_norm);
     } else {
-        // Sur l'eau : humidité maximale
-        ocean_influence = 1.5;
+        // Sur l'eau : légèrement plus humide
+        coast_effect = 0.15;
     }
     
-    // === 4. COMBINAISON FINALE ===
-    float value = base_humidity * lat_factor * ocean_influence;
+    // =========================================================================
+    // EFFET OROGRAPHIQUE SIMPLIFIÉ
+    // =========================================================================
+    float mountain_effect = 0.0;
+    if (!is_water && elevation > 800.0) {
+        float elev_norm = min((elevation - 800.0) / 4000.0, 1.0);
+        // Bruit pour côté au vent vs sous le vent
+        float wind_side = snoise(coords * 3.0 + vec3(float(params.seed + 70000u)));
+        mountain_effect = wind_side * elev_norm * 0.25;  // ±25% max en montagne
+    }
     
-    // Application du facteur global d'humidité
-    value *= params.avg_precipitation;
+    // =========================================================================
+    // ASSEMBLAGE FINAL
+    // =========================================================================
+    // noise_base est dans [-1, +1], lat_bias dans [-0.2, +0.15], etc.
+    // Total des variations possibles : environ [-1.5, +1.5]
+    float variation = noise_base + lat_bias + coast_effect + mountain_effect;
     
-    // Légère redistribution pour réduire la surreprésentation des basses valeurs
-    // tout en gardant la plage complète [0.0, 1.0]
-    value = pow(value, 0.8); // Légère courbe vers le haut
+    // avg_precipitation définit le CENTRE de la distribution
+    // variation module autour de ce centre
+    // Facteur 0.5 pour que les variations restent raisonnables
+    float value = params.avg_precipitation + variation * 0.5;
     
+    // Clamp final - pas de smoothstep pour garder la pleine gamme
     value = clamp(value, 0.0, 1.0);
 
-    // === 5. ÉCRITURE DES RÉSULTATS ===
+    // =========================================================================
+    // ÉCRITURE DES RÉSULTATS
+    // =========================================================================
     
     // Lire la température existante
     vec4 climate = imageLoad(climate_texture, pixel);

@@ -124,8 +124,10 @@ void main() {
     uint water_type = is_water ? WATER_POTENTIAL : WATER_NONE;
     imageStore(water_mask, pixel, uvec4(water_type, 0u, 0u, 0u));
     
-    // Seed JFA : chaque pixel d'eau est son propre seed au départ
-    // (-1, -1) pour les pixels de terre
-    ivec2 seed = is_water ? pixel : ivec2(-1, -1);
-    imageStore(water_component, pixel, ivec4(seed, 0, 0));
+    // Label pour composantes connexes :
+    // - Chaque pixel d'eau commence avec son propre ID unique = y * width + x
+    // - L'algorithme de propagation fera converger vers le minimum
+    // - (-1, -1) pour les pixels de terre
+    int label = is_water ? (pixel.y * w + pixel.x) : -1;
+    imageStore(water_component, pixel, ivec4(label, pixel.y, 0, 0));
 }
