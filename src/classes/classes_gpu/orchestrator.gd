@@ -2526,16 +2526,17 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	var cost_river = float(params.get("region_cost_river", 3.0))
 	var river_threshold = float(params.get("region_river_threshold", 1.0))
 	var budget_variation = float(params.get("region_budget_variation", 0.5))
-	var noise_strength = float(params.get("region_noise_strength", 0.5))  # Réduit pour ne pas dominer les coûts (flat=1, uphill=2)
+	var noise_strength = float(params.get("region_noise_strength", 3.0))  # Perturbation en pixels pour frontières organiques (JFA)
 	
-	# Nombre d'itérations de croissance (basé sur la taille de la carte)
-	# Augmenté pour garantir que toute la terre soit couverte
-	var region_iterations = int(params.get("region_iterations", max(w, h) * 2))
+	# JFA : ceil(log2(max_dim)) + 2 passes supplémentaires à step=1 pour robustesse
+	# Pour une carte 2048 : log2(2048)=11, donc 13 passes au lieu de 4096+
+	var max_dim = max(w, h)
+	var jfa_log_steps = ceili(log(float(max_dim)) / log(2.0))
+	var region_iterations = int(params.get("region_iterations", jfa_log_steps + 2))
 	
 	print("  Seed: ", seed_val, " | Cases/Région: ", nb_cases_region)
-	print("  Coûts - Plat: ", cost_flat, " | Montée: ", cost_uphill, " | Rivière: +", cost_river)
-	print("  Bruit frontières: ", noise_strength)
-	print("  Itérations de croissance: ", region_iterations)
+	print("  Bruit frontières: ", noise_strength, " px")
+	print("  Itérations JFA: ", region_iterations, " (log2(", max_dim, ")=", jfa_log_steps, ")")
 	
 	# Initialiser les textures de région
 	gpu.initialize_region_textures()
@@ -2544,20 +2545,22 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  • Placement des seeds de régions...")
 	_dispatch_region_seed_placement(w, h, groups_x, groups_y, seed_val, nb_cases_region, sea_level, budget_variation)
 	
-	# === PASSE 2 : CROISSANCE ITÉRATIVE (Dijkstra-like) ===
-	print("  • Croissance des régions (", region_iterations, " passes)...")
+	# === PASSE 2 : CROISSANCE JFA (Jump Flooding Algorithm) ===
+	print("  • Croissance des régions JFA (", region_iterations, " passes)...")
 	for pass_idx in range(region_iterations):
+		# JFA : step diminue par puissances de 2 (1024, 512, ..., 2, 1, 1)
+		var step_size = maxi(1, int(pow(2, jfa_log_steps - 1 - pass_idx)))
 		var use_swap = (pass_idx % 2 == 1)
-		_dispatch_region_growth(w, h, groups_x, groups_y, pass_idx, seed_val, sea_level, river_threshold, cost_flat, cost_uphill, cost_river, noise_strength, use_swap)
+		_dispatch_region_growth(w, h, groups_x, groups_y, step_size, seed_val, sea_level, river_threshold, cost_flat, cost_uphill, cost_river, noise_strength, use_swap)
 	
 	# Si nombre impair de passes, copier le résultat vers la texture principale
 	if region_iterations % 2 == 1:
 		_copy_region_textures(w, h)
 	
-	# === PASSE 2.5 : NETTOYAGE FINAL (assigner toute terre restante) ===
-	print("  • Nettoyage final (couverture complète)...")
-	# Chaque passe cherche jusqu'à 16 pixels de rayon, donc max(w,h)/16 passes suffisent
-	var cleanup_passes = max(w, h) / 16 + 1
+	# === PASSE 2.5 : NETTOYAGE FINAL (sécurité pour îles isolées) ===
+	print("  • Nettoyage final (sécurité)...")
+	# JFA couvre >99% des pixels terrestres, quelques passes suffisent
+	var cleanup_passes = 3
 	for cleanup_pass in range(cleanup_passes):
 		var use_swap = ((region_iterations + cleanup_pass) % 2 == 1)
 		_dispatch_region_cleanup(w, h, groups_x, groups_y, seed_val, use_swap)

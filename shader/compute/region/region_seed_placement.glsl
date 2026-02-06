@@ -120,7 +120,9 @@ void main() {
         
         // Écrire le seed
         imageStore(region_map, pixel, uvec4(region_id, 0u, 0u, 0u));
-        imageStore(region_cost, pixel, vec4(0.0, 0.0, 0.0, 0.0));  // Coût 0 au départ
+        // JFA : stocker la position du seed encodée (y * width + x + 1.0)
+        float packed_pos = float(uint(pixel.y) * params.width + uint(pixel.x)) + 1.0;
+        imageStore(region_cost, pixel, vec4(packed_pos, 0.0, 0.0, 0.0));
     } else {
         // Pixel terre normal : en attente d'assignation
         imageStore(region_map, pixel, uvec4(0xFFFFFFFFu, 0u, 0u, 0u));

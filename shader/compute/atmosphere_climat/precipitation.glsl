@@ -279,28 +279,27 @@ void main() {
     float noise = accumulated / total_weight;  // [-1, 1] approx
     
     // =========================================================================
-    // TRANSFORMATION VERS [0, 1] - PLAGE COMPLÈTE GARANTIE
+    // TRANSFORMATION VERS [0, 1] - COURBE DE PUISSANCE
     // =========================================================================
     
     // 1. Le bruit FBM produit environ [-0.7, 0.7] en pratique
     //    On étire pour couvrir [-1, 1] réellement
     noise = noise * 1.5;
     
-    // 2. Convertir vers [0, 1]
-    float base = noise * 0.5 + 0.5;
+    // 2. Convertir vers [0, 1] et clamper
+    float base = clamp(noise * 0.5 + 0.5, 0.0, 1.0);
     
-    // 3. Appliquer avg_precipitation comme décalage ET contrôle de contraste
-    //    avg=0.0 → planète très sèche
-    //    avg=0.5 → équilibre
-    //    avg=1.0 → planète très humide
-    float shift = (params.avg_precipitation - 0.5) * 0.6;
-    float humidity = base + shift;
+    // 3. Appliquer avg_precipitation via courbe de puissance
+    //    L'exposant contrôle la distribution globale :
+    //      avg=0.0 → exp2(4)  = 16.0  → tout écrasé vers 0 (très sec)
+    //      avg=0.2 → exp2(2.4) ≈ 5.3  → majorité sèche
+    //      avg=0.5 → exp2(0)  = 1.0   → distribution linéaire (équilibre)
+    //      avg=0.8 → exp2(-2.4) ≈ 0.19 → majorité humide
+    //      avg=1.0 → exp2(-4) = 0.0625 → tout poussé vers 1 (très humide)
+    float power = exp2((0.5 - params.avg_precipitation) * 8.0);
+    float humidity = pow(base, power);
     
-    // 4. Étirer FORTEMENT pour garantir que les extrêmes sont atteints
-    //    Centre à 0.5, puis étire de 2.5x
-    humidity = (humidity - 0.5) * 2.5 + 0.5;
-    
-    // 5. Clamp simple - pas de sigmoïde qui compresse !
+    // 4. Clamp de sécurité
     humidity = clamp(humidity, 0.0, 1.0);
     
     // =========================================================================
