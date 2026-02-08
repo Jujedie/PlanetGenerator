@@ -348,7 +348,7 @@ var COULEUR_PRECIPITATION = {
 	0.3: Color.hex(0x4a18afFF),
 	0.4: Color.hex(0x521ac1FF),
 	0.5: Color.hex(0x2c1bc5FF),
-	0.6: Color.hex(0x1d33d3F),
+	0.6: Color.hex(0x1d33d3FF),
 	0.7: Color.hex(0x2439dbFF),
 	0.8: Color.hex(0x1c49ceFF),
 	0.9: Color.hex(0x1f4fe0FF),

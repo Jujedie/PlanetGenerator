@@ -2,11 +2,13 @@
 #version 450
 
 // ============================================================================
-// PRECIPITATION SHADER - Zones par Bruit Pur
+// PRECIPITATION SHADER - Zones climatiques réalistes
 // ============================================================================
-// Génère de grandes zones cohérentes (sèches ou humides) via bruit.
-// AUCUN pattern latitudinal.
-// avg_precipitation contrôle l'équilibre global sec/humide.
+// Génère une carte de précipitation réaliste avec :
+// - Grandes zones sèches et humides bien contrastées (bruit à large échelle)
+// - Modulation latitudinale (cellules de Hadley simplifiées)
+// - Influence de l'altitude et de la proximité océanique
+// - avg_precipitation contrôle l'équilibre global sec/humide
 //
 // Sortie : climate_texture.G = humidité [0, 1]
 // ============================================================================
@@ -39,11 +41,6 @@ const float TAU = 6.28318530718;
 // HASH FUNCTIONS
 // ============================================================================
 
-// Hash pseudo-aléatoire déterministe
-// Fonctionnement :
-//   Prend un uint en entrée et retourne un uint "aléatoire"
-//   Utilisé pour générer des variations basées sur la position et le seed global
-//   Permet d'avoir des résultats reproductibles
 uint hash(uint x) {
     x ^= x >> 16;
     x *= 0x85ebca6bu;
@@ -201,105 +198,100 @@ void main() {
     // Coordonnées cylindriques pour seamless wrap
     vec3 coords = getCylindricalCoords(pixel, params.width, params.height, params.cylinder_radius);
     
-    // =========================================================================
-    // BRUIT MULTI-COUCHES INDÉPENDANTES
-    // =========================================================================
-    // Chaque couche a sa propre échelle, seed, et contribution
-    // Ensemble elles créent une distribution riche qui couvre [0, 1]
-    
-    float total_weight = 0.0;
-    float accumulated = 0.0;
-    
-    // --- COUCHE 1 : Continentale (très grandes masses, 2-3 sur la planète) ---
-    float s1 = 0.15 / params.cylinder_radius;
-    float n1 = fbm(coords * s1, 4, 0.5, 2.0, params.seed + 1000u);
-    accumulated += n1 * 0.20;
-    total_weight += 0.20;
-    
-    // --- COUCHE 2 : Régionale (5-8 zones par planète) ---
-    float s2 = 0.4 / params.cylinder_radius;
-    float n2 = fbm(coords * s2, 4, 0.5, 2.0, params.seed + 2000u);
-    accumulated += n2 * 0.18;
-    total_weight += 0.18;
-    
-    // --- COUCHE 3 : Sous-régionale ---
-    float s3 = 0.8 / params.cylinder_radius;
-    float n3 = fbm(coords * s3, 3, 0.5, 2.0, params.seed + 3000u);
-    accumulated += n3 * 0.14;
-    total_weight += 0.14;
-    
-    // --- COUCHE 4 : Locale majeure ---
-    float s4 = 1.5 / params.cylinder_radius;
-    float n4 = fbm(coords * s4, 3, 0.5, 2.0, params.seed + 4000u);
-    accumulated += n4 * 0.12;
-    total_weight += 0.12;
-    
-    // --- COUCHE 5 : Locale mineure ---
-    float s5 = 2.5 / params.cylinder_radius;
-    float n5 = fbm(coords * s5, 3, 0.5, 2.0, params.seed + 5000u);
-    accumulated += n5 * 0.10;
-    total_weight += 0.10;
-    
-    // --- COUCHE 6 : Mésoscale ---
-    float s6 = 4.0 / params.cylinder_radius;
-    float n6 = fbm(coords * s6, 2, 0.5, 2.0, params.seed + 6000u);
-    accumulated += n6 * 0.08;
-    total_weight += 0.08;
-    
-    // --- COUCHE 7 : Détail majeur ---
-    float s7 = 7.0 / params.cylinder_radius;
-    float n7 = fbm(coords * s7, 2, 0.5, 2.0, params.seed + 7000u);
-    accumulated += n7 * 0.06;
-    total_weight += 0.06;
-    
-    // --- COUCHE 8 : Détail mineur ---
-    float s8 = 12.0 / params.cylinder_radius;
-    float n8 = fbm(coords * s8, 2, 0.5, 2.0, params.seed + 8000u);
-    accumulated += n8 * 0.05;
-    total_weight += 0.05;
-    
-    // --- COUCHE 9 : Micro-variation 1 ---
-    float s9 = 20.0 / params.cylinder_radius;
-    float n9 = fbm(coords * s9, 2, 0.5, 2.0, params.seed + 9000u);
-    accumulated += n9 * 0.04;
-    total_weight += 0.04;
-    
-    // --- COUCHE 10 : Micro-variation 2 (haute fréquence) ---
-    float s10 = 35.0 / params.cylinder_radius;
-    float n10 = gradientNoise3D(coords * s10, params.seed + 10000u);
-    accumulated += n10 * 0.03;
-    total_weight += 0.03;
+    // Latitude normalisée [0=équateur, 1=pôle]
+    float lat = abs((float(pixel.y) / float(params.height)) - 0.5) * 2.0;
     
     // =========================================================================
-    // NORMALISATION
+    // BRUIT STRUCTURÉ - 3 COUCHES PRINCIPALES (pas 10)
     // =========================================================================
-    // accumulated est dans [-total_weight, +total_weight] théoriquement
-    // En pratique la somme de bruits tend vers une distribution plus centrée
+    // Utiliser peu de couches avec le FBM interne pour éviter 
+    // l'écrasement de variance par le théorème central limite.
     
-    float noise = accumulated / total_weight;  // [-1, 1] approx
+    float noise_base = 1.0 / params.cylinder_radius;
+    
+    // --- COUCHE 1 : Continentale (2-4 grandes masses sec/humide) ---
+    // C'est la couche dominante qui crée les grands déserts et jungles
+    float continental = fbm(coords * noise_base * 0.3, 5, 0.5, 2.0, params.seed + 1000u);
+    
+    // --- COUCHE 2 : Régionale (modulation moyenne) ---
+    float regional = fbm(coords * noise_base * 1.2, 4, 0.5, 2.0, params.seed + 2000u);
+    
+    // --- COUCHE 3 : Locale (détails fins) ---
+    float local_detail = fbm(coords * noise_base * 4.0, 3, 0.5, 2.0, params.seed + 3000u);
+    
+    // Combinaison pondérée : la couche continentale domine largement
+    // Cela garantit de grandes zones cohérentes sèches ou humides
+    float noise = continental * 0.65 + regional * 0.25 + local_detail * 0.10;
     
     // =========================================================================
-    // TRANSFORMATION VERS [0, 1] - COURBE DE PUISSANCE
+    // MODULATION LATITUDINALE - Cellules de Hadley simplifiées
+    // =========================================================================
+    // Sur Terre :
+    // - Équateur (~0°) : ITCZ, très humide (convergence, air ascendant)
+    // - Subtropicaux (~30°) : Très sec (air descendant, déserts)
+    // - Latitudes moyennes (~50-60°) : Humide (fronts, dépressions)
+    // - Pôles (~90°) : Sec (air froid = peu d'évaporation)
+    
+    float lat_moisture = 0.0;
+    // ITCZ - Équateur : boost humidité
+    lat_moisture += 0.25 * exp(-pow((lat - 0.0) / 0.12, 2.0));
+    // Subtropicaux : forte réduction (déserts à ~30° = lat 0.33)
+    lat_moisture -= 0.30 * exp(-pow((lat - 0.33) / 0.10, 2.0));
+    // Latitudes moyennes : boost humidité (~55° = lat 0.61)
+    lat_moisture += 0.15 * exp(-pow((lat - 0.61) / 0.12, 2.0));
+    // Pôles : sec
+    lat_moisture -= 0.20 * smoothstep(0.75, 1.0, lat);
+    
+    // =========================================================================
+    // INFLUENCE DE LA GÉOGRAPHIE
+    // =========================================================================
+    vec4 geo = imageLoad(geo_texture, pixel);
+    float height = geo.r;
+    float water_height = geo.a;
+    bool is_ocean = (water_height > 0.0 && height <= params.sea_level);
+    
+    // Les océans ont une humidité de base plus élevée (évaporation)
+    float ocean_boost = is_ocean ? 0.10 : 0.0;
+    
+    // L'altitude réduit les précipitations (effet d'ombre pluviométrique simplifié)
+    float altitude_above_sea = max(0.0, height - params.sea_level);
+    float altitude_penalty = -0.08 * smoothstep(0.0, 5000.0, altitude_above_sea);
+    
+    // =========================================================================
+    // ASSEMBLAGE ET NORMALISATION
     // =========================================================================
     
-    // 1. Le bruit FBM produit environ [-0.7, 0.7] en pratique
-    //    On étire pour couvrir [-1, 1] réellement
-    noise = noise * 1.5;
+    // Le bruit brut est dans environ [-0.65, 0.65]
+    // On le normalise vers [0, 1] avec un étirement agressif
+    float raw = noise * 2.0;  // Étirer vers [-1.3, 1.3]
+    float base = clamp(raw * 0.5 + 0.5, 0.0, 1.0);  // Vers [0, 1]
     
-    // 2. Convertir vers [0, 1] et clamper
-    float base = clamp(noise * 0.5 + 0.5, 0.0, 1.0);
+    // Appliquer une courbe de contraste sigmoïde pour pousser les valeurs
+    // vers les extrêmes (0 et 1) au lieu de rester groupées au centre
+    // Cela crée des zones franchement sèches et franchement humides
+    float contrast_base = base;
+    contrast_base = contrast_base * contrast_base * (3.0 - 2.0 * contrast_base); // smoothstep
+    contrast_base = contrast_base * contrast_base * (3.0 - 2.0 * contrast_base); // double smoothstep = fort contraste
     
-    // 3. Appliquer avg_precipitation via courbe de puissance
-    //    L'exposant contrôle la distribution globale :
-    //      avg=0.0 → exp2(4)  = 16.0  → tout écrasé vers 0 (très sec)
-    //      avg=0.2 → exp2(2.4) ≈ 5.3  → majorité sèche
-    //      avg=0.5 → exp2(0)  = 1.0   → distribution linéaire (équilibre)
-    //      avg=0.8 → exp2(-2.4) ≈ 0.19 → majorité humide
-    //      avg=1.0 → exp2(-4) = 0.0625 → tout poussé vers 1 (très humide)
-    float power = exp2((0.5 - params.avg_precipitation) * 8.0);
-    float humidity = pow(base, power);
+    // Ajouter les modifications latitudinales et géographiques
+    float modified = contrast_base + lat_moisture + ocean_boost + altitude_penalty;
+    modified = clamp(modified, 0.0, 1.0);
     
-    // 4. Clamp de sécurité
+    // =========================================================================
+    // APPLICATION DE avg_precipitation
+    // =========================================================================
+    // avg_precipitation contrôle la balance globale sec/humide.
+    // On utilise une courbe de puissance :
+    //   avg=0.0 → power = 6.0  → quasi tout à 0 (planète désertique)
+    //   avg=0.3 → power = 2.4  → majorité sèche avec quelques zones humides
+    //   avg=0.5 → power = 1.0  → distribution équilibrée
+    //   avg=0.7 → power ≈ 0.42 → majorité humide
+    //   avg=1.0 → power ≈ 0.17 → quasi tout à 1 (planète océanique/humide)
+    
+    float power = exp2((0.5 - params.avg_precipitation) * 5.0);
+    float humidity = pow(modified, power);
+    
+    // Clamp de sécurité final
     humidity = clamp(humidity, 0.0, 1.0);
     
     // =========================================================================

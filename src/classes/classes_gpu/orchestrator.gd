@@ -1423,7 +1423,7 @@ func run_atmosphere_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	var seed_val = int(params.get("seed", 12345))
 	var avg_temperature = float(params.get("avg_temperature", 15.0))
-	var avg_precipitation = float(params.get("avg_precipitation", 0.5))
+	var avg_precipitation = float(params.get("global_humidity", 0.5))
 	var sea_level = float(params.get("sea_level", 0.0))
 	var atmosphere_type = int(params.get("atmosphere_type", 0))
 	var cylinder_radius = float(w) / (2.0 * PI)
