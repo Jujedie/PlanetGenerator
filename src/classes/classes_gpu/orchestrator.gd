@@ -1008,13 +1008,14 @@ func run_cratering_phase(params: Dictionary, w: int, h: int) -> void:
 		push_warning("[Orchestrator] ⚠️ cratering shader non disponible, phase ignorée")
 		return
 	
-	# Vérifier si la planète est sans atmosphère
+	# Vérifier si la planète peut avoir des cratères
+	# Types avec cratères : Sans Atmosphère (3), Mort (4), Stérile (5)
 	var atmosphere_type = int(params.get("planet_type", 0))
-	if atmosphere_type != 3:  # 3 = Sans atmosphère
-		print("[Orchestrator] ⏭️ Phase 0.6 : Cratères ignorés (planète avec atmosphère)")
+	if atmosphere_type not in [Enum.TYPE_NO_ATMOS, Enum.TYPE_DEAD, Enum.TYPE_STERILE]:
+		print("[Orchestrator] ⏭️ Phase 0.6 : Cratères ignorés (planète avec atmosphère épaisse)")
 		return
 	
-	print("[Orchestrator] ☄️ Phase 0.6 : Génération des cratères d'impact")
+	print("[Orchestrator] ☄️ Phase 0.6 : Génération des cratères d'impact (type=", atmosphere_type, ")")
 	
 	var groups_x = ceili(float(w) / 16.0)
 	var groups_y = ceili(float(h) / 16.0)
@@ -1490,16 +1491,41 @@ func _dispatch_temperature(w: int, h: int, groups_x: int, groups_y: int, seed_va
 		rd.free_rid(param_buffer)
 		return
 	
+	# === SET 2 : PALETTE DE COULEURS DYNAMIQUE (SSBO) ===
+	var palette_data: PackedByteArray = Enum.build_temperature_palette(atmosphere_type)
+	var palette_ssbo: RID = rd.storage_buffer_create(palette_data.size(), palette_data)
+	if not palette_ssbo.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create temperature palette SSBO")
+		rd.free_rid(param_set)
+		rd.free_rid(param_buffer)
+		return
+	
+	var palette_uniform := RDUniform.new()
+	palette_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	palette_uniform.binding = 0
+	palette_uniform.add_id(palette_ssbo)
+	
+	var palette_set: RID = rd.uniform_set_create([palette_uniform], gpu.shaders["temperature"], 2)
+	if not palette_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create temperature palette uniform set")
+		rd.free_rid(palette_ssbo)
+		rd.free_rid(param_set)
+		rd.free_rid(param_buffer)
+		return
+	
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["temperature"])
 	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["temperature_textures"], 0)
 	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_bind_uniform_set(compute_list, palette_set, 2)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
 	rd.submit()
 	rd.sync()
 	
+	rd.free_rid(palette_set)
+	rd.free_rid(palette_ssbo)
 	rd.free_rid(param_set)
 	rd.free_rid(param_buffer)
 
@@ -1549,16 +1575,41 @@ func _dispatch_precipitation(w: int, h: int, groups_x: int, groups_y: int, seed_
 		rd.free_rid(param_buffer)
 		return
 	
+	# === SET 2 : PALETTE DE COULEURS DYNAMIQUE (SSBO) ===
+	var palette_data: PackedByteArray = Enum.build_precipitation_palette(atmosphere_type)
+	var palette_ssbo: RID = rd.storage_buffer_create(palette_data.size(), palette_data)
+	if not palette_ssbo.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create precipitation palette SSBO")
+		rd.free_rid(param_set)
+		rd.free_rid(param_buffer)
+		return
+	
+	var palette_uniform := RDUniform.new()
+	palette_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	palette_uniform.binding = 0
+	palette_uniform.add_id(palette_ssbo)
+	
+	var palette_set: RID = rd.uniform_set_create([palette_uniform], gpu.shaders["precipitation"], 2)
+	if not palette_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create precipitation palette uniform set")
+		rd.free_rid(palette_ssbo)
+		rd.free_rid(param_set)
+		rd.free_rid(param_buffer)
+		return
+	
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["precipitation"])
 	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["precipitation_textures"], 0)
 	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_bind_uniform_set(compute_list, palette_set, 2)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
 	rd.submit()
 	rd.sync()
 	
+	rd.free_rid(palette_set)
+	rd.free_rid(palette_ssbo)
 	rd.free_rid(param_set)
 	rd.free_rid(param_buffer)
 
@@ -1729,9 +1780,9 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	var sea_level = float(params.get("sea_level", 0.0))
 	var atmosphere_type = int(params.get("atmosphere_type", 0))
 	
-	# Si pas d'atmosphère = pas d'eau liquide
-	if atmosphere_type == 3:
-		print("  ⏭️ Planète sans atmosphère - pas d'eau liquide")
+	# Planètes sans eau liquide : Sans atmosphère (3) et Stérile (5)
+	if atmosphere_type in [Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE]:
+		print("  ⏭️ Planète sans eau liquide (type=", atmosphere_type, ")")
 		return
 	
 	# Paramètres de classification des eaux
@@ -1879,6 +1930,9 @@ func _dispatch_water_fill(w: int, h: int, groups_x: int, groups_y: int, sea_leve
 	comp_uniform.binding = 2
 	comp_uniform.add_id(gpu.textures["water_component"])
 	tex_uniforms.append(comp_uniform)
+	
+	# climate_texture (RGBA32F) - pour vérification température eau liquide
+	tex_uniforms.append(gpu.create_texture_uniform(3, gpu.textures["climate"]))
 	
 	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["water_fill"], 0)
 	

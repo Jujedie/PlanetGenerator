@@ -31,6 +31,24 @@ layout(set = 1, binding = 0, std140) uniform PrecipParams {
     float padding2;
 } params;
 
+// === SET 2: PALETTE DE COULEURS DYNAMIQUE (SSBO) ===
+// Construite depuis les biomes dans Enum.gd
+// Chaque entrée = 16 bytes : float threshold, float r, float g, float b
+struct PaletteEntry {
+    float threshold;
+    float r;
+    float g;
+    float b;
+};
+
+layout(set = 2, binding = 0, std430) readonly buffer ColorPalette {
+    uint entry_count;
+    uint _pad1;
+    uint _pad2;
+    uint _pad3;
+    PaletteEntry entries[];
+};
+
 // ============================================================================
 // CONSTANTES
 // ============================================================================
@@ -144,6 +162,31 @@ float fbm(vec3 p, int octaves, float persistence, float lacunarity, uint seed_of
     return value / maxValue;
 }
 
+// Ridge Noise - crée des crêtes anguleuses au lieu de formes arrondies
+// Utilisé pour briser la rondeur naturelle du fBm
+float ridgedFbm(vec3 p, int octaves, float persistence, float lacunarity, uint seed_offset) {
+    float value = 0.0;
+    float amplitude = 1.0;
+    float maxValue = 0.0;
+    float weight = 1.0;
+    
+    for (int i = 0; i < octaves; i++) {
+        float n = gradientNoise3D(p, seed_offset + uint(i) * 7919u);
+        // Transformation ridge : abs() crée des crêtes, 1-abs donne des vallées pointues
+        n = 1.0 - abs(n);
+        n = n * n;  // Accentuer les crêtes
+        n *= weight;
+        weight = clamp(n, 0.0, 1.0);  // Les crêtes précédentes influencent les suivantes
+        
+        value += amplitude * n;
+        maxValue += amplitude;
+        amplitude *= persistence;
+        p *= lacunarity;
+    }
+    
+    return (value / maxValue) * 2.0 - 1.0;  // Normaliser vers [-1, 1]
+}
+
 // ============================================================================
 // COORDONNÉES CYLINDRIQUES (seamless horizontal)
 // ============================================================================
@@ -158,22 +201,31 @@ vec3 getCylindricalCoords(ivec2 pixel, uint w, uint h, float radius) {
 }
 
 // ============================================================================
-// PALETTE COULEURS
+// PALETTE COULEURS - Interpolation dynamique depuis SSBO
 // ============================================================================
+// Les couleurs sont construites depuis les biomes actifs du type de planète
+// Interpolation linéaire entre les entrées de la palette
 
 vec4 getPrecipitationColor(float p) {
-    // 0.0 = très sec (violet), 1.0 = très humide (bleu foncé)
-    if (p <= 0.0) return vec4(0.694, 0.094, 0.706, 1.0);
-    if (p <= 0.1) return vec4(0.553, 0.078, 0.565, 1.0);
-    if (p <= 0.2) return vec4(0.424, 0.086, 0.635, 1.0);
-    if (p <= 0.3) return vec4(0.290, 0.094, 0.686, 1.0);
-    if (p <= 0.4) return vec4(0.322, 0.102, 0.757, 1.0);
-    if (p <= 0.5) return vec4(0.173, 0.106, 0.773, 1.0);
-    if (p <= 0.6) return vec4(0.114, 0.200, 0.827, 1.0);
-    if (p <= 0.7) return vec4(0.141, 0.224, 0.859, 1.0);
-    if (p <= 0.8) return vec4(0.110, 0.286, 0.808, 1.0);
-    if (p <= 0.9) return vec4(0.122, 0.310, 0.878, 1.0);
-    return vec4(0.192, 0.365, 0.890, 1.0);
+    // Fallback si palette vide
+    if (entry_count == 0u) return vec4(1.0, 0.0, 1.0, 1.0);  // Magenta = erreur
+    
+    // Sous le premier seuil → couleur du premier seuil
+    if (p <= entries[0].threshold) {
+        return vec4(entries[0].r, entries[0].g, entries[0].b, 1.0);
+    }
+    
+    // Trouver le seuil précédent (pas d'interpolation, couleur fixe par palier)
+    for (uint i = 0u; i < entry_count - 1u; i++) {
+        if (p <= entries[i + 1u].threshold) {
+            // Retourner la couleur du seuil précédent (entries[i])
+            return vec4(entries[i].r, entries[i].g, entries[i].b, 1.0);
+        }
+    }
+    
+    // Au-dessus du dernier seuil → couleur du dernier seuil
+    uint last = entry_count - 1u;
+    return vec4(entries[last].r, entries[last].g, entries[last].b, 1.0);
 }
 
 // ============================================================================
@@ -187,8 +239,8 @@ void main() {
         return;
     }
     
-    // Sans atmosphère = sec
-    if (params.atmosphere_type == 3u) {
+    // Sans atmosphère (3) ou Stérile (5) = sec, pas de précipitations
+    if (params.atmosphere_type == 3u || params.atmosphere_type == 5u) {
         vec4 climate = imageLoad(climate_texture, pixel);
         imageStore(climate_texture, pixel, vec4(climate.r, 0.0, 0.0, 0.0));
         imageStore(precipitation_colored, pixel, getPrecipitationColor(0.0));
@@ -202,36 +254,45 @@ void main() {
     float lat = abs((float(pixel.y) / float(params.height)) - 0.5) * 2.0;
     
     // =========================================================================
-    // BRUIT STRUCTURÉ - 3 COUCHES PRINCIPALES (pas 10)
+    // DOMAIN WARPING - Distorsion des coordonnées pour briser les formes rondes
     // =========================================================================
-    // Utiliser peu de couches avec le FBM interne pour éviter 
-    // l'écrasement de variance par le théorème central limite.
+    // Le domain warping déforme l'espace d'entrée du bruit, créant des
+    // frontières irrégulières et des formes étirées au lieu de blobs ronds.
     
     float noise_base = 1.0 / params.cylinder_radius;
+    float warp_scale = noise_base * 0.6;
     
-    // --- COUCHE 1 : Continentale (2-4 grandes masses sec/humide) ---
-    // C'est la couche dominante qui crée les grands déserts et jungles
-    float continental = fbm(coords * noise_base * 0.3, 5, 0.5, 2.0, params.seed + 1000u);
+    // Première passe de warping
+    float warp_x = fbm(coords * warp_scale, 3, 0.5, 2.0, params.seed + 5000u);
+    float warp_y = fbm(coords * warp_scale + vec3(5.2, 1.3, 2.8), 3, 0.5, 2.0, params.seed + 5100u);
+    float warp_z = fbm(coords * warp_scale + vec3(2.7, 8.1, 4.3), 3, 0.5, 2.0, params.seed + 5200u);
     
-    // --- COUCHE 2 : Régionale (modulation moyenne) ---
-    float regional = fbm(coords * noise_base * 1.2, 4, 0.5, 2.0, params.seed + 2000u);
+    float warp_strength = 0.35 * params.cylinder_radius;
+    vec3 warped_coords = coords + vec3(warp_x, warp_y, warp_z) * warp_strength;
     
-    // --- COUCHE 3 : Locale (détails fins) ---
+    // =========================================================================
+    // BRUIT STRUCTURÉ - 4 COUCHES avec domain warping et ridge noise
+    // =========================================================================
+    
+    // --- COUCHE 1 : Continentale (grandes masses sec/humide, warpées) ---
+    float continental = fbm(warped_coords * noise_base * 0.3, 5, 0.5, 2.0, params.seed + 1000u);
+    
+    // --- COUCHE 2 : Régionale (modulation moyenne, warpée) ---
+    float regional = fbm(warped_coords * noise_base * 1.2, 4, 0.5, 2.0, params.seed + 2000u);
+    
+    // --- COUCHE 3 : Locale (détails fins, non warpée pour garder le detail) ---
     float local_detail = fbm(coords * noise_base * 4.0, 3, 0.5, 2.0, params.seed + 3000u);
     
-    // Combinaison pondérée : la couche continentale domine largement
-    // Cela garantit de grandes zones cohérentes sèches ou humides
-    float noise = continental * 0.65 + regional * 0.25 + local_detail * 0.10;
+    // --- COUCHE 4 : Ridge noise (contours anguleux, brise la rondeur) ---
+    float ridge = ridgedFbm(warped_coords * noise_base * 1.5, 4, 0.5, 2.0, params.seed + 4000u);
+    
+    // Combinaison pondérée avec ridge noise pour casser la rondeur
+    // Le ridge noise crée des frontières en crêtes au lieu de transitions lisses
+    float noise = continental * 0.45 + regional * 0.20 + local_detail * 0.15 + ridge * 0.20;
     
     // =========================================================================
     // MODULATION LATITUDINALE - Cellules de Hadley simplifiées
     // =========================================================================
-    // Sur Terre :
-    // - Équateur (~0°) : ITCZ, très humide (convergence, air ascendant)
-    // - Subtropicaux (~30°) : Très sec (air descendant, déserts)
-    // - Latitudes moyennes (~50-60°) : Humide (fronts, dépressions)
-    // - Pôles (~90°) : Sec (air froid = peu d'évaporation)
-    
     float lat_moisture = 0.0;
     // ITCZ - Équateur : boost humidité
     lat_moisture += 0.25 * exp(-pow((lat - 0.0) / 0.12, 2.0));
@@ -262,16 +323,12 @@ void main() {
     // =========================================================================
     
     // Le bruit brut est dans environ [-0.65, 0.65]
-    // On le normalise vers [0, 1] avec un étirement agressif
-    float raw = noise * 2.0;  // Étirer vers [-1.3, 1.3]
-    float base = clamp(raw * 0.5 + 0.5, 0.0, 1.0);  // Vers [0, 1]
+    float raw = noise * 2.0;
+    float base = clamp(raw * 0.5 + 0.5, 0.0, 1.0);
     
-    // Appliquer une courbe de contraste sigmoïde pour pousser les valeurs
-    // vers les extrêmes (0 et 1) au lieu de rester groupées au centre
-    // Cela crée des zones franchement sèches et franchement humides
-    float contrast_base = base;
-    contrast_base = contrast_base * contrast_base * (3.0 - 2.0 * contrast_base); // smoothstep
-    contrast_base = contrast_base * contrast_base * (3.0 - 2.0 * contrast_base); // double smoothstep = fort contraste
+    // UN SEUL smoothstep pour un contraste modéré (au lieu de double)
+    // Le double smoothstep écrasait la distribution vers les extrêmes trop vite
+    float contrast_base = base * base * (3.0 - 2.0 * base);
     
     // Ajouter les modifications latitudinales et géographiques
     float modified = contrast_base + lat_moisture + ocean_boost + altitude_penalty;
@@ -280,15 +337,15 @@ void main() {
     // =========================================================================
     // APPLICATION DE avg_precipitation
     // =========================================================================
-    // avg_precipitation contrôle la balance globale sec/humide.
-    // On utilise une courbe de puissance :
-    //   avg=0.0 → power = 6.0  → quasi tout à 0 (planète désertique)
-    //   avg=0.3 → power = 2.4  → majorité sèche avec quelques zones humides
+    // Amplification réduite (3.0 au lieu de 5.0) pour éviter que les extrêmes
+    // ne soient atteints trop rapidement quand on s'éloigne de avg=0.5
+    //   avg=0.0 → power = 8.0  → très sec mais pas totalement écrasé
+    //   avg=0.3 → power = 1.74 → majorité sèche avec zones humides
     //   avg=0.5 → power = 1.0  → distribution équilibrée
-    //   avg=0.7 → power ≈ 0.42 → majorité humide
-    //   avg=1.0 → power ≈ 0.17 → quasi tout à 1 (planète océanique/humide)
+    //   avg=0.7 → power ≈ 0.57 → majorité humide
+    //   avg=1.0 → power ≈ 0.125 → très humide
     
-    float power = exp2((0.5 - params.avg_precipitation) * 5.0);
+    float power = exp2((0.5 - params.avg_precipitation) * 3.0);
     float humidity = pow(modified, power);
     
     // Clamp de sécurité final

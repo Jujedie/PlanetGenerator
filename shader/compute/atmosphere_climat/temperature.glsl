@@ -44,6 +44,24 @@ layout(set = 1, binding = 0, std140) uniform ClimateParams {
     float padding;
 } params;
 
+// === SET 2: PALETTE DE COULEURS DYNAMIQUE (SSBO) ===
+// Construite depuis les biomes dans Enum.gd
+// Chaque entrée = 16 bytes : float threshold, float r, float g, float b
+struct PaletteEntry {
+    float threshold;
+    float r;
+    float g;
+    float b;
+};
+
+layout(set = 2, binding = 0, std430) readonly buffer ColorPalette {
+    uint entry_count;
+    uint _pad1;
+    uint _pad2;
+    uint _pad3;
+    PaletteEntry entries[];
+};
+
 // ============================================================================
 // CONSTANTES
 // ============================================================================
@@ -173,47 +191,31 @@ vec3 getCylindricalCoords(ivec2 pixel, uint w, uint h, float cylinder_radius) {
 }
 
 // ============================================================================
-// PALETTE DE COULEURS TEMPÉRATURE (Hard-coded depuis Enum.gd)
-// 33 seuils de -200°C à +200°C
+// PALETTE DE COULEURS TEMPÉRATURE (Dynamique via SSBO)
+// Interpolation linéaire entre les entrées de la palette
+// Construite depuis les biomes actifs du type de planète courant
 // ============================================================================
 
 vec4 getTemperatureColor(float temp) {
-    // Palette extraite de COULEURS_TEMPERATURE dans Enum.gd
-    // Format: seuil en °C, couleur RGBA normalisée
+    // Fallback si palette vide
+    if (entry_count == 0u) return vec4(1.0, 0.0, 1.0, 1.0);  // Magenta = erreur
     
-    if (temp <= -200.0) return vec4(0.278, 0.561, 0.902, 1.0); // 0x478fe6
-    if (temp <= -150.0) return vec4(0.302, 0.000, 0.478, 1.0); // 0x4D007A
-    if (temp <= -100.0) return vec4(0.294, 0.000, 0.510, 1.0); // 0x4B0082
-    if (temp <= -90.0)  return vec4(0.337, 0.000, 0.580, 1.0); // 0x560094
-    if (temp <= -80.0)  return vec4(0.361, 0.000, 0.620, 1.0); // 0x5c009e
-    if (temp <= -70.0)  return vec4(0.384, 0.000, 0.659, 1.0); // 0x6200a8
-    if (temp <= -60.0)  return vec4(0.408, 0.000, 0.702, 1.0); // 0x6800b3
-    if (temp <= -50.0)  return vec4(0.235, 0.000, 0.702, 1.0); // 0x3c00b3
-    if (temp <= -45.0)  return vec4(0.247, 0.000, 0.741, 1.0); // 0x3f00bd
-    if (temp <= -35.0)  return vec4(0.259, 0.000, 0.780, 1.0); // 0x4200c7
-    if (temp <= -25.0)  return vec4(0.275, 0.000, 0.820, 1.0); // 0x4600d1
-    if (temp <= -20.0)  return vec4(0.286, 0.000, 0.859, 1.0); // 0x4900db
-    if (temp <= -15.0)  return vec4(0.235, 0.275, 0.482, 1.0); // 0x3c467b
-    if (temp <= -10.0)  return vec4(0.278, 0.318, 0.553, 1.0); // 0x47518d
-    if (temp <= -5.0)   return vec4(0.290, 0.345, 0.639, 1.0); // 0x4a58a3
-    if (temp <= 0.0)    return vec4(0.306, 0.361, 0.690, 1.0); // 0x4e5cb0
-    if (temp <= 5.0)    return vec4(0.149, 0.447, 0.157, 1.0); // 0x267228
-    if (temp <= 10.0)   return vec4(0.149, 0.467, 0.157, 1.0); // 0x267728
-    if (temp <= 15.0)   return vec4(0.153, 0.502, 0.161, 1.0); // 0x278029
-    if (temp <= 20.0)   return vec4(0.149, 0.518, 0.157, 1.0); // 0x268428
-    if (temp <= 25.0)   return vec4(0.855, 0.753, 0.059, 1.0); // 0xdac00f
-    if (temp <= 30.0)   return vec4(0.831, 0.725, 0.059, 1.0); // 0xd4b90f
-    if (temp <= 35.0)   return vec4(0.855, 0.510, 0.059, 1.0); // 0xda820f
-    if (temp <= 40.0)   return vec4(0.824, 0.490, 0.059, 1.0); // 0xd27d0f
-    if (temp <= 45.0)   return vec4(0.784, 0.471, 0.055, 1.0); // 0xc8780e
-    if (temp <= 50.0)   return vec4(0.784, 0.141, 0.055, 1.0); // 0xc8240e
-    if (temp <= 60.0)   return vec4(0.749, 0.133, 0.051, 1.0); // 0xbf220d
-    if (temp <= 70.0)   return vec4(0.710, 0.125, 0.051, 1.0); // 0xb5200d
-    if (temp <= 80.0)   return vec4(0.675, 0.122, 0.047, 1.0); // 0xac1f0c
-    if (temp <= 90.0)   return vec4(0.635, 0.114, 0.043, 1.0); // 0xa21d0b
-    if (temp <= 100.0)  return vec4(0.431, 0.078, 0.031, 1.0); // 0x6e1408
-    if (temp <= 150.0)  return vec4(0.706, 0.094, 0.380, 1.0); // 0xb41861
-    return vec4(0.729, 0.090, 0.169, 1.0); // 0xba172b (200°C+)
+    // Sous le premier seuil → couleur du premier seuil
+    if (temp <= entries[0].threshold) {
+        return vec4(entries[0].r, entries[0].g, entries[0].b, 1.0);
+    }
+    
+    // Trouver le seuil précédent (pas d'interpolation, couleur fixe par palier)
+    for (uint i = 0u; i < entry_count - 1u; i++) {
+        if (temp <= entries[i + 1u].threshold) {
+            // Retourner la couleur du seuil précédent (entries[i])
+            return vec4(entries[i].r, entries[i].g, entries[i].b, 1.0);
+        }
+    }
+    
+    // Au-dessus du dernier seuil → couleur du dernier seuil
+    uint last = entry_count - 1u;
+    return vec4(entries[last].r, entries[last].g, entries[last].b, 1.0);
 }
 
 // ============================================================================
