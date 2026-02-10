@@ -75,16 +75,17 @@ const uint TYPE_DEAD = 4u;
 const uint TYPE_STERILE = 5u;
 const uint TYPE_GAZEUZE = 6u;
 
-// Types de planètes sans eau (comme sans atmosphère)
-// Gazeuse = pas de surface solide, donc pas d'eau liquide
-// Stérile = CAN have water (exception demandée par l'utilisateur)
+// Types de planètes sans eau liquide
+// Sans atmosphère = pas de pression pour maintenir l'eau liquide
+// Stérile = planète rocheuse morte, pas d'eau
+// Gazeuse = pas de surface solide
 bool is_waterless_planet_type(uint ptype) {
-    return (ptype == TYPE_NO_ATMOS) || (ptype == TYPE_GAZEUZE);
+    return (ptype == TYPE_NO_ATMOS) || (ptype == TYPE_STERILE) || (ptype == TYPE_GAZEUZE);
 }
 
 // Types de planètes sans atmosphère (affecte l'humidité)
 bool is_airless_planet_type(uint ptype) {
-    return (ptype == TYPE_NO_ATMOS) || (ptype == TYPE_GAZEUZE);
+    return (ptype == TYPE_NO_ATMOS) || (ptype == TYPE_STERILE) || (ptype == TYPE_GAZEUZE);
 }
 
 const float ALTITUDE_MAX = 25000.0;
