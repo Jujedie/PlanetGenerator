@@ -38,11 +38,11 @@ var BIOMES = [
 	# --- TERRES : CLIMATS FROIDS (Polaires & Alpins) ---
 	Biome.new("Calotte Glaciaire", Color.hex(0xe8f0ffFF), Color.hex(0xe0e8f0FF), [-273, -15], [0.5, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
 	Biome.new("Désert Polaire", Color.hex(0xc8d8f0FF), Color.hex(0xb8c8d8FF), [-273, -15], [0.0, 0.4], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Toundra", Color.hex(0xa0b080FF), Color.hex(0x6a7858FF), [-15, 10], [0.0, 0.5], [0, 2500], false, [TYPE_TERRAN]),
-	Biome.new("Toundra Alpine", Color.hex(0x909898FF), Color.hex(0x707878FF), [-30, 15], [0.0, 0.5], [2500, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Toundra", Color.hex(0xa0b080FF), Color.hex(0x6a7858FF), [-15, 0], [0.0, 0.25], [-ALTITUDE_MAX, 2500], false, [TYPE_TERRAN]),
+	Biome.new("Toundra Alpine", Color.hex(0x909898FF), Color.hex(0x707878FF), [-30, 0], [0.0, 0.25], [2500, ALTITUDE_MAX], false, [TYPE_TERRAN]),
 	Biome.new("Taïga (Forêt Boréale)", Color.hex(0x205830FF), Color.hex(0x1a3820FF), [-10, 15], [0.25, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Prairie Alpine (Alpage)", Color.hex(0x90c050FF), Color.hex(0x608838FF), [-5, 18], [0.1, 0.8], [1500, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Forêt de montagne", Color.hex(0x388030FF), Color.hex(0x284828FF), [-10, 25], [0.1, 1.0], [800, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Prairie Alpine (Alpage)", Color.hex(0x90c050FF), Color.hex(0x608838FF), [-5, 15], [0.0, 0.25], [1500, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Forêt de montagne", Color.hex(0x388030FF), Color.hex(0x284828FF), [-10, 25], [0.0, 1.0], [800, ALTITUDE_MAX], false, [TYPE_TERRAN]),
 
 	# --- TERRES : CLIMATS TEMPÉRÉS ---
 	Biome.new("Forêt Tempérée (Décidue)", Color.hex(0x30a030FF), Color.hex(0x2a6028FF), [5, 25], [0.3, 0.8], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
