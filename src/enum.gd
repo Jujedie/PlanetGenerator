@@ -89,9 +89,11 @@ var BIOMES = [
 	# --- TERRESTRE TOXIQUE ---
 	Biome.new("Désert de Soufre", Color.hex(0xffff00FF), Color.hex(0xc8b830FF), [40, 100], [0.0, 0.2], [0, ALTITUDE_MAX], false, [TYPE_TOXIC]),
 	Biome.new("Forêt Fongique (Champignons)", Color.hex(0x8040d0FF), Color.hex(0x4a2870FF), [20, 50], [0.5, 1.0], [0, 2000], false, [TYPE_TOXIC]),
-	Biome.new("Plaines de Spores", Color.hex(0x60c060FF), Color.hex(0x385838FF), [10, 40], [0.3, 0.7], [0, 1500], false, [TYPE_TOXIC]),
-	Biome.new("Marécages Acides", Color.hex(0x00ff00FF), Color.hex(0x284020FF), [20, 60], [0.8, 1.0], [-100, 500], true, [TYPE_TOXIC]),
-	Biome.new("Glacier Vert (Méthane)", Color.hex(0x00ff80FF), Color.hex(0x60c898FF), [-150, -50], [0.0, 1.0], [0, ALTITUDE_MAX], false, [TYPE_TOXIC]),
+	Biome.new("Plaines de Spores", Color.hex(0x60c060FF), Color.hex(0x385838FF), [10, 40], [0.2, 0.5], [0, 1500], false, [TYPE_TOXIC]),
+	Biome.new("Marécages Acides", Color.hex(0x00ff00FF), Color.hex(0x284020FF), [20, 60], [0.7, 1.0], [-100, 500], true, [TYPE_TOXIC]),
+	Biome.new("Glacier Vert (Méthane)", Color.hex(0x00ff80FF), Color.hex(0x60c898FF), [-200, -50], [0.0, 1.0], [0, ALTITUDE_MAX], false, [TYPE_TOXIC]),
+	Biome.new("Plaines Venteuses Toxiques", Color.hex(0x90b060FF), Color.hex(0x606838FF), [0, 40], [0.0, 0.3], [0, ALTITUDE_MAX], false, [TYPE_TOXIC]),
+	Biome.new("Cratères Acides", Color.hex(0x70a050FF), Color.hex(0x405828FF), [-50, 100], [0.0, 0.5], [0, ALTITUDE_MAX], false, [TYPE_TOXIC]),
 
 	# --- RIVIÈRES TOXIQUES ---
 	Biome.new("Rivière Acide", Color.hex(0x80ff00FF), Color.hex(0x406018FF), [10, 80], [0.1, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TOXIC], true, true),
@@ -111,11 +113,14 @@ var BIOMES = [
 	Biome.new("Croûte Basaltique Refroidie", Color.hex(0x404040FF), Color.hex(0x181818FF), [100, 400], [0.0, 1.0], [-200, 100], false, [TYPE_VOLCANIC]),
 
 	# --- TERRESTRE VOLCANIQUE ---
-	Biome.new("Plaines de Cendres", Color.hex(0x808080FF), Color.hex(0x484848FF), [20, 200], [0.0, 0.3], [0, 2000], false, [TYPE_VOLCANIC]),
-	Biome.new("Champs de Geysers", Color.hex(0xe0e0f0FF), Color.hex(0xb8b8c8FF), [100, 300], [0.5, 1.0], [500, 1500], true, [TYPE_VOLCANIC]),
+	Biome.new("Glace Volcanique", Color.hex(0xc0c0d0FF), Color.hex(0x888898FF), [-200, 0], [0.0, 1.0], [0, ALTITUDE_MAX], false, [TYPE_VOLCANIC]),
+	Biome.new("Toundra Volcanique", Color.hex(0x606068FF), Color.hex(0x383840FF), [0, 50], [0.3, 1.0], [0, ALTITUDE_MAX], false, [TYPE_VOLCANIC]),
+	Biome.new("Plaines de Cendres", Color.hex(0x808080FF), Color.hex(0x484848FF), [20, 200], [0.0, 0.4], [0, 2000], false, [TYPE_VOLCANIC]),
+	Biome.new("Champs de Geysers", Color.hex(0xe0e0f0FF), Color.hex(0xb8b8c8FF), [100, 300], [0.4, 1.0], [500, 1500], true, [TYPE_VOLCANIC]),
 	Biome.new("Volcan Actif (Sommet)", Color.hex(0xff0000FF), Color.hex(0x400000FF), [200, 1000], [0.0, 1.0], [2000, ALTITUDE_MAX], false, [TYPE_VOLCANIC]),
 	Biome.new("Obsidienne (Verre Volcanique)", Color.hex(0x200040FF), Color.hex(0x080010FF), [50, 200], [0.0, 1.0], [1000, 3000], false, [TYPE_VOLCANIC]),
-	Biome.new("Désert de Soufre Jaune", Color.hex(0xf0e000FF), Color.hex(0xa89830FF), [50, 150], [0.0, 0.2], [500, 2500], false, [TYPE_VOLCANIC]),
+	Biome.new("Désert de Soufre Jaune", Color.hex(0xf0e000FF), Color.hex(0xa89830FF), [50, 150], [0.0, 0.3], [500, 2500], false, [TYPE_VOLCANIC]),
+	Biome.new("Caldeira Fumante", Color.hex(0xa06050FF), Color.hex(0x604030FF), [300, 800], [0.0, 0.5], [0, ALTITUDE_MAX], false, [TYPE_VOLCANIC]),
 
 	# --- RIVIÈRES DE LAVE (Requis pour river_map) ---
 	Biome.new("Rivière de Lave", Color.hex(0xff4000FF), Color.hex(0xb03010FF), [300, 1500], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_VOLCANIC], true, true),
@@ -141,14 +146,17 @@ var BIOMES = [
 	
 	# --- AQUATIQUE MORT (eaux sombres et polluées) ---
 	Biome.new("Océan Mort (Gris)", Color.hex(0x505860FF), Color.hex(0x282c30FF), [-21, 40], [0.0, 1.0], [-ALTITUDE_MAX, -200], true, [TYPE_DEAD]),
-	Biome.new("Marécage Luminescent", Color.hex(0x40ff80FF), Color.hex(0x205838FF), [10, 30], [0.0, 1.0], [-200, 50], true, [TYPE_DEAD], true, true),
+	Biome.new("Marécage Luminescent", Color.hex(0x40ff80FF), Color.hex(0x205838FF), [10, 30], [0.6, 1.0], [-200, 50], true, [TYPE_DEAD], true, true),
 	
 	# --- TERRESTRE MORT ---
-	Biome.new("Terres Désolées (Wasteland)", Color.hex(0x706860FF), Color.hex(0x403830FF), [-20, 50], [0.0, 0.3], [0, 2000], false, [TYPE_DEAD]),
-	Biome.new("Désert de Sel", Color.hex(0xf8f0e8FF), Color.hex(0xe0d8d0FF), [0, 60], [0.0, 0.1], [-500, 500], false, [TYPE_DEAD]),
-	Biome.new("Forêt Morte (Arbres Noirs)", Color.hex(0x383030FF), Color.hex(0x181010FF), [-10, 40], [0.2, 0.6], [0, 1500], false, [TYPE_DEAD]),
+	Biome.new("Toundra Morte", Color.hex(0x606068FF), Color.hex(0x383840FF), [-200, -20], [0.0, 0.5], [0, ALTITUDE_MAX], false, [TYPE_DEAD]),
+	Biome.new("Terres Désolées (Wasteland)", Color.hex(0x706860FF), Color.hex(0x403830FF), [-20, 50], [0.0, 0.4], [0, 2000], false, [TYPE_DEAD]),
+	Biome.new("Désert de Sel", Color.hex(0xf8f0e8FF), Color.hex(0xe0d8d0FF), [0, 60], [0.0, 0.2], [-500, 500], false, [TYPE_DEAD]),
+	Biome.new("Forêt Morte (Arbres Noirs)", Color.hex(0x383030FF), Color.hex(0x181010FF), [-10, 40], [0.3, 0.7], [0, 1500], false, [TYPE_DEAD]),
 	Biome.new("Cratère Nucléaire", Color.hex(0x00e000FF), Color.hex(0x203820FF), [-50, 100], [0.0, 1.0], [-500, 500], false, [TYPE_DEAD]),
-	Biome.new("Plaines de Cendres Grises", Color.hex(0x787878FF), Color.hex(0x484848FF), [-30, 30], [0.0, 0.2], [0, 3000], false, [TYPE_DEAD]),
+	Biome.new("Plaines de Cendres Grises", Color.hex(0x787878FF), Color.hex(0x484848FF), [-30, 30], [0.0, 0.3], [0, 3000], false, [TYPE_DEAD]),
+	Biome.new("Désert Radioactif", Color.hex(0x90a080FF), Color.hex(0x586048FF), [30, 200], [0.0, 0.4], [0, ALTITUDE_MAX], false, [TYPE_DEAD]),
+	Biome.new("Montagnes Mortes", Color.hex(0x504850FF), Color.hex(0x282028FF), [-200, 200], [0.0, 1.0], [3000, ALTITUDE_MAX], false, [TYPE_DEAD]),
 
 	# --- RIVIÈRES MORTES ---
 	Biome.new("Rivière de Boue", Color.hex(0x906040FF), Color.hex(0x503020FF), [-21, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
