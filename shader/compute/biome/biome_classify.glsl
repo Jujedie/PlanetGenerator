@@ -313,14 +313,19 @@ void main() {
         humid_with_noise = clamp(humidity + humid_noise, 0.0, 1.0);
     }
     
-    // === RECHERCHE DU MEILLEUR BIOME ===
-    // Constante spéciale pour "aucun biome trouvé"
+    // === RECHERCHE DES MEILLEURS BIOMES (TOP N CANDIDATS) ===
+    // Au lieu de sélectionner un unique "meilleur" biome, on collecte les N meilleurs
+    // candidats et on utilise du bruit spatial multi-échelle pour choisir parmi eux.
+    // Cela crée de la diversité naturelle tout en gardant des ensembles continus.
     const uint NO_BIOME_FOUND = 0xFFFFFFFFu;
     const vec4 ERROR_COLOR = vec4(1.0, 0.0, 0.0, 1.0);  // ROUGE = erreur/pas de biome
+    const int MAX_CANDIDATES = 5;
     
-    uint best_biome_id = NO_BIOME_FOUND;
-    float best_score = 0.0;
-    vec4 best_color = ERROR_COLOR;  // Rouge par défaut si aucun biome trouvé
+    // Tableau de candidats (triés par score décroissant)
+    uint candidate_ids[5];
+    float candidate_scores[5];
+    vec4 candidate_colors[5];
+    int num_candidates = 0;
     
     for (uint i = 0u; i < biome_count; i++) {
         BiomeData biome = biomes[i];
@@ -336,29 +341,103 @@ void main() {
             atmosphere_type
         );
         
-        // Si le score est > 0 (biome compatible), ajouter une variation spatiale cohérente
-        // pour créer de la diversité entre biomes similaires
         if (score > 0.0) {
-            // Variation basée sur position + ID du biome (0-1000 scale pour grandes zones cohérentes)
-            vec2 biome_noise_pos = vec2(pixel) * 0.003 + vec2(float(i) * 123.456, float(seed) * 0.234);
-            float biome_variation = snoise(biome_noise_pos) * 0.25;  // ±0.25 de variation (réduit)
+            // Insertion triée dans le tableau de candidats (top N)
+            int insert_pos = num_candidates;
+            for (int j = 0; j < num_candidates; j++) {
+                if (score > candidate_scores[j]) {
+                    insert_pos = j;
+                    break;
+                }
+            }
             
-            // Ajouter la variation au score (permet aux biomes compatibles de "se battre")
-            score += biome_variation;
-        }
-        
-        if (score > best_score) {
-            best_score = score;
-            best_biome_id = i;
-            best_color = biome.color;
+            // Décaler les éléments pour faire de la place
+            int limit = min(num_candidates, MAX_CANDIDATES - 1);
+            for (int j = limit; j > insert_pos; j--) {
+                candidate_ids[j] = candidate_ids[j - 1];
+                candidate_scores[j] = candidate_scores[j - 1];
+                candidate_colors[j] = candidate_colors[j - 1];
+            }
+            
+            // Insérer le nouveau candidat
+            if (insert_pos < MAX_CANDIDATES) {
+                candidate_ids[insert_pos] = i;
+                candidate_scores[insert_pos] = score;
+                candidate_colors[insert_pos] = biome.color;
+                num_candidates = min(num_candidates + 1, MAX_CANDIDATES);
+            }
         }
     }
     
-    // Si aucun biome trouvé, garder le rouge et un ID spécial
-    // Cela indique un problème de configuration des biomes pour ce type de planète
-    if (best_biome_id == NO_BIOME_FOUND) {
-        best_biome_id = 0xFFFFu;  // ID invalide pour debug
-        // best_color reste rouge
+    // === SÉLECTION PARMI LES CANDIDATS ===
+    uint best_biome_id = NO_BIOME_FOUND;
+    vec4 best_color = ERROR_COLOR;
+    
+    if (num_candidates == 0) {
+        // Aucun biome trouvé
+        best_biome_id = 0xFFFFu;
+    }
+    else if (num_candidates == 1) {
+        // Un seul candidat, pas de choix à faire
+        best_biome_id = candidate_ids[0];
+        best_color = candidate_colors[0];
+    }
+    else {
+        // Plusieurs candidats : utiliser du bruit spatial multi-échelle
+        // pour sélectionner parmi eux, créant des territoires naturels
+        
+        // Bruit à grande échelle (territoires de biomes, ~continent)
+        vec2 large_pos = vec2(pixel) * 0.002 + vec2(float(seed) * 0.137);
+        float large_noise = snoise(large_pos);
+        
+        // Bruit à moyenne échelle (régions, ~pays)
+        vec2 medium_pos = vec2(pixel) * 0.008 + vec2(float(seed) * 0.891);
+        float medium_noise = snoise(medium_pos);
+        
+        // Bruit à petite échelle (frontières irrégulières)
+        vec2 small_pos = vec2(pixel) * 0.025 + vec2(float(seed) * 0.432);
+        float small_noise = snoise(small_pos);
+        
+        // Combinaison : grande échelle domine pour la continuité spatiale
+        float selection_noise = large_noise * 0.55 + medium_noise * 0.30 + small_noise * 0.15;
+        
+        // Normaliser le bruit vers [0, 1]
+        float selection = clamp(selection_noise * 0.5 + 0.5, 0.0, 1.0);
+        
+        // Déterminer le nombre de candidats viables (score suffisamment proche du meilleur)
+        float top_score = candidate_scores[0];
+        int viable_count = 1;
+        for (int j = 1; j < num_candidates; j++) {
+            // Un candidat est viable si son score est au moins 40% du meilleur
+            // Cela permet aux biomes proches en score de se battre pour le territoire
+            if (candidate_scores[j] >= top_score * 0.4) {
+                viable_count = j + 1;
+            }
+        }
+        
+        // Sélection pondérée par score parmi les candidats viables
+        // On calcule des poids normalisés et on utilise le bruit pour choisir
+        float total_weight = 0.0;
+        for (int j = 0; j < viable_count; j++) {
+            total_weight += candidate_scores[j];
+        }
+        
+        // Utiliser le bruit pour parcourir les poids cumulés
+        float threshold = selection * total_weight;
+        float cumulative = 0.0;
+        int selected = 0;
+        
+        for (int j = 0; j < viable_count; j++) {
+            cumulative += candidate_scores[j];
+            if (threshold <= cumulative) {
+                selected = j;
+                break;
+            }
+            selected = j;  // Dernier viable si on dépasse
+        }
+        
+        best_biome_id = candidate_ids[selected];
+        best_color = candidate_colors[selected];
     }
     
     // === ÉCRITURE DES RÉSULTATS ===
