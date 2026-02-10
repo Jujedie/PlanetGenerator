@@ -11,7 +11,7 @@
 // - Atténuation océanique
 //
 // Entrées :
-// - geo_texture (R=height, A=water_height)
+// - geo_texture (R=height) - altitude pour gradient adiabatique
 // - Paramètres UBO (seed, avg_temperature, sea_level, etc.)
 //
 // Sorties :
@@ -231,7 +231,6 @@ void main() {
     // Lire les données géographiques
     vec4 geo = imageLoad(geo_texture, pixel);
     float height = geo.r;           // Altitude en mètres
-    float water_height = geo.a;     // Colonne d'eau (>0 = eau)
     
     // Calculer la latitude normalisée [0, 1] : 0=équateur, 1=pôles
     float lat_normalized = abs((float(pixel.y) / float(params.height)) - 0.5) * 2.0;
@@ -261,35 +260,32 @@ void main() {
     
     // === 3. Gradient d'altitude ===
     float altitude_temp = 0.0;
-    bool is_water = water_height > 0.0;
+    // NOTE: On utilise height < sea_level au lieu de water_height > 0
+    // car la température est calculée AVANT la phase eau.
+    // water_height (geo.a) est un indicateur brut de base_elevation,
+    // mais la vraie classification eau se fait APRÈS en tenant compte de la température.
+    bool is_below_sea = (height < params.sea_level);
     
-    if (!is_water) {
+    if (!is_below_sea) {
         float altitude_above_sea = max(0.0, height - params.sea_level);
         altitude_temp = LAPSE_RATE * (altitude_above_sea / 1000.0);
-        
-        // Sous le niveau de la mer (légère hausse)
-        if (height < params.sea_level) {
-            float depth_below_sea = params.sea_level - height;
-            altitude_temp = DEPTH_RATE * (depth_below_sea / 1000.0);
-        }
+    } else {
+        // Sous le niveau de la mer : température plus stable (fond marin ou futur océan)
+        float depth_below_sea = params.sea_level - height;
+        // Gradient modéré sous la mer (l'eau profonde est froide mais stable)
+        altitude_temp = -DEPTH_RATE * (depth_below_sea / 1000.0);
     }
     
     // === 4. Calcul final ===
     float temp = base_temp + longitudinal_variation + secondary_variation + local_variation + altitude_temp;
     
-    // Atténuation océanique (l'eau modère les températures)
-    if (is_water) {
+    // Atténuation pour les zones sous le niveau de la mer (futur océan)
+    // L'eau modère les températures : attire vers la moyenne
+    if (is_below_sea) {
         temp = temp * OCEAN_DAMPING + params.avg_temperature * (1.0 - OCEAN_DAMPING);
     }
     
-    // Clamp selon type d'atmosphère
-    if (params.atmosphere_type == 3u) {
-        // Sans atmosphère : températures extrêmes
-        temp = clamp(temp, -200.0, 200.0);
-    } else {
-        // Avec atmosphère : limites terrestres
-        temp = clamp(temp, -80.0, 60.0);
-    }
+    temp = clamp(temp, -200.0, 200.0);
     
     // === 5. Écriture des résultats ===
     
