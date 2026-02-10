@@ -22,10 +22,10 @@ var BIOMES = [
 	# ==========================================================================
 
 	# --- OCÉANS & BATHYMÉTRIE (couleurs foncées réalistes) ---
-	Biome.new("Abysses", Color.hex(0x0a0a2aFF), Color.hex(0x020408FF), [-10, 100], [0.0, 1.0], [-ALTITUDE_MAX, -6000], true, [TYPE_TERRAN]),
-	Biome.new("Plaine Abyssale", Color.hex(0x0f1640FF), Color.hex(0x06101cFF), [-10, 100], [0.0, 1.0], [-6000, -2000], true, [TYPE_TERRAN]),
-	Biome.new("Océan Profond", Color.hex(0x1a2d66FF), Color.hex(0x0c1a30FF), [-10, 100], [0.0, 1.0], [-2000, -200], true, [TYPE_TERRAN]),
-	Biome.new("Plateau Continental", Color.hex(0x2d4a9eFF), Color.hex(0x1a3050FF), [-10, 100], [0.0, 1.0], [-200, -50], true, [TYPE_TERRAN]),
+	Biome.new("Abysses", Color.hex(0x0a0a2aFF), Color.hex(0x020408FF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, -6000], true, [TYPE_TERRAN]),
+	Biome.new("Plaine Abyssale", Color.hex(0x0f1640FF), Color.hex(0x06101cFF), [-21, 100], [0.0, 1.0], [-6000, -2000], true, [TYPE_TERRAN]),
+	Biome.new("Océan Profond", Color.hex(0x1a2d66FF), Color.hex(0x0c1a30FF), [-21, 100], [0.0, 1.0], [-2000, -200], true, [TYPE_TERRAN]),
+	Biome.new("Plateau Continental", Color.hex(0x2d4a9eFF), Color.hex(0x1a3050FF), [-21, 100], [0.0, 1.0], [-200, -50], true, [TYPE_TERRAN]),
 	
 	# --- CÔTES & EAUX PEU PROFONDES ---
 	Biome.new("Récif Corallien", Color.hex(0x00e0c0FF), Color.hex(0x20a090FF), [24, 35], [0.0, 1.0], [-50, 0], true, [TYPE_TERRAN]),
@@ -55,16 +55,16 @@ var BIOMES = [
 	Biome.new("Marécage Tempéré", Color.hex(0x508040FF), Color.hex(0x384830FF), [5, 30], [0.70, 1.0], [0, 1500], true, [TYPE_TERRAN], true),
 
 	# --- TERRES : CLIMATS CHAUDS & ARIDES ---
-	Biome.new("Jungle Tropicale", Color.hex(0x00a000FF), Color.hex(0x1c4c18FF), [18, 50], [0.55, 1.0], [0, 2000], false, [TYPE_TERRAN]),
-	Biome.new("Savane", Color.hex(0xe8d880FF), Color.hex(0xb8a860FF), [18, 45], [0.15, 0.45], [0, 2500], false, [TYPE_TERRAN]),
-	Biome.new("Brousse (Bush)", Color.hex(0xc8b860FF), Color.hex(0x908848FF), [18, 42], [0.10, 0.30], [0, 1500], false, [TYPE_TERRAN]),
-	Biome.new("Désert semi-aride", Color.hex(0xd8c080FF), Color.hex(0xc8a870FF), [15, 48], [0.05, 0.20], [0, 2500], false, [TYPE_TERRAN]),
-	Biome.new("Désert de Sable", Color.hex(0xf0d8a0FF), Color.hex(0xe0c890FF), [22, 55], [0.0, 0.15], [0, 1500], false, [TYPE_TERRAN]),
-	Biome.new("Désert Rocheux (Badlands)", Color.hex(0xd09050FF), Color.hex(0xa87048FF), [15, 50], [0.0, 0.20], [200, 3000], false, [TYPE_TERRAN]),
-	Biome.new("Désert Extrême", Color.hex(0xb05830FF), Color.hex(0x8a4828FF), [45, 200], [0.0, 0.10], [0, 5000], false, [TYPE_TERRAN]),
+	Biome.new("Jungle Tropicale", Color.hex(0x00a000FF), Color.hex(0x1c4c18FF), [18, 50], [0.55, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Savane", Color.hex(0xe8d880FF), Color.hex(0xb8a860FF), [18, 45], [0.15, 0.45], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Brousse (Bush)", Color.hex(0xc8b860FF), Color.hex(0x908848FF), [18, 42], [0.10, 0.30], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Désert semi-aride", Color.hex(0xd8c080FF), Color.hex(0xc8a870FF), [15, 48], [0.05, 0.20], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Désert de Sable", Color.hex(0xf0d8a0FF), Color.hex(0xe0c890FF), [22, 55], [0.0, 0.15], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Désert Rocheux (Badlands)", Color.hex(0xd09050FF), Color.hex(0xa87048FF), [15, 50], [0.0, 0.20], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Désert Extrême", Color.hex(0xb05830FF), Color.hex(0x8a4828FF), [45, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
 	
 	# --- EAUX DOUCES INTÉRIEURES (Surface) ---
-	Biome.new("Oasis", Color.hex(0x60e060FF), Color.hex(0x388038FF), [30, 50], [0.0, 0.3], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
+	Biome.new("Oasis", Color.hex(0x60e060FF), Color.hex(0x388038FF), [0, 50], [0.0, 0.3], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
 	Biome.new("Cénote (Gouffre)", Color.hex(0x2080a0FF), Color.hex(0x185060FF), [20, 35], [0.5, 1.0], [--ALTITUDE_MAX, 0], true, [TYPE_TERRAN], true),
 	Biome.new("Bayou (Marais Chaud)", Color.hex(0x506828FF), Color.hex(0x384020FF), [25, 35], [0.8, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
 
@@ -140,7 +140,7 @@ var BIOMES = [
 	# ==========================================================================
 	
 	# --- AQUATIQUE MORT (eaux sombres et polluées) ---
-	Biome.new("Océan Mort (Gris)", Color.hex(0x505860FF), Color.hex(0x282c30FF), [-10, 40], [0.0, 1.0], [-ALTITUDE_MAX, -200], true, [TYPE_DEAD]),
+	Biome.new("Océan Mort (Gris)", Color.hex(0x505860FF), Color.hex(0x282c30FF), [-21, 40], [0.0, 1.0], [-ALTITUDE_MAX, -200], true, [TYPE_DEAD]),
 	Biome.new("Marécage Luminescent", Color.hex(0x40ff80FF), Color.hex(0x205838FF), [10, 30], [0.0, 1.0], [-200, 50], true, [TYPE_DEAD], true, true),
 	
 	# --- TERRESTRE MORT ---
@@ -151,9 +151,9 @@ var BIOMES = [
 	Biome.new("Plaines de Cendres Grises", Color.hex(0x787878FF), Color.hex(0x484848FF), [-30, 30], [0.0, 0.2], [0, 3000], false, [TYPE_DEAD]),
 
 	# --- RIVIÈRES MORTES ---
-	Biome.new("Rivière de Boue", Color.hex(0x906040FF), Color.hex(0x503020FF), [-10, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
-	Biome.new("Fleuve Pollué", Color.hex(0x608040FF), Color.hex(0x303820FF), [-10, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
-	Biome.new("Lac Irradié", Color.hex(0xc0ff40FF), Color.hex(0x608030FF), [-10, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
+	Biome.new("Rivière de Boue", Color.hex(0x906040FF), Color.hex(0x503020FF), [-21, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
+	Biome.new("Fleuve Pollué", Color.hex(0x608040FF), Color.hex(0x303820FF), [-21, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
+	Biome.new("Lac Irradié", Color.hex(0xc0ff40FF), Color.hex(0x608030FF), [-21, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
 
 	# ==========================================================================
 	# TYPE 5 : STÉRILE (Planète rocheuse morte)
@@ -674,3 +674,224 @@ func getElevationColor(elevation: int, grey_version : bool = false) -> Color:
 			if elevation <= key:
 				return COULEURS_ELEVATIONS_GREY[key]
 		return COULEURS_ELEVATIONS_GREY[ALTITUDE_MAX]
+
+
+# ============================================================================
+# PALETTES DYNAMIQUES BASÉES SUR LES BIOMES
+# ============================================================================
+# Génère des palettes de couleur pour la température et les précipitations
+# en analysant les biomes actifs pour le type de planète courant.
+# Chaque seuil est dérivé des intervalles des biomes, et la couleur à ce
+# seuil est la moyenne pondérée des couleurs des biomes actifs
+# (pondérée par l'inverse de la largeur de leur plage → favorise la spécificité).
+# ============================================================================
+
+## Construit une palette de couleurs de température dynamique basée sur les biomes.
+## Structure SSBO (std430):
+## - Header: uint entry_count + 3×padding = 16 bytes
+## - Entries[]: float threshold, float r, float g, float b = 16 bytes chacune
+## @param planet_type: Type de planète (0=Terran, 1=Toxic, etc.)
+## @return PackedByteArray pour le GPU
+func build_temperature_palette(planet_type: int) -> PackedByteArray:
+	var biomes_list = get_biomes_for_gpu(planet_type)
+	
+	# Collecter tous les seuils de température uniques depuis les biomes
+	var temp_set: Dictionary = {}
+	for biome in biomes_list:
+		var temp = biome.get_interval_temp()
+		temp_set[temp[0]] = true
+		temp_set[temp[1]] = true
+	
+	var raw_temps: Array = temp_set.keys()
+	raw_temps.sort()
+	
+	if raw_temps.size() < 2:
+		raw_temps = [-200, 0, 200]
+	
+	# Ajouter des points intermédiaires entre les seuils espacés pour un gradient lisse
+	var all_temps: Array = []
+	for i in range(raw_temps.size()):
+		all_temps.append(raw_temps[i])
+		if i < raw_temps.size() - 1:
+			var gap = raw_temps[i + 1] - raw_temps[i]
+			if gap > 30:
+				# Ajouter 1-2 points intermédiaires
+				all_temps.append(raw_temps[i] + int(gap / 3))
+				all_temps.append(raw_temps[i] + int(2 * gap / 3))
+			elif gap > 15:
+				all_temps.append(raw_temps[i] + int(gap / 2))
+	
+	all_temps.sort()
+	# Dédupliquer
+	var unique_temps: Array = []
+	for t in all_temps:
+		if unique_temps.size() == 0 or unique_temps[-1] != t:
+			unique_temps.append(t)
+	
+	# Pour chaque seuil, interpoler depuis le dictionnaire COULEURS_TEMPERATURE
+	var palette_entries: Array = []
+	
+	for t in unique_temps:
+		# Chercher la couleur exacte ou interpoler entre deux clés
+		var temp_keys = COULEURS_TEMPERATURE.keys()
+		temp_keys.sort()
+		
+		var color: Color
+		if COULEURS_TEMPERATURE.has(t):
+			# Correspondance exacte
+			color = COULEURS_TEMPERATURE[t]
+		else:
+			# Interpoler entre les deux clés les plus proches
+			var lower_key = null
+			var upper_key = null
+			
+			for key in temp_keys:
+				if key <= t:
+					lower_key = key
+				if key >= t and upper_key == null:
+					upper_key = key
+					break
+			
+			if lower_key != null and upper_key != null and lower_key != upper_key:
+				var t_ratio = float(t - lower_key) / float(upper_key - lower_key)
+				color = COULEURS_TEMPERATURE[lower_key].lerp(COULEURS_TEMPERATURE[upper_key], t_ratio)
+			elif lower_key != null:
+				color = COULEURS_TEMPERATURE[lower_key]
+			elif upper_key != null:
+				color = COULEURS_TEMPERATURE[upper_key]
+			else:
+				color = Color(1.0, 0.0, 1.0)  # Magenta fallback
+		
+		palette_entries.append({
+			"threshold": float(t),
+			"r": color.r,
+			"g": color.g,
+			"b": color.b
+		})
+	
+	# Construire le buffer SSBO
+	var entry_count: int = palette_entries.size()
+	var header_size: int = 16
+	var entry_size: int = 16
+	var total_size: int = header_size + entry_count * entry_size
+	
+	var buffer: PackedByteArray = PackedByteArray()
+	buffer.resize(total_size)
+	buffer.fill(0)
+	
+	buffer.encode_u32(0, entry_count)
+	
+	var offset: int = header_size
+	for entry in palette_entries:
+		buffer.encode_float(offset, entry["threshold"])
+		buffer.encode_float(offset + 4, entry["r"])
+		buffer.encode_float(offset + 8, entry["g"])
+		buffer.encode_float(offset + 12, entry["b"])
+		offset += entry_size
+	
+	print("[Enum] ✅ Palette température dynamique: ", entry_count, " entrées (type=", planet_type, ")")
+	return buffer
+
+
+## Construit une palette de couleurs de précipitation dynamique basée sur les biomes.
+## Même structure SSBO que la palette de température.
+## @param planet_type: Type de planète (0=Terran, 1=Toxic, etc.)
+## @return PackedByteArray pour le GPU
+func build_precipitation_palette(planet_type: int) -> PackedByteArray:
+	var biomes_list = get_biomes_for_gpu(planet_type)
+	
+	# Collecter tous les seuils d'humidité uniques depuis les biomes
+	var humid_set: Dictionary = {}
+	for biome in biomes_list:
+		var precip = biome.get_interval_precipitation()
+		humid_set[precip[0]] = true
+		humid_set[precip[1]] = true
+	
+	var raw_humids: Array = humid_set.keys()
+	raw_humids.sort()
+	
+	if raw_humids.size() < 2:
+		raw_humids = [0.0, 0.5, 1.0]
+	
+	# Ajouter des points intermédiaires pour un gradient lisse
+	var all_humids: Array = []
+	for i in range(raw_humids.size()):
+		all_humids.append(raw_humids[i])
+		if i < raw_humids.size() - 1:
+			var gap: float = raw_humids[i + 1] - raw_humids[i]
+			if gap > 0.15:
+				all_humids.append(raw_humids[i] + gap / 3.0)
+				all_humids.append(raw_humids[i] + 2.0 * gap / 3.0)
+			elif gap > 0.08:
+				all_humids.append(raw_humids[i] + gap / 2.0)
+	
+	all_humids.sort()
+	# Dédupliquer (float: tolérance 0.001)
+	var unique_humids: Array = []
+	for h in all_humids:
+		if unique_humids.size() == 0 or abs(unique_humids[-1] - h) > 0.001:
+			unique_humids.append(h)
+	
+	# Pour chaque seuil, interpoler depuis le dictionnaire COULEUR_PRECIPITATION
+	var palette_entries: Array = []
+	
+	for h in unique_humids:
+		# Chercher la couleur exacte ou interpoler entre deux clés
+		var precip_keys = COULEUR_PRECIPITATION.keys()
+		precip_keys.sort()
+		
+		var color: Color
+		if COULEUR_PRECIPITATION.has(h):
+			# Correspondance exacte
+			color = COULEUR_PRECIPITATION[h]
+		else:
+			# Interpoler entre les deux clés les plus proches
+			var lower_key = null
+			var upper_key = null
+			
+			for key in precip_keys:
+				if key <= h:
+					lower_key = key
+				if key >= h and upper_key == null:
+					upper_key = key
+					break
+			
+			if lower_key != null and upper_key != null and lower_key != upper_key:
+				var t_ratio = (h - lower_key) / (upper_key - lower_key)
+				color = COULEUR_PRECIPITATION[lower_key].lerp(COULEUR_PRECIPITATION[upper_key], t_ratio)
+			elif lower_key != null:
+				color = COULEUR_PRECIPITATION[lower_key]
+			elif upper_key != null:
+				color = COULEUR_PRECIPITATION[upper_key]
+			else:
+				color = Color(1.0, 0.0, 1.0)  # Magenta fallback
+		
+		palette_entries.append({
+			"threshold": h,
+			"r": color.r,
+			"g": color.g,
+			"b": color.b
+		})
+	
+	# Construire le buffer SSBO
+	var entry_count: int = palette_entries.size()
+	var header_size: int = 16
+	var entry_size: int = 16
+	var total_size: int = header_size + entry_count * entry_size
+	
+	var buffer: PackedByteArray = PackedByteArray()
+	buffer.resize(total_size)
+	buffer.fill(0)
+	
+	buffer.encode_u32(0, entry_count)
+	
+	var offset: int = header_size
+	for entry in palette_entries:
+		buffer.encode_float(offset, entry["threshold"])
+		buffer.encode_float(offset + 4, entry["r"])
+		buffer.encode_float(offset + 8, entry["g"])
+		buffer.encode_float(offset + 12, entry["b"])
+		offset += entry_size
+	
+	print("[Enum] ✅ Palette précipitation dynamique: ", entry_count, " entrées (type=", planet_type, ")")
+	return buffer
