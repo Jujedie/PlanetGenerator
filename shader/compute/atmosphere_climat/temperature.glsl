@@ -186,7 +186,8 @@ vec3 getCylindricalCoords(ivec2 pixel, uint w, uint h, float cylinder_radius) {
     float angle = (float(pixel.x) / float(w)) * TAU;
     float cx = cos(angle) * cylinder_radius;
     float cz = sin(angle) * cylinder_radius;
-    float cy = (float(pixel.y) / float(h) - 0.5) * cylinder_radius * 2.0;
+    // CORRIGÉ : facteur PI au lieu de 2.0 pour isotropie du bruit
+    float cy = (float(pixel.y) / float(h) - 0.5) * cylinder_radius * PI;
     return vec3(cx, cy, cz);
 }
 

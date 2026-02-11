@@ -195,7 +195,9 @@ vec3 getCylindricalCoords(ivec2 pixel, uint w, uint h, float radius) {
     float angle = (float(pixel.x) / float(w)) * TAU;
     return vec3(
         cos(angle) * radius,
-        (float(pixel.y) / float(h) - 0.5) * radius * 2.0,
+        // CORRIGÉ : facteur PI au lieu de 2.0 pour isotropie du bruit
+        // L'ancien facteur compressait l'axe Y, créant des bandes horizontales
+        (float(pixel.y) / float(h) - 0.5) * radius * PI,
         sin(angle) * radius
     );
 }
@@ -260,15 +262,22 @@ void main() {
     // frontières irrégulières et des formes étirées au lieu de blobs ronds.
     
     float noise_base = 1.0 / params.cylinder_radius;
-    float warp_scale = noise_base * 0.6;
+    float warp_scale = noise_base * 0.5;
     
-    // Première passe de warping
-    float warp_x = fbm(coords * warp_scale, 3, 0.5, 2.0, params.seed + 5000u);
-    float warp_y = fbm(coords * warp_scale + vec3(5.2, 1.3, 2.8), 3, 0.5, 2.0, params.seed + 5100u);
-    float warp_z = fbm(coords * warp_scale + vec3(2.7, 8.1, 4.3), 3, 0.5, 2.0, params.seed + 5200u);
+    // Première passe de warping (grande échelle)
+    float warp_x = fbm(coords * warp_scale, 4, 0.5, 2.0, params.seed + 5000u);
+    float warp_y = fbm(coords * warp_scale + vec3(5.2, 1.3, 2.8), 4, 0.5, 2.0, params.seed + 5100u);
+    float warp_z = fbm(coords * warp_scale + vec3(2.7, 8.1, 4.3), 4, 0.5, 2.0, params.seed + 5200u);
     
-    float warp_strength = 0.35 * params.cylinder_radius;
+    // Warp plus fort pour briser les bandes horizontales
+    float warp_strength = 0.6 * params.cylinder_radius;
     vec3 warped_coords = coords + vec3(warp_x, warp_y, warp_z) * warp_strength;
+    
+    // Deuxième passe de warping (cascade) pour encore plus d'irrégularité
+    float warp2_x = fbm(warped_coords * warp_scale * 1.5, 3, 0.5, 2.0, params.seed + 6000u);
+    float warp2_y = fbm(warped_coords * warp_scale * 1.5 + vec3(3.1, 7.4, 1.9), 3, 0.5, 2.0, params.seed + 6100u);
+    float warp2_z = fbm(warped_coords * warp_scale * 1.5 + vec3(8.3, 2.6, 5.7), 3, 0.5, 2.0, params.seed + 6200u);
+    warped_coords += vec3(warp2_x, warp2_y, warp2_z) * warp_strength * 0.4;
     
     // =========================================================================
     // BRUIT STRUCTURÉ - 4 COUCHES avec domain warping et ridge noise
@@ -286,22 +295,29 @@ void main() {
     // --- COUCHE 4 : Ridge noise (contours anguleux, brise la rondeur) ---
     float ridge = ridgedFbm(warped_coords * noise_base * 1.5, 4, 0.5, 2.0, params.seed + 4000u);
     
-    // Combinaison pondérée avec ridge noise pour casser la rondeur
-    // Le ridge noise crée des frontières en crêtes au lieu de transitions lisses
-    float noise = continental * 0.45 + regional * 0.20 + local_detail * 0.15 + ridge * 0.20;
+    // Combinaison pondérée : continental domine pour créer de grandes zones sec/humide
+    // Le ridge noise crée des frontières anguleuses au lieu de transitions lisses
+    float noise = continental * 0.50 + regional * 0.18 + local_detail * 0.07 + ridge * 0.25;
     
     // =========================================================================
-    // MODULATION LATITUDINALE - Cellules de Hadley simplifiées
+    // MODULATION LATITUDINALE - Cellules de Hadley modulées par du bruit
     // =========================================================================
+    // Bruit de modulation : ondule les bandes latitudinales pour casser la rigidité
+    // Ce bruit déplace la latitude "effective" de ±8° environ
+    float lat_warp = fbm(warped_coords * noise_base * 0.4, 3, 0.5, 2.0, params.seed + 7000u);
+    float warped_lat = clamp(lat + lat_warp * 0.15, 0.0, 1.0);
+    
+    // Amplitude de modulation réduite pour laisser le bruit continental dominer
+    // On veut des tendances latitudinales, pas des bandes dures
     float lat_moisture = 0.0;
-    // ITCZ - Équateur : boost humidité
-    lat_moisture += 0.25 * exp(-pow((lat - 0.0) / 0.12, 2.0));
-    // Subtropicaux : forte réduction (déserts à ~30° = lat 0.33)
-    lat_moisture -= 0.30 * exp(-pow((lat - 0.33) / 0.10, 2.0));
-    // Latitudes moyennes : boost humidité (~55° = lat 0.61)
-    lat_moisture += 0.15 * exp(-pow((lat - 0.61) / 0.12, 2.0));
-    // Pôles : sec
-    lat_moisture -= 0.20 * smoothstep(0.75, 1.0, lat);
+    // ITCZ - Équateur : boost humidité (réduit 0.25→0.15)
+    lat_moisture += 0.15 * exp(-pow((warped_lat - 0.0) / 0.15, 2.0));
+    // Subtropicaux : réduction modérée (réduit 0.30→0.18, élargi 0.10→0.14)
+    lat_moisture -= 0.18 * exp(-pow((warped_lat - 0.33) / 0.14, 2.0));
+    // Latitudes moyennes : léger boost (réduit 0.15→0.10)
+    lat_moisture += 0.10 * exp(-pow((warped_lat - 0.61) / 0.14, 2.0));
+    // Pôles : sec (réduit 0.20→0.12)
+    lat_moisture -= 0.12 * smoothstep(0.75, 1.0, warped_lat);
     
     // =========================================================================
     // INFLUENCE DE LA GÉOGRAPHIE
