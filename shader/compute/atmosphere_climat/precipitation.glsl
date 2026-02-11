@@ -310,14 +310,14 @@ void main() {
     // Amplitude de modulation réduite pour laisser le bruit continental dominer
     // On veut des tendances latitudinales, pas des bandes dures
     float lat_moisture = 0.0;
-    // ITCZ - Équateur : boost humidité (réduit 0.25→0.15)
+    // ITCZ - Équateur : boost humidité
     lat_moisture += 0.15 * exp(-pow((warped_lat - 0.0) / 0.15, 2.0));
-    // Subtropicaux : réduction modérée (réduit 0.30→0.18, élargi 0.10→0.14)
+    // Subtropicaux : réduction modérée (déserts à ~30°)
     lat_moisture -= 0.18 * exp(-pow((warped_lat - 0.33) / 0.14, 2.0));
-    // Latitudes moyennes : léger boost (réduit 0.15→0.10)
+    // Latitudes moyennes : léger boost (~55°)
     lat_moisture += 0.10 * exp(-pow((warped_lat - 0.61) / 0.14, 2.0));
-    // Pôles : sec (réduit 0.20→0.12)
-    lat_moisture -= 0.12 * smoothstep(0.75, 1.0, warped_lat);
+    // Pôles : beaucoup plus sec - démarrage plus tôt et plus fort
+    lat_moisture -= 0.30 * smoothstep(0.60, 0.90, warped_lat);
     
     // =========================================================================
     // INFLUENCE DE LA GÉOGRAPHIE
@@ -332,7 +332,7 @@ void main() {
     
     // L'altitude réduit les précipitations (effet d'ombre pluviométrique simplifié)
     float altitude_above_sea = max(0.0, height - params.sea_level);
-    float altitude_penalty = -0.08 * smoothstep(0.0, 5000.0, altitude_above_sea);
+    float altitude_penalty = -0.12 * smoothstep(0.0, 4000.0, altitude_above_sea);
     
     // =========================================================================
     // ASSEMBLAGE ET NORMALISATION
@@ -353,16 +353,20 @@ void main() {
     // =========================================================================
     // APPLICATION DE avg_precipitation
     // =========================================================================
-    // Amplification réduite (3.0 au lieu de 5.0) pour éviter que les extrêmes
-    // ne soient atteints trop rapidement quand on s'éloigne de avg=0.5
-    //   avg=0.0 → power = 8.0  → très sec mais pas totalement écrasé
-    //   avg=0.3 → power = 1.74 → majorité sèche avec zones humides
-    //   avg=0.5 → power = 1.0  → distribution équilibrée
-    //   avg=0.7 → power ≈ 0.57 → majorité humide
-    //   avg=1.0 → power ≈ 0.125 → très humide
+    // Amplification forte (5.0) pour que avg=0 soit vraiment sec
+    //   avg=0.0 → power = exp2(2.5) ≈ 5.66 → très sec (0.8^5.66 ≈ 0.26)
+    //   avg=0.2 → power = exp2(1.5) ≈ 2.83 → sec
+    //   avg=0.5 → power = 1.0         → distribution équilibrée
+    //   avg=0.7 → power ≈ 0.35        → majorité humide
+    //   avg=1.0 → power ≈ 0.18        → très humide
     
-    float power = exp2((0.5 - params.avg_precipitation) * 3.0);
+    float power = exp2((0.5 - params.avg_precipitation) * 5.0);
     float humidity = pow(modified, power);
+    
+    // Atténuation polaire multiplicative : réduit l'humidité aux hautes latitudes
+    // indépendamment du bruit (empêche les bords de monter)
+    float polar_damping = 1.0 - 0.7 * smoothstep(0.55, 0.95, lat);
+    humidity *= polar_damping;
     
     // Clamp de sécurité final
     humidity = clamp(humidity, 0.0, 1.0);
