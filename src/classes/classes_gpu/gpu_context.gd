@@ -43,7 +43,7 @@ static var TextureID_Resources : Array[String] = ["petrole", "resources"]
 # river_sources : (R32UI) - IDs des sources de rivières
 # river_flux : (R32F) - Intensité du flux des rivières
 # river_flux_temp : (R32F) - Buffer ping-pong pour propagation
-static var TextureID_Water : Array[String] = ["water_mask", "water_component", "water_component_temp", "river_sources", "river_flux", "river_flux_temp"]
+static var TextureID_Water : Array[String] = ["water_mask", "water_component", "water_component_temp", "river_sources", "river_flux", "river_flux_temp", "river_biome_id"]
 
 # Textures Étape 4 - Régions administratives
 # region_map : (R32UI) - ID de région par pixel (0xFFFFFFFF = non assigné)
@@ -458,7 +458,21 @@ func initialize_water_textures() -> void:
 			else:
 				push_error("❌ Échec création texture " + tex_id)
 	
-	print("✅ Textures eaux créées (1x R8 + 2x RG32I + 1x R32UI + 2x R32F)")
+	# Créer river_biome_id (R32UI - 4 bytes par pixel, initialisé à 0xFFFFFFFF = pas de rivière)
+	if not textures.has("river_biome_id"):
+		var data = PackedByteArray()
+		data.resize(resolution.x * resolution.y * 4)
+		# Initialiser à 0xFFFFFFFF (pas de biome rivière)
+		for i in range(0, data.size(), 4):
+			data.encode_u32(i, 0xFFFFFFFF)
+		var view := RDTextureView.new()
+		var rid := rd.texture_create(format_r32ui, view, [data])
+		if rid.is_valid():
+			textures["river_biome_id"] = rid
+		else:
+			push_error("❌ Échec création texture river_biome_id")
+	
+	print("✅ Textures eaux créées (1x R8 + 2x RG32I + 2x R32UI + 2x R32F)")
 
 # === CRÉATION DES TEXTURES RÉGIONS (Étape 4) ===
 func initialize_region_textures() -> void:

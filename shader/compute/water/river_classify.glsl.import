@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://duh2v321f0con"
+path="res://.godot/imported/river_classify.glsl-4c576f4584ce3769e561b9728fe91118.res"
+
+[deps]
+
+source_file="res://shader/compute/water/river_classify.glsl"
+dest_files=["res://.godot/imported/river_classify.glsl-4c576f4584ce3769e561b9728fe91118.res"]
+
+[params]
+

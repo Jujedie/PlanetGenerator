@@ -36,6 +36,7 @@ layout(set = 0, binding = 3, rgba8) uniform readonly image2D ice_caps;
 layout(set = 0, binding = 4, rgba8) uniform readonly image2D water_colored;
 layout(set = 0, binding = 5, rgba8) uniform writeonly image2D final_map;
 layout(set = 0, binding = 6, r32ui) uniform readonly uimage2D biome_id;
+layout(set = 0, binding = 7, r32ui) uniform readonly uimage2D river_biome_id;
 
 // === SET 1: PARAMETERS UBO ===
 layout(set = 1, binding = 0, std140) uniform FinalMapParams {
@@ -76,6 +77,33 @@ layout(set = 2, binding = 0, std430) readonly buffer BiomeLUT {
     uint header_padding2;
     uint header_padding3;
     BiomeData biomes[];
+};
+
+// === SET 3: RIVER BIOMES SSBO (VEGETATION COLORS) ===
+// Structure alignée std430 (64 bytes par biome rivière)
+struct RiverBiomeData {
+    vec4 color;              // RGB + alpha (couleur végétation rivière) - 16 bytes
+    float temp_min;          // Température minimale (°C) - 4 bytes
+    float temp_max;          // Température maximale (°C) - 4 bytes
+    float humid_min;         // (non utilisé) - 4 bytes
+    float humid_max;         // (non utilisé) - 4 bytes
+    float elev_min;          // (non utilisé) - 4 bytes
+    float elev_max;          // (non utilisé) - 4 bytes
+    uint water_need;         // (non utilisé) - 4 bytes
+    uint planet_type_mask;   // Bitmask des types de planètes valides - 4 bytes
+    uint river_type;         // 0=Affluent, 1=Rivière, 2=Fleuve, 3=Lac, etc. - 4 bytes
+    uint rpad1;              // Alignement - 4 bytes
+    uint rpad2;              // Alignement - 4 bytes
+    uint rpad3;              // Alignement - 4 bytes
+    // Total: 64 bytes
+};
+
+layout(set = 3, binding = 0, std430) readonly buffer RiverBiomeLUT {
+    uint river_biome_count;
+    uint river_header_padding1;
+    uint river_header_padding2;
+    uint river_header_padding3;
+    RiverBiomeData river_biomes[];
 };
 
 // ============================================================================
@@ -138,10 +166,11 @@ void main() {
     float flux = imageLoad(river_flux, pos).r;
     vec4 ice = imageLoad(ice_caps, pos);
     uint biome_index = imageLoad(biome_id, pos).r;
+    uint river_bid = imageLoad(river_biome_id, pos).r;
     
     bool is_water = water.a > 0.0;  // L'eau a alpha > 0 dans water_colored
     bool is_banquise = ice.a > 0.0;
-    bool is_river = flux > params.river_threshold;
+    bool is_river = (river_bid != 0xFFFFFFFFu);
     
     // === STEP 1: Base color ===
     // Utiliser le SSBO pour obtenir la couleur végétation directement via l'index du biome
@@ -160,8 +189,15 @@ void main() {
     color *= shade_factor;
     
     // === STEP 3: Rivers overlay ===
-    // Les rivières sont gérées par biome_id qui pointe vers le bon biome d'eau
-    // Le SSBO fournit directement la couleur végétation appropriée
+    // Si un biome rivière est assigné, multiplier sa couleur végétation avec la couleur du terrain
+    if (is_river && river_bid < river_biome_count) {
+        vec3 river_veg_color = river_biomes[river_bid].color.rgb;
+        // Multiplicative blending : assombrit le terrain avec la teinte de la rivière
+        // Cela donne un aspect naturel où la rivière prend la teinte du terrain environnant
+        color = color * river_veg_color * 2.5;
+        // Clamp pour éviter la surbrillance
+        color = min(color, vec3(1.0));
+    }
     
     // === STEP 4: Banquise overlay (highest priority) ===
     if (is_banquise) {

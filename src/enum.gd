@@ -672,6 +672,142 @@ func get_biome_gpu_id_by_name(biome_name: String) -> int:
 			return i
 	return -1
 
+# ============================================================================
+# SYSTÈME DE BIOMES RIVIÈRE GPU
+# ============================================================================
+# Construit un buffer SSBO pour les biomes rivière uniquement (is_river = true).
+# Structure alignée std430 identique aux biomes normaux (64 bytes par biome)
+# avec le champ river_type qui indique le type de cours d'eau :
+# 0=Affluent, 1=Rivière, 2=Fleuve, 3=Lac, 4=Lac gelé, 5=Rivière glaciaire
+# ============================================================================
+
+## Déduit le river_type (0=Affluent, 1=Rivière, 2=Fleuve, 3=Lac, 4=Lac gelé, 5=Rivière glaciaire)
+## à partir du nom du biome rivière.
+func _get_river_type_from_name(nom: String) -> int:
+	var lower = nom.to_lower()
+	# Affluents
+	if lower.contains("affluent") or lower.contains("contaminé"):
+		return 0
+	# Fleuves / Magma
+	if lower.contains("fleuve") or lower.contains("magma"):
+		return 2
+	# Lacs
+	if lower.contains("lac") or lower.contains("lake"):
+		if lower.contains("gelé") or lower.contains("frozen"):
+			return 4
+		return 3
+	# Rivière glaciaire
+	if lower.contains("glaciaire") or lower.contains("glacial"):
+		return 5
+	# Rivière (par défaut pour les cours d'eau)
+	return 1
+
+## Filtre les biomes rivière pour le GPU (seulement is_river = true)
+## @param planet_type: Type de planète (0=Terran, 1=Toxic, etc.)
+## @return Array des biomes rivière filtrés
+func get_river_biomes_for_gpu(planet_type: int = 0) -> Array:
+	var filtered = []
+	for biome in BIOMES:
+		if not biome.isRiver():
+			continue
+		var planet_types = biome.get_type_planete()
+		if planet_type not in planet_types:
+			continue
+		filtered.append(biome)
+	return filtered
+
+## Construit un PackedByteArray aligné std430 pour le SSBO des biomes rivière.
+## Structure par biome (64 bytes alignés std430) :
+## - color: vec4 (16 bytes) - couleur végétation du biome rivière
+## - temp_min: float (4 bytes)
+## - temp_max: float (4 bytes)
+## - humid_min: float (4 bytes) - non utilisé pour rivières
+## - humid_max: float (4 bytes) - non utilisé pour rivières
+## - elev_min: float (4 bytes) - non utilisé pour rivières
+## - elev_max: float (4 bytes) - non utilisé pour rivières
+## - water_need: uint (4 bytes) - non utilisé
+## - planet_type_mask: uint (4 bytes)
+## - river_type: uint (4 bytes) - 0=Affluent, 1=Rivière, 2=Fleuve, 3=Lac, 4=Lac gelé, 5=Riv. glaciaire
+## - padding1: uint (4 bytes)
+## - padding2: uint (4 bytes)
+## - padding3: uint (4 bytes)
+## Total: 64 bytes par biome
+## @param planet_type: Type de planète pour filtrer les biomes
+## @param is_vegetation: Si true, utilise couleur_vegetation au lieu de couleur
+func build_river_biomes_gpu_buffer(planet_type: int = 0, is_vegetation: bool = false) -> PackedByteArray:
+	var filtered_biomes = get_river_biomes_for_gpu(planet_type)
+	var biome_count_val = filtered_biomes.size()
+	
+	# Header: biome_count (4 bytes) + 3x padding (12 bytes) = 16 bytes
+	# Biomes: 64 bytes par biome (aligné std430)
+	var header_size = 16
+	var biome_size = 64
+	var total_size = header_size + biome_count_val * biome_size
+	
+	var buffer = PackedByteArray()
+	buffer.resize(total_size)
+	buffer.fill(0)
+	
+	# Écrire le header
+	buffer.encode_u32(0, biome_count_val)
+	
+	# Écrire chaque biome
+	var offset = header_size
+	for biome in filtered_biomes:
+		var color
+		if is_vegetation:
+			color = biome.get_couleur_vegetation()
+		else:
+			color = biome.get_couleur()
+		
+		buffer.encode_float(offset + 0, color.r)
+		buffer.encode_float(offset + 4, color.g)
+		buffer.encode_float(offset + 8, color.b)
+		buffer.encode_float(offset + 12, color.a)
+		
+		# Température min/max
+		var temp = biome.get_interval_temp()
+		buffer.encode_float(offset + 16, float(temp[0]))
+		buffer.encode_float(offset + 20, float(temp[1]))
+		
+		# Humidité min/max (non utilisé pour rivières, mais on renseigne quand même)
+		var precip = biome.get_interval_precipitation()
+		buffer.encode_float(offset + 24, precip[0])
+		buffer.encode_float(offset + 28, precip[1])
+		
+		# Élévation min/max
+		var elev = biome.get_interval_elevation()
+		buffer.encode_float(offset + 32, float(elev[0]))
+		buffer.encode_float(offset + 36, float(elev[1]))
+		
+		# water_need
+		var water_need: int = 0
+		if biome.get_water_need():
+			water_need = 2 if biome.isEauDouce() else 1
+		buffer.encode_u32(offset + 40, water_need)
+		
+		# planet_type_mask
+		var planet_types = biome.get_type_planete()
+		var mask: int = 0
+		for pt in planet_types:
+			mask |= (1 << pt)
+		buffer.encode_u32(offset + 44, mask)
+		
+		# river_type (déduit du nom)
+		var river_type = _get_river_type_from_name(biome.get_nom())
+		buffer.encode_u32(offset + 48, river_type)
+		
+		# padding (12 bytes) - déjà à 0
+		
+		offset += biome_size
+	
+	print("[Enum] ✅ Buffer biomes rivière GPU construit: ", biome_count_val, " biomes, ", total_size, " bytes")
+	return buffer
+
+## Retourne le nombre de biomes rivière pour le type de planète
+func get_river_biome_gpu_count(planet_type: int = 0) -> int:
+	return get_river_biomes_for_gpu(planet_type).size()
+
 func getElevationColor(elevation: int, grey_version : bool = false) -> Color:
 	if not grey_version:
 		for key in COULEURS_ELEVATIONS.keys():

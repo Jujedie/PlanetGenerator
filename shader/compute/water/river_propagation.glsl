@@ -4,59 +4,50 @@
 // ============================================================================
 // RIVER PROPAGATION SHADER - Propagation physique des rivières
 // ============================================================================
-// Simule l'écoulement de l'eau en suivant la topographie :
-// - L'eau descend vers le voisin le plus bas (steepest descent)
-// - Le flux s'accumule quand plusieurs rivières convergent (affluents)
-// - Les rivières s'arrêtent quand elles atteignent l'eau (lac/mer)
+// Simule l'écoulement de l'eau en suivant la topographie.
+// 
+// APPROCHE : Collecte en amont (backward-collect)
+// Chaque pixel regarde ses 8 voisins. Pour chaque voisin, il calcule
+// la direction de steepest descent de ce voisin. Si ce voisin pointe vers
+// le pixel courant, on collecte son flux.
+// Les sources injectent du flux à chaque passe.
 //
-// Utilise un schéma ping-pong pour éviter les race conditions.
+// Ce shader est exécuté en ping-pong (flux_input → flux_output) pendant
+// N itérations (N ≈ max(width, height) pour que le flux traverse toute la carte).
 //
 // Entrées :
 // - GeoTexture (RGBA32F) : R=height
-// - river_sources (R32UI) : Points sources
-// - water_mask (R8UI) : Pour arrêter à l'eau
-// - river_flux_input (R32F) : Flux actuel
+// - river_sources (R32UI) : Points sources (ID > 0)
+// - water_mask (R8UI) : Pour arrêter à l'eau existante
+// - flux_input (R32F) : Flux actuel (ping)
 //
 // Sorties :
-// - river_flux_output (R32F) : Flux mis à jour
+// - flux_output (R32F) : Flux mis à jour (pong)
 // ============================================================================
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 // === BINDINGS ===
-
-// GeoTexture en lecture seule
 layout(set = 0, binding = 0, rgba32f) uniform readonly image2D geo_texture;
+layout(set = 0, binding = 1, r32ui)   uniform readonly uimage2D river_sources;
+layout(set = 0, binding = 2, r8ui)    uniform readonly uimage2D water_mask;
+layout(set = 0, binding = 3, r32f)    uniform readonly image2D flux_input;
+layout(set = 0, binding = 4, r32f)    uniform writeonly image2D flux_output;
 
-// Sources de rivières
-layout(set = 0, binding = 1, r32ui) uniform readonly uimage2D river_sources;
-
-// Masque d'eau
-layout(set = 0, binding = 2, r8ui) uniform readonly uimage2D water_mask;
-
-// Flux entrée (ping)
-layout(set = 0, binding = 3, r32f) uniform readonly image2D flux_input;
-
-// Flux sortie (pong)
-layout(set = 0, binding = 4, r32f) uniform writeonly image2D flux_output;
-
-// Uniform Buffer : Paramètres
 layout(set = 1, binding = 0, std140) uniform PropagationParams {
-    uint width;           // Largeur texture
-    uint height;          // Hauteur texture
-    uint pass_index;      // Index de la passe
-    float sea_level;      // Niveau de la mer
-    float base_flux;      // Flux ajouté aux sources à chaque passe
-    float min_slope;      // Pente minimale pour continuer
-    float flux_decay;     // Facteur de décroissance du flux (ex: 0.999)
-    uint seed;            // Seed pour variations
+    uint width;
+    uint height;
+    uint pass_index;
+    float sea_level;
+    float source_flux;     // Flux ajouté aux sources à chaque passe
+    float min_slope;       // Pente minimale pour drainage
+    float flux_transfer;   // Fraction du flux transféré (ex: 0.95)
+    uint seed;
 } params;
 
 // ============================================================================
 // CONSTANTES
 // ============================================================================
-
-const float MIN_FLUX = 0.01;
 
 // 8 voisins (Moore neighborhood)
 const ivec2 NEIGHBORS[8] = ivec2[8](
@@ -72,16 +63,16 @@ const float NEIGHBOR_DIST[8] = float[8](
     1.41421, 1.0, 1.41421
 );
 
-// Direction opposée pour chaque voisin (pour savoir qui draine vers nous)
-const int OPPOSITE_DIR[8] = int[8](7, 6, 5, 4, 3, 2, 1, 0);
+// Index du voisin opposé (si voisin[i] est NW, opposé est SE = index 7)
+const int OPPOSITE[8] = int[8](7, 6, 5, 4, 3, 2, 1, 0);
 
 // ============================================================================
 // FONCTIONS UTILITAIRES
 // ============================================================================
 
-/// Wrap X pour projection équirectangulaire
+/// Wrap X pour projection équirectangulaire (cylindrique)
 int wrapX(int x, int w) {
-    return (x % w + w) % w;
+    return ((x % w) + w) % w;
 }
 
 /// Clamp Y pour les pôles
@@ -89,8 +80,9 @@ int clampY(int y, int h) {
     return clamp(y, 0, h - 1);
 }
 
-/// Trouver la direction de drainage (voisin avec la plus grande pente descendante)
-int findDrainageDirection(ivec2 pixel, float my_height, int w, int h) {
+/// Trouver la direction de drainage d'un pixel (voisin avec la plus grande pente descendante)
+/// Retourne l'index du voisin (0-7), ou -1 si pas de descente.
+int findDrainageDir(ivec2 pixel, float my_height, int w, int h) {
     int best_dir = -1;
     float best_slope = params.min_slope;
     
@@ -98,10 +90,7 @@ int findDrainageDirection(ivec2 pixel, float my_height, int w, int h) {
         int nx = wrapX(pixel.x + NEIGHBORS[i].x, w);
         int ny = clampY(pixel.y + NEIGHBORS[i].y, h);
         
-        vec4 n_geo = imageLoad(geo_texture, ivec2(nx, ny));
-        float n_height = n_geo.r;
-        
-        // Calculer la pente (positif = descente)
+        float n_height = imageLoad(geo_texture, ivec2(nx, ny)).r;
         float slope = (my_height - n_height) / NEIGHBOR_DIST[i];
         
         if (slope > best_slope) {
@@ -123,71 +112,55 @@ void main() {
     int w = int(params.width);
     int h = int(params.height);
     
-    // Vérification des limites
-    if (pixel.x >= w || pixel.y >= h) {
-        return;
-    }
+    if (pixel.x >= w || pixel.y >= h) return;
     
-    // Lire le flux actuel
+    // === PIXEL SUR L'EAU : absorbe le flux, ne propage plus ===
+    uint water_type = imageLoad(water_mask, pixel).r;
     float current_flux = imageLoad(flux_input, pixel).r;
     
-    // Lire les données
-    vec4 geo = imageLoad(geo_texture, pixel);
-    float my_height = geo.r;
-    uint water_type = imageLoad(water_mask, pixel).r;
-    uint source_id = imageLoad(river_sources, pixel).r;
-    
-    // === SI C'EST DE L'EAU : conserver le flux mais ne pas propager ===
     if (water_type > 0u) {
-        // L'eau absorbe le flux (embouchure de rivière)
+        // L'eau absorbe : on conserve le flux accumulé (embouchure)
         imageStore(flux_output, pixel, vec4(current_flux, 0.0, 0.0, 0.0));
         return;
     }
     
-    // === SOURCE : ajouter du flux continu ===
+    // === INJECTION AUX SOURCES ===
+    uint source_id = imageLoad(river_sources, pixel).r;
+    float new_flux = 0.0;
+    
     if (source_id > 0u) {
-        current_flux += params.base_flux;
+        new_flux += params.source_flux;
     }
     
-    // === ACCUMULATION : collecter le flux des voisins en amont ===
-    float incoming_flux = 0.0;
+    // === COLLECTE DU FLUX EN AMONT ===
+    // Pour chaque voisin, vérifier si ce voisin draine vers nous
+    float my_height = imageLoad(geo_texture, pixel).r;
     
     for (int i = 0; i < 8; i++) {
         int nx = wrapX(pixel.x + NEIGHBORS[i].x, w);
         int ny = clampY(pixel.y + NEIGHBORS[i].y, h);
         ivec2 neighbor = ivec2(nx, ny);
         
+        // Pas de flux depuis l'eau
+        uint n_water = imageLoad(water_mask, neighbor).r;
+        if (n_water > 0u) continue;
+        
         // Flux du voisin
         float n_flux = imageLoad(flux_input, neighbor).r;
-        if (n_flux < MIN_FLUX) {
-            continue;
-        }
+        if (n_flux < 0.001) continue;
         
-        // Est-ce que ce voisin est sur l'eau ? (pas de flux depuis l'eau)
-        uint n_water = imageLoad(water_mask, neighbor).r;
-        if (n_water > 0u) {
-            continue;
-        }
+        // Hauteur du voisin
+        float n_height = imageLoad(geo_texture, neighbor).r;
         
-        // Altitude du voisin
-        vec4 n_geo = imageLoad(geo_texture, neighbor);
-        float n_height = n_geo.r;
+        // Direction de drainage du voisin
+        int n_drain_dir = findDrainageDir(neighbor, n_height, w, h);
         
-        // Trouver vers où ce voisin draine
-        int n_drain_dir = findDrainageDirection(neighbor, n_height, w, h);
-        
-        // Est-ce que le voisin draine vers nous ?
-        int opposite_dir = OPPOSITE_DIR[i];
-        
-        if (n_drain_dir == opposite_dir) {
-            // Le voisin draine vers nous : accumuler son flux
-            incoming_flux += n_flux * params.flux_decay;
+        // Le voisin i draine vers nous si sa direction de drainage est l'opposé de i
+        if (n_drain_dir == OPPOSITE[i]) {
+            new_flux += n_flux * params.flux_transfer;
         }
     }
     
-    // === MISE À JOUR DU FLUX ===
-    float new_flux = current_flux + incoming_flux;
-    
-    // === ÉCRITURE DU RÉSULTAT ===
+    // === ÉCRITURE ===
     imageStore(flux_output, pixel, vec4(new_flux, 0.0, 0.0, 0.0));
 }
