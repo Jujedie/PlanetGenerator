@@ -269,8 +269,10 @@ vec3 getCylindricalCoords(ivec2 pixel, uint w, uint h, float cylinder_radius) {
     // Coordonnées cylindriques avec Y NORMALISÉ
     float cx = cos(angle) * cylinder_radius;
     float cz = sin(angle) * cylinder_radius;
-    // Y centré [-radius, +radius] pour isotropie du bruit
-    float cy = (float(pixel.y) / float(h) - 0.5) * cylinder_radius * 2.0;
+    // Y centré [-R*π/2, +R*π/2] pour isotropie RÉELLE du bruit
+    // Pas vertical par pixel = R*π/H ≈ 1.0, identique au pas horizontal
+    // (l'ancien facteur 2.0 donnait un pas de ~0.637, étirant les features de ~57%)
+    float cy = (float(pixel.y) / float(h) - 0.5) * cylinder_radius * PI;
     
     return vec3(cx, cy, cz);
 }
@@ -377,20 +379,23 @@ vec2 noise2D(vec2 p, uint seed) {
 }
 
 // Perturbation multi-octaves pour les bordures de plaques (Domain Warping)
-// Amplitude ajustée pour masquer les artefacts de wrapping tout en évitant les ovales
+// CORRIGÉ : Utilise du bruit 3D sur coordonnées cylindriques pour un wrap seamless en X
+// L'ancien noise2D en espace UV créait une couture visible au bord horizontal
 vec2 domainWarp(vec2 uv, uint seed) {
+    // Convertir UV en coordonnées cylindriques 3D pour seamless X
+    float angle = uv.x * TAU;
+    float cy = (uv.y - 0.5) * PI;  // [-π/2, π/2] proportionnel à latitude
+    vec3 p = vec3(cos(angle), cy, sin(angle));
+    
     vec2 offset = vec2(0.0);
+    float amplitude = 0.035;
+    float frequency = 3.0;  // Ajusté pour l'espace 3D cylindrique
     
-    // Amplitude de base augmentée près des bords X pour masquer les lignes droites
-    float edgeDistance = min(uv.x, 1.0 - uv.x);  // Distance au bord le plus proche
-    float edgeBoost = smoothstep(0.15, 0.0, edgeDistance);  // Boost près des bords
-    
-    float amplitude = 0.035 + edgeBoost * 0.02;  // 0.035 base, jusqu'à 0.055 aux bords
-    float frequency = 5.0;
-    
-    // 4 octaves pour plus de variété organique
+    // 4 octaves pour variété organique
     for (int i = 0; i < 4; i++) {
-        offset += noise2D(uv * frequency, seed + uint(i) * 5000u) * amplitude;
+        float ox = valueNoise3D(p * frequency, seed + uint(i) * 5000u);
+        float oy = valueNoise3D(p * frequency, seed + uint(i) * 5000u + 500u);
+        offset += vec2(ox, oy) * amplitude;
         amplitude *= 0.5;
         frequency *= 2.0;
     }
@@ -490,7 +495,7 @@ PlateInfo findClosestPlate(vec2 uv, uint seed) {
 
 // Calcule l'uplift tectonique basé sur le type de frontière
 // CORRECTION: Ajout paramètre currentElevation pour atténuer effets sous l'eau
-float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, vec3 coords, uint seed, float currentElevation) {
+float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, vec3 coords, uint seed, float currentElevation, bool localIsOceanic) {
     if (info.borderStrength < 0.05) {
         return 0.0;  // Trop loin de la bordure
     }
@@ -507,6 +512,10 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
         // Damping minimum 0.5 pour garder un peu de relief océanique
         underwaterDamping = max(0.5, 1.0 + currentElevation / 5000.0);
     }
+    
+    // Atténuation locale : si le pixel est continental, réduire fortement
+    // les effets négatifs (fosses/subduction) pour éviter d'enfoncer le terrain
+    float localTrenchAttenuation = localIsOceanic ? 1.0 : 0.15;
     
     // Bruit local pour variation le long de la frontière
     float localNoise = fbm(coords * 0.02, 4, 0.6, 2.0, seed + 88888u);
@@ -525,9 +534,9 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
             // Position relative pour asymétrie
             float side = sign(dot(info.velocity1, vec2(1.0, 0.0)));
             if (info.borderDist < 0.01) {
-                // Fosse profonde (atténuée sous l'eau)
-                // Réduit à -2000m pour bordures tectoniques moins marquées
-                uplift = -strength * 2000.0 * conv_strength * underwaterDamping;
+                // Fosse profonde (atténuée sous l'eau et sur les continents)
+                // Réduit à -1200m pour bordures tectoniques moins marquées
+                uplift = -strength * 1200.0 * conv_strength * underwaterDamping * localTrenchAttenuation;
             } else if (info.borderDist < 0.03) {
                 // Arc insulaire (50-100km en arrière de la fosse)
                 float arcFactor = smoothstep(0.01, 0.015, info.borderDist) * 
@@ -537,9 +546,9 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
         } else {
             // Océan-Continent : Subduction asymétrique
             if (isOceanic1) {
-                // Ce côté est océanique - FOSSE (atténuée sous l'eau)
-                // Réduit à -1800m pour bordures moins excessives
-                uplift = -strength * 1800.0 * conv_strength * underwaterDamping;
+                // Ce côté est océanique - FOSSE (atténuée sous l'eau et sur les continents)
+                // Réduit à -1000m pour bordures moins excessives
+                uplift = -strength * 1000.0 * conv_strength * underwaterDamping * localTrenchAttenuation;
             } else {
                 // Ce côté est continental - CORDILLÈRE
                 // Réduit de 3000m à 1800m
@@ -557,7 +566,7 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
             // Rift continental (Vallée du Rift)
             // Vallée centrale + épaules surélevées
             if (info.borderDist < 0.008) {
-                uplift = -strength * 500.0 * div_strength;  // Vallée (réduit 800→500m)
+                uplift = -strength * 300.0 * div_strength * localTrenchAttenuation;  // Vallée (réduit 500→300m)
             } else if (info.borderDist < 0.02) {
                 float shoulderFactor = smoothstep(0.008, 0.012, info.borderDist) *
                                        smoothstep(0.02, 0.016, info.borderDist);
@@ -565,7 +574,7 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
             }
         } else {
             // Rift mixte
-            uplift = -strength * 400.0 * div_strength;
+            uplift = -strength * 250.0 * div_strength * localTrenchAttenuation;
         }
     } else {
         // === TRANSFORMANTE ===
@@ -799,7 +808,8 @@ void main() {
     
     // === UPLIFT TECTONIQUE AUX FRONTIÈRES ===
     // CORRECTION: Passer l'élévation de base pour atténuer sous l'eau
-    float tectonicUplift = calculateTectonicUplift(plateInfo, isOceanic1, isOceanic2, coords, params.seed, baseElevation + noiseElevation);
+    // + localIsOceanic pour protéger le terrain continental des fosses
+    float tectonicUplift = calculateTectonicUplift(plateInfo, isOceanic1, isOceanic2, coords, params.seed, baseElevation + noiseElevation, isOceanic);
     
     // === TRIPLE JUNCTIONS (là où 3+ plaques se rencontrent) ===
     float tripleJunctionUplift = calculateTripleJunctionUplift(uv, coords, params.seed, continental_freq);
