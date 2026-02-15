@@ -9,12 +9,15 @@
 // pente descendante la plus forte). Cela cree un graphe de drainage
 // deterministe ou chaque pixel a exactement un exutoire.
 //
+// Utilise l'elevation remplie (Planchon-Darboux) pour garantir qu'aucune
+// depression terrestre ne bloque l'ecoulement.
+//
 // Gestion des zones plates :
 // - Une micro-perturbation basee sur un hash est ajoutee a la hauteur
 //   pour casser les egalites et garantir un ecoulement meme sur terrain plat.
 //
 // Entrees :
-// - geo_texture (RGBA32F) : R=height (altitude en metres)
+// - filled_elevation (R32F) : Elevation apres remplissage des depressions
 // - water_mask (R8UI) : 0=terre, >0=eau
 //
 // Sorties :
@@ -24,7 +27,7 @@
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 // === BINDINGS ===
-layout(set = 0, binding = 0, rgba32f) uniform readonly image2D geo_texture;
+layout(set = 0, binding = 0, r32f)    uniform readonly image2D filled_elevation;
 layout(set = 0, binding = 1, r8ui)    uniform readonly uimage2D water_mask;
 layout(set = 0, binding = 2, r8ui)    uniform writeonly uimage2D flow_direction;
 
@@ -91,6 +94,12 @@ void main() {
 
     if (pixel.x >= w || pixel.y >= h) return;
 
+    // Exclure les rangees polaires (eviter convergence artificielle due a clampY)
+    if (pixel.y < 2 || pixel.y >= h - 2) {
+        imageStore(flow_direction, pixel, uvec4(DIR_SINK, 0u, 0u, 0u));
+        return;
+    }
+
     // Les pixels d'eau sont des puits absorbants
     uint water_type = imageLoad(water_mask, pixel).r;
     if (water_type > 0u) {
@@ -99,7 +108,7 @@ void main() {
     }
 
     // Hauteur du pixel courant avec micro-perturbation
-    float my_height = imageLoad(geo_texture, pixel).r;
+    float my_height = imageLoad(filled_elevation, pixel).r;
     float my_perturbed = my_height + microPerturbation(pixel, params.seed);
 
     // Chercher le voisin avec la plus forte pente descendante
@@ -110,7 +119,7 @@ void main() {
         int nx = wrapX(pixel.x + NEIGHBORS[i].x, w);
         int ny = clampY(pixel.y + NEIGHBORS[i].y, h);
 
-        float n_height = imageLoad(geo_texture, ivec2(nx, ny)).r;
+        float n_height = imageLoad(filled_elevation, ivec2(nx, ny)).r;
         float n_perturbed = n_height + microPerturbation(ivec2(nx, ny), params.seed);
 
         // Pixels d'eau voisins : consideres comme etant au niveau de la mer

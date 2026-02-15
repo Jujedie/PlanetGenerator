@@ -151,6 +151,12 @@ void main() {
 
     if (pos.x >= w || pos.y >= h) return;
 
+    // Exclure les rangees polaires (eviter artefacts de convergence)
+    if (pos.y < 2 || pos.y >= h - 2) {
+        imageStore(river_biome_id, pos, uvec4(0xFFFFFFFFu));
+        return;
+    }
+
     // Par defaut : pas de riviere
     uint biome_index = 0xFFFFFFFFu;
 

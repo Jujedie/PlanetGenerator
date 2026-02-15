@@ -88,6 +88,12 @@ void main() {
 
     if (pixel.x >= w || pixel.y >= h) return;
 
+    // Exclure les rangees polaires (pas de flux, coherent avec river_sources)
+    if (pixel.y < 2 || pixel.y >= h - 2) {
+        imageStore(flux_output, pixel, vec4(0.0, 0.0, 0.0, 0.0));
+        return;
+    }
+
     // === PIXEL SUR L'EAU : absorbe le flux (embouchure) ===
     uint water_type = imageLoad(water_mask, pixel).r;
     if (water_type > 0u) {

@@ -84,6 +84,14 @@ void main() {
         return;
     }
 
+    // Depressions terrestres (DIR_SINK) = lacs virtuels -> toujours connectes
+    // Une depression sans exutoire formerait naturellement un lac
+    uint my_dir_check = imageLoad(flow_direction, pixel).r;
+    if (my_dir_check >= 8u) {
+        imageStore(connect_output, pixel, uvec4(1u, 0u, 0u, 0u));
+        return;
+    }
+
     // Si deja connecte dans la passe precedente, rester connecte
     uint current_state = imageLoad(connect_input, pixel).r;
     if (current_state > 0u) {

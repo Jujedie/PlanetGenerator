@@ -147,6 +147,11 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	var river_result = _export_river_map(gpu, output_dir, width, height)
 	for key in river_result.keys():
 		exported_files[key] = river_result[key]
+
+	# === EXPORT TYPE RIVIÈRES (Step 2.7) - Carte des types de rivières ===
+	var river_type_result = _export_river_type_map(gpu, output_dir, width, height)
+	for key in river_type_result.keys():
+		exported_files[key] = river_type_result[key]
 	
 	# === EXPORT RÉGIONS (Step 4) - Régions administratives ===
 	var region_result = _export_region_map(gpu, output_dir,params.get("region_generation_optimised",true))
@@ -1257,50 +1262,65 @@ func _export_water_classification(gpu: GPUContext, output_dir: String, width: in
 ## @return Dictionary: Chemins des fichiers exportés
 func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: int) -> Dictionary:
 	print("[Exporter] 🌊 Exporting river map (CPU)...")
-	
+
 	var result = {}
 	var rd = gpu.rd
-	
+
 	if not rd:
 		push_error("[Exporter] ❌ RenderingDevice not available")
 		return result
-	
+
 	# Synchroniser le GPU
 	rd.submit()
 	rd.sync()
-	
+
 	# Récupérer le type d'atmosphère
 	var atmosphere_type = int(params.get("atmosphere_type", 0))
-	
+
 	# Récupérer les biomes rivières pour ce type d'atmosphère
 	var river_biomes: Array = []
 	for biome in Enum.BIOMES:
 		if biome.isRiver() and atmosphere_type in biome.get_type_planete():
 			river_biomes.append(biome)
-	
+
 	if river_biomes.size() == 0:
 		print("  ⚠️ No river biomes found for atmosphere type ", atmosphere_type)
 		return result
-	
+
 	print("  Found ", river_biomes.size(), " river biomes for atmosphere type ", atmosphere_type)
 	for rb in river_biomes:
 		print("    - ", rb.get_nom(), " (", rb.get_couleur(), ")")
-	
-	# Lire la texture river_flux (R32F)
+
+	# Lire les textures nécessaires
 	if not gpu.textures.has("river_flux") or not gpu.textures["river_flux"].is_valid():
 		print("  ⚠️ river_flux texture not available")
 		return result
-	
+
 	var flux_data = rd.texture_get_data(gpu.textures["river_flux"], 0)
-	
+
 	if flux_data.size() == 0:
 		print("  ⚠️ river_flux texture empty")
 		return result
-	
-	# Trouver le flux maximum pour normalisation
+
+	# Lire ocean_reachable et water_mask pour filtrage cohérent avec le GPU classify
+	var has_reachable = gpu.textures.has("ocean_reachable") and gpu.textures["ocean_reachable"].is_valid()
+	var has_water_mask = gpu.textures.has("water_mask") and gpu.textures["water_mask"].is_valid()
+	var reachable_data: PackedByteArray = []
+	var water_mask_data: PackedByteArray = []
+	if has_reachable:
+		reachable_data = rd.texture_get_data(gpu.textures["ocean_reachable"], 0)
+	if has_water_mask:
+		water_mask_data = rd.texture_get_data(gpu.textures["water_mask"], 0)
+
+	# Seuils cohérents avec le shader GPU river_classify
+	var affluent_threshold = float(params.get("river_affluent_threshold", 10.0))
+	var riviere_threshold = float(params.get("river_riviere_threshold", 30.0))
+	var fleuve_threshold = float(params.get("river_fleuve_threshold", 60.0))
+
+	# Statistiques du flux
 	var max_flux = 0.0
 	var non_zero_count = 0
-	
+
 	for y in range(height):
 		for x in range(width):
 			var idx = (y * width + x) * 4  # R32F = 4 bytes par pixel
@@ -1308,75 +1328,73 @@ func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: 
 			if flux > 0.0:
 				non_zero_count += 1
 				max_flux = maxf(max_flux, flux)
-	
+
 	print("  River flux stats:")
 	print("    - Non-zero pixels: ", non_zero_count, " / ", width * height)
 	print("    - Max flux: ", max_flux)
-	
+	print("    - Thresholds: affluent=", affluent_threshold, " riviere=", riviere_threshold, " fleuve=", fleuve_threshold)
+
 	var river_img : Image
 	var path_river: String
 	if max_flux < 0.001:
 		print("  ⚠️ No significant river flux detected")
-		# Créer une carte vide
 		river_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
 		river_img.fill(Color(0, 0, 0, 0))
 		path_river = output_dir + "/river_map.png"
 		river_img.save_png(path_river)
 		result["river_map"] = path_river
 		return result
-	
-	# Définir les seuils pour les différents types de rivières
-	# (basés sur le flux normalisé)
-	var flux_threshold = max_flux * 0.01  # Seuil minimum (1% du max)
-	var fleuve_threshold = max_flux * 0.4  # Seuil pour fleuve (40% du max)
-	var riviere_threshold = max_flux * 0.15  # Seuil pour rivière (15% du max)
-	
+
 	# Créer l'image de sortie
 	river_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	river_img.fill(Color(0, 0, 0, 0))  # Transparent par défaut
-	
+
 	var river_pixel_count = 0
 	var biome_counts: Dictionary = {}
-	
+
 	for y in range(height):
 		for x in range(width):
-			var idx = (y * width + x) * 4
-			var flux = flux_data.decode_float(idx)
-			
-			if flux > flux_threshold:
+			var pixel_idx = y * width + x
+
+			# Filtrage cohérent avec le GPU classify : exclure l'eau et les pixels non connectés
+			if has_water_mask and water_mask_data.size() > pixel_idx:
+				if water_mask_data[pixel_idx] > 0:
+					continue
+			if has_reachable and reachable_data.size() > pixel_idx:
+				if reachable_data[pixel_idx] == 0:
+					continue
+
+			var flux_idx = pixel_idx * 4  # R32F = 4 bytes
+			var flux = flux_data.decode_float(flux_idx)
+
+			if flux >= affluent_threshold:
 				river_pixel_count += 1
-				
-				# Sélectionner le biome en fonction du flux
+
+				# Sélectionner le biome en fonction du flux (mêmes seuils que GPU)
 				var selected_biome: Biome = null
-				
+
 				if flux >= fleuve_threshold and river_biomes.size() > 1:
-					# Fleuve (2ème biome rivière = Fleuve)
 					selected_biome = river_biomes[1]
 				elif flux >= riviere_threshold and river_biomes.size() > 0:
-					# Rivière (1er biome = Rivière)
 					selected_biome = river_biomes[0]
 				elif river_biomes.size() > 2:
-					# Affluent (3ème biome = Affluent)
 					selected_biome = river_biomes[2]
 				else:
-					# Défaut au premier biome
 					selected_biome = river_biomes[0]
-				
-				# Utiliser la couleur du biome
+
 				var color = selected_biome.get_couleur()
 				river_img.set_pixel(x, y, color)
-				
-				# Stats
+
 				var biome_name = selected_biome.get_nom()
 				if biome_counts.has(biome_name):
 					biome_counts[biome_name] += 1
 				else:
 					biome_counts[biome_name] = 1
-	
+
 	print("  River pixels drawn: ", river_pixel_count)
 	for biome_name in biome_counts.keys():
 		print("    - ", biome_name, ": ", biome_counts[biome_name])
-	
+
 	# Sauvegarder
 	path_river = output_dir + "/river_map.png"
 	var err = river_img.save_png(path_river)
@@ -1385,8 +1403,96 @@ func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: 
 		print("  ✅ Saved: ", path_river, " (CPU)")
 	else:
 		push_error("[Exporter] ❌ Failed to save river_map: ", err)
-	
+
 	print("[Exporter] ✅ River map export complete")
+	return result
+
+## Export de la carte des types de rivières avec couleurs fixes
+## Affluent = cyan clair, Rivière = bleu, Fleuve = bleu foncé
+func _export_river_type_map(gpu: GPUContext, output_dir: String, width: int, height: int) -> Dictionary:
+	print("[Exporter] 🗺️ Exporting river type map...")
+
+	var result = {}
+	var rd = gpu.rd
+
+	if not rd:
+		push_error("[Exporter] ❌ RenderingDevice not available")
+		return result
+
+	# Lire les textures
+	if not gpu.textures.has("river_flux") or not gpu.textures["river_flux"].is_valid():
+		print("  ⚠️ river_flux texture not available")
+		return result
+
+	var flux_data = rd.texture_get_data(gpu.textures["river_flux"], 0)
+	if flux_data.size() == 0:
+		return result
+
+	var has_reachable = gpu.textures.has("ocean_reachable") and gpu.textures["ocean_reachable"].is_valid()
+	var has_water_mask = gpu.textures.has("water_mask") and gpu.textures["water_mask"].is_valid()
+	var reachable_data: PackedByteArray = []
+	var water_mask_data: PackedByteArray = []
+	if has_reachable:
+		reachable_data = rd.texture_get_data(gpu.textures["ocean_reachable"], 0)
+	if has_water_mask:
+		water_mask_data = rd.texture_get_data(gpu.textures["water_mask"], 0)
+
+	# Mêmes seuils que le GPU classify
+	var affluent_threshold = float(params.get("river_affluent_threshold", 10.0))
+	var riviere_threshold = float(params.get("river_riviere_threshold", 30.0))
+	var fleuve_threshold = float(params.get("river_fleuve_threshold", 60.0))
+
+	# Couleurs fixes pour chaque type
+	var color_affluent = Color(0.4, 0.75, 1.0, 1.0)   # Cyan clair
+	var color_riviere  = Color(0.1, 0.35, 0.85, 1.0)   # Bleu
+	var color_fleuve    = Color(0.15, 0.05, 0.55, 1.0)  # Bleu-violet foncé
+
+	var type_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
+	type_img.fill(Color(0, 0, 0, 0))
+
+	var count_affluent = 0
+	var count_riviere = 0
+	var count_fleuve = 0
+
+	for y in range(height):
+		for x in range(width):
+			var pixel_idx = y * width + x
+
+			# Filtrage cohérent avec le GPU classify
+			if has_water_mask and water_mask_data.size() > pixel_idx:
+				if water_mask_data[pixel_idx] > 0:
+					continue
+			if has_reachable and reachable_data.size() > pixel_idx:
+				if reachable_data[pixel_idx] == 0:
+					continue
+
+			var flux_idx = pixel_idx * 4
+			var flux = flux_data.decode_float(flux_idx)
+
+			if flux >= fleuve_threshold:
+				type_img.set_pixel(x, y, color_fleuve)
+				count_fleuve += 1
+			elif flux >= riviere_threshold:
+				type_img.set_pixel(x, y, color_riviere)
+				count_riviere += 1
+			elif flux >= affluent_threshold:
+				type_img.set_pixel(x, y, color_affluent)
+				count_affluent += 1
+
+	print("  River type counts:")
+	print("    - Affluent (cyan):  ", count_affluent)
+	print("    - Rivière (bleu):   ", count_riviere)
+	print("    - Fleuve (foncé):   ", count_fleuve)
+	print("    - Total:            ", count_affluent + count_riviere + count_fleuve)
+
+	var path_type = output_dir + "/river_type_map.png"
+	var err = type_img.save_png(path_type)
+	if err == OK:
+		result["river_type_map"] = path_type
+		print("  ✅ Saved: ", path_type)
+	else:
+		push_error("[Exporter] ❌ Failed to save river_type_map: ", err)
+
 	return result
 
 # ============================================================================

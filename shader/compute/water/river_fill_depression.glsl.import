@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bnvfhqp1k86bi"
+path="res://.godot/imported/river_fill_depression.glsl-662d3d1b13c2b72610736dc39ba54dac.res"
+
+[deps]
+
+source_file="res://shader/compute/water/river_fill_depression.glsl"
+dest_files=["res://.godot/imported/river_fill_depression.glsl-662d3d1b13c2b72610736dc39ba54dac.res"]
+
+[params]
+
