@@ -25,7 +25,7 @@ var BIOMES = [
 	Biome.new("Abysses", Color.hex(0x0a0a2aFF), Color.hex(0x020408FF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, -6000], true, [TYPE_TERRAN]),
 	Biome.new("Plaine Abyssale", Color.hex(0x0f1640FF), Color.hex(0x06101cFF), [-21, 100], [0.0, 1.0], [-6000, -2000], true, [TYPE_TERRAN]),
 	Biome.new("Océan Profond", Color.hex(0x1a2d66FF), Color.hex(0x0c1a30FF), [-21, 100], [0.0, 1.0], [-2000, -200], true, [TYPE_TERRAN]),
-	Biome.new("Plateau Continental", Color.hex(0x2d4a9eFF), Color.hex(0x1a3050FF), [-21, 100], [0.0, 1.0], [-200, -50], true, [TYPE_TERRAN]),
+	Biome.new("Plateau Continental", Color.hex(0x2d4a9eFF), Color.hex(0x1a3050FF), [-21, 100], [0.0, 1.0], [-200, 0], true, [TYPE_TERRAN]),
 	
 	# --- CÔTES & EAUX PEU PROFONDES ---
 	Biome.new("Récif Corallien", Color.hex(0x00e0c0FF), Color.hex(0x20a090FF), [24, 35], [0.0, 1.0], [-50, 0], true, [TYPE_TERRAN]),
