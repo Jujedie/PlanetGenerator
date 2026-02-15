@@ -138,6 +138,8 @@ func _compile_all_shaders() -> bool:
 		{"path": "res://shader/compute/water/river_flow_direction.glsl", "name": "river_flow_direction", "critical": false},
 		{"path": "res://shader/compute/water/river_fill_depression.glsl", "name": "river_fill_depression", "critical": false},
 		{"path": "res://shader/compute/water/river_ocean_connect.glsl", "name": "river_ocean_connect", "critical": false},
+		{"path": "res://shader/compute/water/river_type_assign.glsl", "name": "river_type_assign", "critical": false},
+		{"path": "res://shader/compute/water/river_type_promote.glsl", "name": "river_type_promote", "critical": false},
 		# Shaders Régions Administratives (Étape 4)
 		{"path": "res://shader/compute/region/region_seed_placement.glsl", "name": "region_seed_placement", "critical": false},
 		{"path": "res://shader/compute/region/region_growth.glsl", "name": "region_growth", "critical": false},
@@ -1959,9 +1961,11 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 
 	if max_flux > 100.0:
 		# Seuils adaptatifs : pourcentage du max
+		# Avec type promotion, les seuils bas suffisent car la promotion
+		# propage le type fleuve/riviere en amont le long du chenal principal
 		river_affluent_threshold = max_flux * 0.005   # 0.5% du max
-		river_riviere_threshold  = max_flux * 0.05    # 5% du max
-		river_fleuve_threshold   = max_flux * 0.25    # 25% du max
+		river_riviere_threshold  = max_flux * 0.02    # 2% du max
+		river_fleuve_threshold   = max_flux * 0.08    # 8% du max
 	else:
 		# Fallback si flux très faible (ne devrait pas arriver avec depression filling)
 		river_affluent_threshold = 10.0
@@ -1977,19 +1981,26 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 		" | rivière=", river_riviere_threshold,
 		" | fleuve=", river_fleuve_threshold)
 
-	# === PASSE 8 : OCEAN CONNECT - Vérification connectivité ===
-	print("  • Vérification connectivité à l'océan...")
-	for pass_idx_ in range(effective_river_iterations):
+	# === PASSE 8 : TYPE ASSIGN - Classification initiale par flux ===
+	# Note: ocean_connect est inutile avec depression filling (tout le terrain
+	# draine vers l'eau), et type_assign ecrase ocean_reachable de toute facon.
+	print("  • Classification initiale des types de rivière (flux → type)...")
+	_dispatch_river_type_assign(w, h, groups_x, groups_y, river_affluent_threshold, river_riviere_threshold, river_fleuve_threshold)
+
+	# === PASSE 9 : TYPE PROMOTE - Promotion du type le long du chenal principal ===
+	var promote_iterations = 500
+	print("  • Promotion des types de rivière (", promote_iterations, " passes)...")
+	for pass_idx_ in range(promote_iterations):
 		var use_swap = (pass_idx_ % 2 == 1)
-		_dispatch_river_ocean_connect(w, h, groups_x, groups_y, pass_idx_, use_swap)
+		_dispatch_river_type_promote(w, h, groups_x, groups_y, use_swap)
 
 	# Si nombre impair de passes, copier le résultat
-	if effective_river_iterations % 2 == 1:
+	if promote_iterations % 2 == 1:
 		_copy_texture(gpu.textures["ocean_reachable_temp"], gpu.textures["ocean_reachable"], w, h)
 
-	# === PASSE 9 : RIVER CLASSIFY - Classification des rivières en biomes ===
-	print("  • Classification des rivières en biomes (seuils adaptatifs)...")
-	_dispatch_river_classify(w, h, groups_x, groups_y, atmosphere_type, river_affluent_threshold, river_riviere_threshold, river_fleuve_threshold)
+	# === PASSE 10 : RIVER CLASSIFY - Classification des rivières en biomes ===
+	print("  • Classification des rivières en biomes (type promu)...")
+	_dispatch_river_classify(w, h, groups_x, groups_y, atmosphere_type)
 
 	print("[Orchestrator] ✅ Phase 2.5 : Classification des eaux terminée")
 
@@ -2581,48 +2592,26 @@ func _dispatch_river_ocean_connect(w: int, h: int, groups_x: int, groups_y: int,
 	rd.free_rid(param_buffer)
 	rd.free_rid(tex_set)
 
-## Dispatch le shader de classification des rivières en biomes (avec connectivité océan)
-func _dispatch_river_classify(w: int, h: int, groups_x: int, groups_y: int, atmosphere_type: int, affluent_threshold: float, riviere_threshold: float, fleuve_threshold: float) -> void:
-	if not gpu.shaders.has("river_classify") or not gpu.shaders["river_classify"].is_valid():
-		push_warning("[Orchestrator] ⚠️ river_classify shader not ready, skipping")
+## Dispatch le shader de classification initiale des types de rivière (flux → type)
+func _dispatch_river_type_assign(w: int, h: int, groups_x: int, groups_y: int, affluent_threshold: float, riviere_threshold: float, fleuve_threshold: float) -> void:
+	if not gpu.shaders.has("river_type_assign") or not gpu.shaders["river_type_assign"].is_valid():
+		push_warning("[Orchestrator] ⚠️ river_type_assign shader not ready, skipping")
 		return
 
 	# === SET 0 : TEXTURES ===
 	var tex_uniforms: Array[RDUniform] = []
 
-	# Binding 0: river_flux (R32F)
-	var u_flux = RDUniform.new()
-	u_flux.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	u_flux.binding = 0
-	u_flux.add_id(gpu.textures["river_flux"])
-	tex_uniforms.append(u_flux)
+	# Binding 0: river_flux (R32F) - accumulated flux
+	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["river_flux"]))
 
-	# Binding 1: climate_texture (RGBA32F)
-	tex_uniforms.append(gpu.create_texture_uniform(1, gpu.textures["climate"]))
+	# Binding 1: water_mask (R8UI)
+	tex_uniforms.append(gpu.create_texture_uniform(1, gpu.textures["water_mask"]))
 
-	# Binding 2: water_mask (R8UI)
-	var u_mask = RDUniform.new()
-	u_mask.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	u_mask.binding = 2
-	u_mask.add_id(gpu.textures["water_mask"])
-	tex_uniforms.append(u_mask)
+	# Binding 2: river_type_out (R8UI) - output → ocean_reachable (repurposed)
+	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["ocean_reachable"]))
 
-	# Binding 3: ocean_reachable (R8UI)
-	var u_reach = RDUniform.new()
-	u_reach.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	u_reach.binding = 3
-	u_reach.add_id(gpu.textures["ocean_reachable"])
-	tex_uniforms.append(u_reach)
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["river_type_assign"], 0)
 
-	# Binding 4: river_biome_id (R32UI) - output
-	var u_rbid = RDUniform.new()
-	u_rbid.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	u_rbid.binding = 4
-	u_rbid.add_id(gpu.textures["river_biome_id"])
-	tex_uniforms.append(u_rbid)
-
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["river_classify"], 0)
-	
 	# === SET 1 : UBO PARAMETERS (32 bytes) ===
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(32)
@@ -2634,32 +2623,137 @@ func _dispatch_river_classify(w: int, h: int, groups_x: int, groups_y: int, atmo
 	buffer_bytes.encode_float(20, 0.0)  # padding1
 	buffer_bytes.encode_float(24, 0.0)  # padding2
 	buffer_bytes.encode_float(28, 0.0)  # padding3
-	
+
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["river_type_assign"], 1)
+
+	# === DISPATCH ===
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["river_type_assign"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+
+	rd.submit()
+	rd.sync()
+
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+## Dispatch le shader de promotion de type le long du chenal principal (ping-pong)
+func _dispatch_river_type_promote(w: int, h: int, groups_x: int, groups_y: int, use_swap: bool) -> void:
+	if not gpu.shaders.has("river_type_promote") or not gpu.shaders["river_type_promote"].is_valid():
+		return
+
+	var input_tex = gpu.textures["ocean_reachable"] if not use_swap else gpu.textures["ocean_reachable_temp"]
+	var output_tex = gpu.textures["ocean_reachable_temp"] if not use_swap else gpu.textures["ocean_reachable"]
+
+	# === SET 0 : TEXTURES ===
+	var tex_uniforms: Array[RDUniform] = []
+
+	# Binding 0: river_type_in (R8UI) - input ping
+	tex_uniforms.append(gpu.create_texture_uniform(0, input_tex))
+
+	# Binding 1: river_type_out (R8UI) - output pong
+	tex_uniforms.append(gpu.create_texture_uniform(1, output_tex))
+
+	# Binding 2: river_flux (R32F) - for main channel identification
+	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["river_flux"]))
+
+	# Binding 3: flow_direction (R8UI)
+	tex_uniforms.append(gpu.create_texture_uniform(3, gpu.textures["flow_direction"]))
+
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["river_type_promote"], 0)
+
+	# === SET 1 : UBO PARAMETERS (16 bytes) ===
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(16)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, 0)   # padding1
+	buffer_bytes.encode_u32(12, 0)  # padding2
+
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["river_type_promote"], 1)
+
+	# === DISPATCH ===
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["river_type_promote"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+
+	rd.submit()
+	rd.sync()
+
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+## Dispatch le shader de classification des rivières en biomes (avec connectivité océan)
+func _dispatch_river_classify(w: int, h: int, groups_x: int, groups_y: int, atmosphere_type: int) -> void:
+	if not gpu.shaders.has("river_classify") or not gpu.shaders["river_classify"].is_valid():
+		push_warning("[Orchestrator] ⚠️ river_classify shader not ready, skipping")
+		return
+
+	# === SET 0 : TEXTURES ===
+	var tex_uniforms: Array[RDUniform] = []
+
+	# Binding 0: river_type (R8UI) - promoted type from ocean_reachable
+	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["ocean_reachable"]))
+
+	# Binding 1: climate_texture (RGBA32F)
+	tex_uniforms.append(gpu.create_texture_uniform(1, gpu.textures["climate"]))
+
+	# Binding 2: river_biome_id (R32UI) - output
+	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["river_biome_id"]))
+
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["river_classify"], 0)
+
+	# === SET 1 : UBO PARAMETERS (16 bytes) ===
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(16)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, 0)   # padding1
+	buffer_bytes.encode_u32(12, 0)  # padding2
+
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
 	var param_uniform = RDUniform.new()
 	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
 	param_uniform.binding = 0
 	param_uniform.add_id(param_buffer)
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["river_classify"], 1)
-	
+
 	# === SET 2 : RIVER BIOMES SSBO ===
 	var planet_type = atmosphere_type
 	var river_biomes_data = Enum.build_river_biomes_gpu_buffer(planet_type, true)  # is_vegetation = true
 	var river_ssbo = rd.storage_buffer_create(river_biomes_data.size(), river_biomes_data)
-	
+
 	if not river_ssbo.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create river biomes SSBO")
 		rd.free_rid(param_set)
 		rd.free_rid(tex_set)
 		rd.free_rid(param_buffer)
 		return
-	
+
 	var ssbo_uniform = RDUniform.new()
 	ssbo_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
 	ssbo_uniform.binding = 0
 	ssbo_uniform.add_id(river_ssbo)
 	var ssbo_set = rd.uniform_set_create([ssbo_uniform], gpu.shaders["river_classify"], 2)
-	
+
 	# === DISPATCH ===
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["river_classify"])
@@ -2668,16 +2762,16 @@ func _dispatch_river_classify(w: int, h: int, groups_x: int, groups_y: int, atmo
 	rd.compute_list_bind_uniform_set(compute_list, ssbo_set, 2)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
-	
+
 	rd.submit()
 	rd.sync()
-	
+
 	rd.free_rid(ssbo_set)
 	rd.free_rid(river_ssbo)
 	rd.free_rid(param_set)
 	rd.free_rid(param_buffer)
 	rd.free_rid(tex_set)
-	
+
 	print("  [Orchestrator] ✅ Rivières classifiées en biomes")
 
 # ============================================================================

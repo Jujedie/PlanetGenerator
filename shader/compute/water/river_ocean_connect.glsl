@@ -2,18 +2,21 @@
 #version 450
 
 // ============================================================================
-// RIVER OCEAN CONNECT SHADER - Verification de connectivite a l'ocean
+// RIVER OCEAN CONNECT SHADER - Verification de connectivite a l'OCEAN
 // ============================================================================
 // Propage un drapeau "connecte a l'ocean" en remontant le graphe de drainage.
-// Seules les rivieres qui atteignent effectivement un plan d'eau (ocean, lac)
+// Seules les rivieres qui atteignent effectivement l'EAU SALEE (ocean/mer)
 // seront conservees dans la classification finale.
 //
 // APPROCHE : Propagation amont iterative
-// - Initialisation : tous les pixels d'eau sont marques "connectes"
-// - Chaque iteration : un pixel terrestre est marque "connecte" si son
-//   voisin en aval (selon flow_direction) est deja connecte
-// - Apres convergence, tous les pixels du bassin versant qui atteignent
-//   l'ocean sont marques
+// - Initialisation : les pixels d'eau SALEE (water_mask==1) sont marques "connectes"
+// - Les lacs d'eau douce propagent la connectivite de facon bidirectionnelle :
+//   si un voisin quelconque est connecte, le lac l'est aussi (pass-through)
+// - Les pixels terrestres suivent la propagation aval classique
+// - Apres convergence, les bassins versants atteignant l'ocean sont marques
+//
+// Resultat : les rivieres traversant des lacs avant d'atteindre la mer sont
+// conservees, mais les rivieres se terminant a un lac isole sont filtrees.
 //
 // Ce shader est execute en ping-pong pendant N iterations.
 //
@@ -77,10 +80,42 @@ void main() {
 
     if (pixel.x >= w || pixel.y >= h) return;
 
-    // Les pixels d'eau sont toujours "connectes" (ce sont les destinations)
+    // Seuls les pixels d'eau SALEE (ocean) seedent la connectivite
+    // water_mask: 0=terre, 1=saltwater/ocean, 2=freshwater/lac
     uint water_type = imageLoad(water_mask, pixel).r;
-    if (water_type > 0u) {
+    if (water_type == 1u) {
         imageStore(connect_output, pixel, uvec4(1u, 0u, 0u, 0u));
+        return;
+    }
+
+    // Lacs d'eau douce : propagation bidirectionnelle (pass-through)
+    // Un lac est connecte si N'IMPORTE quel voisin est connecte ou est eau salee.
+    // Cela permet a la connectivite de "traverser" les lacs vers l'interieur,
+    // mais un lac isole (sans voisin connecte) reste non-connecte.
+    if (water_type == 2u) {
+        uint current_state = imageLoad(connect_input, pixel).r;
+        if (current_state > 0u) {
+            imageStore(connect_output, pixel, uvec4(1u, 0u, 0u, 0u));
+            return;
+        }
+        for (int i = 0; i < 8; i++) {
+            int nx = wrapX(pixel.x + NEIGHBORS[i].x, w);
+            int ny = clampY(pixel.y + NEIGHBORS[i].y, h);
+            ivec2 nb = ivec2(nx, ny);
+            // Voisin eau salee -> connecte
+            uint n_water = imageLoad(water_mask, nb).r;
+            if (n_water == 1u) {
+                imageStore(connect_output, pixel, uvec4(1u, 0u, 0u, 0u));
+                return;
+            }
+            // Voisin deja marque connecte -> connecte
+            uint n_state = imageLoad(connect_input, nb).r;
+            if (n_state > 0u) {
+                imageStore(connect_output, pixel, uvec4(1u, 0u, 0u, 0u));
+                return;
+            }
+        }
+        imageStore(connect_output, pixel, uvec4(0u, 0u, 0u, 0u));
         return;
     }
 
@@ -107,14 +142,16 @@ void main() {
         int ny = clampY(pixel.y + NEIGHBORS[my_dir].y, h);
         ivec2 downstream = ivec2(nx, ny);
 
-        // Si le voisin en aval est un plan d'eau -> connecte
+        // Si le voisin en aval est de l'eau SALEE -> connecte directement
+        // Si le voisin en aval est un lac connecte -> connecte aussi
         uint down_water = imageLoad(water_mask, downstream).r;
-        if (down_water > 0u) {
+        if (down_water == 1u) {
             imageStore(connect_output, pixel, uvec4(1u, 0u, 0u, 0u));
             return;
         }
 
         // Si le voisin en aval est deja marque connecte -> nous aussi
+        // (couvre: terre connectee, lac connecte via pass-through)
         uint down_state = imageLoad(connect_input, downstream).r;
         if (down_state > 0u) {
             imageStore(connect_output, pixel, uvec4(1u, 0u, 0u, 0u));
