@@ -189,10 +189,9 @@ func _compile_generation_params() -> Dictionary:
 		"lake_threshold"     : get_node(CATEGORIES_PATHS["EAU"]+"Lake_Threshold_Param/LineEdit").value, # 5.0
 
 		"river_iterations"   : get_node(CATEGORIES_PATHS["EAU"]+"River_Iterations_Param/LineEdit").value, # 2000
-		"river_min_altitude" : get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Altitude_Param/LineEdit").value, # 20.0
-		"river_min_precipitation": get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Precipitation_Param/LineEdit").value, # 0.08
-		"river_threshold"    : get_node(CATEGORIES_PATHS["EAU"]+"River_Threshold_Param/LineEdit").value, # 1.0
-		"river_base_flux"    : get_node(CATEGORIES_PATHS["EAU"]+"River_Base_Flux_Param/LineEdit").value, # 1.0
+		# Nouveau système de rivières : les seuils sont définis par défaut dans orchestrator.gd
+		# river_affluent_threshold = 50.0, river_riviere_threshold = 200.0, river_fleuve_threshold = 800.0
+		# river_precip_scale = 1.0 (utiliser River_Base_Flux_Param comme proxy si besoin)
 
 		# Regions
 		"nb_cases_regions" : get_node(CATEGORIES_PATHS["REGION"]+"Nb_Cases_Regions_Param/LineEdit").value, # 50
@@ -202,7 +201,6 @@ func _compile_generation_params() -> Dictionary:
 		"region_river_threshold" : get_node(CATEGORIES_PATHS["REGION"]+"Region_River_Threshold_Param/LineEdit").value, # 1.0
 		"region_budget_variation": get_node(CATEGORIES_PATHS["REGION"]+"Region_Budget_Variation_Param/LineEdit").value, # 0.5
 		"region_noise_strength"  : get_node(CATEGORIES_PATHS["REGION"]+"Region_Noise_Strength_Param/LineEdit").value, # 0.5
-		"region_generation_optimised" : get_node(CATEGORIES_PATHS["REGION"]+"Region_Generation_Optimised_Param/LineEdit").button_pressed,
 		"region_iterations"	     : max(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 2,
 
 		# Regions Ocean 
@@ -340,14 +338,13 @@ func _on_range_change_lake_threshold(_value = 0) -> void:
 	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"Lake_Threshold_Param/Label"), "LAKE_THRESHOLD", get_node(CATEGORIES_PATHS["EAU"]+"Lake_Threshold_Param/LineEdit").value)
 func _on_range_change_river_iterations(_value = 0) -> void:
 	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Iterations_Param/Label"), "RIVER_ITERATIONS", get_node(CATEGORIES_PATHS["EAU"]+"River_Iterations_Param/LineEdit").value)
-func _on_range_change_river_min_altitude(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Altitude_Param/Label"), "RIVER_MIN_ALTITUDE", get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Altitude_Param/LineEdit").value, " m")
-func _on_range_change_river_min_precipitation(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Precipitation_Param/Label"), "RIVER_MIN_PRECIPITATION", get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Precipitation_Param/LineEdit").value, "%")
+func _on_range_change_river_affluent_threshold(_value = 0) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Affluent_Threshold_Param/Label"), "RIVER_AFFLUENT_THRESHOLD", get_node(CATEGORIES_PATHS["EAU"]+"River_Affluent_Threshold_Param/LineEdit").value)
 func _on_range_change_river_threshold(_value = 0) -> void:
 	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Threshold_Param/Label"), "RIVER_THRESHOLD", get_node(CATEGORIES_PATHS["EAU"]+"River_Threshold_Param/LineEdit").value)
-func _on_range_change_river_base_flux(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Base_Flux_Param/Label"), "RIVER_BASE_FLUX", get_node(CATEGORIES_PATHS["EAU"]+"River_Base_Flux_Param/LineEdit").value)
+func _on_range_change_river_fleuve_threshold(_value = 0) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Fleuve_Threshold_Param/Label"), "RIVER_FLEUVE_THRESHOLD", get_node(CATEGORIES_PATHS["EAU"]+"River_Fleuve_Threshold_Param/LineEdit").value)
+
 func _on_range_change_cloud_coverage(_value = 0) -> void:
 	_set_slider_label(get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Coverage_Param/Label"), "CLOUD_COVERAGE", get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Coverage_Param/LineEdit").value, "%")
 func _on_range_change_cloud_density(_value = 0) -> void:
@@ -421,10 +418,9 @@ func maj_labels() -> void:
 	_on_range_change_freshwater_max_size()
 	_on_range_change_lake_threshold()
 	_on_range_change_river_iterations()
-	_on_range_change_river_min_altitude()
-	_on_range_change_river_min_precipitation()
+	_on_range_change_river_affluent_threshold()
 	_on_range_change_river_threshold()
-	_on_range_change_river_base_flux()
+	_on_range_change_river_fleuve_threshold()
 
 	_on_range_change_cloud_coverage()
 	_on_range_change_cloud_density()

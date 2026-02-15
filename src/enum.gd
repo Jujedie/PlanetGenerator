@@ -70,8 +70,6 @@ var BIOMES = [
 
 	# --- RIVIÈRES & LACS (Type 0 - Requis pour river_map) ---
 	Biome.new("Rivière", Color.hex(0x4090e0FF), Color.hex(0x285890FF), [-30, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
-	Biome.new("Fleuve", Color.hex(0x3078c8FF), Color.hex(0x204870FF), [-20, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
-	Biome.new("Affluent", Color.hex(0x60a8f0FF), Color.hex(0x3870a8FF), [-30, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
 	Biome.new("Lac d'eau douce", Color.hex(0x50a0e8FF), Color.hex(0x306898FF), [0, 45], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
 	Biome.new("Lac gelé", Color.hex(0xd8f0ffFF), Color.hex(0xc0e0f8FF), [-50, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
 	Biome.new("Rivière glaciaire", Color.hex(0xa8d8f0FF), Color.hex(0x80b0c8FF), [-30, 10], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
@@ -98,8 +96,6 @@ var BIOMES = [
 
 	# --- RIVIÈRES TOXIQUES ---
 	Biome.new("Rivière Acide", Color.hex(0x80ff00FF), Color.hex(0x406018FF), [-50, 80], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TOXIC], true, true),
-	Biome.new("Fleuve Radioactif", Color.hex(0x00ff40FF), Color.hex(0x205010FF), [-50, 80], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TOXIC], true, true),
-	Biome.new("Affluent Contaminé", Color.hex(0x90ff40FF), Color.hex(0x507028FF), [-50, 80], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TOXIC], true, true),
 	Biome.new("Lac d'Acide", Color.hex(0x40ff40FF), Color.hex(0x284818FF), [-50, 90], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TOXIC], true, true),
 
 
@@ -161,7 +157,7 @@ var BIOMES = [
 
 	# --- RIVIÈRES MORTES ---
 	Biome.new("Rivière de Boue", Color.hex(0x906040FF), Color.hex(0x503020FF), [-21, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
-	Biome.new("Fleuve Pollué", Color.hex(0x608040FF), Color.hex(0x303820FF), [-21, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
+	Biome.new("Rivière Pollué", Color.hex(0x608040FF), Color.hex(0x303820FF), [-21, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
 	Biome.new("Lac Irradié", Color.hex(0xc0ff40FF), Color.hex(0x608030FF), [-21, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
 
 	# ==========================================================================
