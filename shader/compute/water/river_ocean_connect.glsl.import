@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bu3ax4wf2kawa"
+path="res://.godot/imported/river_ocean_connect.glsl-fd1d9a051daeb65b5e54d7d10c89f96d.res"
+
+[deps]
+
+source_file="res://shader/compute/water/river_ocean_connect.glsl"
+dest_files=["res://.godot/imported/river_ocean_connect.glsl-fd1d9a051daeb65b5e54d7d10c89f96d.res"]
+
+[params]
+
