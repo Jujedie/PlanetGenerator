@@ -934,81 +934,23 @@ func build_temperature_palette(planet_type: int) -> PackedByteArray:
 	return buffer
 
 
-## Construit une palette de couleurs de précipitation dynamique basée sur les biomes.
-## Même structure SSBO que la palette de température.
-## @param planet_type: Type de planète (0=Terran, 1=Toxic, etc.)
+## Construit une palette de couleurs de précipitation statique depuis COULEUR_PRECIPITATION.
+## Utilise directement les 11 entrées (0.0, 0.1, ..., 1.0) du dictionnaire.
+## Structure SSBO (std430):
+## - Header: uint entry_count + 3×padding = 16 bytes
+## - Entries[]: float threshold, float r, float g, float b = 16 bytes chacune
+## @param _planet_type: Ignoré (palette identique pour tous les types)
 ## @return PackedByteArray pour le GPU
-func build_precipitation_palette(planet_type: int) -> PackedByteArray:
-	var biomes_list = get_biomes_for_gpu(planet_type)
+func build_precipitation_palette(_planet_type: int) -> PackedByteArray:
+	# Utiliser directement les clés/couleurs de COULEUR_PRECIPITATION
+	var precip_keys = COULEUR_PRECIPITATION.keys()
+	precip_keys.sort()
 	
-	# Collecter tous les seuils d'humidité uniques depuis les biomes
-	var humid_set: Dictionary = {}
-	for biome in biomes_list:
-		var precip = biome.get_interval_precipitation()
-		humid_set[precip[0]] = true
-		humid_set[precip[1]] = true
-	
-	var raw_humids: Array = humid_set.keys()
-	raw_humids.sort()
-	
-	if raw_humids.size() < 2:
-		raw_humids = [0.0, 0.5, 1.0]
-	
-	# Ajouter des points intermédiaires pour un gradient lisse
-	var all_humids: Array = []
-	for i in range(raw_humids.size()):
-		all_humids.append(raw_humids[i])
-		if i < raw_humids.size() - 1:
-			var gap: float = raw_humids[i + 1] - raw_humids[i]
-			if gap > 0.15:
-				all_humids.append(raw_humids[i] + gap / 3.0)
-				all_humids.append(raw_humids[i] + 2.0 * gap / 3.0)
-			elif gap > 0.08:
-				all_humids.append(raw_humids[i] + gap / 2.0)
-	
-	all_humids.sort()
-	# Dédupliquer (float: tolérance 0.001)
-	var unique_humids: Array = []
-	for h in all_humids:
-		if unique_humids.size() == 0 or abs(unique_humids[-1] - h) > 0.001:
-			unique_humids.append(h)
-	
-	# Pour chaque seuil, interpoler depuis le dictionnaire COULEUR_PRECIPITATION
 	var palette_entries: Array = []
-	
-	for h in unique_humids:
-		# Chercher la couleur exacte ou interpoler entre deux clés
-		var precip_keys = COULEUR_PRECIPITATION.keys()
-		precip_keys.sort()
-		
-		var color: Color
-		if COULEUR_PRECIPITATION.has(h):
-			# Correspondance exacte
-			color = COULEUR_PRECIPITATION[h]
-		else:
-			# Interpoler entre les deux clés les plus proches
-			var lower_key = null
-			var upper_key = null
-			
-			for key in precip_keys:
-				if key <= h:
-					lower_key = key
-				if key >= h and upper_key == null:
-					upper_key = key
-					break
-			
-			if lower_key != null and upper_key != null and lower_key != upper_key:
-				var t_ratio = (h - lower_key) / (upper_key - lower_key)
-				color = COULEUR_PRECIPITATION[lower_key].lerp(COULEUR_PRECIPITATION[upper_key], t_ratio)
-			elif lower_key != null:
-				color = COULEUR_PRECIPITATION[lower_key]
-			elif upper_key != null:
-				color = COULEUR_PRECIPITATION[upper_key]
-			else:
-				color = Color(1.0, 0.0, 1.0)  # Magenta fallback
-		
+	for key in precip_keys:
+		var color: Color = COULEUR_PRECIPITATION[key]
 		palette_entries.append({
-			"threshold": h,
+			"threshold": float(key),
 			"r": color.r,
 			"g": color.g,
 			"b": color.b
@@ -1034,5 +976,5 @@ func build_precipitation_palette(planet_type: int) -> PackedByteArray:
 		buffer.encode_float(offset + 12, entry["b"])
 		offset += entry_size
 	
-	print("[Enum] ✅ Palette précipitation dynamique: ", entry_count, " entrées (type=", planet_type, ")")
+	print("[Enum] ✅ Palette précipitation statique: ", entry_count, " entrées")
 	return buffer

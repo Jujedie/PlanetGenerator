@@ -310,14 +310,14 @@ void main() {
     // Amplitude de modulation réduite pour laisser le bruit continental dominer
     // On veut des tendances latitudinales, pas des bandes dures
     float lat_moisture = 0.0;
-    // ITCZ - Équateur : boost humidité
-    lat_moisture += 0.15 * exp(-pow((warped_lat - 0.0) / 0.15, 2.0));
+    // ITCZ - Équateur : boost humidité (modéré)
+    lat_moisture += 0.08 * exp(-pow((warped_lat - 0.0) / 0.15, 2.0));
     // Subtropicaux : réduction modérée (déserts à ~30°)
-    lat_moisture -= 0.18 * exp(-pow((warped_lat - 0.33) / 0.14, 2.0));
+    lat_moisture -= 0.10 * exp(-pow((warped_lat - 0.33) / 0.14, 2.0));
     // Latitudes moyennes : léger boost (~55°)
-    lat_moisture += 0.10 * exp(-pow((warped_lat - 0.61) / 0.14, 2.0));
-    // Pôles : beaucoup plus sec - démarrage plus tôt et plus fort
-    lat_moisture -= 0.30 * smoothstep(0.60, 0.90, warped_lat);
+    lat_moisture += 0.06 * exp(-pow((warped_lat - 0.61) / 0.14, 2.0));
+    // Pôles : plus sec
+    lat_moisture -= 0.15 * smoothstep(0.60, 0.90, warped_lat);
     
     // =========================================================================
     // INFLUENCE DE LA GÉOGRAPHIE
@@ -339,15 +339,14 @@ void main() {
     // =========================================================================
     
     // Le bruit brut est dans environ [-0.65, 0.65]
-    float raw = noise * 2.0;
-    float base = clamp(raw * 0.5 + 0.5, 0.0, 1.0);
-    
-    // UN SEUL smoothstep pour un contraste modéré (au lieu de double)
-    // Le double smoothstep écrasait la distribution vers les extrêmes trop vite
-    float contrast_base = base * base * (3.0 - 2.0 * base);
+    // Normalisation douce : centrer autour de 0.5 sans amplification excessive
+    // Cela préserve la diversité des valeurs intermédiaires
+    float base = clamp(noise + 0.5, 0.0, 1.0);
     
     // Ajouter les modifications latitudinales et géographiques
-    float modified = contrast_base + lat_moisture + ocean_boost + altitude_penalty;
+    // Pas de smoothstep : on garde la distribution naturelle du bruit
+    // pour éviter de pousser les valeurs vers les extrêmes 0.0 et 1.0
+    float modified = base + lat_moisture + ocean_boost + altitude_penalty;
     modified = clamp(modified, 0.0, 1.0);
     
     // =========================================================================
@@ -365,7 +364,7 @@ void main() {
     
     // Atténuation polaire multiplicative : réduit l'humidité aux hautes latitudes
     // indépendamment du bruit (empêche les bords de monter)
-    float polar_damping = 1.0 - 0.7 * smoothstep(0.55, 0.95, lat);
+    float polar_damping = 1.0 - 0.5 * smoothstep(0.60, 0.95, lat);
     humidity *= polar_damping;
     
     // Clamp de sécurité final
