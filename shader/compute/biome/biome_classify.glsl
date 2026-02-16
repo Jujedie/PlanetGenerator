@@ -224,13 +224,16 @@ float compute_biome_score(
         }
     }
     
-    // PÉNALITÉ FORTE pour les plages très larges (favorise fortement la spécificité)
-    // Un biome avec des plages étroites doit TOUJOURS gagner sur un biome générique
-    float temp_penalty = temp_range / 100.0;      // max ~2.0 pour plage de 200°C
-    float humid_penalty = humid_range * 2.0;      // max 2.0 pour plage de 1.0
-    float elev_penalty = elev_range / 10000.0;    // max ~5.0 pour plage complète
+    // SPÉCIFICITÉ MULTIPLICATIVE : favorise les biomes aux plages étroites
+    // sans écraser les biomes généralistes à 0.001
+    // Chaque facteur tend vers 1.0 pour les plages étroites et vers 0 pour
+    // les plages très larges, mais le produit ne tombe jamais à zéro.
+    float specificity = 1.0;
+    specificity *= 15.0 / (15.0 + temp_range);       // 200° → 0.07, 30° → 0.33, 5° → 0.75
+    specificity *= 1.5 / (1.5 + humid_range * 5.0);  // 1.0 → 0.23, 0.3 → 0.56, 0.1 → 0.75
+    specificity *= 8000.0 / (8000.0 + elev_range);    // 50000 → 0.14, 1000 → 0.89, 50 → 0.99
     
-    score -= (temp_penalty + humid_penalty + elev_penalty);
+    score *= specificity;
     
     return max(score, 0.001);  // Toujours > 0 si on arrive ici
 }
@@ -400,7 +403,12 @@ void main() {
         float small_noise = snoise(small_pos);
         
         // Combinaison : grande échelle domine pour la continuité spatiale
-        float selection_noise = large_noise * 0.55 + medium_noise * 0.30 + small_noise * 0.15;
+        float selection_noise = large_noise * 0.50 + medium_noise * 0.28 + small_noise * 0.12;
+        
+        // Variation par pixel (hash) pour casser les zones trop uniformes
+        // quand plusieurs biomes ont des scores proches
+        float pixel_jitter = hash(vec2(pixel) + vec2(float(seed) * 0.731));
+        selection_noise += (pixel_jitter - 0.5) * 0.10;
         
         // Normaliser le bruit vers [0, 1]
         float selection = clamp(selection_noise * 0.5 + 0.5, 0.0, 1.0);
