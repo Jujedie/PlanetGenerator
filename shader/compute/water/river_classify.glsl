@@ -95,8 +95,10 @@ uint findBestRiverBiome(int rtype, float temperature) {
             }
         }
 
-        // Fallback : n'importe quel type de riviere (pas lac)
-        if (b.river_type <= 2u || b.river_type == 5u) {
+        // Fallback : n'importe quel type de riviere (pas lac, pas glaciaire)
+        // Les rivières glaciaires (type 5) ne doivent être assignées que par
+        // match exact de température, pas via le fallback générique.
+        if (b.river_type <= 2u) {
             if (score > fallback_score) {
                 fallback_score = score;
                 fallback_match = i;

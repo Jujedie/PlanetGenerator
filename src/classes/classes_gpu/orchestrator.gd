@@ -1955,22 +1955,31 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	print("    Max flux détecté: ", max_flux)
 
 	# Seuils adaptatifs basés sur le flux maximum
+	# SCALING PAR TAILLE DE CARTE : sur les petites cartes, les drainage networks
+	# sont proportionnellement plus denses visuellement. On augmente les seuils
+	# pour compenser, en prenant une carte de référence de 2000×1000 pixels.
+	var map_pixels = float(w * h)
+	var reference_pixels = 2000.0 * 1000.0  # 2M pixels comme référence
+	var density_scale = sqrt(reference_pixels / maxf(map_pixels, 1.0))
+	density_scale = clampf(density_scale, 0.5, 4.0)  # Borner le facteur
+	print("    Density scale (map size correction): ", density_scale, " (map: ", w, "x", h, " = ", int(map_pixels), " px)")
+
 	var river_affluent_threshold: float
 	var river_riviere_threshold: float
 	var river_fleuve_threshold: float
 
 	if max_flux > 100.0:
-		# Seuils adaptatifs : pourcentage du max
+		# Seuils adaptatifs : pourcentage du max, ajustés par la taille de la carte
 		# Avec type promotion, les seuils bas suffisent car la promotion
 		# propage le type fleuve/riviere en amont le long du chenal principal
-		river_affluent_threshold = max_flux * 0.005   # 0.5% du max
-		river_riviere_threshold  = max_flux * 0.02    # 2% du max
-		river_fleuve_threshold   = max_flux * 0.08    # 8% du max
+		river_affluent_threshold = max_flux * 0.005 * density_scale
+		river_riviere_threshold  = max_flux * 0.02  * density_scale
+		river_fleuve_threshold   = max_flux * 0.08  * density_scale
 	else:
 		# Fallback si flux très faible (ne devrait pas arriver avec depression filling)
-		river_affluent_threshold = 10.0
-		river_riviere_threshold  = 30.0
-		river_fleuve_threshold   = 60.0
+		river_affluent_threshold = 10.0 * density_scale
+		river_riviere_threshold  = 30.0 * density_scale
+		river_fleuve_threshold   = 60.0 * density_scale
 
 	# Stocker dans params pour l'exporter
 	params["river_affluent_threshold"] = river_affluent_threshold

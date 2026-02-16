@@ -69,10 +69,10 @@ var BIOMES = [
 	Biome.new("Bayou (Marais Chaud)", Color.hex(0x506828FF), Color.hex(0x384020FF), [25, 35], [0.8, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
 
 	# --- RIVIÈRES & LACS (Type 0 - Requis pour river_map) ---
-	Biome.new("Rivière", Color.hex(0x4090e0FF), Color.hex(0x285890FF), [-30, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
-	Biome.new("Lac d'eau douce", Color.hex(0x50a0e8FF), Color.hex(0x306898FF), [0, 45], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
-	Biome.new("Lac gelé", Color.hex(0xd8f0ffFF), Color.hex(0xc0e0f8FF), [-50, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
-	Biome.new("Rivière glaciaire", Color.hex(0xa8d8f0FF), Color.hex(0x80b0c8FF), [-30, 10], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
+	Biome.new("Rivière", Color.hex(0x4090e0FF), Color.hex(0x285890FF), [-10, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
+	Biome.new("Lac d'eau douce", Color.hex(0x50a0e8FF), Color.hex(0x306898FF), [-10, 45], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
+	Biome.new("Lac gelé", Color.hex(0xd8f0ffFF), Color.hex(0xc0e0f8FF), [-50, -10], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
+	Biome.new("Rivière glaciaire", Color.hex(0xa8d8f0FF), Color.hex(0x80b0c8FF), [-50, -10], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
 
 
 	# ==========================================================================
