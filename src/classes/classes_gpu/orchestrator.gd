@@ -156,6 +156,8 @@ func _compile_all_shaders() -> bool:
 		# Shaders Final Map (Étape 6)
 		{"path": "res://shader/compute/final_map.glsl", "name": "final_map", "critical": false},
 		{"path": "res://shader/compute/water/water_to_color.glsl", "name": "water_to_color", "critical": false},
+		# Shader Gas Giant Final Map (Type 6 - Gazeuse)
+		{"path": "res://shader/compute/gas_giant_final.glsl", "name": "gas_giant_final", "critical": false},
 	]
 	
 	var all_critical_loaded = true
@@ -630,6 +632,33 @@ func run_simulation() -> void:
 	print("  Résolution de la simulation : ", w, "x", h)
 	
 	var _rids_to_free: Array[RID] = []
+
+	# === TYPE 6 (GAZEUSE) : Pipeline simplifié ===
+	# Les planètes gazeuses n'ont pas de surface solide.
+	# On ne génère que température, précipitation et une carte finale spéciale.
+	var atmosphere_type = int(generation_params.get("planet_type", 0))
+	if atmosphere_type == Enum.TYPE_GAZEUZE:
+		print("[Orchestrator] 🪐 Planète gazeuse détectée - pipeline simplifié")
+		
+		var groups_x = ceili(float(w) / 16.0)
+		var groups_y = ceili(float(h) / 16.0)
+		var seed_val = int(generation_params.get("seed", 12345))
+		var avg_temperature = float(generation_params.get("avg_temperature", 15.0))
+		var avg_precipitation = float(generation_params.get("global_humidity", 0.5))
+		var sea_level = float(generation_params.get("sea_level", 0.0))
+		var cylinder_radius = float(w) / (2.0 * PI)
+		
+		# Température et précipitation (réutilise les shaders existants, geo=0 → pas de gradient d'altitude)
+		_dispatch_temperature(w, h, groups_x, groups_y, seed_val, avg_temperature, sea_level, cylinder_radius, atmosphere_type)
+		_dispatch_precipitation(w, h, groups_x, groups_y, seed_val, avg_precipitation, cylinder_radius, atmosphere_type, sea_level)
+		
+		# Carte finale gazeuse (shader spécifique)
+		run_gas_giant_final_phase(generation_params, w, h)
+		
+		print("=".repeat(60))
+		print("[Orchestrator] ✅ SIMULATION GAZEUSE TERMINÉE")
+		print("=".repeat(60) + "\n")
+		return
 
 	# === ÉTAPE 0 : GÉNÉRATION TOPOGRAPHIQUE DE BASE ===
 	run_base_elevation_phase(generation_params, w, h)
@@ -1432,7 +1461,7 @@ func run_atmosphere_phase(params: Dictionary, w: int, h: int) -> void:
 	var avg_temperature = float(params.get("avg_temperature", 15.0))
 	var avg_precipitation = float(params.get("global_humidity", 0.5))
 	var sea_level = float(params.get("sea_level", 0.0))
-	var atmosphere_type = int(params.get("atmosphere_type", 0))
+	var atmosphere_type = int(params.get("planet_type", 0))
 	var cylinder_radius = float(w) / (2.0 * PI)
 	
 	# === PASSE 1 : TEMPÉRATURE ===
@@ -1440,6 +1469,12 @@ func run_atmosphere_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# === PASSE 2 : PRÉCIPITATION ===
 	_dispatch_precipitation(w, h, groups_x, groups_y, seed_val, avg_precipitation, cylinder_radius, atmosphere_type, sea_level)
+	
+	# Pas de nuages ni de banquise sur planètes sans atmosphère ou stériles
+	if atmosphere_type in [Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE]:
+		print("  ⏭️ Nuages et banquise ignorés (type=", atmosphere_type, ")")
+		print("[Orchestrator] ✅ Phase 3 : Atmosphère & Climat terminée")
+		return
 	
 	# === PASSE 3 : NUAGES ===
 	var cloud_coverage = float(params.get("cloud_coverage", 0.5))
@@ -1784,7 +1819,7 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	var seed_val = int(params.get("seed", 12345))
 	var sea_level = float(params.get("sea_level", 0.0))
-	var atmosphere_type = int(params.get("atmosphere_type", 0))
+	var atmosphere_type = int(params.get("planet_type", 0))
 	
 	# Toujours initialiser les textures d'eau (nécessaires pour final_map même sans eau)
 	gpu.initialize_water_textures()
@@ -3878,6 +3913,106 @@ func _dispatch_resources(w: int, h: int, groups_x: int, groups_y: int, seed_val:
 	
 	rd.free_rid(param_set)
 	rd.free_rid(param_buffer)
+
+# ============================================================================
+# ÉTAPE 6 BIS : FINAL MAP GAZEUSE (TYPE 6)
+# ============================================================================
+
+## Génère la carte finale pour une planète gazeuse.
+##
+## Utilise le shader gas_giant_final qui lit climate_texture (R=temp, G=humidity)
+## et produit une apparence de géante gazeuse avec bandes horizontales et tourbillons.
+##
+## @param params: Dictionnaire contenant les paramètres de génération
+## @param w: Largeur de la texture
+## @param h: Hauteur de la texture
+func run_gas_giant_final_phase(params: Dictionary, w: int, h: int) -> void:
+	print("[Orchestrator] 🪐 Phase 6 : Génération Final Map (Gazeuse)")
+	
+	if not rd or not gpu.pipelines.has("gas_giant_final") or not gpu.pipelines["gas_giant_final"].is_valid():
+		push_warning("[Orchestrator] ⚠️ gas_giant_final pipeline not ready, skipping")
+		return
+	
+	# Initialiser la texture final_map (RGBA8)
+	gpu.initialize_final_map_textures()
+	
+	var groups_x = int(ceil(float(w) / 16.0))
+	var groups_y = int(ceil(float(h) / 16.0))
+	
+	var seed_val = int(params.get("seed", 12345))
+	var avg_temperature = float(params.get("avg_temperature", 15.0))
+	var cylinder_radius = float(w) / (2.0 * PI)
+	
+	# === UBO (32 bytes, std140) ===
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	
+	buffer_bytes.encode_u32(0, w)                      # width
+	buffer_bytes.encode_u32(4, h)                      # height
+	buffer_bytes.encode_u32(8, seed_val)               # seed
+	buffer_bytes.encode_float(12, cylinder_radius)     # cylinder_radius
+	buffer_bytes.encode_float(16, avg_temperature)     # avg_temperature
+	buffer_bytes.encode_float(20, 0.0)                 # padding1
+	buffer_bytes.encode_float(24, 0.0)                 # padding2
+	buffer_bytes.encode_float(28, 0.0)                 # padding3
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	if not param_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create gas_giant_final param buffer")
+		return
+	
+	# === SET 0 : Textures (climate_texture + final_map) ===
+	var tex_uniforms: Array[RDUniform] = []
+	
+	# Binding 0: climate_texture (RGBA32F, lecture)
+	var u_climate = RDUniform.new()
+	u_climate.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	u_climate.binding = 0
+	u_climate.add_id(gpu.textures["climate"])
+	tex_uniforms.append(u_climate)
+	
+	# Binding 1: final_map (RGBA8, écriture)
+	var u_final = RDUniform.new()
+	u_final.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	u_final.binding = 1
+	u_final.add_id(gpu.textures["final_map"])
+	tex_uniforms.append(u_final)
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["gas_giant_final"], 0)
+	if not tex_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create gas_giant_final textures uniform set")
+		rd.free_rid(param_buffer)
+		return
+	
+	# === SET 1 : Parameters UBO ===
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["gas_giant_final"], 1)
+	if not param_set.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create gas_giant_final param set")
+		rd.free_rid(tex_set)
+		rd.free_rid(param_buffer)
+		return
+	
+	# === Dispatch ===
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["gas_giant_final"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	rd.submit()
+	rd.sync()
+	
+	# Nettoyer
+	rd.free_rid(param_set)
+	rd.free_rid(tex_set)
+	rd.free_rid(param_buffer)
+	
+	print("[Orchestrator] ✅ Carte finale gazeuse générée")
 
 # ============================================================================
 # ÉTAPE 6 : FINAL MAP (COMBINAISON)

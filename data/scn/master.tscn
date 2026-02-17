@@ -484,7 +484,7 @@ popup/item_4/text = "TYPE_MORTE"
 popup/item_4/id = 4
 popup/item_5/text = "TYPE_STERILE"
 popup/item_5/id = 5
-popup/item_6/text = "TYPE_GAZEUZE"
+popup/item_6/text = "TYPE_GAZEUSE"
 popup/item_6/id = 6
 
 [node name="Thread_Number_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters" unique_id=442686978]

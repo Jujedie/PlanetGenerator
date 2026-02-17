@@ -82,6 +82,26 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	rd.submit()
 	rd.sync()
 	
+	# === TYPE 6 (GAZEUSE) : Export simplifié ===
+	# Seulement température, précipitation et carte finale
+	var planet_type = int(params.get("planet_type", 0))
+	if planet_type == 6:  # TYPE_GAZEUZE
+		print("[Exporter] 🪐 Export gazeuse - cartes limitées (température, précipitation, final)")
+		var exported_files = {}
+		
+		# Export climat (température + précipitation colorées seulement)
+		var climate_result = _export_climate_maps_gas_giant(gpu, output_dir)
+		for key in climate_result.keys():
+			exported_files[key] = climate_result[key]
+		
+		# Export final map
+		var final_result = _export_final_map(gpu, output_dir)
+		for key in final_result.keys():
+			exported_files[key] = final_result[key]
+		
+		print("[Exporter] Export gazeuse complete: ", exported_files.size(), " maps")
+		return exported_files
+	
 	# Liste des textures RGBA32F (16 bytes/pixel) - exclure les textures climat
 	var rgba32f_textures = ["geo", "climate", "temp_buffer", "plates", "crust_age"]
 	
@@ -134,24 +154,32 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 			exported_files[key] = plates_result[key]
 	
 	# === EXPORT CLIMAT (Step 3) - Optimisé RGBA8 Direct ===
-	var climate_result = _export_climate_maps_optimized(gpu, output_dir)
-	for key in climate_result.keys():
-		exported_files[key] = climate_result[key]
+	# Pour les planètes sans atmosphère ou stériles, exporter seulement temp/precip (pas nuages/banquise)
+	if planet_type in [3, 5]:  # TYPE_NO_ATMOS, TYPE_STERILE
+		var climate_result = _export_climate_maps_gas_giant(gpu, output_dir)  # Réutilise: exporte seulement temp + precip
+		for key in climate_result.keys():
+			exported_files[key] = climate_result[key]
+	else:
+		var climate_result = _export_climate_maps_optimized(gpu, output_dir)
+		for key in climate_result.keys():
+			exported_files[key] = climate_result[key]
 	
 	# === EXPORT EAUX (Step 2.5) - Classification des masses d'eau ===
-	var water_result = _export_water_classification(gpu, output_dir, width, height)
-	for key in water_result.keys():
-		exported_files[key] = water_result[key]
+	# Pas d'eau sur planètes sans atmosphère ou stériles
+	if planet_type not in [3, 5]:  # TYPE_NO_ATMOS, TYPE_STERILE
+		var water_result = _export_water_classification(gpu, output_dir, width, height)
+		for key in water_result.keys():
+			exported_files[key] = water_result[key]
 	
-	# === EXPORT RIVIÈRES (Step 2.6) - Carte des rivières CPU ===
-	var river_result = _export_river_map(gpu, output_dir, width, height)
-	for key in river_result.keys():
-		exported_files[key] = river_result[key]
+		# === EXPORT RIVIÈRES (Step 2.6) - Carte des rivières CPU ===
+		var river_result = _export_river_map(gpu, output_dir, width, height)
+		for key in river_result.keys():
+			exported_files[key] = river_result[key]
 
-	# === EXPORT TYPE RIVIÈRES (Step 2.7) - Carte des types de rivières ===
-	var river_type_result = _export_river_type_map(gpu, output_dir, width, height)
-	for key in river_type_result.keys():
-		exported_files[key] = river_type_result[key]
+		# === EXPORT TYPE RIVIÈRES (Step 2.7) - Carte des types de rivières ===
+		var river_type_result = _export_river_type_map(gpu, output_dir, width, height)
+		for key in river_type_result.keys():
+			exported_files[key] = river_type_result[key]
 	
 	# === EXPORT RÉGIONS (Step 4) - Régions administratives ===
 	var region_result = _export_region_map(gpu, output_dir,params.get("region_generation_optimised",true))
@@ -159,9 +187,11 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		exported_files[key] = region_result[key]
 	
 	# === EXPORT RÉGIONS OCÉANIQUES (Step 4.5) ===
-	var ocean_region_result = _export_ocean_region_map(gpu, output_dir,params.get("region_generation_optimised",true))
-	for key in ocean_region_result.keys():
-		exported_files[key] = ocean_region_result[key]
+	# Pas de régions océaniques sans eau
+	if planet_type not in [3, 5]:  # TYPE_NO_ATMOS, TYPE_STERILE
+		var ocean_region_result = _export_ocean_region_map(gpu, output_dir,params.get("region_generation_optimised",true))
+		for key in ocean_region_result.keys():
+			exported_files[key] = ocean_region_result[key]
 	
 	# === EXPORT BIOMES (Step 4.1) ===
 	var biome_result = _export_biome_map(gpu, output_dir)
@@ -425,6 +455,71 @@ func _export_raw_heightmap(geo_img: Image, output_dir: String, width: int, heigh
 	else:
 		push_error("[Exporter] ❌ Failed to save raw heightmap: ", err)
 		return ""
+
+# ============================================================================
+# EXPORT CLIMAT GAZEUSE (température + précipitation seulement)
+# ============================================================================
+
+## Exporte uniquement température et précipitation pour les planètes gazeuses.
+## Pas de nuages ni de banquise car il n'y a pas de surface.
+func _export_climate_maps_gas_giant(gpu: GPUContext, output_dir: String) -> Dictionary:
+	print("[Exporter] 🪐 Exporting gas giant climate maps (temp + precip)...")
+	
+	var result = {}
+	var rd = gpu.rd
+	
+	if not rd:
+		push_error("[Exporter] ❌ RenderingDevice not available")
+		return result
+	
+	rd.submit()
+	rd.sync()
+	
+	# Seulement température et précipitation pour les gazeuses
+	var climate_textures = {
+		"temperature_colored": "temperature_map.png",
+		"precipitation_colored": "precipitation_map.png",
+	}
+	
+	for tex_id in climate_textures.keys():
+		if not gpu.textures.has(tex_id) or not gpu.textures[tex_id].is_valid():
+			print("  ⚠️ Texture '", tex_id, "' non disponible, skip")
+			continue
+		
+		var data = rd.texture_get_data(gpu.textures[tex_id], 0)
+		
+		if data.size() == 0:
+			push_error("[Exporter] ❌ Empty data for texture: ", tex_id)
+			continue
+		
+		var tex_format = rd.texture_get_format(gpu.textures[tex_id])
+		var width = tex_format.width
+		var height = tex_format.height
+		
+		var expected_size = width * height * 4
+		if data.size() != expected_size:
+			push_error("[Exporter] ❌ Data size mismatch for ", tex_id, 
+				": expected ", expected_size, ", got ", data.size())
+			continue
+		
+		var img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, data)
+		
+		if not img:
+			push_error("[Exporter] ❌ Failed to create image from ", tex_id)
+			continue
+		
+		var filename = climate_textures[tex_id]
+		var filepath = output_dir + "/" + filename
+		var save_err = img.save_png(filepath)
+		
+		if save_err == OK:
+			result[tex_id] = filepath
+			print("  ✅ Saved: ", filepath, " (", width, "x", height, ", direct RGBA8)")
+		else:
+			push_error("[Exporter] ❌ Failed to save ", filename, ": ", save_err)
+	
+	print("[Exporter] ✅ Gas giant climate export complete: ", result.size(), " maps")
+	return result
 
 # ============================================================================
 # ÉTAPE 3 : EXPORT CLIMAT OPTIMISÉ (RGBA8 DIRECT)
