@@ -240,9 +240,9 @@ func _export_topographie_maps(geo_img: Image, output_dir: String, width: int, he
 	var elevation_grey = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	var water_mask = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	
-	# Vérifier si la planète a une atmosphère (pas d'eau sur planètes sans atmosphère)
+	# Vérifier si la planète a de l'eau (pas d'eau sur planètes sans atmosphère ou stériles)
 	var atmosphere_type = int(params.get("planet_type", 0))
-	var has_water = (atmosphere_type != 3)  # 3 = Sans atmosphère
+	var has_water = atmosphere_type not in [3, 5]  # 3 = Sans atmosphère, 5 = Stérile
 	
 	# Parcourir chaque pixel et convertir l'élévation en couleur
 	for y in range(height):
@@ -1370,7 +1370,7 @@ func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: 
 	rd.sync()
 
 	# Récupérer le type d'atmosphère
-	var atmosphere_type = int(params.get("atmosphere_type", 0))
+	var atmosphere_type = int(params.get("planet_type", 0))
 
 	# Récupérer les biomes rivières pour ce type d'atmosphère
 	var river_biomes: Array = []

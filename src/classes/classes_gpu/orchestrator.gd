@@ -1166,10 +1166,10 @@ func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
 			push_warning("[Orchestrator] ⚠️ ", shader_name, " shader non disponible, phase érosion ignorée")
 			return
 	
-	# Vérifier si la planète a une atmosphère (pas d'érosion sur planète sans atmosphère)
+	# Vérifier si la planète a une atmosphère (pas d'érosion sur planète sans atmosphère/stérile)
 	var atmosphere_type = int(params.get("planet_type", 0))
-	if atmosphere_type == 3:  # Sans atmosphère
-		print("[Orchestrator] ⏭️ Phase 2 : Érosion ignorée (planète sans atmosphère)")
+	if atmosphere_type in [Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE]:  # Sans atmosphère ou Stérile
+		print("[Orchestrator] ⏭️ Phase 2 : Érosion ignorée (type=", atmosphere_type, ")")
 		return
 	
 	print("[Orchestrator] 💧 Phase 2 : Érosion Hydraulique")

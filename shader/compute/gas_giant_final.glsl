@@ -126,15 +126,13 @@ vec3 getCylindricalCoords(ivec2 pixel, uint w, uint h, float cyl_r) {
 }
 
 // ============================================================================
-// PALETTE DE COULEURS GAZ GÉANT
+// PALETTE DE COULEURS GAZ GÉANT - SCHÉMAS MULTIPLES
 // ============================================================================
+// 6 schémas de couleurs sélectionnés aléatoirement par le seed.
+// Chaque schéma a 8 couleurs de bandes + 1 couleur de tache.
 
-// Palette inspirée de Jupiter / Saturne
-// On utilise la température pour choisir entre palette chaude et froide
-// et l'humidité pour ajuster la saturation
-
-// Couleurs de bandes chaudes (type Jupiter)
-const vec3 BAND_WARM_COLORS[8] = vec3[8](
+// --- Schéma 0 : Jupiter classique (brun-orange-crème) ---
+const vec3 SCHEME_0[8] = vec3[8](
     vec3(0.82, 0.68, 0.50),   // Beige doré
     vec3(0.76, 0.52, 0.32),   // Orange brun
     vec3(0.90, 0.78, 0.62),   // Crème clair
@@ -144,47 +142,109 @@ const vec3 BAND_WARM_COLORS[8] = vec3[8](
     vec3(0.92, 0.85, 0.72),   // Ivoire
     vec3(0.75, 0.55, 0.35)    // Caramel
 );
+const vec3 SPOT_0 = vec3(0.75, 0.35, 0.18);  // Rouge-orange
 
-// Couleurs de bandes froides (type Neptune/Uranus)
-const vec3 BAND_COLD_COLORS[8] = vec3[8](
-    vec3(0.30, 0.50, 0.72),   // Bleu acier
-    vec3(0.22, 0.40, 0.65),   // Bleu profond
-    vec3(0.45, 0.62, 0.78),   // Bleu ciel
-    vec3(0.18, 0.35, 0.58),   // Bleu marine
-    vec3(0.38, 0.55, 0.75),   // Azur
-    vec3(0.25, 0.42, 0.68),   // Bleu cobalt
-    vec3(0.50, 0.68, 0.82),   // Bleu glacé
-    vec3(0.20, 0.38, 0.62)    // Indigo doux
+// --- Schéma 1 : Neptune glacé (bleu profond) ---
+const vec3 SCHEME_1[8] = vec3[8](
+    vec3(0.15, 0.30, 0.62),   // Bleu marine
+    vec3(0.22, 0.40, 0.72),   // Bleu royal
+    vec3(0.30, 0.50, 0.80),   // Bleu moyen
+    vec3(0.12, 0.25, 0.55),   // Bleu nuit
+    vec3(0.25, 0.42, 0.70),   // Bleu cobalt
+    vec3(0.18, 0.35, 0.65),   // Bleu acier
+    vec3(0.35, 0.55, 0.82),   // Bleu ciel
+    vec3(0.20, 0.38, 0.68)    // Indigo
 );
+const vec3 SPOT_1 = vec3(0.10, 0.20, 0.50);  // Tache sombre
 
-// Couleurs intermédiaires (type Saturne)
-const vec3 BAND_MID_COLORS[8] = vec3[8](
-    vec3(0.78, 0.72, 0.55),   // Jaune pâle
-    vec3(0.65, 0.58, 0.42),   // Olive doré
-    vec3(0.85, 0.80, 0.65),   // Crème doré
-    vec3(0.58, 0.52, 0.38),   // Kaki
-    vec3(0.72, 0.68, 0.52),   // Chamois
-    vec3(0.55, 0.50, 0.36),   // Bronze pâle
-    vec3(0.82, 0.78, 0.62),   // Parchemin
-    vec3(0.62, 0.55, 0.40)    // Ambre pâle
+// --- Schéma 2 : Saturne doré (jaune-or-beige) ---
+const vec3 SCHEME_2[8] = vec3[8](
+    vec3(0.85, 0.78, 0.55),   // Or pâle
+    vec3(0.75, 0.68, 0.42),   // Vieil or
+    vec3(0.92, 0.85, 0.65),   // Crème doré
+    vec3(0.68, 0.60, 0.38),   // Bronze
+    vec3(0.80, 0.72, 0.50),   // Chamois
+    vec3(0.72, 0.62, 0.40),   // Ambre
+    vec3(0.88, 0.82, 0.60),   // Miel clair
+    vec3(0.78, 0.70, 0.48)    // Sable doré
 );
+const vec3 SPOT_2 = vec3(0.65, 0.55, 0.30);  // Ocre profond
+
+// --- Schéma 3 : Uranus vert-cyan ---
+const vec3 SCHEME_3[8] = vec3[8](
+    vec3(0.40, 0.72, 0.70),   // Turquoise
+    vec3(0.30, 0.62, 0.60),   // Sarcelle
+    vec3(0.50, 0.78, 0.75),   // Aigue-marine
+    vec3(0.25, 0.55, 0.55),   // Pétrole clair
+    vec3(0.45, 0.70, 0.68),   // Céladon
+    vec3(0.35, 0.65, 0.62),   // Vert d'eau
+    vec3(0.55, 0.80, 0.78),   // Menthe glacée
+    vec3(0.32, 0.60, 0.58)    // Paon
+);
+const vec3 SPOT_3 = vec3(0.20, 0.50, 0.48);  // Tache sombre verte
+
+// --- Schéma 4 : Géante rouge (oxyde-rouille) ---
+const vec3 SCHEME_4[8] = vec3[8](
+    vec3(0.72, 0.38, 0.25),   // Rouille
+    vec3(0.62, 0.30, 0.18),   // Brique
+    vec3(0.80, 0.50, 0.35),   // Terre cuite
+    vec3(0.55, 0.25, 0.15),   // Bordeaux brun
+    vec3(0.75, 0.42, 0.28),   // Cuivre
+    vec3(0.58, 0.28, 0.16),   // Acajou
+    vec3(0.85, 0.55, 0.40),   // Saumon foncé
+    vec3(0.65, 0.35, 0.22)    // Cannelle
+);
+const vec3 SPOT_4 = vec3(0.50, 0.18, 0.10);  // Rouge profond
+
+// --- Schéma 5 : Lavande-violet (exotique) ---
+const vec3 SCHEME_5[8] = vec3[8](
+    vec3(0.55, 0.45, 0.70),   // Lavande
+    vec3(0.45, 0.35, 0.62),   // Améthyste
+    vec3(0.65, 0.55, 0.78),   // Lilas clair
+    vec3(0.40, 0.30, 0.58),   // Prune douce
+    vec3(0.58, 0.48, 0.72),   // Glycine
+    vec3(0.48, 0.38, 0.65),   // Iris
+    vec3(0.70, 0.60, 0.82),   // Mauve pâle
+    vec3(0.52, 0.42, 0.68)    // Violet doux
+);
+const vec3 SPOT_5 = vec3(0.35, 0.22, 0.55);  // Violet profond
 
 // ============================================================================
 // FONCTIONS AUXILIAIRES
 // ============================================================================
 
-// Interpole entre les trois palettes selon la température
-vec3 getBandColor(int band_index, float temp_factor) {
+// Récupère la couleur de bande pour un schéma donné
+vec3 getSchemeColor(uint scheme, int band_index) {
     int idx = band_index % 8;
-    
-    // temp_factor : 0 = très froid (Neptune), 0.5 = moyen (Saturne), 1 = chaud (Jupiter)
-    if (temp_factor < 0.4) {
-        float t = temp_factor / 0.4;
-        return mix(BAND_COLD_COLORS[idx], BAND_MID_COLORS[idx], t);
-    } else {
-        float t = (temp_factor - 0.4) / 0.6;
-        return mix(BAND_MID_COLORS[idx], BAND_WARM_COLORS[idx], t);
+    switch (scheme) {
+        case 0u: return SCHEME_0[idx];
+        case 1u: return SCHEME_1[idx];
+        case 2u: return SCHEME_2[idx];
+        case 3u: return SCHEME_3[idx];
+        case 4u: return SCHEME_4[idx];
+        case 5u: return SCHEME_5[idx];
+        default: return SCHEME_0[idx];
     }
+}
+
+// Récupère la couleur de tache pour un schéma donné
+vec3 getSpotColor(uint scheme) {
+    switch (scheme) {
+        case 0u: return SPOT_0;
+        case 1u: return SPOT_1;
+        case 2u: return SPOT_2;
+        case 3u: return SPOT_3;
+        case 4u: return SPOT_4;
+        case 5u: return SPOT_5;
+        default: return SPOT_0;
+    }
+}
+
+// Interpole entre deux schémas pour les valeurs temp_factor intermédiaires
+vec3 getBandColor(int band_index, float temp_factor, uint scheme_a, uint scheme_b, float scheme_blend) {
+    vec3 ca = getSchemeColor(scheme_a, band_index);
+    vec3 cb = getSchemeColor(scheme_b, band_index);
+    return mix(ca, cb, scheme_blend);
 }
 
 // Structure de bande atmosphérique
@@ -235,6 +295,16 @@ void main() {
     // < -50°C = Neptune, ~15°C = Saturne, > 100°C = Jupiter
     float temp_factor = clamp((params.avg_temperature + 50.0) / 150.0, 0.0, 1.0);
     
+    // === Sélection du schéma de couleurs basée sur le seed ===
+    // Le seed détermine quels deux schémas sont mélangés et dans quelle proportion
+    const uint NUM_SCHEMES = 6u;
+    uint scheme_hash = hash(params.seed + 77777u);
+    uint scheme_a = scheme_hash % NUM_SCHEMES;
+    uint scheme_b = hash(scheme_hash + 13u) % NUM_SCHEMES;
+    if (scheme_b == scheme_a) scheme_b = (scheme_a + 1u) % NUM_SCHEMES;
+    // Le blend entre schémas est influencé par temp_factor pour garder une cohérence thermique
+    float scheme_blend = hashFloat(params.seed + 88888u) * 0.6;  // 0 à 0.6 max de mélange
+    
     // === Turbulence atmosphérique ===
     // Bruit à grande échelle pour déformer les bandes
     float turb_freq = 2.0 / params.cylinder_radius;
@@ -262,8 +332,8 @@ void main() {
     float band_frac = fract(band_continuous);
     
     // === Couleurs de base des bandes ===
-    vec3 color_a = getBandColor(band_index_a, temp_factor);
-    vec3 color_b = getBandColor(band_index_b, temp_factor);
+    vec3 color_a = getBandColor(band_index_a, temp_factor, scheme_a, scheme_b, scheme_blend);
+    vec3 color_b = getBandColor(band_index_b, temp_factor, scheme_a, scheme_b, scheme_blend);
     
     // Transition douce entre bandes avec le motif sinusoïdal
     float blend = smoothstep(-0.3, 0.3, band_value);
@@ -289,10 +359,11 @@ void main() {
     float shear_zone = abs(fract(band_continuous) - 0.5) * 2.0;  // 1 aux frontières de bandes
     float vortex_strength = smoothstep(0.6, 0.9, vortex_noise) * shear_zone;
     
-    // Couleur du vortex (légèrement plus sombre/rougeâtre pour les planètes chaudes, plus clair pour les froides)
+    // Couleur du vortex dérivée du schéma de couleurs choisi
+    vec3 spot_tint = getSpotColor(scheme_a);
     vec3 vortex_color = mix(
-        base_color * 0.7,                                          // Normale: assombrir
-        mix(vec3(0.65, 0.35, 0.20), vec3(0.35, 0.55, 0.75), 1.0 - temp_factor),  // Teinte tempête  
+        base_color * 0.7,     // Normale: assombrir
+        spot_tint * 0.85,     // Teinte tempête issue du schéma
         0.5
     );
     base_color = mix(base_color, vortex_color, vortex_strength * 0.6);
@@ -323,12 +394,8 @@ void main() {
         float angle = atan(dy, dx);
         float spiral = sin(angle * 3.0 + spot_dist * 30.0 + turbulence_mid * 2.0) * 0.5 + 0.5;
         
-        // Couleur de la tache (plus intensément colorée)
-        vec3 spot_color = mix(
-            vec3(0.75, 0.35, 0.18),   // Chaud: rouge-orange (Grande Tache Rouge de Jupiter)
-            vec3(0.25, 0.55, 0.80),   // Froid: bleu profond (Grande Tache Sombre de Neptune)
-            1.0 - temp_factor
-        );
+        // Couleur de la tache dérivée du schéma choisi
+        vec3 spot_color = getSpotColor(scheme_a);
         
         // Variation interne avec spirale
         spot_color = mix(spot_color, spot_color * 1.3, spiral * 0.3);
