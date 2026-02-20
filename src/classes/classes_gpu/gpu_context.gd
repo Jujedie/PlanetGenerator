@@ -413,12 +413,17 @@ func initialize_water_textures() -> void:
 	)
 	
 	# Créer water_mask (R8 - 1 byte par pixel)
-	if not textures.has("water_mask"):
-		var data = PackedByteArray()
-		data.resize(resolution.x * resolution.y)
-		data.fill(0)
+	# IMPORTANT : Toujours remettre à zéro pour éviter les données obsolètes
+	# entre deux générations successives
+	var wm_data = PackedByteArray()
+	wm_data.resize(resolution.x * resolution.y)
+	wm_data.fill(0)
+	if textures.has("water_mask") and textures["water_mask"].is_valid():
+		# Texture existe déjà → écraser avec des zéros
+		rd.texture_update(textures["water_mask"], 0, wm_data)
+	else:
 		var view := RDTextureView.new()
-		var rid := rd.texture_create(format_r8, view, [data])
+		var rid := rd.texture_create(format_r8, view, [wm_data])
 		if rid.is_valid():
 			textures["water_mask"] = rid
 		else:
@@ -426,26 +431,30 @@ func initialize_water_textures() -> void:
 	
 	# Créer water_component et water_component_temp (RG32I - 8 bytes par pixel)
 	for tex_id in ["water_component", "water_component_temp"]:
-		if not textures.has(tex_id):
-			var data = PackedByteArray()
-			data.resize(resolution.x * resolution.y * 8)
-			# Initialiser à -1 (invalide)
-			for i in range(0, data.size(), 4):
-				data.encode_s32(i, -1)
+		var wc_data = PackedByteArray()
+		wc_data.resize(resolution.x * resolution.y * 8)
+		# Initialiser à -1 (invalide)
+		for i in range(0, wc_data.size(), 4):
+			wc_data.encode_s32(i, -1)
+		if textures.has(tex_id) and textures[tex_id].is_valid():
+			rd.texture_update(textures[tex_id], 0, wc_data)
+		else:
 			var view := RDTextureView.new()
-			var rid := rd.texture_create(format_rg32i, view, [data])
+			var rid := rd.texture_create(format_rg32i, view, [wc_data])
 			if rid.is_valid():
 				textures[tex_id] = rid
 			else:
 				push_error("❌ Échec création texture " + tex_id)
 	
 	# Créer river_sources (R32UI - 4 bytes par pixel)
-	if not textures.has("river_sources"):
-		var data = PackedByteArray()
-		data.resize(resolution.x * resolution.y * 4)
-		data.fill(0)
+	var rs_data = PackedByteArray()
+	rs_data.resize(resolution.x * resolution.y * 4)
+	rs_data.fill(0)
+	if textures.has("river_sources") and textures["river_sources"].is_valid():
+		rd.texture_update(textures["river_sources"], 0, rs_data)
+	else:
 		var view := RDTextureView.new()
-		var rid := rd.texture_create(format_r32ui, view, [data])
+		var rid := rd.texture_create(format_r32ui, view, [rs_data])
 		if rid.is_valid():
 			textures["river_sources"] = rid
 		else:
@@ -453,38 +462,43 @@ func initialize_water_textures() -> void:
 	
 	# Créer river_flux et river_flux_temp (R32F - 4 bytes par pixel)
 	for tex_id in ["river_flux", "river_flux_temp"]:
-		if not textures.has(tex_id):
-			var data = PackedByteArray()
-			data.resize(resolution.x * resolution.y * 4)
-			data.fill(0)
+		var rf_data = PackedByteArray()
+		rf_data.resize(resolution.x * resolution.y * 4)
+		rf_data.fill(0)
+		if textures.has(tex_id) and textures[tex_id].is_valid():
+			rd.texture_update(textures[tex_id], 0, rf_data)
+		else:
 			var view := RDTextureView.new()
-			var rid := rd.texture_create(format_r32f, view, [data])
+			var rid := rd.texture_create(format_r32f, view, [rf_data])
 			if rid.is_valid():
 				textures[tex_id] = rid
 			else:
 				push_error("❌ Échec création texture " + tex_id)
 	
 	# Créer river_biome_id (R32UI - 4 bytes par pixel, initialisé à 0xFFFFFFFF = pas de rivière)
-	if not textures.has("river_biome_id"):
-		var data = PackedByteArray()
-		data.resize(resolution.x * resolution.y * 4)
-		# Initialiser à 0xFFFFFFFF (pas de biome rivière)
-		for i in range(0, data.size(), 4):
-			data.encode_u32(i, 0xFFFFFFFF)
+	var rbi_data = PackedByteArray()
+	rbi_data.resize(resolution.x * resolution.y * 4)
+	for i in range(0, rbi_data.size(), 4):
+		rbi_data.encode_u32(i, 0xFFFFFFFF)
+	if textures.has("river_biome_id") and textures["river_biome_id"].is_valid():
+		rd.texture_update(textures["river_biome_id"], 0, rbi_data)
+	else:
 		var view := RDTextureView.new()
-		var rid := rd.texture_create(format_r32ui, view, [data])
+		var rid := rd.texture_create(format_r32ui, view, [rbi_data])
 		if rid.is_valid():
 			textures["river_biome_id"] = rid
 		else:
 			push_error("❌ Échec création texture river_biome_id")
 
 	# Créer flow_direction (R8UI - 1 byte par pixel, direction D8 : 0-7, 255=puits)
-	if not textures.has("flow_direction"):
-		var data = PackedByteArray()
-		data.resize(resolution.x * resolution.y)
-		data.fill(255)  # 255 = DIR_SINK par défaut
+	var fd_data = PackedByteArray()
+	fd_data.resize(resolution.x * resolution.y)
+	fd_data.fill(255)  # 255 = DIR_SINK par défaut
+	if textures.has("flow_direction") and textures["flow_direction"].is_valid():
+		rd.texture_update(textures["flow_direction"], 0, fd_data)
+	else:
 		var view := RDTextureView.new()
-		var rid := rd.texture_create(format_r8, view, [data])
+		var rid := rd.texture_create(format_r8, view, [fd_data])
 		if rid.is_valid():
 			textures["flow_direction"] = rid
 		else:
@@ -492,12 +506,14 @@ func initialize_water_textures() -> void:
 
 	# Créer ocean_reachable et ocean_reachable_temp (R8UI - 1 byte par pixel, ping-pong)
 	for tex_id in ["ocean_reachable", "ocean_reachable_temp"]:
-		if not textures.has(tex_id):
-			var data = PackedByteArray()
-			data.resize(resolution.x * resolution.y)
-			data.fill(0)  # 0 = non connecté par défaut
+		var or_data = PackedByteArray()
+		or_data.resize(resolution.x * resolution.y)
+		or_data.fill(0)  # 0 = non connecté par défaut
+		if textures.has(tex_id) and textures[tex_id].is_valid():
+			rd.texture_update(textures[tex_id], 0, or_data)
+		else:
 			var view := RDTextureView.new()
-			var rid := rd.texture_create(format_r8, view, [data])
+			var rid := rd.texture_create(format_r8, view, [or_data])
 			if rid.is_valid():
 				textures[tex_id] = rid
 			else:

@@ -373,15 +373,67 @@ void main() {
         }
     }
     
+    // === FALLBACK : Si aucun candidat exact, chercher le biome le plus proche ===
+    if (num_candidates == 0) {
+        // Recherche relaxée : ignorer les plages strictes, trouver le biome
+        // le plus proche par distance normalisée (température + humidité + élévation)
+        float best_fallback_dist = 1e20;
+        uint fallback_id = 0u;
+        vec4 fallback_color = vec4(0.5, 0.5, 0.5, 1.0);  // Gris par défaut si vraiment rien
+        
+        for (uint i = 0u; i < biome_count; i++) {
+            BiomeData biome = biomes[i];
+            
+            // Filtrer par type de planète (obligatoire)
+            uint planet_bit = 1u << atmosphere_type;
+            if ((biome.planet_type_mask & planet_bit) == 0u) continue;
+            
+            // Filtrer par correspondance eau/terre (obligatoire)
+            bool biome_needs_water = (biome.water_need > 0u);
+            if (biome_needs_water != is_water) continue;
+            
+            // Si eau, vérifier le type d'eau
+            if (is_water && biome_needs_water) {
+                bool biome_fw = (biome.is_freshwater_only == 1u);
+                bool biome_sw = (biome.is_saltwater_only == 1u);
+                if (biome_fw && !is_freshwater) continue;
+                if (biome_sw && is_freshwater) continue;
+            }
+            
+            // Distance normalisée au centre de chaque plage
+            float temp_center = (biome.temp_min + biome.temp_max) * 0.5;
+            float humid_center = (biome.humid_min + biome.humid_max) * 0.5;
+            float elev_center = (biome.elev_min + biome.elev_max) * 0.5;
+            
+            float temp_range = max(biome.temp_max - biome.temp_min, 1.0);
+            float humid_range = max(biome.humid_max - biome.humid_min, 0.01);
+            float elev_range = max(biome.elev_max - biome.elev_min, 1.0);
+            
+            float td = abs(temp_with_noise - temp_center) / temp_range;
+            float hd = abs(humid_with_noise - humid_center) / humid_range;
+            float ed = abs(effective_elevation - elev_center) / elev_range;
+            
+            float dist = td + hd + ed;
+            
+            if (dist < best_fallback_dist) {
+                best_fallback_dist = dist;
+                fallback_id = i;
+                fallback_color = biome.color;
+            }
+        }
+        
+        // Utiliser le fallback comme unique candidat
+        candidate_ids[0] = fallback_id;
+        candidate_scores[0] = 0.001;
+        candidate_colors[0] = fallback_color;
+        num_candidates = 1;
+    }
+    
     // === SÉLECTION PARMI LES CANDIDATS ===
     uint best_biome_id = NO_BIOME_FOUND;
     vec4 best_color = ERROR_COLOR;
     
-    if (num_candidates == 0) {
-        // Aucun biome trouvé
-        best_biome_id = 0xFFFFu;
-    }
-    else if (num_candidates == 1) {
+    if (num_candidates == 1) {
         // Un seul candidat, pas de choix à faire
         best_biome_id = candidate_ids[0];
         best_color = candidate_colors[0];

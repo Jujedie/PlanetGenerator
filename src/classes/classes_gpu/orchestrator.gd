@@ -4054,7 +4054,7 @@ func _run_water_to_color_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	var sea_level = float(params.get("sea_level", 0.0))
 	var atmosphere_type = int(params.get("planet_type", 0))
-	var freshwater_max_size = int(params.get("freshwater_max_size", 500))
+	var freshwater_max_size = int(params.get("freshwater_max_size", 999))
 	
 	# Créer le buffer de comptage pour les composantes d'eau
 	var buffer_size = w * h * 4  # uint par pixel
