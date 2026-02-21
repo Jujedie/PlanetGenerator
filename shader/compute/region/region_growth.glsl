@@ -2,27 +2,27 @@
 #version 450
 
 // ===========================================================================
-// REGION GROWTH SHADER (Dijkstra-like)
+// REGION GROWTH SHADER (Jump Flooding Algorithm)
 // ===========================================================================
-// Propage les régions vers les pixels voisins non assignés avec système de coûts.
+// Propage les régions via JFA : chaque pixel vérifie 9 voisins à ±step_size.
+// Converge en O(log2(max_dim)) passes au lieu de O(max_dim) pour Dijkstra.
 //
-// Système de coûts :
-//   - Terrain plat (même altitude ou descente) : coût = 1
-//   - Altitude plus haute que le pixel courant : coût = 2
-//   - Traverser une rivière (flux > seuil) : coût = 3
+// La position du seed est encodée dans region_cost :
+//   packed = float(seed_y * width + seed_x) + 1.0
+// Fonctionne tant que width * height < 2^24 (~4096×4096).
 //
-// Utilise un ping-pong sur region_cost / region_cost_temp.
+// Utilise un ping-pong sur region_map / region_map_temp.
 //
 // Entrées :
-//   - geo_texture (binding 0) : R=height pour calcul de pente
+//   - geo_texture (binding 0) : R=height (réservé pour usage futur)
 //   - water_mask (binding 1) : masque eau (infranchissable)
-//   - river_flux (binding 2) : flux des rivières (barrière naturelle)
+//   - river_flux (binding 2) : flux des rivières (réservé)
 //   - region_map_in (binding 3) : état actuel des régions
-//   - region_cost_in (binding 4) : coûts accumulés actuels
+//   - region_cost_in (binding 4) : position du seed encodée
 //
 // Sorties :
 //   - region_map_out (binding 5) : nouveaux IDs de région
-//   - region_cost_out (binding 6) : nouveaux coûts accumulés
+//   - region_cost_out (binding 6) : nouvelles positions de seed encodées
 // ===========================================================================
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
@@ -40,14 +40,14 @@ layout(set = 0, binding = 6, r32f) uniform writeonly image2D region_cost_out;
 layout(set = 1, binding = 0, std140) uniform GrowthParams {
     uint width;
     uint height;
-    uint pass_index;
-    uint seed;                 // Pour le bruit
+    uint step_size;            // Taille du pas JFA (commence grand, diminue par 2)
+    uint seed;                 // Seed global pour le bruit
     float sea_level;
-    float river_threshold;     // Seuil de flux pour considérer comme rivière
-    float cost_flat;           // Coût terrain plat (1.0)
-    float cost_uphill;         // Coût montée (2.0)
-    float cost_river;          // Coût traversée rivière (3.0)
-    float noise_strength;      // Force du bruit (comme randf() * 10.0 du legacy)
+    float river_threshold;     // Réservé (compatibilité)
+    float cost_flat;           // Réservé (compatibilité)
+    float cost_uphill;         // Réservé (compatibilité)
+    float cost_river;          // Réservé (compatibilité)
+    float noise_strength;      // Perturbation en pixels pour frontières organiques
     float padding1;
     float padding2;
 } params;
@@ -68,10 +68,6 @@ uint hash2(uint x, uint y) {
     return hash(x ^ (y * 1664525u + 1013904223u));
 }
 
-uint hash3(uint x, uint y, uint z) {
-    return hash(hash2(x, y) ^ (z * 2654435761u));
-}
-
 float hashToFloat(uint h) {
     return float(h) / float(0xFFFFFFFFu);
 }
@@ -86,13 +82,25 @@ int clampY(int y, int h) {
     return clamp(y, 0, h - 1);
 }
 
-// Voisinage 4-connecté (comme le legacy)
-const ivec2 NEIGHBORS[4] = ivec2[4](
-    ivec2(-1, 0),   // Gauche
-    ivec2(1, 0),    // Droite
-    ivec2(0, -1),   // Haut
-    ivec2(0, 1)     // Bas
-);
+// === ENCODAGE/DÉCODAGE POSITION SEED ===
+// Pack (x, y) en un float : float(y * width + x) + 1.0
+// Le +1.0 évite la valeur 0.0 (réservée)
+// Précision garantie tant que y * width + x < 2^24 (max ~4096×4096)
+
+ivec2 unpackCoords(float packed, uint w) {
+    uint total = uint(packed - 1.0);
+    return ivec2(int(total % w), int(total / w));
+}
+
+// === DISTANCE EUCLIDIENNE AVEC WRAP ===
+// Calcule la distance² entre un point (éventuellement perturbé) et un seed
+// Gère le wrap horizontal (projection équirectangulaire)
+float wrappedDistSq(vec2 pt, ivec2 seed_pos, int w) {
+    float dx = abs(pt.x - float(seed_pos.x));
+    if (dx > float(w) * 0.5) dx = float(w) - dx;
+    float dy = pt.y - float(seed_pos.y);
+    return dx * dx + dy * dy;
+}
 
 // === MAIN ===
 void main() {
@@ -105,92 +113,67 @@ void main() {
         return;
     }
     
-    // Lire l'état actuel de ce pixel
-    uint current_region = imageLoad(region_map_in, pixel).r;
-    float current_cost = imageLoad(region_cost_in, pixel).r;
-    
-    // Vérifier si c'est de l'eau (infranchissable)
+    // Eau : infranchissable, ne participe pas aux régions
     uint water_type = imageLoad(water_mask, pixel).r;
     if (water_type > 0u) {
-        // Eau : copier tel quel (reste infranchissable)
         imageStore(region_map_out, pixel, uvec4(0xFFFFFFFFu, 0u, 0u, 0u));
         imageStore(region_cost_out, pixel, vec4(1e30, 0.0, 0.0, 0.0));
         return;
     }
     
-    // Lire les données géographiques de ce pixel
-    vec4 geo = imageLoad(geo_texture, pixel);
-    float my_height = geo.r;
-    float my_river_flux = imageLoad(river_flux, pixel).r;
+    // Lire l'état actuel de ce pixel
+    uint current_region = imageLoad(region_map_in, pixel).r;
+    float current_packed = imageLoad(region_cost_in, pixel).r;
     
-    // Chercher le meilleur voisin (coût minimal)
-    // Si le pixel est déjà assigné, il garde sa région (stable)
-    // Si le pixel n'est PAS assigné, on cherche le voisin avec le meilleur coût
-    bool is_assigned = (current_region != 0xFFFFFFFFu);
+    // Perturbation par pixel pour frontières organiques
+    // Le hash est constant entre passes (ne dépend pas de step_size)
+    // Cela crée des frontières irrégulières entre régions
+    uint ph = hash2(uint(pixel.x) + params.seed, uint(pixel.y) + params.seed * 7u);
+    float perturb_x = (hashToFloat(ph) - 0.5) * params.noise_strength * 2.0;
+    float perturb_y = (hashToFloat(hash(ph)) - 0.5) * params.noise_strength * 2.0;
+    vec2 perturbed = vec2(float(pixel.x) + perturb_x, float(pixel.y) + perturb_y);
+    
+    // Meilleur candidat trouvé
     uint best_region = current_region;
-    float best_cost = current_cost;
+    float best_packed = current_packed;
+    float best_dist = 1e30;
     
-    // Si PAS assigné, on accepte n'importe quel voisin valide
-    if (!is_assigned) {
-        best_region = 0xFFFFFFFFu;  // Reset pour trouver le meilleur voisin
-        best_cost = 1e30;  // Reset pour trouver le minimum
+    // Si déjà assigné, calculer la distance au seed actuel
+    if (current_region != 0xFFFFFFFFu) {
+        ivec2 seed_pos = unpackCoords(current_packed, params.width);
+        best_dist = wrappedDistSq(perturbed, seed_pos, w);
     }
     
-    for (int i = 0; i < 4; i++) {
-        ivec2 neighbor_offset = NEIGHBORS[i];
-        int nx = wrapX(pixel.x + neighbor_offset.x, w);
-        int ny = clampY(pixel.y + neighbor_offset.y, h);
-        
-        // Ignorer si même pixel (après wrap)
-        if (nx == pixel.x && ny == pixel.y) continue;
-        
-        ivec2 neighbor_pos = ivec2(nx, ny);
-        
-        // Vérifier que le voisin n'est pas de l'eau
-        uint neighbor_water = imageLoad(water_mask, neighbor_pos).r;
-        if (neighbor_water > 0u) continue;
-        
-        // Lire la région et le coût du voisin
-        uint neighbor_region = imageLoad(region_map_in, neighbor_pos).r;
-        float neighbor_cost = imageLoad(region_cost_in, neighbor_pos).r;
-        
-        // Si le voisin n'est pas assigné, il ne peut pas nous influencer
-        if (neighbor_region == 0xFFFFFFFFu) continue;
-        
-        // Calculer le coût de traversée depuis le voisin vers nous
-        vec4 neighbor_geo = imageLoad(geo_texture, neighbor_pos);
-        float neighbor_height = neighbor_geo.r;
-        
-        // Coût de base : terrain plat
-        float edge_cost = params.cost_flat;
-        
-        // Pénalité si on monte (notre altitude > altitude voisin)
-        if (my_height > neighbor_height) {
-            edge_cost = params.cost_uphill;
-        }
-        
-        // Pénalité si on traverse une rivière (sur notre position)
-        if (my_river_flux > params.river_threshold) {
-            edge_cost += params.cost_river;
-        }
-        
-        // Ajouter du bruit pour rendre les frontières irrégulières (comme legacy randf() * 10.0)
-        // NOTE: Le bruit doit être CONSTANT par pixel (pas dépendre de pass_index)
-        // sinon les frontières "bougent" et les régions ne peuvent pas s'étendre de manière stable
-        uint noise_hash = hash3(uint(pixel.x), uint(pixel.y), params.seed);
-        float noise = hashToFloat(noise_hash) * params.noise_strength;
-        
-        // Coût total pour atteindre ce pixel via ce voisin
-        float total_cost = neighbor_cost + edge_cost + noise;
-        
-        // Si c'est meilleur, mettre à jour
-        if (total_cost < best_cost) {
-            best_cost = total_cost;
-            best_region = neighbor_region;
+    int step = int(params.step_size);
+    
+    // JFA : vérifier les 9 voisins à ±step (incluant le centre)
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            int nx = wrapX(pixel.x + dx * step, w);
+            int ny = clampY(pixel.y + dy * step, h);
+            ivec2 neighbor = ivec2(nx, ny);
+            
+            // Lire la région du voisin
+            uint n_region = imageLoad(region_map_in, neighbor).r;
+            if (n_region == 0xFFFFFFFFu) continue;
+            
+            // Décoder la position du seed de ce voisin
+            float n_packed = imageLoad(region_cost_in, neighbor).r;
+            ivec2 n_seed = unpackCoords(n_packed, params.width);
+            
+            // Calculer la distance depuis notre position perturbée vers ce seed
+            float dist = wrappedDistSq(perturbed, n_seed, w);
+            
+            // Si c'est plus proche, adopter ce seed
+            if (dist < best_dist) {
+                best_dist = dist;
+                best_region = n_region;
+                best_packed = n_packed;
+            }
         }
     }
     
-    // Écrire le résultat
+    // Écrire le résultat (région et position du seed encodée)
     imageStore(region_map_out, pixel, uvec4(best_region, 0u, 0u, 0u));
-    imageStore(region_cost_out, pixel, vec4(best_cost, 0.0, 0.0, 0.0));
+    imageStore(region_cost_out, pixel, vec4(best_packed, 0.0, 0.0, 0.0));
 }

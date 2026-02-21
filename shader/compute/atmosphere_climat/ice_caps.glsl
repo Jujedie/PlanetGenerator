@@ -28,6 +28,7 @@ layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 layout(set = 0, binding = 0, rgba32f) uniform readonly image2D geo_texture;
 layout(set = 0, binding = 1, rgba32f) uniform readonly image2D climate_texture;
 layout(set = 0, binding = 2, rgba8) uniform writeonly image2D ice_caps_texture;
+layout(set = 0, binding = 3, rgba8) uniform readonly image2D water_colored;
 
 // Uniform Buffer
 layout(set = 1, binding = 0, std140) uniform IceParams {
@@ -36,7 +37,7 @@ layout(set = 1, binding = 0, std140) uniform IceParams {
     uint height;
     float ice_probability;  // Probabilité de glace si conditions remplies (0.9 par défaut)
     uint atmosphere_type;
-    float padding1;
+    float sea_level;        // Niveau de la mer (m) - seul critère fiable pour eau
     float padding2;
     float padding3;
 } params;
@@ -118,13 +119,15 @@ float fbm(vec3 p, int octaves, float gain, float lacunarity, uint seed_offset) {
 
 // Conversion coordonnées cylindriques
 vec3 getCylindricalCoords(ivec2 pixel, uint w, uint h) {
+    float PI = 3.14159265359;
     float TAU = 6.28318530718;
     float cylinder_radius = float(w) / TAU;
     
     float angle = (float(pixel.x) / float(w)) * TAU;
     float cx = cos(angle) * cylinder_radius;
     float cz = sin(angle) * cylinder_radius;
-    float cy = (float(pixel.y) / float(h) - 0.5) * cylinder_radius * 2.0;
+    // CORRIGÉ : facteur PI au lieu de 2.0 pour isotropie du bruit
+    float cy = (float(pixel.y) / float(h) - 0.5) * cylinder_radius * PI;
     
     return vec3(cx, cy, cz);
 }
@@ -136,7 +139,7 @@ vec3 getCylindricalCoords(ivec2 pixel, uint w, uint h) {
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
     
-    if (pixel.x > int(params.width) || pixel.y > int(params.height)) {
+    if (pixel.x >= int(params.width) || pixel.y >= int(params.height)) {
         return;
     }
     
@@ -149,14 +152,14 @@ void main() {
     vec4 climate = imageLoad(climate_texture, pixel);
     
     float height = geo.r;
-    float water_height = geo.a;
     float temperature = climate.r;
     
     // === Condition 1 : Présence d'eau (banquise = glace flottante uniquement) ===
-    // La banquise ne se forme que sur l'eau, pas sur terre
-    // Il faut que water_height > height (colonne d'eau présente)
-    if (water_height < height) {
-        // Pas d'eau ou terre émergée = pas de banquise
+    // On vérifie directement water_colored (source de vérité pour l'eau visible).
+    // Ni geo.a (résidus d'érosion) ni sea_level seul ne suffisent.
+    vec4 water = imageLoad(water_colored, pixel);
+    if (water.a <= 0.0) {
+        // Pas d'eau visible sur ce pixel = pas de banquise
         imageStore(ice_caps_texture, pixel, no_ice_color);
         return;
     }

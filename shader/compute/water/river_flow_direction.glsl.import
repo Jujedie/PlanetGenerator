@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://b7ks8cwefcnb8"
+path="res://.godot/imported/river_flow_direction.glsl-09b2fe8e4f7317d1fd37de76f5316d74.res"
+
+[deps]
+
+source_file="res://shader/compute/water/river_flow_direction.glsl"
+dest_files=["res://.godot/imported/river_flow_direction.glsl-09b2fe8e4f7317d1fd37de76f5316d74.res"]
+
+[params]
+

@@ -29,8 +29,9 @@ layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 // Composantes JFA (lecture seule après JFA)
 layout(set = 0, binding = 0, rg32i) uniform readonly iimage2D water_component;
 
-// Masque d'eau (lecture seule - 0=terre, 1=eau)
-layout(set = 0, binding = 1, r8ui) uniform readonly uimage2D water_mask;
+// Masque d'eau (lecture/écriture - 0=terre, 1=eau salée, 2=eau douce)
+// IMPORTANT: Ce shader met à jour water_mask avec le type d'eau final
+layout(set = 0, binding = 1, r8ui) uniform uimage2D water_mask;
 
 // GeoTexture pour vérifier altitude (lacs d'altitude toujours eau douce)
 layout(set = 0, binding = 2, rgba32f) uniform readonly image2D geo_texture;
@@ -125,54 +126,90 @@ void main() {
         return;
     }
     
-    // Lire le seed de la composante
-    ivec2 seed = imageLoad(water_component, pixel).xy;
+    // Lire le label de la composante (stocké dans .x)
+    ivec2 component_data = imageLoad(water_component, pixel).xy;
+    int label = component_data.x;
     
-    // Seed invalide = pas d'eau (ne devrait pas arriver)
-    if (seed.x < 0 || seed.y < 0) {
+    // Label invalide = pas d'eau (ne devrait pas arriver)
+    if (label < 0) {
         if (params.pass_type == 1u) {
             imageStore(water_colored, pixel, COL_TRANSPARENT);
         }
         return;
     }
     
-    // Index dans le buffer de comptage
-    uint seed_index = uint(seed.y * w + seed.x);
+    // Index dans le buffer de comptage = label lui-même
+    // (le label est l'ID du pixel "root" de la composante)
+    uint label_index = uint(label);
     
     // === PASSE 1 : COMPTAGE ===
     if (params.pass_type == 0u) {
         // Incrémenter le compteur pour cette composante
-        atomicAdd(counters.pixel_counts[seed_index], 1u);
+        atomicAdd(counters.pixel_counts[label_index], 1u);
     }
     // === PASSE 2 : COLORATION ===
-    else {
+    else if (params.pass_type == 1u) {
         // Lire le nombre de pixels dans cette composante
-        uint component_size = counters.pixel_counts[seed_index];
+        uint component_size = counters.pixel_counts[label_index];
         
         // Lire l'altitude pour détecter les lacs en altitude
         vec4 geo = imageLoad(geo_texture, pixel);
         float height_val = geo.r;
         
-        // Règles de classification :
-        // 1. Lacs en altitude (au-dessus du niveau mer) = TOUJOURS eau douce
-        // 2. Taille > freshwater_max_size = eau salée (océans/mers)
-        // 3. Taille <= freshwater_max_size = eau douce (lacs)
+        // =====================================================================
+        // LOGIQUE DE CLASSIFICATION PAR TAILLE
+        // =====================================================================
         
         vec4 final_color;
+        uint final_water_type;  // 1=salée, 2=douce
         
+        // Lac en altitude = TOUJOURS eau douce
         if (height_val >= params.sea_level) {
-            // Lac en altitude = TOUJOURS eau douce
             final_color = getFreshwaterColor(params.atmosphere_type);
+            final_water_type = 2u;  // WATER_FRESHWATER
         }
-        else if (component_size > params.freshwater_max_size) {
-            // Grande masse d'eau = océan/mer (eau salée)
-            final_color = getSaltwaterColor(params.atmosphere_type);
-        }
+        // Eau sous le niveau de la mer - classification par taille
         else {
-            // Petite masse d'eau = lac (eau douce)
-            final_color = getFreshwaterColor(params.atmosphere_type);
+            if (component_size > params.freshwater_max_size) {
+                final_color = getSaltwaterColor(params.atmosphere_type);
+                final_water_type = 1u;  // WATER_SALTWATER
+            } else {
+                final_color = getFreshwaterColor(params.atmosphere_type);
+                final_water_type = 2u;  // WATER_FRESHWATER
+            }
         }
         
         imageStore(water_colored, pixel, final_color);
+        imageStore(water_mask, pixel, uvec4(final_water_type, 0u, 0u, 0u));
+    }
+    // === PASSE 3 : FUSION eau douce touchant eau salée → eau salée ===
+    else if (params.pass_type == 2u) {
+        uint my_water_type = imageLoad(water_mask, pixel).r;
+        
+        // Si c'est de l'eau douce (2), vérifier si elle touche de l'eau salée
+        if (my_water_type == 2u) {
+            bool touches_saltwater = false;
+            
+            // Vérifier les 8 voisins
+            for (int dy = -1; dy <= 1 && !touches_saltwater; dy++) {
+                for (int dx = -1; dx <= 1 && !touches_saltwater; dx++) {
+                    if (dx == 0 && dy == 0) continue;
+                    
+                    int nx = (pixel.x + dx + w) % w;  // Wrap X
+                    int ny = clamp(pixel.y + dy, 0, h - 1);
+                    
+                    uint neighbor_type = imageLoad(water_mask, ivec2(nx, ny)).r;
+                    if (neighbor_type == 1u) {  // Eau salée
+                        touches_saltwater = true;
+                    }
+                }
+            }
+            
+            if (touches_saltwater) {
+                // Convertir en eau salée
+                imageStore(water_colored, pixel, getSaltwaterColor(params.atmosphere_type));
+                imageStore(water_mask, pixel, uvec4(1u, 0u, 0u, 0u));
+            }
+        }
     }
 }

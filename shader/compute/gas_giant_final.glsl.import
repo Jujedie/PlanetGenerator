@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bvpyph5g52yw8"
+path="res://.godot/imported/gas_giant_final.glsl-9650489fb589f9d34edf38546b1e90d3.res"
+
+[deps]
+
+source_file="res://shader/compute/gas_giant_final.glsl"
+dest_files=["res://.godot/imported/gas_giant_final.glsl-9650489fb589f9d34edf38546b1e90d3.res"]
+
+[params]
+
