@@ -372,37 +372,6 @@ void main() {
     float fine_detail = turbulence_fine * 0.06;
     base_color += vec3(fine_detail);
     
-    // === Grande tache (tempête majeure) ===
-    // Position de la grande tache basée sur le seed
-    float spot_lon = hashFloat(params.seed + 42u);
-    float spot_lat = hashFloat(params.seed + 43u) * 0.4 - 0.2;  // Près de l'équateur
-    float spot_size = 0.04 + hashFloat(params.seed + 44u) * 0.03;  // Taille variable
-    
-    vec2 spot_center = vec2(spot_lon, spot_lat * 0.5 + 0.5);
-    float dx = u - spot_center.x;
-    // Wrapping horizontal
-    if (dx > 0.5) dx -= 1.0;
-    if (dx < -0.5) dx += 1.0;
-    float dy = v - spot_center.y;
-    
-    // Ovale horizontal (ellipse 2:1)
-    float spot_dist = sqrt(dx * dx / (spot_size * spot_size * 4.0) + dy * dy / (spot_size * spot_size));
-    float spot_mask = 1.0 - smoothstep(0.8, 1.2, spot_dist);
-    
-    if (spot_mask > 0.0) {
-        // Spirale dans la tache
-        float angle = atan(dy, dx);
-        float spiral = sin(angle * 3.0 + spot_dist * 30.0 + turbulence_mid * 2.0) * 0.5 + 0.5;
-        
-        // Couleur de la tache dérivée du schéma choisi
-        vec3 spot_color = getSpotColor(scheme_a);
-        
-        // Variation interne avec spirale
-        spot_color = mix(spot_color, spot_color * 1.3, spiral * 0.3);
-        
-        base_color = mix(base_color, spot_color, spot_mask * 0.7);
-    }
-    
     // === Assombrissement aux pôles ===
     float polar_darkening = 1.0 - pow(abs_lat, 3.0) * 0.25;
     base_color *= polar_darkening;

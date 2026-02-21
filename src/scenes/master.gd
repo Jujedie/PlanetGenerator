@@ -59,6 +59,7 @@ func _ready() -> void:
 	# 2. Audio player for SFX
 	_sfx_player = AudioStreamPlayer.new()
 	_sfx_player.bus = "Master"
+	_sfx_player.volume_db = 25.0
 	add_child(_sfx_player)
 
 	# 3. Ensure presets directory exists
