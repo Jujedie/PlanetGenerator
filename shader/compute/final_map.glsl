@@ -122,6 +122,31 @@ vec3 getBanquiseColor(uint atmo) {
 }
 
 // ============================================================================
+// RIVER COLOR BY ATMOSPHERE - Mélange dynamique selon le type de planète
+// ============================================================================
+
+/// Calcule la couleur finale de la rivière en fonction du terrain et du type d'atmosphère
+/// Chaque type de planète utilise un mode de mélange adapté à son esthétique
+vec3 getRiverBlendedColor(vec3 terrain_color, vec3 river_color, uint atmo) {
+    // TYPE_VOLCANIC (2) : Rivières de lave - elles brillent et dominent le terrain
+    if (atmo == 2u) {
+        // Forte dominance de la couleur lave, légère influence du terrain
+        return mix(terrain_color, river_color, 0.85);
+    }
+    // TYPE_TOXIC (1) : Rivières acides - très visibles, teinte acide dominante
+    if (atmo == 1u) {
+        return mix(terrain_color, river_color, 0.75);
+    }
+    // TYPE_DEAD (4) : Rivières polluées/boueuses - se fondent plus avec le terrain
+    if (atmo == 4u) {
+        return mix(terrain_color, river_color, 0.65);
+    }
+    // TYPE_TERRAN (0) et autres : Mélange multiplicatif classique (eau réaliste)
+    vec3 result = terrain_color * river_color * 2.5;
+    return min(result, vec3(1.0));
+}
+
+// ============================================================================
 // HILLSHADE CALCULATION
 // ============================================================================
 
@@ -189,14 +214,12 @@ void main() {
     color *= shade_factor;
     
     // === STEP 3: Rivers overlay ===
-    // Si un biome rivière est assigné, multiplier sa couleur végétation avec la couleur du terrain
+    // Si un biome rivière est assigné, appliquer la colorisation dynamique
+    // selon le type d'atmosphère de la planète
     if (is_river && river_bid < river_biome_count) {
         vec3 river_veg_color = river_biomes[river_bid].color.rgb;
-        // Multiplicative blending : assombrit le terrain avec la teinte de la rivière
-        // Cela donne un aspect naturel où la rivière prend la teinte du terrain environnant
-        color = color * river_veg_color * 2.5;
-        // Clamp pour éviter la surbrillance
-        color = min(color, vec3(1.0));
+        // Mélange adapté au type de planète (lave, acide, boue, eau...)
+        color = getRiverBlendedColor(color, river_veg_color, params.atmosphere_type);
     }
     
     // === STEP 4: Banquise overlay (highest priority) ===

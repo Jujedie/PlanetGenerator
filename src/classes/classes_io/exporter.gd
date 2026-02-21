@@ -1359,7 +1359,7 @@ func _export_water_classification(gpu: GPUContext, output_dir: String, width: in
 ## @param height: Hauteur de l'image
 ## @return Dictionary: Chemins des fichiers exportés
 func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: int) -> Dictionary:
-	print("[Exporter] 🌊 Exporting river map (CPU)...")
+	print("[Exporter] 🌊 Exporting river map (GPU river_biome_id based)...")
 
 	var result = {}
 	var rd = gpu.rd
@@ -1376,112 +1376,62 @@ func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: 
 	var atmosphere_type = int(params.get("planet_type", 0))
 
 	# Récupérer les biomes rivières pour ce type d'atmosphère
-	var river_biomes: Array = []
-	for biome in Enum.BIOMES:
-		if biome.isRiver() and atmosphere_type in biome.get_type_planete():
-			river_biomes.append(biome)
+	# L'ordre et le filtrage sont IDENTIQUES au SSBO GPU (get_river_biomes_for_gpu)
+	var river_biomes_list: Array = Enum.get_river_biomes_for_gpu(atmosphere_type)
 
-	if river_biomes.size() == 0:
+	if river_biomes_list.size() == 0:
 		print("  ⚠️ No river biomes found for atmosphere type ", atmosphere_type)
 		return result
 
-	print("  Found ", river_biomes.size(), " river biomes for atmosphere type ", atmosphere_type)
-	for rb in river_biomes:
+	print("  Found ", river_biomes_list.size(), " river biomes for atmosphere type ", atmosphere_type)
+	for rb in river_biomes_list:
 		print("    - ", rb.get_nom(), " (", rb.get_couleur(), ")")
 
-	# Lire les textures nécessaires
-	if not gpu.textures.has("river_flux") or not gpu.textures["river_flux"].is_valid():
-		print("  ⚠️ river_flux texture not available")
+	# Lire la texture river_biome_id (R32UI) depuis le GPU
+	# Cette texture contient l'index du biome rivière assigné par river_classify.glsl
+	# 0xFFFFFFFF = pas de rivière (filtré par température + type)
+	if not gpu.textures.has("river_biome_id") or not gpu.textures["river_biome_id"].is_valid():
+		print("  ⚠️ river_biome_id texture not available")
 		return result
 
-	var flux_data = rd.texture_get_data(gpu.textures["river_flux"], 0)
+	var biome_id_data = rd.texture_get_data(gpu.textures["river_biome_id"], 0)
 
-	if flux_data.size() == 0:
-		print("  ⚠️ river_flux texture empty")
-		return result
-
-	# Lire ocean_reachable qui contient désormais le type promu (0=affluent,1=riviere,2=fleuve,255=none)
-	var has_river_type = gpu.textures.has("ocean_reachable") and gpu.textures["ocean_reachable"].is_valid()
-	var has_water_mask = gpu.textures.has("water_mask") and gpu.textures["water_mask"].is_valid()
-	var river_type_data: PackedByteArray = []
-	var water_mask_data: PackedByteArray = []
-	if has_river_type:
-		river_type_data = rd.texture_get_data(gpu.textures["ocean_reachable"], 0)
-	if has_water_mask:
-		water_mask_data = rd.texture_get_data(gpu.textures["water_mask"], 0)
-
-	# Seuils cohérents avec le shader GPU river_classify
-	var affluent_threshold = float(params.get("river_affluent_threshold", 10.0))
-	var riviere_threshold = float(params.get("river_riviere_threshold", 30.0))
-	var fleuve_threshold = float(params.get("river_fleuve_threshold", 60.0))
-
-	# Statistiques du flux
-	var max_flux = 0.0
-	var non_zero_count = 0
-
-	for y in range(height):
-		for x in range(width):
-			var idx = (y * width + x) * 4  # R32F = 4 bytes par pixel
-			var flux = flux_data.decode_float(idx)
-			if flux > 0.0:
-				non_zero_count += 1
-				max_flux = maxf(max_flux, flux)
-
-	print("  River flux stats:")
-	print("    - Non-zero pixels: ", non_zero_count, " / ", width * height)
-	print("    - Max flux: ", max_flux)
-	print("    - Thresholds: affluent=", affluent_threshold, " riviere=", riviere_threshold, " fleuve=", fleuve_threshold)
-
-	var river_img : Image
-	var path_river: String
-	if max_flux < 0.001:
-		print("  ⚠️ No significant river flux detected")
-		river_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
-		river_img.fill(Color(0, 0, 0, 0))
-		path_river = output_dir + "/river_map.png"
-		river_img.save_png(path_river)
-		result["river_map"] = path_river
+	if biome_id_data.size() == 0:
+		print("  ⚠️ river_biome_id texture empty")
 		return result
 
 	# Créer l'image de sortie
-	river_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
+	var river_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	river_img.fill(Color(0, 0, 0, 0))  # Transparent par défaut
 
 	var river_pixel_count = 0
+	var skipped_no_biome = 0
 	var biome_counts: Dictionary = {}
 
 	for y in range(height):
 		for x in range(width):
 			var pixel_idx = y * width + x
+			var byte_offset = pixel_idx * 4  # R32UI = 4 bytes par pixel
 
-			# Filtrage par type promu : 255 = pas de riviere
-			if has_river_type and river_type_data.size() > pixel_idx:
-				if river_type_data[pixel_idx] == 255:
-					continue
-			# Exclure les pixels d'eau
-			if has_water_mask and water_mask_data.size() > pixel_idx:
-				if water_mask_data[pixel_idx] > 0:
-					continue
+			if byte_offset + 4 > biome_id_data.size():
+				continue
 
-			# Lire le type promu pour sélectionner le biome
-			var rtype = 0
-			if has_river_type and river_type_data.size() > pixel_idx:
-				rtype = river_type_data[pixel_idx]
+			# Lire l'index du biome rivière assigné par le GPU
+			var biome_idx = biome_id_data.decode_u32(byte_offset)
+
+			# 0xFFFFFFFF = pas de rivière (pas de biome adapté en température)
+			if biome_idx == 0xFFFFFFFF:
+				continue
+
+			# Vérifier que l'index est valide dans la liste des biomes
+			if biome_idx >= river_biomes_list.size():
+				skipped_no_biome += 1
+				continue
 
 			river_pixel_count += 1
 
-			# Sélectionner le biome en fonction du type promu
-			var selected_biome: Biome = null
-
-			if rtype == 2 and river_biomes.size() > 1:
-				selected_biome = river_biomes[1]   # Fleuve
-			elif rtype == 1 and river_biomes.size() > 0:
-				selected_biome = river_biomes[0]   # Riviere
-			elif river_biomes.size() > 2:
-				selected_biome = river_biomes[2]   # Affluent
-			else:
-				selected_biome = river_biomes[0]
-
+			# Utiliser le biome sélectionné par le GPU (température déjà vérifiée)
+			var selected_biome: Biome = river_biomes_list[biome_idx]
 			var color = selected_biome.get_couleur()
 			river_img.set_pixel(x, y, color)
 
@@ -1492,15 +1442,17 @@ func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: 
 				biome_counts[biome_name] = 1
 
 	print("  River pixels drawn: ", river_pixel_count)
+	if skipped_no_biome > 0:
+		print("  ⚠️ Skipped ", skipped_no_biome, " pixels with invalid biome index")
 	for biome_name in biome_counts.keys():
 		print("    - ", biome_name, ": ", biome_counts[biome_name])
 
 	# Sauvegarder
-	path_river = output_dir + "/river_map.png"
+	var path_river = output_dir + "/river_map.png"
 	var err = river_img.save_png(path_river)
 	if err == OK:
 		result["river_map"] = path_river
-		print("  ✅ Saved: ", path_river, " (CPU)")
+		print("  ✅ Saved: ", path_river)
 	else:
 		push_error("[Exporter] ❌ Failed to save river_map: ", err)
 
@@ -1523,6 +1475,12 @@ func _export_river_type_map(gpu: GPUContext, output_dir: String, width: int, hei
 	if not gpu.textures.has("ocean_reachable") or not gpu.textures["ocean_reachable"].is_valid():
 		print("  ⚠️ ocean_reachable (river type) texture not available")
 		return result
+
+	# Lire river_biome_id pour filtrer par température (cohérent avec river_map)
+	var has_biome_id = gpu.textures.has("river_biome_id") and gpu.textures["river_biome_id"].is_valid()
+	var biome_id_data: PackedByteArray = []
+	if has_biome_id:
+		biome_id_data = rd.texture_get_data(gpu.textures["river_biome_id"], 0)
 
 	var has_river_type = true
 	var has_water_mask = gpu.textures.has("water_mask") and gpu.textures["water_mask"].is_valid()
@@ -1554,6 +1512,13 @@ func _export_river_type_map(gpu: GPUContext, output_dir: String, width: int, hei
 			# Exclure les pixels d'eau
 			if has_water_mask and water_mask_data.size() > pixel_idx:
 				if water_mask_data[pixel_idx] > 0:
+					continue
+
+			# Filtrer par river_biome_id : si le GPU n'a assigné aucun biome
+			# (température hors plage), ne pas afficher cette rivière
+			if has_biome_id and biome_id_data.size() >= (pixel_idx + 1) * 4:
+				var biome_idx = biome_id_data.decode_u32(pixel_idx * 4)
+				if biome_idx == 0xFFFFFFFF:
 					continue
 
 			var rtype = 0

@@ -70,24 +70,36 @@ const uint TYPE_NONE = 255u;
 // FONCTIONS UTILITAIRES
 // ============================================================================
 
-/// Trouve le meilleur biome riviere correspondant au type et a la temperature
+/// Trouve le meilleur biome riviere correspondant au type et a la temperature.
+/// Retourne 0xFFFFFFFF si AUCUN biome ne correspond (= pas de riviere affichee).
+///
+/// Priorite :
+/// 1) Match exact du type de riviere + temperature compatible
+/// 2) Fallback vers types courants (<=2) compatibles en temperature
+/// 3) Fallback vers n'importe quel biome compatible en temperature
+///    (Riviere glaciaire, Lac gele, Riviere de Lave, etc.)
+/// Si aucun biome ne correspond en temperature → pas de riviere.
 uint findBestRiverBiome(int rtype, float temperature) {
     uint best_match = 0xFFFFFFFFu;
     float best_score = -1e10;
     uint fallback_match = 0xFFFFFFFFu;
     float fallback_score = -1e10;
+    uint any_match = 0xFFFFFFFFu;
+    float any_score = -1e10;
 
     for (uint i = 0u; i < river_biome_count; i++) {
         RiverBiomeData b = river_biomes[i];
 
-        // Verifier la compatibilite de temperature
+        // Verifier la compatibilite de temperature - STRICT
+        // Si la temperature locale n'est pas dans la plage du biome, on passe
         if (temperature < b.temp_min || temperature > b.temp_max) continue;
 
         // Score base sur la specificite de la plage de temperature
+        // Plus la plage est etroite, plus le biome est specifique et prioritaire
         float range = b.temp_max - b.temp_min;
         float score = 1000.0 / max(range, 1.0);
 
-        // Match exact du type de riviere
+        // Priorite 1 : Match exact du type de riviere
         if (b.river_type == uint(rtype)) {
             if (score > best_score) {
                 best_score = score;
@@ -95,18 +107,27 @@ uint findBestRiverBiome(int rtype, float temperature) {
             }
         }
 
-        // Fallback : n'importe quel type de riviere (pas lac, pas glaciaire)
-        // Les rivières glaciaires (type 5) ne doivent être assignées que par
-        // match exact de température, pas via le fallback générique.
+        // Priorite 2 : Fallback vers types courants (Affluent/Riviere/Fleuve)
         if (b.river_type <= 2u) {
             if (score > fallback_score) {
                 fallback_score = score;
                 fallback_match = i;
             }
         }
+
+        // Priorite 3 : N'importe quel biome compatible en temperature
+        // Necessaire pour les biomes speciaux comme Riviere glaciaire (type=5),
+        // Lac gele (type=4), Riviere de Lave (type=1 mais plage extreme), etc.
+        // quand le type exact et le fallback courant ne couvrent pas la temperature
+        if (score > any_score) {
+            any_score = score;
+            any_match = i;
+        }
     }
 
-    return (best_match != 0xFFFFFFFFu) ? best_match : fallback_match;
+    if (best_match != 0xFFFFFFFFu) return best_match;
+    if (fallback_match != 0xFFFFFFFFu) return fallback_match;
+    return any_match;
 }
 
 // ============================================================================
