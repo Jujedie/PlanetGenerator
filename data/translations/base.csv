@@ -105,3 +105,6 @@ PETROLE_PROBABILITY,Petroleum probability : {val},Probabilité de pétrole : {va
 PETROLE_DEPOSIT_SIZE,Petroleum deposit size : {val},Taille du dépôt de pétrole : {val},Größe der Ölvorkommen : {val}
 GLOBAL_RICHNESS,Global richness : {val},Richesse globale : {val},Gesamtvorkommen : {val}
 PARAMETRES,Parameters,Paramètres,Parameter
+
+LOAD_PRESET,LOAD PRESET,CHARGER PRESET,PRESET LADER
+SAVE_PRESET,SAVE PRESET,SAUVEGARDER PRESET,PRESET SPEICHERN

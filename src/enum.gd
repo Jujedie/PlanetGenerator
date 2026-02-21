@@ -131,8 +131,8 @@ var BIOMES = [
 
 	Biome.new("Mare (Mer Lunaire - Basalte)", Color.hex(0x303040FF), Color.hex(0x2e2e2eFF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, -1000], false, [TYPE_NO_ATMOS]),
 	Biome.new("Régolithe Gris", Color.hex(0x888890FF), Color.hex(0x303030FF), [-200, 200], [0.0, 1.0], [-1000, 1000], false, [TYPE_NO_ATMOS]),
-	Biome.new("Cratère d'Impact", Color.hex(0x505058FF), Color.hex(0x68180dFF), [-200, 200], [0.0, 1.0], [-2000, -500], false, [TYPE_NO_ATMOS]),
-	Biome.new("Hauts Plateaux Lunaires", Color.hex(0xc0c0c8FF), Color.hex(0x68180dFF), [-200, 200], [0.0, 1.0], [1000, ALTITUDE_MAX], false, [TYPE_NO_ATMOS]),
+	Biome.new("Cratère d'Impact", Color.hex(0x505058FF), Color.hex(0x363636FF), [-200, 200], [0.0, 1.0], [-2000, -500], false, [TYPE_NO_ATMOS]),
+	Biome.new("Hauts Plateaux Lunaires", Color.hex(0xc0c0c8FF), Color.hex(0x3a3a3aFF), [-200, 200], [0.0, 1.0], [1000, ALTITUDE_MAX], false, [TYPE_NO_ATMOS]),
 	Biome.new("Glace de Cratère Polaire", Color.hex(0xd8f0ffFF), Color.hex(0x58585aFF), [-273, -150], [0.0, 1.0], [-2000, 0], false, [TYPE_NO_ATMOS]),
 
 	# ==========================================================================
@@ -163,13 +163,13 @@ var BIOMES = [
 	# Couleur 1 (vive) = identification carte | Couleur 2 (réaliste) = roche grise/brune
 	# ==========================================================================
 
-	Biome.new("Désert Stérile", Color.hex(0x909080FF), Color.hex(0xaf8a67FF), [50, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE]),
-	Biome.new("Plaine Rocheuse", Color.hex(0x686860FF), Color.hex(0x866546FF), [-50, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE]),
-	Biome.new("Montagnes Rocheuses", Color.hex(0x585050FF), Color.hex(0x5a4430FF), [-200, 200], [0.0, 1.0], [5000, ALTITUDE_MAX], false, [TYPE_STERILE]),
-	Biome.new("Vallées Profondes", Color.hex(0x484040FF), Color.hex(0x7f6043FF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, -5000], false, [TYPE_STERILE]),
+	Biome.new("Désert Stérile", Color.hex(0x909080FF), Color.hex(0xaf8a67FF), [50, 200], [0.0, 1.0], [-500, 500], false, [TYPE_STERILE]),
+	Biome.new("Plaine Rocheuse", Color.hex(0x686860FF), Color.hex(0x866546FF), [-50, 50], [0.0, 1.0], [-500, 500], false, [TYPE_STERILE]),
+	Biome.new("Montagnes Rocheuses", Color.hex(0x585050FF), Color.hex(0x5a4430FF), [-200, 200], [0.0, 1.0], [1000, ALTITUDE_MAX], false, [TYPE_STERILE]),
+	Biome.new("Vallées Profondes", Color.hex(0x484040FF), Color.hex(0x7f6043FF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, -500], false, [TYPE_STERILE]),
 	Biome.new("Désert de Pierre", Color.hex(0x787068FF), Color.hex(0x4f3f30FF), [-150, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE]),
 	Biome.new("Glaciers Stériles", Color.hex(0xd0d0d8FF), Color.hex(0x4f3f30FF), [-200, -50], [0.0, 1.0], [0, ALTITUDE_MAX], false, [TYPE_STERILE]),
-	Biome.new("Plateaux Érodés", Color.hex(0x706860FF), Color.hex(0x81654bFF), [-200, 200], [0.0, 1.0], [2000, 8000], false, [TYPE_STERILE]),
+	Biome.new("Plateaux Érodés", Color.hex(0x706860FF), Color.hex(0x81654bFF), [-200, 200], [0.0, 1.0], [500, 1000], false, [TYPE_STERILE]),
 	Biome.new("Cratères Secs", Color.hex(0x605858FF), Color.hex(0x6e5945FF), [50, 150], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE])
 ]
 

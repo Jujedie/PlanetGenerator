@@ -38,9 +38,6 @@
 [ext_resource type="Texture2D" uid="uid://dg0d3pwitlh5w" path="res://data/img/UI/button/random_btn_pressed.png" id="31_gnqa1"]
 [ext_resource type="Texture2D" uid="uid://nb4amu2omgpi" path="res://data/img/UI/button/red_btn_hover.png" id="31_syvc8"]
 [ext_resource type="Texture2D" uid="uid://d00rk2qqtvjo7" path="res://data/img/UI/button/random_btn_hover.png" id="32_23ir5"]
-[ext_resource type="Texture2D" uid="uid://c1shapl500fux" path="res://data/img/UI/button/red_black_btn.png" id="32_syvc8"]
-[ext_resource type="Texture2D" uid="uid://bfejthja5rbtf" path="res://data/img/UI/button/red_black_btn_pressed.png" id="33_wim0k"]
-[ext_resource type="Texture2D" uid="uid://bqa62hnonwr33" path="res://data/img/UI/button/red_black_btn_hover.png" id="34_xtfv3"]
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_dbnah"]
 
@@ -88,15 +85,6 @@ texture = ExtResource("30_a0y5r")
 
 [sub_resource type="StyleBoxTexture" id="StyleBoxTexture_4smu3"]
 texture = ExtResource("31_syvc8")
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_7eaih"]
-texture = ExtResource("32_syvc8")
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_o3yh3"]
-texture = ExtResource("33_wim0k")
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_k8o41"]
-texture = ExtResource("34_xtfv3")
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_7eaih"]
 
@@ -1971,6 +1959,7 @@ theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.2509804, 0.2627451, 0.26666668, 1)
 theme_override_font_sizes/font_size = 50
 text = "PARAMETRES"
+metadata/_edit_lock_ = true
 
 [node name="HBoxContainer" type="HBoxContainer" parent="ImageFrame/Control General" unique_id=1740787907]
 layout_mode = 1
@@ -2077,21 +2066,21 @@ focus_mode = 0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
 theme_override_colors/font_focus_color = Color(0.9254902, 0.61960787, 0, 1)
-theme_override_colors/font_pressed_color = Color(0.9254902, 0.61960787, 0, 1)
-theme_override_colors/font_hover_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_pressed_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
 theme_override_colors/font_hover_pressed_color = Color(0.9254902, 0.61960787, 0, 1)
 theme_override_font_sizes/font_size = 38
-theme_override_styles/normal = SubResource("StyleBoxTexture_7eaih")
-theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_7eaih")
-theme_override_styles/pressed = SubResource("StyleBoxTexture_o3yh3")
-theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_o3yh3")
-theme_override_styles/hover = SubResource("StyleBoxTexture_k8o41")
-theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_k8o41")
-theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_o3yh3")
-theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_o3yh3")
-theme_override_styles/disabled = SubResource("StyleBoxTexture_o3yh3")
-theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_o3yh3")
-theme_override_styles/focus = SubResource("StyleBoxTexture_7eaih")
+theme_override_styles/normal = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
 text = "SAUVEGARDER"
 metadata/_edit_lock_ = true
 
@@ -2107,6 +2096,62 @@ texture_pressed = ExtResource("31_gnqa1")
 texture_hover = ExtResource("32_23ir5")
 texture_disabled = ExtResource("32_23ir5")
 texture_focused = ExtResource("30_svf8o")
+metadata/_edit_lock_ = true
+
+[node name="btnSavePreset" type="Button" parent="ImageFrame/Control General" unique_id=523495873]
+layout_mode = 0
+offset_left = 613.3909
+offset_top = 17.998558
+offset_right = 825.51544
+offset_bottom = 61.915043
+focus_mode = 0
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_focus_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_pressed_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_font_sizes/font_size = 25
+theme_override_styles/normal = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
+text = "SAVE_PRESET"
+metadata/_edit_lock_ = true
+
+[node name="btnLoadPreset" type="Button" parent="ImageFrame/Control General" unique_id=148547478]
+layout_mode = 0
+offset_left = 378.6897
+offset_top = 17.99856
+offset_right = 603.3117
+offset_bottom = 61.915047
+focus_mode = 0
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_focus_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_pressed_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_font_sizes/font_size = 25
+theme_override_styles/normal = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
+text = "LOAD_PRESET"
 metadata/_edit_lock_ = true
 
 [node name="btnPrecedent" type="TextureButton" parent="ImageFrame" unique_id=1620452075]
@@ -2219,5 +2264,7 @@ metadata/_edit_lock_ = true
 [connection signal="pressed" from="ImageFrame/Control General/btnGenerer" to="." method="_on_btn_comfirme_pressed"]
 [connection signal="pressed" from="ImageFrame/Control General/btnSauvegarder" to="." method="_on_btn_sauvegarder_pressed"]
 [connection signal="pressed" from="ImageFrame/Control General/btnRandomiser" to="." method="_on_btn_randomise_pressed"]
+[connection signal="pressed" from="ImageFrame/Control General/btnSavePreset" to="." method="save_preset"]
+[connection signal="pressed" from="ImageFrame/Control General/btnLoadPreset" to="." method="load_preset"]
 [connection signal="pressed" from="ImageFrame/btnPrecedent" to="." method="_on_btn_precedant_pressed"]
 [connection signal="pressed" from="ImageFrame/btnSuivant" to="." method="_on_btn_suivant_pressed"]
