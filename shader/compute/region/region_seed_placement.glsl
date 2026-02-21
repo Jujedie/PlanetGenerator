@@ -99,12 +99,11 @@ void main() {
     // Décider si ce pixel est un seed de région
     // Utiliser une probabilité par pixel pour avoir une distribution régulière
     
-    // Estimation du nombre de régions attendues
-    float land_area_estimate = float(w * h) * 0.35;  // ~35% de terre (approximatif)
-    float num_regions_expected = land_area_estimate / float(params.nb_cases_region);
-    
     // Probabilité qu'un pixel terre soit un seed
-    float seed_probability = num_regions_expected / land_area_estimate;
+    // On veut BEAUCOUP de seeds pour garantir la couverture
+    // Avec nb_cases_region = 50, on veut 1 seed tous les 50 pixels en moyenne
+    // Mais on ajoute un facteur de sécurité x2 pour éviter les trous
+    float seed_probability = 2.0 / float(params.nb_cases_region);
     
     // Hash déterministe pour ce pixel
     uint pixel_hash = hash3(uint(pixel.x), uint(pixel.y), params.seed);
@@ -121,7 +120,9 @@ void main() {
         
         // Écrire le seed
         imageStore(region_map, pixel, uvec4(region_id, 0u, 0u, 0u));
-        imageStore(region_cost, pixel, vec4(0.0, 0.0, 0.0, 0.0));  // Coût 0 au départ
+        // JFA : stocker la position du seed encodée (y * width + x + 1.0)
+        float packed_pos = float(uint(pixel.y) * params.width + uint(pixel.x)) + 1.0;
+        imageStore(region_cost, pixel, vec4(packed_pos, 0.0, 0.0, 0.0));
     } else {
         // Pixel terre normal : en attente d'assignation
         imageStore(region_map, pixel, uvec4(0xFFFFFFFFu, 0u, 0u, 0u));

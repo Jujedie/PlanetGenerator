@@ -38,9 +38,6 @@
 [ext_resource type="Texture2D" uid="uid://dg0d3pwitlh5w" path="res://data/img/UI/button/random_btn_pressed.png" id="31_gnqa1"]
 [ext_resource type="Texture2D" uid="uid://nb4amu2omgpi" path="res://data/img/UI/button/red_btn_hover.png" id="31_syvc8"]
 [ext_resource type="Texture2D" uid="uid://d00rk2qqtvjo7" path="res://data/img/UI/button/random_btn_hover.png" id="32_23ir5"]
-[ext_resource type="Texture2D" uid="uid://c1shapl500fux" path="res://data/img/UI/button/red_black_btn.png" id="32_syvc8"]
-[ext_resource type="Texture2D" uid="uid://bfejthja5rbtf" path="res://data/img/UI/button/red_black_btn_pressed.png" id="33_wim0k"]
-[ext_resource type="Texture2D" uid="uid://bqa62hnonwr33" path="res://data/img/UI/button/red_black_btn_hover.png" id="34_xtfv3"]
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_dbnah"]
 
@@ -80,8 +77,6 @@ default_font_size = 25
 content_margin_left = 6.0
 texture = ExtResource("15_dbnah")
 
-[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_o3yh3"]
-
 [sub_resource type="StyleBoxTexture" id="StyleBoxTexture_wim0k"]
 texture = ExtResource("29_iijg3")
 
@@ -90,15 +85,6 @@ texture = ExtResource("30_a0y5r")
 
 [sub_resource type="StyleBoxTexture" id="StyleBoxTexture_4smu3"]
 texture = ExtResource("31_syvc8")
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_7eaih"]
-texture = ExtResource("32_syvc8")
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_o3yh3"]
-texture = ExtResource("33_wim0k")
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_k8o41"]
-texture = ExtResource("34_xtfv3")
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_7eaih"]
 
@@ -473,7 +459,7 @@ theme_override_styles/disabled = SubResource("StyleBoxTexture_hvy7f")
 theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_hvy7f")
 theme_override_styles/focus = SubResource("StyleBoxTexture_hvy7f")
 selected = 0
-item_count = 5
+item_count = 7
 popup/item_0/text = "TYPE_DEFAUT"
 popup/item_0/id = 0
 popup/item_1/text = "TYPE_TOXIQUE"
@@ -484,6 +470,10 @@ popup/item_3/text = "TYPE_NO_ATMOSPHERE"
 popup/item_3/id = 3
 popup/item_4/text = "TYPE_MORTE"
 popup/item_4/id = 4
+popup/item_5/text = "TYPE_STERILE"
+popup/item_5/id = 5
+popup/item_6/text = "TYPE_GAZEUSE"
+popup/item_6/id = 6
 
 [node name="Thread_Number_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters" unique_id=442686978]
 layout_mode = 2
@@ -1270,10 +1260,8 @@ theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
 theme_override_styles/slider = ExtResource("12_g0s8p")
 theme_override_styles/grabber_area = ExtResource("12_g0s8p")
 theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
-min_value = 0.5
-max_value = 10.0
 step = 0.5
-value = 5.0
+value = 20.0
 tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
@@ -1305,17 +1293,17 @@ tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="River_Min_Altitude_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters" unique_id=308179150]
+[node name="River_Precip_Scale_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters" unique_id=308179150]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Min_Altitude_Param" unique_id=1320739697]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Precip_Scale_Param" unique_id=1320739697]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
-text = "RIVER_MIN_ALTITUDE"
+text = "RIVER_PRECIP_SCALE"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Min_Altitude_Param" unique_id=142793057]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Precip_Scale_Param" unique_id=142793057]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1323,27 +1311,26 @@ theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
 theme_override_styles/slider = ExtResource("12_g0s8p")
 theme_override_styles/grabber_area = ExtResource("12_g0s8p")
 theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
-min_value = -5000.0
-max_value = 5000.0
-step = 10.0
-value = 20.0
+min_value = 1.0
+max_value = 10.0
+value = 1.0
 allow_greater = true
 allow_lesser = true
 tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="River_Min_Precipitation_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters" unique_id=1756923840]
+[node name="River_Affluent_Threshold_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters" unique_id=1756923840]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Min_Precipitation_Param" unique_id=624233393]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Affluent_Threshold_Param" unique_id=624233393]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
-text = "RIVER_MIN_PRECIPITATION"
+text = "RIVER_AFFLUENT_THRESHOLD"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Min_Precipitation_Param" unique_id=1146552612]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Affluent_Threshold_Param" unique_id=1146552612]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1351,10 +1338,8 @@ theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
 theme_override_styles/slider = ExtResource("12_g0s8p")
 theme_override_styles/grabber_area = ExtResource("12_g0s8p")
 theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
-min_value = 0.01
-max_value = 1.0
-step = 0.01
-value = 0.08
+value = 10.0
+allow_greater = true
 tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
@@ -1377,25 +1362,23 @@ theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
 theme_override_styles/slider = ExtResource("12_g0s8p")
 theme_override_styles/grabber_area = ExtResource("12_g0s8p")
 theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
-min_value = 1.0
-max_value = 10.0
-step = 0.5
-value = 1.0
+value = 30.0
+allow_greater = true
 tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
 
-[node name="River_Base_Flux_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters" unique_id=2021786975]
+[node name="River_Fleuve_Threshold_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters" unique_id=2021786975]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Base_Flux_Param" unique_id=1218578291]
+[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Fleuve_Threshold_Param" unique_id=1218578291]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
 theme_override_font_sizes/font_size = 25
-text = "RIVER_BASE_FLUX"
+text = "RIVER_FLEUVE_THRESHOLD"
 
-[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Base_Flux_Param" unique_id=1789157734]
+[node name="LineEdit" type="HSlider" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Fleuve_Threshold_Param" unique_id=1789157734]
 layout_mode = 2
 theme_override_icons/grabber = ExtResource("10_gg1ai")
 theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
@@ -1403,10 +1386,8 @@ theme_override_icons/grabber_disabled = ExtResource("11_lb8ov")
 theme_override_styles/slider = ExtResource("12_g0s8p")
 theme_override_styles/grabber_area = ExtResource("12_g0s8p")
 theme_override_styles/grabber_area_highlight = ExtResource("13_dfspw")
-min_value = 1.0
-max_value = 10.0
-step = 0.5
-value = 1.0
+value = 60.0
+allow_greater = true
 tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
@@ -1683,20 +1664,6 @@ value = 0.5
 tick_count = 10
 ticks_on_borders = true
 ticks_position = 3
-
-[node name="Region_Generation_Optimised_Param" type="HBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters" unique_id=13991043]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Generation_Optimised_Param" unique_id=1477692319]
-layout_mode = 2
-theme = ExtResource("5_e2i44")
-theme_override_colors/font_color = Color(0.46, 0.14904, 0.101200014, 1)
-theme_override_font_sizes/font_size = 25
-text = "REGION_GENERATION_OPTIMISED"
-
-[node name="LineEdit" type="CheckButton" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters/Region_Generation_Optimised_Param" unique_id=1538634471]
-layout_mode = 2
-theme_override_styles/focus = SubResource("StyleBoxEmpty_o3yh3")
 
 [node name="Region_Noise_Strength_Param" type="VBoxContainer" parent="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Region_Categorie/MarginContainer/Region_parameters" unique_id=2123742186]
 layout_mode = 2
@@ -1992,6 +1959,7 @@ theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.2509804, 0.2627451, 0.26666668, 1)
 theme_override_font_sizes/font_size = 50
 text = "PARAMETRES"
+metadata/_edit_lock_ = true
 
 [node name="HBoxContainer" type="HBoxContainer" parent="ImageFrame/Control General" unique_id=1740787907]
 layout_mode = 1
@@ -2098,21 +2066,21 @@ focus_mode = 0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
 theme_override_colors/font_focus_color = Color(0.9254902, 0.61960787, 0, 1)
-theme_override_colors/font_pressed_color = Color(0.9254902, 0.61960787, 0, 1)
-theme_override_colors/font_hover_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_pressed_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
 theme_override_colors/font_hover_pressed_color = Color(0.9254902, 0.61960787, 0, 1)
 theme_override_font_sizes/font_size = 38
-theme_override_styles/normal = SubResource("StyleBoxTexture_7eaih")
-theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_7eaih")
-theme_override_styles/pressed = SubResource("StyleBoxTexture_o3yh3")
-theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_o3yh3")
-theme_override_styles/hover = SubResource("StyleBoxTexture_k8o41")
-theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_k8o41")
-theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_o3yh3")
-theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_o3yh3")
-theme_override_styles/disabled = SubResource("StyleBoxTexture_o3yh3")
-theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_o3yh3")
-theme_override_styles/focus = SubResource("StyleBoxTexture_7eaih")
+theme_override_styles/normal = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
 text = "SAUVEGARDER"
 metadata/_edit_lock_ = true
 
@@ -2128,6 +2096,62 @@ texture_pressed = ExtResource("31_gnqa1")
 texture_hover = ExtResource("32_23ir5")
 texture_disabled = ExtResource("32_23ir5")
 texture_focused = ExtResource("30_svf8o")
+metadata/_edit_lock_ = true
+
+[node name="btnSavePreset" type="Button" parent="ImageFrame/Control General" unique_id=523495873]
+layout_mode = 0
+offset_left = 613.3909
+offset_top = 17.998558
+offset_right = 825.51544
+offset_bottom = 61.915043
+focus_mode = 0
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_focus_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_pressed_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_font_sizes/font_size = 25
+theme_override_styles/normal = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
+text = "SAVE_PRESET"
+metadata/_edit_lock_ = true
+
+[node name="btnLoadPreset" type="Button" parent="ImageFrame/Control General" unique_id=148547478]
+layout_mode = 0
+offset_left = 378.6897
+offset_top = 17.99856
+offset_right = 603.3117
+offset_bottom = 61.915047
+focus_mode = 0
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_focus_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_pressed_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_font_sizes/font_size = 25
+theme_override_styles/normal = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
+text = "LOAD_PRESET"
 metadata/_edit_lock_ = true
 
 [node name="btnPrecedent" type="TextureButton" parent="ImageFrame" unique_id=1620452075]
@@ -2209,10 +2233,10 @@ metadata/_edit_lock_ = true
 [connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Freshwater_Max_Size_Param/LineEdit" to="." method="_on_range_change_freshwater_max_size"]
 [connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/Lake_Threshold_Param/LineEdit" to="." method="_on_range_change_lake_threshold"]
 [connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Iterations_Param/LineEdit" to="." method="_on_range_change_river_iterations"]
-[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Min_Altitude_Param/LineEdit" to="." method="_on_range_change_river_min_altitude"]
-[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Min_Precipitation_Param/LineEdit" to="." method="_on_range_change_river_min_precipitation"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Precip_Scale_Param/LineEdit" to="." method="_on_range_change_river_precip_scale"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Affluent_Threshold_Param/LineEdit" to="." method="_on_range_change_river_affluent_threshold"]
 [connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Threshold_Param/LineEdit" to="." method="_on_range_change_river_threshold"]
-[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Base_Flux_Param/LineEdit" to="." method="_on_range_change_river_base_flux"]
+[connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Eau_Categorie/MarginContainer/Eaux_parameters/River_Fleuve_Threshold_Param/LineEdit" to="." method="_on_range_change_river_fleuve_threshold"]
 [connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/Title/TextureButton" to="." method="_on_fold_button_pressed" binds= ["ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer"]]
 [connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer/nuage_parameters/Cloud_Coverage_Param/LineEdit" to="." method="_on_range_change_cloud_coverage"]
 [connection signal="value_changed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/Nuages_Categorie/MarginContainer/nuage_parameters/Cloud_Density_Param/LineEdit" to="." method="_on_range_change_cloud_density"]
@@ -2240,5 +2264,7 @@ metadata/_edit_lock_ = true
 [connection signal="pressed" from="ImageFrame/Control General/btnGenerer" to="." method="_on_btn_comfirme_pressed"]
 [connection signal="pressed" from="ImageFrame/Control General/btnSauvegarder" to="." method="_on_btn_sauvegarder_pressed"]
 [connection signal="pressed" from="ImageFrame/Control General/btnRandomiser" to="." method="_on_btn_randomise_pressed"]
+[connection signal="pressed" from="ImageFrame/Control General/btnSavePreset" to="." method="save_preset"]
+[connection signal="pressed" from="ImageFrame/Control General/btnLoadPreset" to="." method="load_preset"]
 [connection signal="pressed" from="ImageFrame/btnPrecedent" to="." method="_on_btn_precedant_pressed"]
 [connection signal="pressed" from="ImageFrame/btnSuivant" to="." method="_on_btn_suivant_pressed"]

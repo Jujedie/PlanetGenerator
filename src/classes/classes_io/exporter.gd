@@ -82,6 +82,26 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	rd.submit()
 	rd.sync()
 	
+	# === TYPE 6 (GAZEUSE) : Export simplifié ===
+	# Seulement température, précipitation et carte finale
+	var planet_type = int(params.get("planet_type", 0))
+	if planet_type == 6:  # TYPE_GAZEUZE
+		print("[Exporter] 🪐 Export gazeuse - cartes limitées (température, précipitation, final)")
+		var exported_files = {}
+		
+		# Export climat (température + précipitation colorées seulement)
+		var climate_result = _export_climate_maps_gas_giant(gpu, output_dir)
+		for key in climate_result.keys():
+			exported_files[key] = climate_result[key]
+		
+		# Export final map
+		var final_result = _export_final_map(gpu, output_dir)
+		for key in final_result.keys():
+			exported_files[key] = final_result[key]
+		
+		print("[Exporter] Export gazeuse complete: ", exported_files.size(), " maps")
+		return exported_files
+	
 	# Liste des textures RGBA32F (16 bytes/pixel) - exclure les textures climat
 	var rgba32f_textures = ["geo", "climate", "temp_buffer", "plates", "crust_age"]
 	
@@ -134,19 +154,32 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 			exported_files[key] = plates_result[key]
 	
 	# === EXPORT CLIMAT (Step 3) - Optimisé RGBA8 Direct ===
-	var climate_result = _export_climate_maps_optimized(gpu, output_dir)
-	for key in climate_result.keys():
-		exported_files[key] = climate_result[key]
+	# Pour les planètes sans atmosphère ou stériles, exporter seulement temp/precip (pas nuages/banquise)
+	if planet_type in [3, 5]:  # TYPE_NO_ATMOS, TYPE_STERILE
+		var climate_result = _export_climate_maps_gas_giant(gpu, output_dir)  # Réutilise: exporte seulement temp + precip
+		for key in climate_result.keys():
+			exported_files[key] = climate_result[key]
+	else:
+		var climate_result = _export_climate_maps_optimized(gpu, output_dir)
+		for key in climate_result.keys():
+			exported_files[key] = climate_result[key]
 	
 	# === EXPORT EAUX (Step 2.5) - Classification des masses d'eau ===
-	var water_result = _export_water_classification(gpu, output_dir, width, height)
-	for key in water_result.keys():
-		exported_files[key] = water_result[key]
+	# Pas d'eau sur planètes sans atmosphère ou stériles
+	if planet_type not in [3, 5]:  # TYPE_NO_ATMOS, TYPE_STERILE
+		var water_result = _export_water_classification(gpu, output_dir, width, height)
+		for key in water_result.keys():
+			exported_files[key] = water_result[key]
 	
-	# === EXPORT RIVIÈRES (Step 2.6) - Carte des rivières CPU ===
-	var river_result = _export_river_map(gpu, output_dir, width, height)
-	for key in river_result.keys():
-		exported_files[key] = river_result[key]
+		# === EXPORT RIVIÈRES (Step 2.6) - Carte des rivières CPU ===
+		var river_result = _export_river_map(gpu, output_dir, width, height)
+		for key in river_result.keys():
+			exported_files[key] = river_result[key]
+
+		# === EXPORT TYPE RIVIÈRES (Step 2.7) - Carte des types de rivières ===
+		var river_type_result = _export_river_type_map(gpu, output_dir, width, height)
+		for key in river_type_result.keys():
+			exported_files[key] = river_type_result[key]
 	
 	# === EXPORT RÉGIONS (Step 4) - Régions administratives ===
 	var region_result = _export_region_map(gpu, output_dir,params.get("region_generation_optimised",true))
@@ -154,9 +187,11 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		exported_files[key] = region_result[key]
 	
 	# === EXPORT RÉGIONS OCÉANIQUES (Step 4.5) ===
-	var ocean_region_result = _export_ocean_region_map(gpu, output_dir,params.get("region_generation_optimised",true))
-	for key in ocean_region_result.keys():
-		exported_files[key] = ocean_region_result[key]
+	# Pas de régions océaniques sans eau
+	if planet_type not in [3, 5]:  # TYPE_NO_ATMOS, TYPE_STERILE
+		var ocean_region_result = _export_ocean_region_map(gpu, output_dir,params.get("region_generation_optimised",true))
+		for key in ocean_region_result.keys():
+			exported_files[key] = ocean_region_result[key]
 	
 	# === EXPORT BIOMES (Step 4.1) ===
 	var biome_result = _export_biome_map(gpu, output_dir)
@@ -205,9 +240,9 @@ func _export_topographie_maps(geo_img: Image, output_dir: String, width: int, he
 	var elevation_grey = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	var water_mask = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	
-	# Vérifier si la planète a une atmosphère (pas d'eau sur planètes sans atmosphère)
+	# Vérifier si la planète a de l'eau (pas d'eau sur planètes sans atmosphère ou stériles)
 	var atmosphere_type = int(params.get("planet_type", 0))
-	var has_water = (atmosphere_type != 3)  # 3 = Sans atmosphère
+	var has_water = atmosphere_type not in [3, 5]  # 3 = Sans atmosphère, 5 = Stérile
 	
 	# Parcourir chaque pixel et convertir l'élévation en couleur
 	for y in range(height):
@@ -422,6 +457,71 @@ func _export_raw_heightmap(geo_img: Image, output_dir: String, width: int, heigh
 		return ""
 
 # ============================================================================
+# EXPORT CLIMAT GAZEUSE (température + précipitation seulement)
+# ============================================================================
+
+## Exporte uniquement température et précipitation pour les planètes gazeuses.
+## Pas de nuages ni de banquise car il n'y a pas de surface.
+func _export_climate_maps_gas_giant(gpu: GPUContext, output_dir: String) -> Dictionary:
+	print("[Exporter] 🪐 Exporting gas giant climate maps (temp + precip)...")
+	
+	var result = {}
+	var rd = gpu.rd
+	
+	if not rd:
+		push_error("[Exporter] ❌ RenderingDevice not available")
+		return result
+	
+	rd.submit()
+	rd.sync()
+	
+	# Seulement température et précipitation pour les gazeuses
+	var climate_textures = {
+		"temperature_colored": "temperature_map.png",
+		"precipitation_colored": "precipitation_map.png",
+	}
+	
+	for tex_id in climate_textures.keys():
+		if not gpu.textures.has(tex_id) or not gpu.textures[tex_id].is_valid():
+			print("  ⚠️ Texture '", tex_id, "' non disponible, skip")
+			continue
+		
+		var data = rd.texture_get_data(gpu.textures[tex_id], 0)
+		
+		if data.size() == 0:
+			push_error("[Exporter] ❌ Empty data for texture: ", tex_id)
+			continue
+		
+		var tex_format = rd.texture_get_format(gpu.textures[tex_id])
+		var width = tex_format.width
+		var height = tex_format.height
+		
+		var expected_size = width * height * 4
+		if data.size() != expected_size:
+			push_error("[Exporter] ❌ Data size mismatch for ", tex_id, 
+				": expected ", expected_size, ", got ", data.size())
+			continue
+		
+		var img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, data)
+		
+		if not img:
+			push_error("[Exporter] ❌ Failed to create image from ", tex_id)
+			continue
+		
+		var filename = climate_textures[tex_id]
+		var filepath = output_dir + "/" + filename
+		var save_err = img.save_png(filepath)
+		
+		if save_err == OK:
+			result[tex_id] = filepath
+			print("  ✅ Saved: ", filepath, " (", width, "x", height, ", direct RGBA8)")
+		else:
+			push_error("[Exporter] ❌ Failed to save ", filename, ": ", save_err)
+	
+	print("[Exporter] ✅ Gas giant climate export complete: ", result.size(), " maps")
+	return result
+
+# ============================================================================
 # ÉTAPE 3 : EXPORT CLIMAT OPTIMISÉ (RGBA8 DIRECT)
 # ============================================================================
 
@@ -518,8 +618,8 @@ func _export_climate_maps_optimized(gpu: GPUContext, output_dir: String) -> Dict
 ## @param gpu: Instance GPUContext avec la texture region_colored
 ## @param output_dir: Dossier de sortie
 ## @return Dictionary: Chemin du fichier exporté
-func _export_region_map(gpu: GPUContext, output_dir: String, optimised_region_generation : bool = true) -> Dictionary:
-	print("[Exporter] 🗺️ Exporting region map (optimized RGBA8 direct)...")
+func _export_region_map(gpu: GPUContext, output_dir: String, _optimised_region_generation : bool = true) -> Dictionary:
+	print("[Exporter] 🗺️ Exporting region map (CPU coloration with Region.gd system)...")
 	
 	var result = {}
 	var rd = gpu.rd
@@ -532,14 +632,14 @@ func _export_region_map(gpu: GPUContext, output_dir: String, optimised_region_ge
 	rd.submit()
 	rd.sync()
 	
-	var tex_id = "region_colored"
+	var tex_id = "region_map"  # R32UI - IDs bruts
 	var filename = "region_map.png"
 	
 	if not gpu.textures.has(tex_id) or not gpu.textures[tex_id].is_valid():
-		print("  ⚠️ Texture 'region_colored' non disponible, skip")
+		print("  ⚠️ Texture 'region_map' non disponible, skip")
 		return result
 	
-	# Lecture directe des données RGBA8 depuis le GPU
+	# Lecture directe des données R32UI depuis le GPU
 	var data = rd.texture_get_data(gpu.textures[tex_id], 0)
 	
 	if data.size() == 0:
@@ -551,47 +651,232 @@ func _export_region_map(gpu: GPUContext, output_dir: String, optimised_region_ge
 	var width = tex_format.width
 	var height = tex_format.height
 	
-	# Vérifier la taille des données (RGBA8 = 4 bytes par pixel)
+	# Vérifier la taille des données (R32UI = 4 bytes par pixel)
 	var expected_size = width * height * 4
 	if data.size() != expected_size:
 		push_error("[Exporter] ❌ Data size mismatch for region map: expected ", 
 			expected_size, ", got ", data.size())
 		return result
 	
-	# Créer l'image directement à partir des données
-	var img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, data)
+	# Créer l'image de sortie RGBA8
+	var img = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	
 	if not img:
 		push_error("[Exporter] ❌ Failed to create region image")
 		return result
-
-	if not optimised_region_generation:
-		print("  Merging isolated regions of size 1...")
-		# Fusion des régions de taille 1 avec des voisins
-		var land_color = Color(0x16 / 255.0, 0x1a / 255.0, 0x1f / 255.0)  # 0x161a1f
-		img = _merge_isolated_regions(img, width, height, land_color)
+	
+	# =========================================================================
+	# PHASE 1 : Collecter tous les IDs uniques et gérer le wrapping horizontal
+	# =========================================================================
+	print("  Phase 1: Collecting unique region IDs...")
+	
+	# Dictionnaire: region_id -> premier pixel où on l'a vu
+	var region_first_seen: Dictionary = {}
+	# Pour fusionner les régions qui touchent les bords (wrap horizontal)
+	# On stocke les IDs vus sur la colonne 0 et la colonne width-1
+	var left_edge_ids: Dictionary = {}  # y -> id
+	var right_edge_ids: Dictionary = {}  # y -> id
+	
+	for y in range(height):
+		for x in range(width):
+			var offset = (y * width + x) * 4
+			var region_id = data.decode_u32(offset)
+			
+			# 0xFFFFFFFF = non-assigné (eau ou terre sans région)
+			if region_id == 0xFFFFFFFF:
+				continue
+			
+			if not region_first_seen.has(region_id):
+				region_first_seen[region_id] = Vector2i(x, y)
+			
+			# Enregistrer les IDs sur les bords
+			if x == 0:
+				left_edge_ids[y] = region_id
+			elif x == width - 1:
+				right_edge_ids[y] = region_id
+	
+	# Fusionner les régions qui se touchent via le wrap horizontal
+	# Une région sur le bord droit (x=width-1) est adjacente au bord gauche (x=0)
+	var merge_map: Dictionary = {}  # id_to_merge -> id_target
+	for y in right_edge_ids.keys():
+		if left_edge_ids.has(y):
+			var right_id = right_edge_ids[y]
+			var left_id = left_edge_ids[y]
+			if right_id != left_id and right_id != 0xFFFFFFFF and left_id != 0xFFFFFFFF:
+				# Fusionner le plus grand ID vers le plus petit
+				var keep_id = min(right_id, left_id)
+				var merge_id = max(right_id, left_id)
+				merge_map[merge_id] = keep_id
+	
+	# Appliquer la transitivité des fusions
+	for merge_id in merge_map.keys():
+		var target = merge_map[merge_id]
+		while merge_map.has(target):
+			target = merge_map[target]
+		merge_map[merge_id] = target
+	
+	print("    Found ", region_first_seen.size(), " unique regions, ", merge_map.size(), " to merge via wrap")
+	
+	# =========================================================================
+	# PHASE 2 : Assigner les couleurs séquentiellement (système Region.gd)
+	# =========================================================================
+	print("  Phase 2: Assigning colors (Region.gd step=17 system)...")
+	
+	var id_to_color: Dictionary = {}
+	var color_counter: Array = [0, 0, 0, 255]  # R, G, B, A
+	const STEP = 17  # Identique à Region.gd
+	
+	# Trier les IDs par ordre de première apparition (y puis x) pour consistance
+	var sorted_ids: Array = []
+	for region_id in region_first_seen.keys():
+		# Appliquer la fusion
+		var effective_id = region_id
+		if merge_map.has(region_id):
+			effective_id = merge_map[region_id]
+		sorted_ids.append([effective_id, region_first_seen[region_id]])
+	
+	# Dédupliquer après fusion
+	var seen_effective: Dictionary = {}
+	var unique_sorted: Array = []
+	for item in sorted_ids:
+		var eff_id = item[0]
+		if not seen_effective.has(eff_id):
+			seen_effective[eff_id] = true
+			unique_sorted.append(item)
+	
+	# Trier par position (y * width + x)
+	unique_sorted.sort_custom(func(a, b): 
+		var pos_a = a[1].y * width + a[1].x
+		var pos_b = b[1].y * width + b[1].x
+		return pos_a < pos_b
+	)
+	
+	# Assigner les couleurs dans l'ordre
+	for item in unique_sorted:
+		var eff_id = item[0]
+		if id_to_color.has(eff_id):
+			continue
+		
+		# Créer la couleur actuelle
+		var color = Color(color_counter[0] / 255.0, color_counter[1] / 255.0, 
+						  color_counter[2] / 255.0, color_counter[3] / 255.0)
+		id_to_color[eff_id] = color
+		
+		# Incrémenter le compteur (système Region.gd)
+		color_counter[0] += STEP
+		if color_counter[0] > 255:
+			color_counter[0] = color_counter[0] % 256
+			color_counter[1] += STEP
+		if color_counter[1] > 255:
+			color_counter[1] = color_counter[1] % 256
+			color_counter[2] += STEP
+		if color_counter[2] > 255:
+			color_counter[2] = color_counter[2] % 256
+	
+	print("    Assigned ", id_to_color.size(), " unique colors")
+	
+	# =========================================================================
+	# PHASE 3 : Colorier l'image en parallèle (subdivision par threads)
+	# =========================================================================
+	print("  Phase 3: Coloring image with ", _nb_threads, " threads...")
+	
+	# Créer le buffer de sortie RGBA8 (4 bytes par pixel)
+	var output_data = PackedByteArray()
+	output_data.resize(width * height * 4)
+	
+	var rows_per_thread = ceili(float(height) / float(_nb_threads))
+	var threads: Array[Thread] = []
+	
+	# Couleur pour les pixels sans région (RGBA8) - TRANSPARENT
+	var no_region_rgba = PackedByteArray([0x00, 0x00, 0x00, 0x00])  # Transparent
+	
+	for t in range(_nb_threads):
+		var start_y = t * rows_per_thread
+		var end_y = min(start_y + rows_per_thread, height)
+		
+		if start_y >= height:
+			break
+		
+		var thread = Thread.new()
+		thread.start(_color_region_rows_fast.bind(
+			data, output_data, width, start_y, end_y, 
+			id_to_color, merge_map, no_region_rgba
+		))
+		threads.append(thread)
+	
+	# Attendre tous les threads
+	for thread in threads:
+		thread.wait_to_finish()
+	
+	# Créer l'image à partir du buffer
+	img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, output_data)
 	
 	# Sauvegarder en PNG
 	var filepath = output_dir + "/" + filename
 	var err = img.save_png(filepath)
 	
 	if err == OK:
-		result[tex_id] = filepath
-		print("  ✅ Saved: ", filepath, " (", width, "x", height, ", direct RGBA8)")
+		result["region_colored"] = filepath
+		print("  ✅ Saved: ", filepath, " (", width, "x", height, ", CPU colored)")
 	else:
 		push_error("[Exporter] ❌ Failed to save region map: ", err)
 	
 	print("[Exporter] ✅ Region export complete")
 	return result
 
+## Thread worker pour colorier les lignes de régions (version rapide avec buffer)
+func _color_region_rows_fast(data: PackedByteArray, output_data: PackedByteArray, width: int, 
+							start_y: int, end_y: int, id_to_color: Dictionary, 
+							merge_map: Dictionary, no_region_rgba: PackedByteArray) -> void:
+	for y in range(start_y, end_y):
+		for x in range(width):
+			var in_offset = (y * width + x) * 4
+			var out_offset = (y * width + x) * 4
+			var region_id = data.decode_u32(in_offset)
+			
+			var r: int
+			var g: int
+			var b: int
+			var a: int = 255
+			
+			# 0xFFFFFFFF = non-assigné (eau ou pas de région)
+			if region_id == 0xFFFFFFFF:
+				r = no_region_rgba[0]
+				g = no_region_rgba[1]
+				b = no_region_rgba[2]
+				a = no_region_rgba[3]
+			else:
+				# Appliquer la fusion si nécessaire
+				var eff_id = region_id
+				if merge_map.has(region_id):
+					eff_id = merge_map[region_id]
+				
+				if id_to_color.has(eff_id):
+					var color: Color = id_to_color[eff_id]
+					r = int(color.r * 255.0)
+					g = int(color.g * 255.0)
+					b = int(color.b * 255.0)
+					a = int(color.a * 255.0)
+				else:
+					r = no_region_rgba[0]
+					g = no_region_rgba[1]
+					b = no_region_rgba[2]
+					a = no_region_rgba[3]
+			
+			# Écriture directe dans le buffer (pas de mutex nécessaire car zones disjointes)
+			output_data[out_offset] = r
+			output_data[out_offset + 1] = g
+			output_data[out_offset + 2] = b
+			output_data[out_offset + 3] = a
+
 ## Exporte ocean_region_colored (RGBA8) en PNG
 ## Identique à _export_region_map mais pour les régions océaniques
 ##
-## @param gpu: Instance GPUContext avec la texture ocean_region_colored
+## @param gpu: Instance GPUContext avec la texture ocean_region_map
 ## @param output_dir: Dossier de sortie
 ## @return Dictionary: Chemin du fichier exporté
-func _export_ocean_region_map(gpu: GPUContext, output_dir: String, optimised_region_generation : bool = true) -> Dictionary:
-	print("[Exporter] 🌊 Exporting ocean region map (optimized RGBA8 direct)...")
+func _export_ocean_region_map(gpu: GPUContext, output_dir: String, _optimised_region_generation : bool = true) -> Dictionary:
+	print("[Exporter] 🌊 Exporting ocean region map (CPU coloration with Region.gd system)...")
 	
 	var result = {}
 	var rd = gpu.rd
@@ -604,14 +889,14 @@ func _export_ocean_region_map(gpu: GPUContext, output_dir: String, optimised_reg
 	rd.submit()
 	rd.sync()
 	
-	var tex_id = "ocean_region_colored"
+	var tex_id = "ocean_region_map"  # R32UI - IDs bruts
 	var filename = "ocean_region_map.png"
 	
 	if not gpu.textures.has(tex_id) or not gpu.textures[tex_id].is_valid():
-		print("  ⚠️ Texture 'ocean_region_colored' non disponible, skip")
+		print("  ⚠️ Texture 'ocean_region_map' non disponible, skip")
 		return result
 	
-	# Lecture directe des données RGBA8 depuis le GPU
+	# Lecture directe des données R32UI depuis le GPU
 	var data = rd.texture_get_data(gpu.textures[tex_id], 0)
 	
 	if data.size() == 0:
@@ -623,33 +908,159 @@ func _export_ocean_region_map(gpu: GPUContext, output_dir: String, optimised_reg
 	var width = tex_format.width
 	var height = tex_format.height
 	
-	# Vérifier la taille des données (RGBA8 = 4 bytes par pixel)
+	# Vérifier la taille des données (R32UI = 4 bytes par pixel)
 	var expected_size = width * height * 4
 	if data.size() != expected_size:
 		push_error("[Exporter] ❌ Data size mismatch for ocean region map: expected ", 
 			expected_size, ", got ", data.size())
 		return result
 	
-	# Créer l'image directement à partir des données
-	var img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, data)
+	# Créer l'image de sortie RGBA8
+	var img = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	
 	if not img:
 		push_error("[Exporter] ❌ Failed to create ocean region image")
 		return result
 	
-	if not optimised_region_generation:
-		print("  Merging isolated regions of size 1...")
-		# Fusion des régions de taille 1 avec des voisins
-		var ocean_color = Color(0x2a / 255.0, 0x2a / 255.0, 0x2a / 255.0)  # 0x2a2a2a
-		img = _merge_isolated_regions(img, width, height, ocean_color,true)
-
+	# =========================================================================
+	# PHASE 1 : Collecter tous les IDs uniques et gérer le wrapping horizontal
+	# =========================================================================
+	print("  Phase 1: Collecting unique ocean region IDs...")
+	
+	var region_first_seen: Dictionary = {}
+	var left_edge_ids: Dictionary = {}
+	var right_edge_ids: Dictionary = {}
+	
+	for y in range(height):
+		for x in range(width):
+			var offset = (y * width + x) * 4
+			var region_id = data.decode_u32(offset)
+			
+			# 0xFFFFFFFF = non-assigné (terre ou océan sans région)
+			if region_id == 0xFFFFFFFF:
+				continue
+			
+			if not region_first_seen.has(region_id):
+				region_first_seen[region_id] = Vector2i(x, y)
+			
+			if x == 0:
+				left_edge_ids[y] = region_id
+			elif x == width - 1:
+				right_edge_ids[y] = region_id
+	
+	# Fusionner les régions via wrap horizontal
+	var merge_map: Dictionary = {}
+	for y in right_edge_ids.keys():
+		if left_edge_ids.has(y):
+			var right_id = right_edge_ids[y]
+			var left_id = left_edge_ids[y]
+			if right_id != left_id and right_id != 0xFFFFFFFF and left_id != 0xFFFFFFFF:
+				var keep_id = min(right_id, left_id)
+				var merge_id = max(right_id, left_id)
+				merge_map[merge_id] = keep_id
+	
+	# Transitivité
+	for merge_id in merge_map.keys():
+		var target = merge_map[merge_id]
+		while merge_map.has(target):
+			target = merge_map[target]
+		merge_map[merge_id] = target
+	
+	print("    Found ", region_first_seen.size(), " unique ocean regions, ", merge_map.size(), " to merge via wrap")
+	
+	# =========================================================================
+	# PHASE 2 : Assigner les couleurs séquentiellement (système Region.gd)
+	# =========================================================================
+	print("  Phase 2: Assigning colors (Region.gd step=17 system)...")
+	
+	var id_to_color: Dictionary = {}
+	var color_counter: Array = [0, 0, 0, 255]
+	const STEP = 17
+	
+	var sorted_ids: Array = []
+	for region_id in region_first_seen.keys():
+		var effective_id = region_id
+		if merge_map.has(region_id):
+			effective_id = merge_map[region_id]
+		sorted_ids.append([effective_id, region_first_seen[region_id]])
+	
+	var seen_effective: Dictionary = {}
+	var unique_sorted: Array = []
+	for item in sorted_ids:
+		var eff_id = item[0]
+		if not seen_effective.has(eff_id):
+			seen_effective[eff_id] = true
+			unique_sorted.append(item)
+	
+	unique_sorted.sort_custom(func(a, b): 
+		var pos_a = a[1].y * width + a[1].x
+		var pos_b = b[1].y * width + b[1].x
+		return pos_a < pos_b
+	)
+	
+	for item in unique_sorted:
+		var eff_id = item[0]
+		if id_to_color.has(eff_id):
+			continue
+		
+		var color = Color(color_counter[0] / 255.0, color_counter[1] / 255.0, 
+						  color_counter[2] / 255.0, color_counter[3] / 255.0)
+		id_to_color[eff_id] = color
+		
+		color_counter[0] += STEP
+		if color_counter[0] > 255:
+			color_counter[0] = color_counter[0] % 256
+			color_counter[1] += STEP
+		if color_counter[1] > 255:
+			color_counter[1] = color_counter[1] % 256
+			color_counter[2] += STEP
+		if color_counter[2] > 255:
+			color_counter[2] = color_counter[2] % 256
+	
+	print("    Assigned ", id_to_color.size(), " unique colors")
+	
+	# =========================================================================
+	# PHASE 3 : Colorier l'image en parallèle
+	# =========================================================================
+	print("  Phase 3: Coloring image with ", _nb_threads, " threads...")
+	
+	# Créer le buffer de sortie RGBA8 (4 bytes par pixel)
+	var output_data = PackedByteArray()
+	output_data.resize(width * height * 4)
+	
+	var rows_per_thread = ceili(float(height) / float(_nb_threads))
+	var threads: Array[Thread] = []
+	
+	# Couleur pour les pixels sans région océanique (RGBA8) - TRANSPARENT
+	var no_region_rgba = PackedByteArray([0x00, 0x00, 0x00, 0x00])  # Transparent
+	
+	for t in range(_nb_threads):
+		var start_y = t * rows_per_thread
+		var end_y = min(start_y + rows_per_thread, height)
+		
+		if start_y >= height:
+			break
+		
+		var thread = Thread.new()
+		thread.start(_color_region_rows_fast.bind(
+			data, output_data, width, start_y, end_y, 
+			id_to_color, merge_map, no_region_rgba
+		))
+		threads.append(thread)
+	
+	for thread in threads:
+		thread.wait_to_finish()
+	
+	# Créer l'image à partir du buffer
+	img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, output_data)
+	
 	# Sauvegarder en PNG
 	var filepath = output_dir + "/" + filename
 	var err = img.save_png(filepath)
 	
 	if err == OK:
-		result[tex_id] = filepath
-		print("  ✅ Saved: ", filepath, " (", width, "x", height, ", direct RGBA8)")
+		result["ocean_region_colored"] = filepath
+		print("  ✅ Saved: ", filepath, " (", width, "x", height, ", CPU colored)")
 	else:
 		push_error("[Exporter] ❌ Failed to save ocean region map: ", err)
 	
@@ -838,12 +1249,15 @@ func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, hei
 							# Couleur de la ressource
 							var base_color = resource_colors[resource_id] if resource_id < resource_colors.size() else Color(1, 1, 1, 1)
 							
-							# RGB = couleur * intensité, Alpha = intensité
+							# Alpha variable du shader (bruit + intensité)
+							var alpha = pixel.a
+							
+							# RGB = couleur * intensité, Alpha = alpha du shader
 							var color = Color(
 								base_color.r * intensity,
 								base_color.g * intensity,
 								base_color.b * intensity,
-								intensity
+								alpha
 							)
 							
 							# Écrire dans la carte individuelle
@@ -889,7 +1303,7 @@ func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, hei
 ## @param height: Hauteur de l'image
 ## @return Dictionary: Chemins des fichiers exportés
 func _export_water_classification(gpu: GPUContext, output_dir: String, width: int, height: int) -> Dictionary:
-	print("[Exporter] 💧 Exporting water classification maps (CPU flood-fill)...")
+	print("[Exporter] 💧 Exporting water classification map (GPU direct)...")
 	
 	var result = {}
 	var rd = gpu.rd
@@ -902,158 +1316,30 @@ func _export_water_classification(gpu: GPUContext, output_dir: String, width: in
 	rd.submit()
 	rd.sync()
 	
-	# Récupérer les paramètres
-	var atmosphere_type = int(params.get("atmosphere_type", 0))
-	var freshwater_max_size = int(params.get("freshwater_max_size", 999))
-	
-	# Récupérer les couleurs selon le type d'atmosphère
-	var water_colors = WATER_COLORS.get(atmosphere_type, WATER_COLORS[0])
-	var saltwater_color: Color = water_colors["saltwater"]
-	var freshwater_color: Color = water_colors["freshwater"]
-	
-	print("  Atmosphere type: ", atmosphere_type)
-	print("  Saltwater color: ", saltwater_color)
-	print("  Freshwater color: ", freshwater_color)
-	print("  Freshwater max size: ", freshwater_max_size)
-	
-	# Lire la texture geo pour l'élévation (RGBA32F)
-	if not gpu.textures.has("geo") or not gpu.textures["geo"].is_valid():
-		push_error("[Exporter] ❌ geo texture not available for water classification")
+	# Vérifier que water_colored existe (généré par water_to_color.glsl)
+	if not gpu.textures.has("water_colored") or not gpu.textures["water_colored"].is_valid():
+		push_error("[Exporter] ❌ water_colored texture not available - run water phase first")
 		return result
 	
-	var geo_data = rd.texture_get_data(gpu.textures["geo"], 0)
-	if geo_data.size() == 0:
-		push_error("[Exporter] ❌ geo texture data is empty")
+	# Lire directement la texture water_colored (RGBA8) déjà calculée par le GPU
+	var water_data = rd.texture_get_data(gpu.textures["water_colored"], 0)
+	if water_data.size() == 0:
+		push_error("[Exporter] ❌ water_colored texture data is empty")
 		return result
 	
-	# Créer un tableau pour stocker l'état de chaque pixel
-	# -1 = terre, 0+ = ID de composante eau
-	var pixel_component: PackedInt32Array = PackedInt32Array()
-	pixel_component.resize(width * height)
-	pixel_component.fill(-1)  # Tout est terre par défaut
-	
-	# Identifier les pixels eau (élévation < 0)
-	var water_pixels: Array[Vector2i] = []
-	
-	for y in range(height):
-		for x in range(width):
-			var idx = (y * width + x) * 16  # RGBA32F = 16 bytes par pixel
-			var elevation = geo_data.decode_float(idx)  # R = élévation
-			
-			if elevation < 0.0:
-				water_pixels.append(Vector2i(x, y))
-				pixel_component[y * width + x] = 0  # Marqué comme eau, composante non assignée
-	
-	print("  Water pixels found: ", water_pixels.size(), " / ", width * height)
-	
-	var water_img: Image
-	var path_water: String
-	if water_pixels.size() == 0:
-		print("  ⚠️ No water pixels found, creating empty water map")
-		water_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
-		water_img.fill(Color(0, 0, 0, 0))
-		path_water = output_dir + "/eaux_map.png"
-		water_img.save_png(path_water)
-		result["eaux_map"] = path_water
-		return result
-	
-	# Flood-fill pour identifier les composantes connexes
-	var neighbors = [
-		Vector2i(0, -1),   # Nord
-		Vector2i(-1, 0),   # Ouest
-		Vector2i(1, 0),    # Est
-		Vector2i(0, 1)     # Sud
-	]
-	
-	var component_sizes: Array[int] = []
-	var current_component_id = 0
-	
-	# Pour chaque pixel eau non visité, faire un flood-fill
-	for start_pos in water_pixels:
-		var start_idx = start_pos.y * width + start_pos.x
-		
-		# Si déjà assigné à une composante, passer
-		if pixel_component[start_idx] > 0:
-			continue
-		
-		# Nouvelle composante
-		current_component_id += 1
-		var component_size = 0
-		
-		# Pile pour flood-fill itératif
-		var stack: Array[Vector2i] = [start_pos]
-		
-		while stack.size() > 0:
-			var pos = stack.pop_back()
-			var idx = pos.y * width + pos.x
-			
-			# Si déjà visité ou terre, passer
-			if pixel_component[idx] != 0:
-				continue
-			
-			# Assigner à cette composante
-			pixel_component[idx] = current_component_id
-			component_size += 1
-			
-			# Ajouter les voisins eau
-			for offset in neighbors:
-				var nx = (pos.x + offset.x + width) % width  # Wrap X
-				var ny = clampi(pos.y + offset.y, 0, height - 1)  # Clamp Y
-				var n_idx = ny * width + nx
-				
-				# Si c'est un pixel eau non visité
-				if pixel_component[n_idx] == 0:
-					stack.append(Vector2i(nx, ny))
-		
-		component_sizes.append(component_size)
-	
-	print("  Components found: ", current_component_id)
-	
-	# Statistiques des composantes
-	var saltwater_components = 0
-	var freshwater_components = 0
-	var saltwater_pixels = 0
-	var freshwater_pixels_count = 0
-	
-	for i in range(component_sizes.size()):
-		if component_sizes[i] <= freshwater_max_size:
-			freshwater_components += 1
-			freshwater_pixels_count += component_sizes[i]
-		else:
-			saltwater_components += 1
-			saltwater_pixels += component_sizes[i]
-	
-	print("  Saltwater: ", saltwater_components, " components, ", saltwater_pixels, " pixels")
-	print("  Freshwater: ", freshwater_components, " components, ", freshwater_pixels_count, " pixels")
-	
-	# Créer l'image finale avec les couleurs
-	water_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
-	water_img.fill(Color(0, 0, 0, 0))  # Transparent par défaut (terre)
-	
-	for y in range(height):
-		for x in range(width):
-			var idx = y * width + x
-			var comp_id = pixel_component[idx]
-			
-			if comp_id > 0:
-				# C'est de l'eau - vérifier si eau douce ou salée
-				var comp_size = component_sizes[comp_id - 1]  # Les IDs commencent à 1
-				
-				if comp_size <= freshwater_max_size:
-					water_img.set_pixel(x, y, freshwater_color)
-				else:
-					water_img.set_pixel(x, y, saltwater_color)
+	# Créer l'image directement depuis les données GPU
+	var water_img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, water_data)
 	
 	# Sauvegarder
-	path_water = output_dir + "/eaux_map.png"
+	var path_water = output_dir + "/eaux_map.png"
 	var err = water_img.save_png(path_water)
 	if err == OK:
 		result["eaux_map"] = path_water
-		print("  ✅ Saved: ", path_water, " (CPU flood-fill)")
+		print("  ✅ Saved: ", path_water, " (GPU direct - water_colored)")
 	else:
 		push_error("[Exporter] ❌ Failed to save eaux_map: ", err)
 	
-	print("[Exporter] ✅ Water classification complete")
+	print("[Exporter] ✅ Water classification export complete")
 	return result
 
 # ============================================================================
@@ -1073,137 +1359,196 @@ func _export_water_classification(gpu: GPUContext, output_dir: String, width: in
 ## @param height: Hauteur de l'image
 ## @return Dictionary: Chemins des fichiers exportés
 func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: int) -> Dictionary:
-	print("[Exporter] 🌊 Exporting river map (CPU)...")
-	
+	print("[Exporter] 🌊 Exporting river map (GPU river_biome_id based)...")
+
 	var result = {}
 	var rd = gpu.rd
-	
+
 	if not rd:
 		push_error("[Exporter] ❌ RenderingDevice not available")
 		return result
-	
+
 	# Synchroniser le GPU
 	rd.submit()
 	rd.sync()
-	
+
 	# Récupérer le type d'atmosphère
-	var atmosphere_type = int(params.get("atmosphere_type", 0))
-	
+	var atmosphere_type = int(params.get("planet_type", 0))
+
 	# Récupérer les biomes rivières pour ce type d'atmosphère
-	var river_biomes: Array = []
-	for biome in Enum.BIOMES:
-		if biome.isRiver() and atmosphere_type in biome.get_type_planete():
-			river_biomes.append(biome)
-	
-	if river_biomes.size() == 0:
+	# L'ordre et le filtrage sont IDENTIQUES au SSBO GPU (get_river_biomes_for_gpu)
+	var river_biomes_list: Array = Enum.get_river_biomes_for_gpu(atmosphere_type)
+
+	if river_biomes_list.size() == 0:
 		print("  ⚠️ No river biomes found for atmosphere type ", atmosphere_type)
 		return result
-	
-	print("  Found ", river_biomes.size(), " river biomes for atmosphere type ", atmosphere_type)
-	for rb in river_biomes:
+
+	print("  Found ", river_biomes_list.size(), " river biomes for atmosphere type ", atmosphere_type)
+	for rb in river_biomes_list:
 		print("    - ", rb.get_nom(), " (", rb.get_couleur(), ")")
-	
-	# Lire la texture river_flux (R32F)
-	if not gpu.textures.has("river_flux") or not gpu.textures["river_flux"].is_valid():
-		print("  ⚠️ river_flux texture not available")
+
+	# Lire la texture river_biome_id (R32UI) depuis le GPU
+	# Cette texture contient l'index du biome rivière assigné par river_classify.glsl
+	# 0xFFFFFFFF = pas de rivière (filtré par température + type)
+	if not gpu.textures.has("river_biome_id") or not gpu.textures["river_biome_id"].is_valid():
+		print("  ⚠️ river_biome_id texture not available")
 		return result
-	
-	var flux_data = rd.texture_get_data(gpu.textures["river_flux"], 0)
-	
-	if flux_data.size() == 0:
-		print("  ⚠️ river_flux texture empty")
+
+	var biome_id_data = rd.texture_get_data(gpu.textures["river_biome_id"], 0)
+
+	if biome_id_data.size() == 0:
+		print("  ⚠️ river_biome_id texture empty")
 		return result
-	
-	# Trouver le flux maximum pour normalisation
-	var max_flux = 0.0
-	var non_zero_count = 0
-	
-	for y in range(height):
-		for x in range(width):
-			var idx = (y * width + x) * 4  # R32F = 4 bytes par pixel
-			var flux = flux_data.decode_float(idx)
-			if flux > 0.0:
-				non_zero_count += 1
-				max_flux = maxf(max_flux, flux)
-	
-	print("  River flux stats:")
-	print("    - Non-zero pixels: ", non_zero_count, " / ", width * height)
-	print("    - Max flux: ", max_flux)
-	
-	var river_img : Image
-	var path_river: String
-	if max_flux < 0.001:
-		print("  ⚠️ No significant river flux detected")
-		# Créer une carte vide
-		river_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
-		river_img.fill(Color(0, 0, 0, 0))
-		path_river = output_dir + "/river_map.png"
-		river_img.save_png(path_river)
-		result["river_map"] = path_river
-		return result
-	
-	# Définir les seuils pour les différents types de rivières
-	# (basés sur le flux normalisé)
-	var flux_threshold = max_flux * 0.01  # Seuil minimum (1% du max)
-	var fleuve_threshold = max_flux * 0.4  # Seuil pour fleuve (40% du max)
-	var riviere_threshold = max_flux * 0.15  # Seuil pour rivière (15% du max)
-	
+
 	# Créer l'image de sortie
-	river_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
+	var river_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	river_img.fill(Color(0, 0, 0, 0))  # Transparent par défaut
-	
+
 	var river_pixel_count = 0
+	var skipped_no_biome = 0
 	var biome_counts: Dictionary = {}
-	
+
 	for y in range(height):
 		for x in range(width):
-			var idx = (y * width + x) * 4
-			var flux = flux_data.decode_float(idx)
-			
-			if flux > flux_threshold:
-				river_pixel_count += 1
-				
-				# Sélectionner le biome en fonction du flux
-				var selected_biome: Biome = null
-				
-				if flux >= fleuve_threshold and river_biomes.size() > 1:
-					# Fleuve (2ème biome rivière = Fleuve)
-					selected_biome = river_biomes[1]
-				elif flux >= riviere_threshold and river_biomes.size() > 0:
-					# Rivière (1er biome = Rivière)
-					selected_biome = river_biomes[0]
-				elif river_biomes.size() > 2:
-					# Affluent (3ème biome = Affluent)
-					selected_biome = river_biomes[2]
-				else:
-					# Défaut au premier biome
-					selected_biome = river_biomes[0]
-				
-				# Utiliser la couleur du biome
-				var color = selected_biome.get_couleur()
-				river_img.set_pixel(x, y, color)
-				
-				# Stats
-				var biome_name = selected_biome.get_nom()
-				if biome_counts.has(biome_name):
-					biome_counts[biome_name] += 1
-				else:
-					biome_counts[biome_name] = 1
-	
+			var pixel_idx = y * width + x
+			var byte_offset = pixel_idx * 4  # R32UI = 4 bytes par pixel
+
+			if byte_offset + 4 > biome_id_data.size():
+				continue
+
+			# Lire l'index du biome rivière assigné par le GPU
+			var biome_idx = biome_id_data.decode_u32(byte_offset)
+
+			# 0xFFFFFFFF = pas de rivière (pas de biome adapté en température)
+			if biome_idx == 0xFFFFFFFF:
+				continue
+
+			# Vérifier que l'index est valide dans la liste des biomes
+			if biome_idx >= river_biomes_list.size():
+				skipped_no_biome += 1
+				continue
+
+			river_pixel_count += 1
+
+			# Utiliser le biome sélectionné par le GPU (température déjà vérifiée)
+			var selected_biome: Biome = river_biomes_list[biome_idx]
+			var color = selected_biome.get_couleur()
+			river_img.set_pixel(x, y, color)
+
+			var biome_name = selected_biome.get_nom()
+			if biome_counts.has(biome_name):
+				biome_counts[biome_name] += 1
+			else:
+				biome_counts[biome_name] = 1
+
 	print("  River pixels drawn: ", river_pixel_count)
+	if skipped_no_biome > 0:
+		print("  ⚠️ Skipped ", skipped_no_biome, " pixels with invalid biome index")
 	for biome_name in biome_counts.keys():
 		print("    - ", biome_name, ": ", biome_counts[biome_name])
-	
+
 	# Sauvegarder
-	path_river = output_dir + "/river_map.png"
+	var path_river = output_dir + "/river_map.png"
 	var err = river_img.save_png(path_river)
 	if err == OK:
 		result["river_map"] = path_river
-		print("  ✅ Saved: ", path_river, " (CPU)")
+		print("  ✅ Saved: ", path_river)
 	else:
 		push_error("[Exporter] ❌ Failed to save river_map: ", err)
-	
+
 	print("[Exporter] ✅ River map export complete")
+	return result
+
+## Export de la carte des types de rivières avec couleurs fixes
+## Affluent = cyan clair, Rivière = bleu, Fleuve = bleu foncé
+func _export_river_type_map(gpu: GPUContext, output_dir: String, width: int, height: int) -> Dictionary:
+	print("[Exporter] 🗺️ Exporting river type map...")
+
+	var result = {}
+	var rd = gpu.rd
+
+	if not rd:
+		push_error("[Exporter] ❌ RenderingDevice not available")
+		return result
+
+	# Lire ocean_reachable qui contient le type promu (0=affluent,1=riviere,2=fleuve,255=none)
+	if not gpu.textures.has("ocean_reachable") or not gpu.textures["ocean_reachable"].is_valid():
+		print("  ⚠️ ocean_reachable (river type) texture not available")
+		return result
+
+	# Lire river_biome_id pour filtrer par température (cohérent avec river_map)
+	var has_biome_id = gpu.textures.has("river_biome_id") and gpu.textures["river_biome_id"].is_valid()
+	var biome_id_data: PackedByteArray = []
+	if has_biome_id:
+		biome_id_data = rd.texture_get_data(gpu.textures["river_biome_id"], 0)
+
+	var has_river_type = true
+	var has_water_mask = gpu.textures.has("water_mask") and gpu.textures["water_mask"].is_valid()
+	var river_type_data: PackedByteArray = rd.texture_get_data(gpu.textures["ocean_reachable"], 0)
+	var water_mask_data: PackedByteArray = []
+	if has_water_mask:
+		water_mask_data = rd.texture_get_data(gpu.textures["water_mask"], 0)
+
+	# Couleurs fixes pour chaque type
+	var color_affluent = Color(0.4, 0.75, 1.0, 1.0)   # Cyan clair
+	var color_riviere  = Color(0.1, 0.35, 0.85, 1.0)   # Bleu
+	var color_fleuve    = Color(0.15, 0.05, 0.55, 1.0)  # Bleu-violet foncé
+
+	var type_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
+	type_img.fill(Color(0, 0, 0, 0))
+
+	var count_affluent = 0
+	var count_riviere = 0
+	var count_fleuve = 0
+
+	for y in range(height):
+		for x in range(width):
+			var pixel_idx = y * width + x
+
+			# Filtrage par type promu : 255 = pas de riviere
+			if has_river_type and river_type_data.size() > pixel_idx:
+				if river_type_data[pixel_idx] == 255:
+					continue
+			# Exclure les pixels d'eau
+			if has_water_mask and water_mask_data.size() > pixel_idx:
+				if water_mask_data[pixel_idx] > 0:
+					continue
+
+			# Filtrer par river_biome_id : si le GPU n'a assigné aucun biome
+			# (température hors plage), ne pas afficher cette rivière
+			if has_biome_id and biome_id_data.size() >= (pixel_idx + 1) * 4:
+				var biome_idx = biome_id_data.decode_u32(pixel_idx * 4)
+				if biome_idx == 0xFFFFFFFF:
+					continue
+
+			var rtype = 0
+			if has_river_type and river_type_data.size() > pixel_idx:
+				rtype = river_type_data[pixel_idx]
+
+			if rtype == 2:
+				type_img.set_pixel(x, y, color_fleuve)
+				count_fleuve += 1
+			elif rtype == 1:
+				type_img.set_pixel(x, y, color_riviere)
+				count_riviere += 1
+			else:
+				type_img.set_pixel(x, y, color_affluent)
+				count_affluent += 1
+
+	print("  River type counts:")
+	print("    - Affluent (cyan):  ", count_affluent)
+	print("    - Rivière (bleu):   ", count_riviere)
+	print("    - Fleuve (foncé):   ", count_fleuve)
+	print("    - Total:            ", count_affluent + count_riviere + count_fleuve)
+
+	var path_type = output_dir + "/river_type_map.png"
+	var err = type_img.save_png(path_type)
+	if err == OK:
+		result["river_type_map"] = path_type
+		print("  ✅ Saved: ", path_type)
+	else:
+		push_error("[Exporter] ❌ Failed to save river_type_map: ", err)
+
 	return result
 
 # ============================================================================
@@ -1314,138 +1659,6 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 	
 	print("[Exporter] ✅ Final map export complete")
 	return result
-
-## Fusionne les régions isolées (taille 1) avec leurs voisins les plus fréquents
-##
-## Pour la terre: assigne le pixel isolé à la région voisine dominante
-## Pour l'eau: fait un flood-fill expansif jusqu'à rencontrer 2x la même couleur
-##
-## @param img: Image source (modifiée)
-## @param width: Largeur de l'image
-## @param height: Hauteur de l'image
-## @param ignore_color: Couleur à ignorer (terre pour régions, océan pour régions océaniques)
-## @param merge_ocean: Si true, on fusionne les océans (comportement flood-fill)
-## @return Image: Image avec régions isolées fusionnées
-func _merge_isolated_regions(img: Image, width: int, height: int, ignore_color: Color, merge_ocean: bool = false) -> Image:
-	print("  • Fusion des régions isolées...")
-	
-	# Voisinage 4-connecté (nord, ouest, est, sud)
-	var neighbors = [
-		Vector2i(0, -1),   # Nord
-		Vector2i(-1, 0),   # Ouest
-		Vector2i(1, 0),    # Est
-		Vector2i(0, 1)     # Sud
-	]
-	
-	var total_merged = 0
-	
-	for y in range(height):
-		for x in range(width):
-			var my_color = img.get_pixel(x, y)
-			
-			# Ignorer les pixels de la couleur à ignorer (terre/océan)
-			if _colors_equal(my_color, ignore_color):
-				continue
-			
-			# Vérifier si ce pixel a au moins un voisin de sa couleur
-			var has_same_neighbor = false
-			var neighbor_colors = {}
-			
-			for offset in neighbors:
-				var nx = (x + offset.x + width) % width  # Wrap X
-				var ny = clampi(y + offset.y, 0, height - 1)  # Clamp Y
-				
-				var neighbor_color = img.get_pixel(nx, ny)
-				
-				# Ignorer la couleur interdite
-				if _colors_equal(neighbor_color, ignore_color):
-					continue
-				
-				# Vérifier si même couleur que le pixel
-				if _colors_equal(neighbor_color, my_color):
-					has_same_neighbor = true
-					break
-				
-				# Compter les occurrences de chaque couleur voisine
-				var color_key = _color_to_key(neighbor_color)
-				if neighbor_colors.has(color_key):
-					neighbor_colors[color_key].count += 1
-				else:
-					neighbor_colors[color_key] = {"color": neighbor_color, "count": 1}
-			
-			# Si pas de voisin de la même couleur → pixel isolé
-			if not has_same_neighbor and neighbor_colors.size() > 0:
-				if merge_ocean:
-					# OCÉAN : Flood-fill expansif jusqu'à rencontrer 2x la même couleur
-					var filled = _flood_fill_neighbors(img, x, y, my_color, ignore_color, width, height, neighbors)
-					total_merged += filled
-				else:
-					# TERRE : Assigner uniquement ce pixel à la région voisine dominante
-					var best_color = null
-					var best_count = 0
-					
-					for color_data in neighbor_colors.values():
-						if color_data.count > best_count:
-							best_count = color_data.count
-							best_color = color_data.color
-					
-					if best_color != null:
-						img.set_pixel(x, y, best_color)
-						total_merged += 1
-	
-	print("    Fusion terminée : ", total_merged, " pixels fusionnés")
-	return img
-
-## Remplit récursivement tous les pixels voisins (non-ignore_color) avec fill_color
-##
-## @param img: Image à modifier
-## @param x: Position X du pixel source
-## @param y: Position Y du pixel source
-## @param fill_color: Couleur à appliquer
-## @param ignore_color: Couleur à ne pas toucher
-## @param width: Largeur de l'image
-## @param height: Hauteur de l'image
-## @param neighbors: Liste des offsets de voisinage
-## @return int: Nombre de pixels colorés
-func _flood_fill_neighbors(img: Image, x: int, y: int, fill_color: Color, ignore_color: Color, width: int, height: int, neighbors: Array) -> int:
-	var filled_count = 0
-	var to_fill = []  # Pile pour flood-fill itératif (éviter stack overflow)
-	var visited = {}  # Dictionnaire pour éviter de revisiter les mêmes pixels
-	
-	# Ajouter tous les voisins directs à la pile
-	for offset in neighbors:
-		var nx = (x + offset.x + width) % width  # Wrap X
-		var ny = clampi(y + offset.y, 0, height - 1)  # Clamp Y
-		
-		var key = str(nx) + "," + str(ny)
-		if not visited.has(key):
-			to_fill.append(Vector2i(nx, ny))
-			visited[key] = true
-	
-	# Flood-fill itératif
-	while to_fill.size() > 0:
-		var pos = to_fill.pop_back()
-		var current_color = img.get_pixel(pos.x, pos.y)
-		
-		# Ignorer si c'est la couleur interdite ou déjà la bonne couleur
-		if _colors_equal(current_color, ignore_color) or _colors_equal(current_color, fill_color):
-			continue
-		
-		# Colorier ce pixel
-		img.set_pixel(pos.x, pos.y, fill_color)
-		filled_count += 1
-		
-		# Ajouter les voisins à la pile
-		for offset in neighbors:
-			var nx = (pos.x + offset.x + width) % width  # Wrap X
-			var ny = clampi(pos.y + offset.y, 0, height - 1)  # Clamp Y
-			
-			var key = str(nx) + "," + str(ny)
-			if not visited.has(key):
-				to_fill.append(Vector2i(nx, ny))
-				visited[key] = true
-	
-	return filled_count
 
 ## Compare deux couleurs avec tolérance pour erreurs de compression
 func _colors_equal(c1: Color, c2: Color) -> bool:

@@ -43,25 +43,24 @@ uint hashForColor(uint x) {
     return x;
 }
 
+// Couleur UNIQUE par region_id - PAS DE HASH
 vec3 oceanRegionIdToColor(uint region_id) {
-    const uint STEP = 10u;
+    const uint STEP = 17u;
+    const uint LEVELS = 15u;
     
-    uint color_index = hashForColor(region_id);
+    // ID direct = couleur unique garantie
+    uint idx = region_id % (LEVELS * LEVELS * LEVELS);
     
-    const uint BASE = 15u;
+    uint r_level = idx % LEVELS;
+    uint g_level = (idx / LEVELS) % LEVELS;
+    uint b_level = (idx / (LEVELS * LEVELS)) % LEVELS;
     
-    uint r_idx = color_index % BASE;
-    uint g_idx = (color_index / BASE) % BASE;
-    uint b_idx = (color_index / (BASE * BASE)) % BASE;
+    uint r = r_level * STEP;
+    uint g = g_level * STEP;
+    uint b = b_level * STEP;
     
-    uint r = (r_idx * STEP) % 256u;
-    uint g = (g_idx * STEP) % 256u;
-    uint b = (b_idx * STEP) % 256u;
-    
-    // Éviter le noir pur et couleurs trop sombres
-    if (r + g + b < 50u) {
-        r = (r + STEP) % 256u;
-        if (r < STEP) g = (g + STEP) % 256u;
+    if (r == 0u && g == 0u && b == 0u) {
+        r = STEP;
     }
     
     return vec3(float(r) / 255.0, float(g) / 255.0, float(b) / 255.0);

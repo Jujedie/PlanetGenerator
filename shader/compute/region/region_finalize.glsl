@@ -47,31 +47,29 @@ uint hashForColor(uint x) {
     return x;
 }
 
-// Convertit un region_id en couleur RGB déterministe
-// Reproduit EXACTEMENT le système legacy : pas de 10 par canal, wrap progressif
-// Le legacy fait : nextColor[0] += 10, puis wrap + incrémente nextColor[1], etc.
+// Convertit un region_id en couleur RGB UNIQUE
+// Chaque ID donne une couleur différente - PAS DE HASH pour éviter les collisions
+// Système: on parcourt l'espace RGB avec un pas de 17 (comme Region.gd)
 vec3 regionIdToColor(uint region_id) {
-    const uint STEP = 10u;
+    const uint STEP = 17u;
+    const uint LEVELS = 15u;  // 256/17 ≈ 15 niveaux par canal
     
-    // Hasher l'ID pour disperser les couleurs et éviter les patterns
-    uint color_index = hashForColor(region_id);
+    // Utiliser l'ID DIRECTEMENT (modulo pour éviter overflow)
+    // Cela garantit que chaque ID a une couleur unique
+    uint idx = region_id % (LEVELS * LEVELS * LEVELS);  // Max 3375 couleurs uniques
     
-    // Simuler l'incrément progressif des canaux comme le legacy
-    // On utilise une représentation base-15 (256/10 ≈ 15)
-    const uint BASE = 15u;  // Nombre de valeurs par canal
+    // Décomposer en base 15 pour R, G, B
+    uint r_level = idx % LEVELS;
+    uint g_level = (idx / LEVELS) % LEVELS;
+    uint b_level = (idx / (LEVELS * LEVELS)) % LEVELS;
     
-    uint r_idx = color_index % BASE;
-    uint g_idx = (color_index / BASE) % BASE;
-    uint b_idx = (color_index / (BASE * BASE)) % BASE;
+    uint r = r_level * STEP;
+    uint g = g_level * STEP;
+    uint b = b_level * STEP;
     
-    uint r = (r_idx * STEP) % 256u;
-    uint g = (g_idx * STEP) % 256u;
-    uint b = (b_idx * STEP) % 256u;
-    
-    // Éviter le noir pur (0,0,0) et les couleurs trop sombres
-    if (r + g + b < 50u) {
-        r = (r + STEP) % 256u;
-        if (r < STEP) g = (g + STEP) % 256u;
+    // Éviter le noir pur (ID 0)
+    if (r == 0u && g == 0u && b == 0u) {
+        r = STEP;
     }
     
     return vec3(float(r) / 255.0, float(g) / 255.0, float(b) / 255.0);

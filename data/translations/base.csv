@@ -12,6 +12,8 @@ TYPE_TOXIQUE,Toxic,Toxique,Giftig
 TYPE_VOLCAN,Volcanic,Volcanique,Vulkanisch
 TYPE_MORTE,Dead,Morte,Tot
 TYPE_NO_ATMOSPHERE,No atmosphere,Sans atmosphère,Ohne Atmosphäre
+TYPE_STERILE,Sterile,Stérile,Steril
+TYPE_GAZEUSE,Gaseous,Gazeuse,Gasförmig
 
 CREATING,Creating,Création en cours,Erstellung
 
@@ -73,10 +75,11 @@ SEA_LEVEL,Sea level : {val},Niveau de la mer : {val},Meeresspiegel : {val}
 FRESHWATER_MAX_SIZE,Freshwater max size : {val},Taille max des eaux douces : {val},Maximale Süßwassergröße : {val}
 LAKE_THRESHOLD,Lake threshold : {val},Seuil pour les lacs : {val},Seeschwelle : {val}
 RIVER_ITERATIONS,River iterations : {val},Itérations de rivières : {val},Flussiterationen : {val}
-RIVER_MIN_ALTITUDE,River min altitude : {val},Altitude min pour rivières : {val},Minimale Flusshöhe : {val}
-RIVER_MIN_PRECIPITATION,River min precipitation : {val},Précipitation min pour rivières : {val},Minimale Niederschlagsmenge für Flüsse : {val}
+RIVER_PRECIP_SCALE,River precipitation scale : {val},Échelle de précipitation des rivières : {val},Niederschlagsskala der Flüsse : {val}
+RIVER_AFFLUENT_THRESHOLD,River affluent threshold : {val},Seuil d'affluent des rivières : {val},Zuflussschwelle der Flüsse : {val}
 RIVER_THRESHOLD,River threshold : {val},Seuil de rivière : {val},Fluss-Schwelle : {val}
-RIVER_BASE_FLUX,River base flux : {val},Flux de base des rivières : {val},Basisfluss der Flüsse : {val}
+RIVER_FLEUVE_THRESHOLD,River fleuve threshold : {val},Seuil de fleuve : {val},Fluss-Fleuve-Schwelle : {val}
+
 
 NUAGE_CATEGORIE,Cloud category,Catégorie nuage,Wolkekategorie
 CLOUD_COVERAGE,Cloud coverage : {val},Couverture nuageuse : {val},Bedeckung : {val}
@@ -102,3 +105,6 @@ PETROLE_PROBABILITY,Petroleum probability : {val},Probabilité de pétrole : {va
 PETROLE_DEPOSIT_SIZE,Petroleum deposit size : {val},Taille du dépôt de pétrole : {val},Größe der Ölvorkommen : {val}
 GLOBAL_RICHNESS,Global richness : {val},Richesse globale : {val},Gesamtvorkommen : {val}
 PARAMETRES,Parameters,Paramètres,Parameter
+
+LOAD_PRESET,LOAD PRESET,CHARGER PRESET,PRESET LADER
+SAVE_PRESET,SAVE PRESET,SAUVEGARDER PRESET,PRESET SPEICHERN

@@ -34,7 +34,7 @@ config/windows_native_icon="res://icon.ico"
 
 [autoload]
 
-Enum="*res://src/enum.gd"
+Enum="*uid://d4mf37hohkuh4"
 
 [display]
 

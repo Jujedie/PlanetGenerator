@@ -5,9 +5,12 @@ var planetGenerator: PlanetGenerator
 var maps: Array[String]
 var map_index: int = 0
 var langue: String = "fr"
+var _sfx_player: AudioStreamPlayer
 
 # --- Constants ---
 const BASE_PATH_SLIDERS = "ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"
+const PRESETS_DIR = "user://presets/"
+const SFX_GENERATION_DONE = "res://data/sound/Foley UI E.wav"
 
 const CATEGORIES_PATHS = {
 	"GENERAL" : BASE_PATH_SLIDERS+"/General_Categorie/MarginContainer/Parameters/",
@@ -53,7 +56,16 @@ func _ready() -> void:
 
 	$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = load("res://data/img/UI/no_data.png")
 
-	# 2. UI Initialization
+	# 2. Audio player for SFX
+	_sfx_player = AudioStreamPlayer.new()
+	_sfx_player.bus = "Master"
+	_sfx_player.volume_db = 25.0
+	add_child(_sfx_player)
+
+	# 3. Ensure presets directory exists
+	DirAccess.make_dir_recursive_absolute(PRESETS_DIR)
+
+	# 4. UI Initialization
 	maj_labels()
 
 # ============================================================================
@@ -105,7 +117,13 @@ func _on_planetGenerator_finished_main() -> void:
 	else:
 		print("Erreur lors du chargement de l'image: ", maps[map_index])
 
-	# 2. Re-enable UI
+	# 2. Play completion sound
+	var sfx = load(SFX_GENERATION_DONE)
+	if sfx:
+		_sfx_player.stream = sfx
+		_sfx_player.play()
+
+	# 3. Re-enable UI
 	_set_buttons_enabled(true)
 
 func _set_buttons_enabled(enabled: bool) -> void:
@@ -189,10 +207,9 @@ func _compile_generation_params() -> Dictionary:
 		"lake_threshold"     : get_node(CATEGORIES_PATHS["EAU"]+"Lake_Threshold_Param/LineEdit").value, # 5.0
 
 		"river_iterations"   : get_node(CATEGORIES_PATHS["EAU"]+"River_Iterations_Param/LineEdit").value, # 2000
-		"river_min_altitude" : get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Altitude_Param/LineEdit").value, # 20.0
-		"river_min_precipitation": get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Precipitation_Param/LineEdit").value, # 0.08
-		"river_threshold"    : get_node(CATEGORIES_PATHS["EAU"]+"River_Threshold_Param/LineEdit").value, # 1.0
-		"river_base_flux"    : get_node(CATEGORIES_PATHS["EAU"]+"River_Base_Flux_Param/LineEdit").value, # 1.0
+		# Nouveau système de rivières : les seuils sont définis par défaut dans orchestrator.gd
+		# river_affluent_threshold = 50.0, river_riviere_threshold = 200.0, river_fleuve_threshold = 800.0
+		# river_precip_scale = 1.0 (utiliser River_Base_Flux_Param comme proxy si besoin)
 
 		# Regions
 		"nb_cases_regions" : get_node(CATEGORIES_PATHS["REGION"]+"Nb_Cases_Regions_Param/LineEdit").value, # 50
@@ -202,7 +219,6 @@ func _compile_generation_params() -> Dictionary:
 		"region_river_threshold" : get_node(CATEGORIES_PATHS["REGION"]+"Region_River_Threshold_Param/LineEdit").value, # 1.0
 		"region_budget_variation": get_node(CATEGORIES_PATHS["REGION"]+"Region_Budget_Variation_Param/LineEdit").value, # 0.5
 		"region_noise_strength"  : get_node(CATEGORIES_PATHS["REGION"]+"Region_Noise_Strength_Param/LineEdit").value, # 0.5
-		"region_generation_optimised" : get_node(CATEGORIES_PATHS["REGION"]+"Region_Generation_Optimised_Param/LineEdit").button_pressed,
 		"region_iterations"	     : max(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 2,
 
 		# Regions Ocean 
@@ -340,14 +356,13 @@ func _on_range_change_lake_threshold(_value = 0) -> void:
 	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"Lake_Threshold_Param/Label"), "LAKE_THRESHOLD", get_node(CATEGORIES_PATHS["EAU"]+"Lake_Threshold_Param/LineEdit").value)
 func _on_range_change_river_iterations(_value = 0) -> void:
 	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Iterations_Param/Label"), "RIVER_ITERATIONS", get_node(CATEGORIES_PATHS["EAU"]+"River_Iterations_Param/LineEdit").value)
-func _on_range_change_river_min_altitude(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Altitude_Param/Label"), "RIVER_MIN_ALTITUDE", get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Altitude_Param/LineEdit").value, " m")
-func _on_range_change_river_min_precipitation(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Precipitation_Param/Label"), "RIVER_MIN_PRECIPITATION", get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Precipitation_Param/LineEdit").value, "%")
+func _on_range_change_river_affluent_threshold(_value = 0) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Affluent_Threshold_Param/Label"), "RIVER_AFFLUENT_THRESHOLD", get_node(CATEGORIES_PATHS["EAU"]+"River_Affluent_Threshold_Param/LineEdit").value)
 func _on_range_change_river_threshold(_value = 0) -> void:
 	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Threshold_Param/Label"), "RIVER_THRESHOLD", get_node(CATEGORIES_PATHS["EAU"]+"River_Threshold_Param/LineEdit").value)
-func _on_range_change_river_base_flux(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Base_Flux_Param/Label"), "RIVER_BASE_FLUX", get_node(CATEGORIES_PATHS["EAU"]+"River_Base_Flux_Param/LineEdit").value)
+func _on_range_change_river_fleuve_threshold(_value = 0) -> void:
+	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Fleuve_Threshold_Param/Label"), "RIVER_FLEUVE_THRESHOLD", get_node(CATEGORIES_PATHS["EAU"]+"River_Fleuve_Threshold_Param/LineEdit").value)
+
 func _on_range_change_cloud_coverage(_value = 0) -> void:
 	_set_slider_label(get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Coverage_Param/Label"), "CLOUD_COVERAGE", get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Coverage_Param/LineEdit").value, "%")
 func _on_range_change_cloud_density(_value = 0) -> void:
@@ -421,10 +436,9 @@ func maj_labels() -> void:
 	_on_range_change_freshwater_max_size()
 	_on_range_change_lake_threshold()
 	_on_range_change_river_iterations()
-	_on_range_change_river_min_altitude()
-	_on_range_change_river_min_precipitation()
+	_on_range_change_river_affluent_threshold()
 	_on_range_change_river_threshold()
-	_on_range_change_river_base_flux()
+	_on_range_change_river_fleuve_threshold()
 
 	_on_range_change_cloud_coverage()
 	_on_range_change_cloud_density()
@@ -553,10 +567,9 @@ func _on_btn_randomise_pressed() -> void:
 	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"Freshwater_Max_Size_Param/LineEdit"))
 	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"Lake_Threshold_Param/LineEdit"))
 	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Iterations_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Altitude_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Precipitation_Param/LineEdit"))
+	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Affluent_Threshold_Param/LineEdit"))
 	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Threshold_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Base_Flux_Param/LineEdit"))
+	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Fleuve_Threshold_Param/LineEdit"))
 
 	_randomize_slider(get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Coverage_Param/LineEdit"))
 	_randomize_slider(get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Density_Param/LineEdit"))
@@ -590,3 +603,222 @@ func _randomize_slider(slider: Slider) -> void:
 	var max_nb_steps = int((slider.max_value - slider.min_value) / slider.step)
 	var random_step = randi() % (max_nb_steps + 1)
 	slider.value = slider.min_value + float(random_step) * slider.step
+
+
+# ============================================================================
+# PRESET SAVE / LOAD SYSTEM
+# ============================================================================
+
+## Mapping des clés de paramètre → chemins relatifs des sliders/contrôles dans l'UI.
+## Utilisé pour sérialiser et désérialiser les presets.
+const PARAM_SLIDER_MAP = {
+	# General
+	"planet_name"        : "GENERAL:Planet_Name_Param/HBoxContainer/LineEdit",
+	"seed"               : "SEED:PanelSeed/seed/LineEdit",
+	"nb_thread"          : "GENERAL:Thread_Number_Param/LineEdit",
+	"planet_radius"      : "GENERAL:Planet_Radius_Param/LineEdit",
+	"planet_density"     : "GENERAL:Planet_Density_Param/LineEdit",
+	"planet_type"        : "GENERAL:Planet_Type_Param/LineEdit",
+	"avg_temperature"    : "GENERAL:Planet_Temperature_Param/LineEdit",
+	# Erosion
+	"terrain_scale"      : "EROSION:Terrain_Scale_Param/LineEdit",
+	"erosion_iterations" : "EROSION:Erosions_Iterations_Param/LineEdit",
+	"erosion_rate"       : "EROSION:Erosion_Rate_Param/LineEdit",
+	"rain_rate"          : "EROSION:Rain_Rate_Param/LineEdit",
+	"evap_rate"          : "EROSION:Evap_Rate_Param/LineEdit",
+	"flow_rate"          : "EROSION:Flow_Rate_Param/LineEdit",
+	"deposition_rate"    : "EROSION:Deposition_Rate_Param/LineEdit",
+	"capacity_multiplier": "EROSION:Capacity_Multiplier_Param/LineEdit",
+	"flux_iterations"    : "EROSION:Flux_Iterations_Param/LineEdit",
+	"base_flux"          : "EROSION:Base_Flux_Param/LineEdit",
+	"propagation_rate"   : "EROSION:Propagation_Rate_Param/LineEdit",
+	"spreading_rate"     : "EROSION:Spreading_Rate_Param/LineEdit",
+	"max_crust_age"      : "EROSION:Max_Crust_Age_Param/LineEdit",
+	"subsidence_coeff"   : "EROSION:Subsidence_Coeff_Param/LineEdit",
+	# Craters
+	"crater_density"     : "CRATER:Crater_Density_Param/LineEdit",
+	"crater_min_radius"  : "CRATER:Crater_Min_Radius_Param/LineEdit",
+	"crater_depth_ratio" : "CRATER:Crater_Depth_Ratio_Param/LineEdit",
+	"crater_ejecta_extent": "CRATER:Crater_Ejecta_Extent_Param/LineEdit",
+	"crater_ejecta_decay": "CRATER:Crater_Ejecta_Decay_Param/LineEdit",
+	"crater_azimuth_var" : "CRATER:Crater_Azimuth_Var_Param/LineEdit",
+	# Water
+	"ocean_ratio"        : "EAU:Ocean_Ratio_Param/LineEdit",
+	"ice_probability"    : "EAU:Ice_Probability_Param/LineEdit",
+	"global_humidity"    : "EAU:Global_Humidity_Param/LineEdit",
+	"sea_level"          : "EAU:Sea_Level_Param/LineEdit",
+	"freshwater_max_size": "EAU:Freshwater_Max_Size_Param/LineEdit",
+	"lake_threshold"     : "EAU:Lake_Threshold_Param/LineEdit",
+	"river_iterations"   : "EAU:River_Iterations_Param/LineEdit",
+	# Clouds
+	"cloud_coverage"     : "NUAGE:Cloud_Coverage_Param/LineEdit",
+	"cloud_density"      : "NUAGE:Cloud_Density_Param/LineEdit",
+	# Regions
+	"nb_cases_regions"   : "REGION:Nb_Cases_Regions_Param/LineEdit",
+	"region_cost_flat"   : "REGION:Region_Cost_Flat_Param/LineEdit",
+	"region_cost_hill"   : "REGION:Region_Cost_Hill_Param/LineEdit",
+	"region_cost_river"  : "REGION:Region_Cost_River_Param/LineEdit",
+	"region_river_threshold": "REGION:Region_River_Threshold_Param/LineEdit",
+	"region_budget_variation": "REGION:Region_Budget_Variation_Param/LineEdit",
+	"region_noise_strength"  : "REGION:Region_Noise_Strength_Param/LineEdit",
+	# Ocean Regions
+	"nb_cases_ocean_regions"  : "OCEAN:Nb_Cases_Ocean_Regions_Param/LineEdit",
+	"ocean_cost_flat"    : "OCEAN:Ocean_Cost_Flat_Param/LineEdit",
+	"ocean_cost_deeper"  : "OCEAN:Ocean_Cost_Deeper_Param/LineEdit",
+	"ocean_noise_strength": "OCEAN:Ocean_Noise_Strength_Param/LineEdit",
+	# Resources
+	"petrole_probability"  : "RESSOURCES:Petrole_Probability_Param/LineEdit",
+	"petrole_deposit_size" : "RESSOURCES:Petrole_Deposit_Size_Param/LineEdit",
+	"global_richness"      : "RESSOURCES:Global_Richness_Param/LineEdit",
+}
+
+## Résout le chemin complet d'un contrôle UI à partir de la forme "CATEGORY:relative_path"
+func _resolve_param_path(mapping: String) -> String:
+	if mapping.begins_with("SEED:"):
+		return BASE_PATH_SLIDERS + "/" + mapping.substr(5)
+	var parts = mapping.split(":", true, 1)
+	if parts.size() != 2:
+		push_error("[Preset] Invalid mapping: ", mapping)
+		return ""
+	var category = parts[0]
+	var relative = parts[1]
+	if not CATEGORIES_PATHS.has(category):
+		push_error("[Preset] Unknown category: ", category)
+		return ""
+	return CATEGORIES_PATHS[category] + relative
+
+## Collecte tous les paramètres UI dans un Dictionary sérialisable.
+func _collect_preset_data() -> Dictionary:
+	var data: Dictionary = {}
+	data["_meta"] = {
+		"version": 1,
+		"date": Time.get_datetime_string_from_system(),
+	}
+
+	for key in PARAM_SLIDER_MAP:
+		var path = _resolve_param_path(PARAM_SLIDER_MAP[key])
+		if path.is_empty():
+			continue
+		var node = get_node_or_null(path)
+		if node == null:
+			push_warning("[Preset] Node introuvable: ", path)
+			continue
+
+		if key == "planet_name":
+			data[key] = node.text
+		elif key == "planet_type":
+			data[key] = node.get_selected_id()
+		else:
+			data[key] = node.value
+	return data
+
+## Écrit les données preset dans un fichier.
+func _write_preset_to_file(file_path: String, data: Dictionary) -> bool:
+	var file = FileAccess.open(file_path, FileAccess.WRITE)
+	if file == null:
+		push_error("[Preset] Impossible d'écrire: ", file_path, " - ", FileAccess.get_open_error())
+		return false
+	file.store_string(JSON.stringify(data, "\t"))
+	file.close()
+	print("[Preset] ✅ Sauvegardé: ", file_path)
+	return true
+
+## Ouvre un FileDialog pour sauvegarder les paramètres actuels en .planetGeneratorParam.
+func save_preset() -> void:
+	var file_dialog = FileDialog.new()
+	file_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	file_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	file_dialog.title = "Sauvegarder le preset"
+	file_dialog.min_size = Vector2i(700, 500)
+	file_dialog.filters = PackedStringArray(["*.planetGeneratorParam ; Planet Generator Preset"])
+	add_child(file_dialog)
+	file_dialog.popup_centered()
+	file_dialog.file_selected.connect(func(path: String):
+		# Assurer l'extension correcte
+		if not path.ends_with(".planetGeneratorParam"):
+			path += ".planetGeneratorParam"
+		var data = _collect_preset_data()
+		data["_meta"]["name"] = path.get_file().get_basename()
+		_write_preset_to_file(path, data)
+		file_dialog.queue_free())
+	file_dialog.canceled.connect(func():
+		file_dialog.queue_free())
+
+## Ouvre un FileDialog pour charger un preset .planetGeneratorParam.
+func load_preset() -> void:
+	var file_dialog = FileDialog.new()
+	file_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	file_dialog.title = "Charger un preset"
+	file_dialog.min_size = Vector2i(700, 500)
+	file_dialog.filters = PackedStringArray(["*.planetGeneratorParam ; Planet Generator Preset"])
+	add_child(file_dialog)
+	file_dialog.popup_centered()
+	file_dialog.file_selected.connect(func(path: String):
+		_load_preset_from_path(path)
+		file_dialog.queue_free())
+	file_dialog.canceled.connect(func():
+		file_dialog.queue_free())
+
+## Charge un preset depuis un chemin absolu et applique ses valeurs à l'UI.
+func _load_preset_from_path(file_path: String) -> bool:
+	if not FileAccess.file_exists(file_path):
+		push_error("[Preset] Fichier introuvable: ", file_path)
+		return false
+
+	var file = FileAccess.open(file_path, FileAccess.READ)
+	if file == null:
+		push_error("[Preset] Impossible de lire: ", file_path)
+		return false
+
+	var json_text = file.get_as_text()
+	file.close()
+
+	var json = JSON.new()
+	var parse_err = json.parse(json_text)
+	if parse_err != OK:
+		push_error("[Preset] JSON invalide: ", json.get_error_message())
+		return false
+
+	var data: Dictionary = json.data
+	if not data is Dictionary:
+		push_error("[Preset] Format invalide")
+		return false
+
+	for key in PARAM_SLIDER_MAP:
+		if not data.has(key):
+			continue
+		var path = _resolve_param_path(PARAM_SLIDER_MAP[key])
+		if path.is_empty():
+			continue
+		var node = get_node_or_null(path)
+		if node == null:
+			push_warning("[Preset] Node introuvable: ", path)
+			continue
+
+		if key == "planet_name":
+			node.text = str(data[key])
+		elif key == "planet_type":
+			var type_id = int(data[key])
+			for i in range(node.item_count):
+				if node.get_item_id(i) == type_id:
+					node.select(i)
+					break
+		else:
+			node.value = float(data[key])
+
+	maj_labels()
+	print("[Preset] ✅ Chargé: ", file_path.get_file())
+	return true
+
+## Supprime un preset par chemin absolu.
+func delete_preset(file_path: String) -> bool:
+	if not FileAccess.file_exists(file_path):
+		push_error("[Preset] Fichier introuvable: ", file_path)
+		return false
+	var err = DirAccess.remove_absolute(file_path)
+	if err != OK:
+		push_error("[Preset] Impossible de supprimer: ", file_path)
+		return false
+	print("[Preset] 🗑️ Supprimé: ", file_path.get_file())
+	return true
