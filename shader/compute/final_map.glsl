@@ -111,7 +111,7 @@ layout(set = 3, binding = 0, std430) readonly buffer RiverBiomeLUT {
 // ============================================================================
 
 // Banquise color constants
-const vec3 BANQUISE_DEFAULT = vec3(0.831, 0.827, 0.824);  // 0xd4d3d2ff
+const vec3 BANQUISE_DEFAULT = vec3(0.96, 0.96, 0.96);  // 0xd4d3d2ff
 const vec3 BANQUISE_VOLCANIC = vec3(0.231, 0.192, 0.169);  // Cooled lava
 
 vec3 getBanquiseColor(uint atmo) {
