@@ -121,7 +121,7 @@ var BIOMES = [
 
 	# --- RIVIÈRES DE LAVE (Requis pour river_map) ---
 	Biome.new("Rivière de Lave", Color.hex(0xff4000FF), Color.hex(0xb03010FF), [300, 1500], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_VOLCANIC], true, true),
-	Biome.new("Fleuve de Magma", Color.hex(0xff0000FF), Color.hex(0x900010FF), [400, 2000], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_VOLCANIC], true, true),
+	Biome.new("Fleuve de Magma", Color.hex(0xff3000FF), Color.hex(0x900010FF), [400, 2000], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_VOLCANIC], true, true),
 	Biome.new("Lac de Lave", Color.hex(0xe05020FF), Color.hex(0x803018FF), [300, 1200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_VOLCANIC], true, true),
 
 

@@ -200,7 +200,8 @@ void main() {
     }
     
     // === STEP 4: Banquise overlay (highest priority) ===
-    if (is_banquise) {
+    // Banquise uniquement sur les pixels eau (double vérification)
+    if (is_banquise && is_water) {
         vec3 banquise_color = getBanquiseColor(params.atmosphere_type);
         color = banquise_color;
     }

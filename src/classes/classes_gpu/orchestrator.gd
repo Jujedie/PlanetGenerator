@@ -515,21 +515,10 @@ func _init_uniform_sets():
 		push_warning("[Orchestrator] ⚠️ clouds shader invalide, uniform set ignoré")
 	
 	# === ICE CAPS SHADER ===
+	# NOTE: L'uniform set ice_caps est créé de façon lazy dans _dispatch_ice_caps()
+	# car il dépend de water_colored qui n'est initialisé que pendant run_water_phase().
 	if gpu.shaders.has("ice_caps") and gpu.shaders["ice_caps"].is_valid():
-		print("  • Création uniform set: ice_caps")
-		
-		# Set 0 : Textures (geo en lecture pour water_height, climate en lecture pour température, ice_caps en écriture)
-		var uniforms_ice = [
-			gpu.create_texture_uniform(0, gpu.textures["geo"]),
-			gpu.create_texture_uniform(1, gpu.textures["climate"]),
-			gpu.create_texture_uniform(2, gpu.textures["ice_caps"]),
-		]
-		
-		gpu.uniform_sets["ice_caps_textures"] = rd.uniform_set_create(uniforms_ice, gpu.shaders["ice_caps"], 0)
-		if not gpu.uniform_sets["ice_caps_textures"].is_valid():
-			push_error("[Orchestrator] ❌ Failed to create ice_caps textures uniform set")
-		else:
-			print("    ✅ ice_caps textures uniform set créé")
+		print("  • ice_caps: uniform set sera créé lors du dispatch (dépendant de water_colored)")
 	else:
 		push_warning("[Orchestrator] ⚠️ ice_caps shader invalide, uniform set ignoré")
 	
@@ -679,6 +668,9 @@ func run_simulation() -> void:
 	
 	# === ÉTAPE 2.5 : CLASSIFICATION DES EAUX & RIVIÈRES ===
 	run_water_phase(generation_params, w, h)
+	
+	# === ÉTAPE 3.5 : BANQUISE (après eau pour vérifier water_colored) ===
+	run_ice_caps_phase(generation_params, w, h)
 	
 	# === ÉTAPE 4.1 : BIOMES ===
 	run_biome_phase(generation_params, w, h)
@@ -1481,9 +1473,8 @@ func run_atmosphere_phase(params: Dictionary, w: int, h: int) -> void:
 	var cloud_density = float(params.get("cloud_density", 0.8))
 	_dispatch_clouds(w, h, groups_x, groups_y, seed_val, cloud_coverage, cloud_density, cylinder_radius, atmosphere_type)
 
-	# === PASSE 4 : BANQUISE ===
-	var ice_probability = float(params.get("ice_probability", 0.9))
-	_dispatch_ice_caps(w, h, groups_x, groups_y, seed_val, ice_probability, atmosphere_type)
+	# NOTE: Banquise (ice_caps) déplacée après la phase eau pour pouvoir
+	# vérifier water_colored et éviter de générer de la glace sans eau.
 	
 	print("[Orchestrator] ✅ Phase 3 : Atmosphère & Climat terminée")
 
@@ -1715,14 +1706,51 @@ func _dispatch_clouds(w: int, h: int, groups_x: int, groups_y: int, seed_val: in
 	rd.free_rid(param_buffer)
 
 
+## Phase banquise - exécutée APRÈS la phase eau pour avoir accès à water_colored
+func run_ice_caps_phase(params: Dictionary, w: int, h: int) -> void:
+	var atmosphere_type = int(params.get("planet_type", 0))
+	
+	# Pas de banquise sur planètes sans atmosphère ou stériles
+	if atmosphere_type in [Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE]:
+		print("[Orchestrator] ⏭️ Banquise ignorée (type=", atmosphere_type, ")")
+		return
+	
+	print("[Orchestrator] 🧊 Phase 3.5 : Banquise")
+	
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+	var seed_val = int(params.get("seed", 12345))
+	var ice_probability = float(params.get("ice_probability", 0.9))
+	var sea_level = float(params.get("sea_level", 0.0))
+	
+	_dispatch_ice_caps(w, h, groups_x, groups_y, seed_val, ice_probability, atmosphere_type, sea_level)
+	
+	print("[Orchestrator] ✅ Phase 3.5 : Banquise terminée")
+
+
 ## Dispatch le shader de banquise
-func _dispatch_ice_caps(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, ice_probability: float, atmosphere_type: int) -> void:
+func _dispatch_ice_caps(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, ice_probability: float, atmosphere_type: int, sea_level: float) -> void:
 	if not gpu.shaders.has("ice_caps") or not gpu.shaders["ice_caps"].is_valid():
 		push_warning("[Orchestrator] ⚠️ ice_caps shader non disponible")
 		return
+	
+	# Création lazy de l'uniform set (water_colored doit exister)
 	if not gpu.uniform_sets.has("ice_caps_textures") or not gpu.uniform_sets["ice_caps_textures"].is_valid():
-		push_warning("[Orchestrator] ⚠️ ice_caps uniform set non disponible")
-		return
+		if not gpu.textures.has("water_colored") or not gpu.textures["water_colored"].is_valid():
+			push_error("[Orchestrator] ❌ water_colored texture indisponible pour ice_caps")
+			return
+		print("  • Création lazy uniform set: ice_caps")
+		var uniforms_ice = [
+			gpu.create_texture_uniform(0, gpu.textures["geo"]),
+			gpu.create_texture_uniform(1, gpu.textures["climate"]),
+			gpu.create_texture_uniform(2, gpu.textures["ice_caps"]),
+			gpu.create_texture_uniform(3, gpu.textures["water_colored"]),
+		]
+		gpu.uniform_sets["ice_caps_textures"] = rd.uniform_set_create(uniforms_ice, gpu.shaders["ice_caps"], 0)
+		if not gpu.uniform_sets["ice_caps_textures"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create ice_caps textures uniform set")
+			return
+		print("    ✅ ice_caps textures uniform set créé")
 	
 	print("  • Banquise (probabilité: ", ice_probability, ")")
 	
@@ -1730,7 +1758,8 @@ func _dispatch_ice_caps(w: int, h: int, groups_x: int, groups_y: int, seed_val: 
 	# uint seed, width, height (12 bytes)
 	# float ice_probability (4 bytes)
 	# uint atmosphere_type (4 bytes)
-	# padding (12 bytes)
+	# float sea_level (4 bytes)
+	# padding (8 bytes)
 	
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(32)
@@ -1740,7 +1769,7 @@ func _dispatch_ice_caps(w: int, h: int, groups_x: int, groups_y: int, seed_val: 
 	buffer_bytes.encode_u32(8, h)
 	buffer_bytes.encode_float(12, ice_probability)
 	buffer_bytes.encode_u32(16, atmosphere_type)
-	buffer_bytes.encode_u32(20, 0)  # padding
+	buffer_bytes.encode_float(20, sea_level)
 	buffer_bytes.encode_u32(24, 0)  # padding
 	buffer_bytes.encode_u32(28, 0)  # padding
 	

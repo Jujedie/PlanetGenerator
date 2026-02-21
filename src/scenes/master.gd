@@ -549,10 +549,9 @@ func _on_btn_randomise_pressed() -> void:
 	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"Freshwater_Max_Size_Param/LineEdit"))
 	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"Lake_Threshold_Param/LineEdit"))
 	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Iterations_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Altitude_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Min_Precipitation_Param/LineEdit"))
+	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Affluent_Threshold_Param/LineEdit"))
 	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Threshold_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Base_Flux_Param/LineEdit"))
+	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Fleuve_Threshold_Param/LineEdit"))
 
 	_randomize_slider(get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Coverage_Param/LineEdit"))
 	_randomize_slider(get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Density_Param/LineEdit"))
