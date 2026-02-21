@@ -248,11 +248,8 @@ vec3 getCylindricalCoords(ivec2 pixel) {
 
 // Facteur d'altitude basé sur le type géologique
 // 0 = ubiquiste, 1 = sédimentaire, 2 = montagne, 3 = volcanique, 4 = plaine, 5 = côtier
-float getElevationFactor(int resource_id, float elevation, float sea_level) {
+float getElevationFactor_type(int geo_type, float elevation, float sea_level) {
     float rel_elev = elevation - sea_level;
-    
-    // Utiliser le type géologique au lieu de l'ID directement
-    int geo_type = RESOURCE_GEO_TYPE[resource_id];
     
     // Type 0: Ubiquiste - présent partout
     if (geo_type == 0) {
@@ -301,38 +298,15 @@ void main() {
     vec4 geo_data = texture(sampler2D(geo_texture, geo_sampler), uv);
     
     float elevation = geo_data.r;
-    float water_height = geo_data.a;
-    
-    // Les ressources peuvent maintenant apparaître sous l'eau (limitation supprimée)
     
     // Coordonnées cylindriques
     vec3 coords = getCylindricalCoords(pixel);
     float noise_scale = 4.0 / params.cylinder_radius;
     
-    // Variables pour stocker la meilleure ressource trouvée
-    float best_intensity = 0.0;
-    int best_resource_id = -1;
-    float best_cluster_id = 0.0;
-    
-    // Calculer la somme des probabilités pour normalisation
-    float total_prob = 0.0;
-    for (int i = 0; i < NUM_RESOURCES; i++) {
-        total_prob += RESOURCE_PROBABILITIES[i];
-    }
-    
     // Hash de base pour ce pixel
     uint pixel_hash = hash2(uint(pixel.x) + params.seed, uint(pixel.y));
-    float pixel_rand = rand(pixel_hash);
     
-    // Déterminer le type de ressource dominant pour ce pixel
-    // basé sur les probabilités cumulatives
-    float cumulative = 0.0;
-    int selected_resource = -1;
-    
-    // Bruit de base pour variation spatiale - échelle plus grande pour zones plus larges
-    float base_noise = fbm(coords * noise_scale * 0.3, 4, 0.5, 2.0, params.seed);
-    
-    // Domain warping pour éviter les patterns rectilignes
+    // Domain warping commun (calculé une seule fois)
     vec3 warp = vec3(
         fbm(coords * noise_scale * 0.2 + vec3(50.0, 0.0, 0.0), 3, 0.5, 2.0, params.seed + 100000u),
         fbm(coords * noise_scale * 0.2 + vec3(0.0, 50.0, 0.0), 3, 0.5, 2.0, params.seed + 200000u),
@@ -341,71 +315,112 @@ void main() {
     
     vec3 warped_coords = coords + warp;
     
-    // Tester chaque ressource
+    // === EARLY-OUT: Pré-sélection par hash probabiliste ===
+    // Au lieu de tester 115 ressources, on sélectionne un sous-ensemble candidat
+    // basé sur un hash spatial. Cela réduit drastiquement le travail par pixel.
+    
+    // Cellule spatiale grossière pour cohérence locale
+    float cell_scale = noise_scale * 0.15;
+    vec3 cell_pos = floor(warped_coords * cell_scale / 0.8);
+    uint cell_hash = hash(uint(cell_pos.x + 10000.0) ^ hash(uint(cell_pos.y + 10000.0) ^ hash(uint(cell_pos.z + 10000.0) + params.seed)));
+    
+    // Pré-calculer le facteur géologique par type (0-5) pour éviter 
+    // de recalculer getElevationFactor pour chaque ressource
+    float geo_factors[6];
+    geo_factors[0] = getElevationFactor_type(0, elevation, params.sea_level);
+    geo_factors[1] = getElevationFactor_type(1, elevation, params.sea_level);
+    geo_factors[2] = getElevationFactor_type(2, elevation, params.sea_level);
+    geo_factors[3] = getElevationFactor_type(3, elevation, params.sea_level);
+    geo_factors[4] = getElevationFactor_type(4, elevation, params.sea_level);
+    geo_factors[5] = getElevationFactor_type(5, elevation, params.sea_level);
+    
+    // Variables pour stocker la meilleure ressource trouvée
+    float best_intensity = 0.0;
+    int best_resource_id = -1;
+    float best_cluster_id = 0.0;
+    
+    // === Boucle optimisée : tester les ressources avec early-out ===
     for (int i = 0; i < NUM_RESOURCES; i++) {
-        // Pétrole a été retiré de ce shader (géré par petrole.glsl)
-        
         float prob = RESOURCE_PROBABILITIES[i];
-        float size = RESOURCE_SIZES[i] * (float(params.width) / 2048.0); // Ajuster à la résolution
         
-        // Facteur géologique basé sur l'altitude
-        float geo_factor = getElevationFactor(i, elevation, params.sea_level);
+        // OPTIMISATION: Skip rapide par probabilité
+        // Hash unique par ressource + cellule spatiale
+        uint res_cell_hash = hash(cell_hash + uint(i) * 7919u);
+        float res_rand = rand(res_cell_hash);
         
-        // Si le facteur géologique est trop bas, skip
+        // Probabilité normalisée (échelle log pour couvrir la grande plage)
+        // Les très rares (prob < 0.0001) sont filtrées agressivement
+        float skip_threshold = clamp(prob * 200.0, 0.01, 1.0);
+        if (res_rand > skip_threshold) continue;
+        
+        // Facteur géologique (lookup pré-calculé)
+        int geo_type = RESOURCE_GEO_TYPE[i];
+        float geo_factor = geo_factors[geo_type];
         if (geo_factor < 0.1) continue;
         
-        // Bruit spécifique à cette ressource
+        float size = RESOURCE_SIZES[i] * (float(params.width) / 2048.0);
         uint resource_seed = params.seed + uint(i) * 50000u;
-        
-        // Échelle basée sur la taille du gisement - zones plus larges
         float resource_scale = noise_scale * (60.0 / max(size, 1.0));
         
-        // Cellular noise pour créer des clusters distincts
+        // Cellular noise pour clusters
         float cell_dist = cellularNoise(warped_coords * resource_scale, resource_seed);
         
-        // Transformer en présence de ressource (centres de cellules = ressources)
-        // Seuil bas pour avoir de grandes zones
+        // Présence avec seuil
         float presence = 1.0 - smoothstep(0.0, 0.5, cell_dist);
+        if (presence < 0.05) continue; // Early-out si trop loin d'un centre
         
-        // Ajouter variation avec fBm - échelle plus grande
+        // Variation de détail (fBm à 3 octaves seulement)
         float detail = fbm(warped_coords * resource_scale * 1.2, 3, 0.5, 2.0, resource_seed + 10000u);
         presence *= mix(0.6, 1.0, detail);
         
-        // Appliquer les facteurs
+        // Appliquer facteurs
         presence *= geo_factor;
         presence *= params.global_richness;
         
-        // Seuil réduit pour augmenter le nombre de gisements
-        float base_threshold = 0.05;
+        // Intensité
+        float raw_intensity = smoothstep(0.05, 0.7, presence);
         
-        // Intensité brute avec grande plage
-        float raw_intensity = smoothstep(base_threshold, 0.7, presence);
-        
-        // Moduler par la probabilité : multiplication très douce
-        float probability_factor = pow(prob * 4.0, 0.25); // Très peu de réduction
+        // Modulation probabiliste douce
+        float probability_factor = pow(prob * 4.0, 0.25);
         probability_factor = clamp(probability_factor, 0.5, 1.0);
         raw_intensity *= probability_factor;
         
-        // Si l'intensité dépasse le seuil minimal ET est meilleure que l'actuelle
         if (raw_intensity > 0.02 && raw_intensity > best_intensity) {
             best_intensity = raw_intensity;
             best_resource_id = i;
-            best_cluster_id = cell_dist * 1000.0; // ID unique du cluster
+            best_cluster_id = cell_dist * 1000.0;
         }
     }
     
     // Écrire le résultat
     if (best_resource_id >= 0) {
-        // R = resource_id, G = intensity (0-1), B = cluster_id, A = 1.0 (has resource)
-        float intensity = smoothstep(0.0, 1.0, best_intensity);
+        // === Ajout de bruit à l'intensité pour variation non-uniforme ===
+        // Bruit haute fréquence pour casser les zones plates
+        uint res_seed = params.seed + uint(best_resource_id) * 50000u;
+        float hf_noise = fbm(warped_coords * noise_scale * 8.0, 3, 0.6, 2.0, res_seed + 20000u);
+        // Bruit à grain fin (hash par pixel pour micro-variation)
+        float pixel_noise = rand(hash2(uint(pixel.x) + res_seed, uint(pixel.y) + 77u));
+        
+        // Combiner : variation organique + micro-grain
+        float noisy_intensity = best_intensity * mix(0.4, 1.0, hf_noise) * mix(0.85, 1.0, pixel_noise);
+        
+        // Clamp et smooth
+        noisy_intensity = clamp(noisy_intensity, 0.0, 1.0);
+        
+        // Alpha variable basée sur l'intensité (pas toujours 1.0)
+        // Centre des dépôts = plus opaque, bords = plus transparent
+        float alpha = smoothstep(0.0, 0.3, noisy_intensity);
+        // Ajouter du bruit à l'alpha aussi
+        alpha *= mix(0.5, 1.0, hf_noise);
+        alpha = clamp(alpha, 0.0, 1.0);
+        
         imageStore(resources_texture, pixel, vec4(
             float(best_resource_id),
-            intensity,
+            noisy_intensity,
             best_cluster_id,
-            1.0
+            alpha
         ));
     } else {
-        // Pas de ressource : -1 en R, A = 0
         imageStore(resources_texture, pixel, vec4(-1.0, 0.0, 0.0, 0.0));
     }
 }

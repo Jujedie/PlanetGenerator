@@ -1249,12 +1249,15 @@ func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, hei
 							# Couleur de la ressource
 							var base_color = resource_colors[resource_id] if resource_id < resource_colors.size() else Color(1, 1, 1, 1)
 							
-							# RGB = couleur * intensité, Alpha = intensité
+							# Alpha variable du shader (bruit + intensité)
+							var alpha = pixel.a
+							
+							# RGB = couleur * intensité, Alpha = alpha du shader
 							var color = Color(
 								base_color.r * intensity,
 								base_color.g * intensity,
 								base_color.b * intensity,
-								intensity
+								alpha
 							)
 							
 							# Écrire dans la carte individuelle
