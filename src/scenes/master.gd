@@ -484,7 +484,7 @@ func _on_btn_quitter_pressed() -> void:
 func _on_btn_sauvegarder_pressed() -> void:
 	var file_dialog = FileDialog.new()
 	file_dialog.access = FileDialog.ACCESS_FILESYSTEM
-	file_dialog.mode = FileDialog.FILE_MODE_OPEN_DIR
+	file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
 	file_dialog.title = tr("Select Export Directory")
 	file_dialog.min_size = Vector2i(600, 400)
 	add_child(file_dialog)
