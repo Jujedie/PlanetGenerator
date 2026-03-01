@@ -8,10 +8,6 @@
 
 config_version=5
 
-[animation]
-
-compatibility/default_parent_skeleton_in_mesh_instance_3d=true
-
 [application]
 
 config/name="Planet Generator"
@@ -22,8 +18,7 @@ config/name_localized={
 }
 config/description="Application de génération de carte planétaire
 "
-config/version="v2.1.0"
-config/tags=PackedStringArray("generation_procedurale", "logiciel", "pixel")
+config/version="v2.2.0"
 run/main_scene="uid://j6dp7dc7d3ov"
 config/features=PackedStringArray("4.6", "Forward Plus")
 boot_splash/bg_color=Color(0.12955844, 0.12955847, 0.12955844, 1)

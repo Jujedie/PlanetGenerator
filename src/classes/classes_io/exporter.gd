@@ -203,6 +203,11 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	for key in final_result.keys():
 		exported_files[key] = final_result[key]
 	
+	# === EXPORT HIÉRARCHIE ADMINISTRATIVE (Step 4.6) ===
+	var hierarchy_result = _export_hierarchy_maps(gpu, output_dir)
+	for key in hierarchy_result.keys():
+		exported_files[key] = hierarchy_result[key]
+	
 	# === EXPORT RESSOURCES (Step 5) ===
 	var resources_result = _export_resources_maps(gpu, output_dir, width, height)
 	for key in resources_result.keys():
@@ -633,7 +638,7 @@ func _export_region_map(gpu: GPUContext, output_dir: String, _optimised_region_g
 	rd.sync()
 	
 	var tex_id = "region_map"  # R32UI - IDs bruts
-	var filename = "region_map.png"
+	var filename = "departement_map.png"
 	
 	if not gpu.textures.has(tex_id) or not gpu.textures[tex_id].is_valid():
 		print("  ⚠️ Texture 'region_map' non disponible, skip")
@@ -890,7 +895,7 @@ func _export_ocean_region_map(gpu: GPUContext, output_dir: String, _optimised_re
 	rd.sync()
 	
 	var tex_id = "ocean_region_map"  # R32UI - IDs bruts
-	var filename = "ocean_region_map.png"
+	var filename = "departement_mer_map.png"
 	
 	if not gpu.textures.has(tex_id) or not gpu.textures[tex_id].is_valid():
 		print("  ⚠️ Texture 'ocean_region_map' non disponible, skip")
@@ -1659,6 +1664,86 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 	
 	print("[Exporter] ✅ Final map export complete")
 	return result
+
+## ============================================================================
+## EXPORT HIÉRARCHIE ADMINISTRATIVE (GPU RGBA8 direct readback)
+## ============================================================================
+## Exporte les 6 niveaux hiérarchiques (3 terre + 3 mer) depuis les textures
+## RGBA8 déjà colorées par hierarchy_finalize.glsl
+
+func _export_hierarchy_maps(gpu: GPUContext, output_dir: String) -> Dictionary:
+	print("[Exporter] 🏛️ Exporting hierarchy maps (6 levels)...")
+	
+	var result = {}
+	var rd = gpu.rd
+	
+	if not rd:
+		push_error("[Exporter] ❌ RenderingDevice not available")
+		return result
+	
+	# Synchroniser le GPU avant lecture
+	rd.submit()
+	rd.sync()
+	
+	# Configuration: tex_id GPU → nom de fichier export
+	var hierarchy_exports = [
+		# Terre
+		{"tex_id": "hier_terre_region_colored", "filename": "region_map.png"},
+		{"tex_id": "hier_terre_pays_colored", "filename": "pays_map.png"},
+		{"tex_id": "hier_terre_continent_colored", "filename": "continent_map.png"},
+		# Mer
+		{"tex_id": "hier_mer_region_colored", "filename": "region_mer_map.png"},
+		{"tex_id": "hier_mer_bassin_colored", "filename": "bassin_map.png"},
+		{"tex_id": "hier_mer_ocean_colored", "filename": "ocean_map.png"},
+	]
+	
+	for entry in hierarchy_exports:
+		var tex_id = entry["tex_id"]
+		var filename = entry["filename"]
+		
+		if not gpu.textures.has(tex_id) or not gpu.textures[tex_id].is_valid():
+			print("  ⚠️ Texture '", tex_id, "' non disponible, skip")
+			continue
+		
+		# Lecture directe des données RGBA8 depuis le GPU
+		var data = rd.texture_get_data(gpu.textures[tex_id], 0)
+		
+		if data.size() == 0:
+			push_error("[Exporter] ❌ Empty data for hierarchy texture: ", tex_id)
+			continue
+		
+		# Récupérer les dimensions depuis le format de texture
+		var tex_format = rd.texture_get_format(gpu.textures[tex_id])
+		var width = tex_format.width
+		var height = tex_format.height
+		
+		# Vérifier la taille des données (RGBA8 = 4 bytes par pixel)
+		var expected_size = width * height * 4
+		if data.size() != expected_size:
+			push_error("[Exporter] ❌ Data size mismatch for ", tex_id, ": expected ",
+				expected_size, ", got ", data.size())
+			continue
+		
+		# Créer l'image directement à partir des données RGBA8
+		var img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, data)
+		
+		if not img:
+			push_error("[Exporter] ❌ Failed to create image for ", tex_id)
+			continue
+		
+		# Sauvegarder en PNG
+		var filepath = output_dir + "/" + filename
+		var err = img.save_png(filepath)
+		
+		if err == OK:
+			result[tex_id] = filepath
+			print("  ✅ Saved: ", filepath, " (", width, "x", height, ")")
+		else:
+			push_error("[Exporter] ❌ Failed to save ", filename, ": ", err)
+	
+	print("[Exporter] ✅ Hierarchy maps export complete (", result.size(), "/6)")
+	return result
+
 
 ## Compare deux couleurs avec tolérance pour erreurs de compression
 func _colors_equal(c1: Color, c2: Color) -> bool:

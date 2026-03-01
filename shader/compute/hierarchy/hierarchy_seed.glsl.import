@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://b2sk5kq67qler"
+path="res://.godot/imported/hierarchy_seed.glsl-953d756de332be4f49ed392f22e81202.res"
+
+[deps]
+
+source_file="res://shader/compute/hierarchy/hierarchy_seed.glsl"
+dest_files=["res://.godot/imported/hierarchy_seed.glsl-953d756de332be4f49ed392f22e81202.res"]
+
+[params]
+

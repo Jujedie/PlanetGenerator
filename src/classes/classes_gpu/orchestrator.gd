@@ -150,6 +150,12 @@ func _compile_all_shaders() -> bool:
 		{"path": "res://shader/compute/ocean_region/ocean_region_growth.glsl", "name": "ocean_region_growth", "critical": false},
 		{"path": "res://shader/compute/ocean_region/ocean_region_cleanup.glsl", "name": "ocean_region_cleanup", "critical": false},
 		{"path": "res://shader/compute/ocean_region/ocean_region_finalize.glsl", "name": "ocean_region_finalize", "critical": false},
+		# Shaders Hiérarchie Administrative (Étape 4.6)
+		{"path": "res://shader/compute/hierarchy/hierarchy_seed.glsl", "name": "hierarchy_seed", "critical": false},
+		{"path": "res://shader/compute/hierarchy/hierarchy_growth.glsl", "name": "hierarchy_growth", "critical": false},
+		{"path": "res://shader/compute/hierarchy/hierarchy_snap.glsl", "name": "hierarchy_snap", "critical": false},
+		{"path": "res://shader/compute/hierarchy/hierarchy_cleanup.glsl", "name": "hierarchy_cleanup", "critical": false},
+		{"path": "res://shader/compute/hierarchy/hierarchy_finalize.glsl", "name": "hierarchy_finalize", "critical": false},
 		# Shaders Biomes (Étape 4.1)
 		{"path": "res://shader/compute/biome/biome_classify.glsl", "name": "biome_classify", "critical": false},
 		{"path": "res://shader/compute/biome/biome_smooth.glsl", "name": "biome_smooth", "critical": false},
@@ -680,6 +686,9 @@ func run_simulation() -> void:
 	
 	# === ÉTAPE 4.5 : RÉGIONS OCÉANIQUES ===
 	run_ocean_region_phase(generation_params, w, h)
+	
+	# === ÉTAPE 4.6 : HIÉRARCHIE ADMINISTRATIVE ===
+	run_hierarchy_phase(generation_params, w, h)
 	
 	# === ÉTAPE 5 : RESSOURCES & PÉTROLE ===
 	run_resources_phase(generation_params, w, h)
@@ -4346,6 +4355,514 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE:
 		# cleanup()  # Commented out to prevent null instance error
 		pass
+
+# ============================================================================
+# ÉTAPE 4.6 : HIÉRARCHIE ADMINISTRATIVE (Département→Région→Pays→Continent)
+# ============================================================================
+
+## Exécute la phase de hiérarchie administrative complète.
+## Produit 3 niveaux pour la terre et 3 pour la mer, chacun avec hiérarchie stricte.
+func run_hierarchy_phase(params: Dictionary, w: int, h: int) -> void:
+	print("[Orchestrator] 🏛️ Phase 4.6 : Hiérarchie Administrative")
+	
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+	var seed_val = int(params.get("seed", 12345))
+	var atmosphere_type = int(params.get("planet_type", 0))
+	
+	if atmosphere_type == 3:
+		print("  ⏭️ Planète sans atmosphère - pas de hiérarchie")
+		return
+	
+	# Vérifier que les shaders sont disponibles
+	for shader_name in ["hierarchy_seed", "hierarchy_growth", "hierarchy_snap", "hierarchy_cleanup", "hierarchy_finalize"]:
+		if not gpu.shaders.has(shader_name) or not gpu.shaders[shader_name].is_valid():
+			push_warning("[Orchestrator] ⚠️ " + shader_name + " shader non disponible, skip hiérarchie")
+			return
+	
+	# Initialiser les textures
+	gpu.initialize_hierarchy_textures()
+	
+	# Nombre de passes JFA
+	var max_dim = max(w, h)
+	var jfa_log_steps = ceili(log(float(max_dim)) / log(2.0))
+	var jfa_iterations = jfa_log_steps + 2
+	
+	# Bruit par niveau (décroissant pour les niveaux supérieurs → frontières plus lisses)
+	var noise_per_level = [3.0, 5.0, 8.0]
+	
+	# ═══════════════════════════════════════════════════════════════════════════
+	#  HIÉRARCHIE TERRESTRE : département → région → pays → continent
+	# ═══════════════════════════════════════════════════════════════════════════
+	var terre_configs = [
+		{
+			"prev_map": "region_map",
+			"target_map": "hier_terre_region_map",
+			"colored": "hier_terre_region_colored",
+			"nb_cases": int(params.get("nb_cases_regions", 50)) * 12,
+			"domain": 0,
+			"level_index": 0,
+			"noise": noise_per_level[0],
+			"bg_r": 22, "bg_g": 26, "bg_b": 31,
+			"label": "Région terrestre"
+		},
+		{
+			"prev_map": "hier_terre_region_map",
+			"target_map": "hier_terre_pays_map",
+			"colored": "hier_terre_pays_colored",
+			"nb_cases": int(params.get("nb_cases_regions", 50)) * 12 * 22,
+			"domain": 0,
+			"level_index": 1,
+			"noise": noise_per_level[1],
+			"bg_r": 22, "bg_g": 26, "bg_b": 31,
+			"label": "Pays terrestre"
+		},
+		{
+			"prev_map": "hier_terre_pays_map",
+			"target_map": "hier_terre_continent_map",
+			"colored": "hier_terre_continent_colored",
+			"nb_cases": int(params.get("nb_cases_regions", 50)) * 12 * 22 * 35,
+			"domain": 0,
+			"level_index": 2,
+			"noise": noise_per_level[2],
+			"bg_r": 22, "bg_g": 26, "bg_b": 31,
+			"label": "Continent terrestre"
+		}
+	]
+	
+	# ═══════════════════════════════════════════════════════════════════════════
+	#  HIÉRARCHIE MARITIME : département → région-mer → bassin → océan
+	# ═══════════════════════════════════════════════════════════════════════════
+	var mer_configs = [
+		{
+			"prev_map": "ocean_region_map",
+			"target_map": "hier_mer_region_map",
+			"colored": "hier_mer_region_colored",
+			"nb_cases": int(params.get("nb_cases_ocean_regions", 100)) * 12,
+			"domain": 1,
+			"level_index": 0,
+			"noise": noise_per_level[0],
+			"bg_r": 42, "bg_g": 42, "bg_b": 42,
+			"label": "Région maritime"
+		},
+		{
+			"prev_map": "hier_mer_region_map",
+			"target_map": "hier_mer_bassin_map",
+			"colored": "hier_mer_bassin_colored",
+			"nb_cases": int(params.get("nb_cases_ocean_regions", 100)) * 12 * 22,
+			"domain": 1,
+			"level_index": 1,
+			"noise": noise_per_level[1],
+			"bg_r": 42, "bg_g": 42, "bg_b": 42,
+			"label": "Bassin maritime"
+		},
+		{
+			"prev_map": "hier_mer_bassin_map",
+			"target_map": "hier_mer_ocean_map",
+			"colored": "hier_mer_ocean_colored",
+			"nb_cases": int(params.get("nb_cases_ocean_regions", 100)) * 12 * 22 * 20,
+			"domain": 1,
+			"level_index": 2,
+			"noise": noise_per_level[2],
+			"bg_r": 42, "bg_g": 42, "bg_b": 42,
+			"label": "Océan"
+		}
+	]
+	
+	var all_configs = terre_configs + mer_configs
+	
+	for config in all_configs:
+		print("  • Niveau: ", config["label"], " (nb_cases=", config["nb_cases"], ")")
+		
+		# Réinitialiser les textures temporaires pour ce niveau
+		gpu.reset_hierarchy_temp_textures()
+		
+		var prev_map_id : String = config["prev_map"]
+		var target_map_id : String = config["target_map"]
+		var colored_id : String = config["colored"]
+		var nb_cases : int = config["nb_cases"]
+		var domain : int = config["domain"]
+		var level_idx : int = config["level_index"]
+		var noise : float = config["noise"]
+		var bg_r : int = config["bg_r"]
+		var bg_g : int = config["bg_g"]
+		var bg_b : int = config["bg_b"]
+		
+		# --- PASSE 1 : Seed placement ---
+		_dispatch_hierarchy_seed(w, h, groups_x, groups_y, seed_val, prev_map_id, target_map_id, nb_cases, domain, level_idx)
+		
+		# Copier le résultat du seed vers hier_cost (le seed écrit directement dans target_map et hier_cost)
+		# Pas besoin de copie car hierarchy_seed écrit dans target_map et hier_cost
+		
+		# --- PASSE 2 : JFA Growth ---
+		for pass_idx in range(jfa_iterations):
+			var step_size = maxi(1, int(pow(2, jfa_log_steps - 1 - pass_idx)))
+			var use_swap = (pass_idx % 2 == 1)
+			_dispatch_hierarchy_growth(w, h, groups_x, groups_y, step_size, seed_val, domain, noise, target_map_id, use_swap)
+		
+		# Si nombre impair de passes, copier temp → target
+		if jfa_iterations % 2 == 1:
+			_copy_texture(gpu.textures["hier_map_temp"], gpu.textures[target_map_id], w, h)
+			_copy_texture(gpu.textures["hier_cost_temp"], gpu.textures["hier_cost"], w, h)
+		
+		# --- PASSE 3 : Snap (hiérarchie stricte) ---
+		# Réinitialiser les cost temp pour le snap
+		var snap_iterations = jfa_log_steps + 2
+		for pass_idx in range(snap_iterations):
+			var step_size = maxi(1, int(pow(2, jfa_log_steps - 1 - pass_idx)))
+			var use_swap = (pass_idx % 2 == 1)
+			_dispatch_hierarchy_snap(w, h, groups_x, groups_y, step_size, prev_map_id, target_map_id, use_swap)
+		
+		if snap_iterations % 2 == 1:
+			_copy_texture(gpu.textures["hier_map_temp"], gpu.textures[target_map_id], w, h)
+			_copy_texture(gpu.textures["hier_cost_temp"], gpu.textures["hier_cost"], w, h)
+		
+		# --- PASSE 4 : Cleanup ---
+		var cleanup_passes = 3
+		var total_passes_before = jfa_iterations + snap_iterations
+		for cleanup_pass in range(cleanup_passes):
+			var use_swap = ((total_passes_before + cleanup_pass) % 2 == 1)
+			_dispatch_hierarchy_cleanup(w, h, groups_x, groups_y, seed_val, domain, target_map_id, use_swap)
+		
+		if (total_passes_before + cleanup_passes) % 2 == 1:
+			_copy_texture(gpu.textures["hier_map_temp"], gpu.textures[target_map_id], w, h)
+		
+		# --- PASSE 5 : Finalize (coloration) ---
+		_dispatch_hierarchy_finalize(w, h, groups_x, groups_y, seed_val, domain, target_map_id, colored_id, bg_r, bg_g, bg_b)
+	
+	print("[Orchestrator] ✅ Phase 4.6 : Hiérarchie administrative terminée")
+
+# ─── Dispatch Hierarchy Seed ─────────────────────────────────────────────────
+func _dispatch_hierarchy_seed(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, prev_map_id: String, target_map_id: String, nb_cases_super: int, domain: int, level_index: int) -> void:
+	var shader_name = "hierarchy_seed"
+	
+	var tex_uniforms: Array[RDUniform] = []
+	
+	# binding 0: water_mask (R8UI)
+	var mask_uniform = RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 0
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	
+	# binding 1: prev_level_map (R32UI)
+	var prev_uniform = RDUniform.new()
+	prev_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	prev_uniform.binding = 1
+	prev_uniform.add_id(gpu.textures[prev_map_id])
+	tex_uniforms.append(prev_uniform)
+	
+	# binding 2: super_map (R32UI) → target_map
+	var map_uniform = RDUniform.new()
+	map_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_uniform.binding = 2
+	map_uniform.add_id(gpu.textures[target_map_id])
+	tex_uniforms.append(map_uniform)
+	
+	# binding 3: super_cost (R32F) → hier_cost
+	tex_uniforms.append(gpu.create_texture_uniform(3, gpu.textures["hier_cost"]))
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders[shader_name], 0)
+	
+	# UBO (32 bytes, std140)
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, seed_val)
+	buffer_bytes.encode_u32(12, nb_cases_super)
+	buffer_bytes.encode_u32(16, domain)
+	buffer_bytes.encode_u32(20, level_index)
+	buffer_bytes.encode_float(24, 0.0)  # padding
+	buffer_bytes.encode_float(28, 0.0)  # padding
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders[shader_name], 1)
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines[shader_name])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+# ─── Dispatch Hierarchy Growth ───────────────────────────────────────────────
+func _dispatch_hierarchy_growth(w: int, h: int, groups_x: int, groups_y: int, step_size: int, seed_val: int, domain: int, noise_strength: float, target_map_id: String, use_swap: bool) -> void:
+	var shader_name = "hierarchy_growth"
+	
+	# Ping-pong entre target_map et hier_map_temp
+	var map_in: RID = gpu.textures[target_map_id] if not use_swap else gpu.textures["hier_map_temp"]
+	var map_out: RID = gpu.textures["hier_map_temp"] if not use_swap else gpu.textures[target_map_id]
+	var cost_in: RID = gpu.textures["hier_cost"] if not use_swap else gpu.textures["hier_cost_temp"]
+	var cost_out: RID = gpu.textures["hier_cost_temp"] if not use_swap else gpu.textures["hier_cost"]
+	
+	var tex_uniforms: Array[RDUniform] = []
+	
+	# binding 0: water_mask
+	var mask_uniform = RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 0
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	
+	# binding 1: super_map_in
+	var map_in_uniform = RDUniform.new()
+	map_in_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_in_uniform.binding = 1
+	map_in_uniform.add_id(map_in)
+	tex_uniforms.append(map_in_uniform)
+	
+	# binding 2: super_cost_in
+	tex_uniforms.append(gpu.create_texture_uniform(2, cost_in))
+	
+	# binding 3: super_map_out
+	var map_out_uniform = RDUniform.new()
+	map_out_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_out_uniform.binding = 3
+	map_out_uniform.add_id(map_out)
+	tex_uniforms.append(map_out_uniform)
+	
+	# binding 4: super_cost_out
+	tex_uniforms.append(gpu.create_texture_uniform(4, cost_out))
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders[shader_name], 0)
+	
+	# UBO (32 bytes, std140)
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, step_size)
+	buffer_bytes.encode_u32(12, seed_val)
+	buffer_bytes.encode_u32(16, domain)
+	buffer_bytes.encode_float(20, noise_strength)
+	buffer_bytes.encode_float(24, 0.0)  # padding
+	buffer_bytes.encode_float(28, 0.0)  # padding
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders[shader_name], 1)
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines[shader_name])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+# ─── Dispatch Hierarchy Snap ─────────────────────────────────────────────────
+func _dispatch_hierarchy_snap(w: int, h: int, groups_x: int, groups_y: int, step_size: int, prev_map_id: String, target_map_id: String, use_swap: bool) -> void:
+	var shader_name = "hierarchy_snap"
+	
+	# Ping-pong entre target_map et hier_map_temp
+	var map_in: RID = gpu.textures[target_map_id] if not use_swap else gpu.textures["hier_map_temp"]
+	var map_out: RID = gpu.textures["hier_map_temp"] if not use_swap else gpu.textures[target_map_id]
+	var cost_in: RID = gpu.textures["hier_cost"] if not use_swap else gpu.textures["hier_cost_temp"]
+	var cost_out: RID = gpu.textures["hier_cost_temp"] if not use_swap else gpu.textures["hier_cost"]
+	
+	var tex_uniforms: Array[RDUniform] = []
+	
+	# binding 0: prev_level_map
+	var prev_uniform = RDUniform.new()
+	prev_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	prev_uniform.binding = 0
+	prev_uniform.add_id(gpu.textures[prev_map_id])
+	tex_uniforms.append(prev_uniform)
+	
+	# binding 1: snap_map_in
+	var map_in_uniform = RDUniform.new()
+	map_in_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_in_uniform.binding = 1
+	map_in_uniform.add_id(map_in)
+	tex_uniforms.append(map_in_uniform)
+	
+	# binding 2: snap_cost_in
+	tex_uniforms.append(gpu.create_texture_uniform(2, cost_in))
+	
+	# binding 3: snap_map_out
+	var map_out_uniform = RDUniform.new()
+	map_out_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_out_uniform.binding = 3
+	map_out_uniform.add_id(map_out)
+	tex_uniforms.append(map_out_uniform)
+	
+	# binding 4: snap_cost_out
+	tex_uniforms.append(gpu.create_texture_uniform(4, cost_out))
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders[shader_name], 0)
+	
+	# UBO (16 bytes, std140)
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(16)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, step_size)
+	buffer_bytes.encode_u32(12, 0)  # padding
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders[shader_name], 1)
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines[shader_name])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+# ─── Dispatch Hierarchy Cleanup ──────────────────────────────────────────────
+func _dispatch_hierarchy_cleanup(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, domain: int, target_map_id: String, use_swap: bool) -> void:
+	var shader_name = "hierarchy_cleanup"
+	
+	var src_map: RID = gpu.textures[target_map_id] if not use_swap else gpu.textures["hier_map_temp"]
+	var dst_map: RID = gpu.textures["hier_map_temp"] if not use_swap else gpu.textures[target_map_id]
+	var dst_cost: RID = gpu.textures["hier_cost_temp"] if not use_swap else gpu.textures["hier_cost"]
+	
+	var tex_uniforms: Array[RDUniform] = []
+	
+	# binding 0: water_mask
+	var mask_uniform = RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 0
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	
+	# binding 1: super_map_in
+	var map_in_uniform = RDUniform.new()
+	map_in_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_in_uniform.binding = 1
+	map_in_uniform.add_id(src_map)
+	tex_uniforms.append(map_in_uniform)
+	
+	# binding 2: super_map_out
+	var map_out_uniform = RDUniform.new()
+	map_out_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_out_uniform.binding = 2
+	map_out_uniform.add_id(dst_map)
+	tex_uniforms.append(map_out_uniform)
+	
+	# binding 3: super_cost_out
+	tex_uniforms.append(gpu.create_texture_uniform(3, dst_cost))
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders[shader_name], 0)
+	
+	# UBO (16 bytes, std140)
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(16)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, seed_val)
+	buffer_bytes.encode_u32(12, domain)
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders[shader_name], 1)
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines[shader_name])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+# ─── Dispatch Hierarchy Finalize ─────────────────────────────────────────────
+func _dispatch_hierarchy_finalize(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, domain: int, target_map_id: String, colored_id: String, bg_r: int, bg_g: int, bg_b: int) -> void:
+	var shader_name = "hierarchy_finalize"
+	
+	var tex_uniforms: Array[RDUniform] = []
+	
+	# binding 0: super_map
+	var map_uniform = RDUniform.new()
+	map_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	map_uniform.binding = 0
+	map_uniform.add_id(gpu.textures[target_map_id])
+	tex_uniforms.append(map_uniform)
+	
+	# binding 1: water_mask
+	var mask_uniform = RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 1
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	
+	# binding 2: colored_output
+	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures[colored_id]))
+	
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders[shader_name], 0)
+	
+	# UBO (32 bytes, std140)
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, seed_val)
+	buffer_bytes.encode_u32(12, domain)
+	buffer_bytes.encode_u32(16, bg_r)
+	buffer_bytes.encode_u32(20, bg_g)
+	buffer_bytes.encode_u32(24, bg_b)
+	buffer_bytes.encode_u32(28, 0)  # padding
+	
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders[shader_name], 1)
+	
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines[shader_name])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	
+	rd.submit()
+	rd.sync()
+	
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
 
 ## Copie une texture vers une autre (pour résoudre les problèmes de ping-pong)
 func _copy_texture(src: RID, dst: RID, width: int, height: int) -> void:

@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bw4bir8n4555d"
+path="res://.godot/imported/hierarchy_finalize.glsl-ab12e79ac10bd77e392efcfd28f3bcf7.res"
+
+[deps]
+
+source_file="res://shader/compute/hierarchy/hierarchy_finalize.glsl"
+dest_files=["res://.godot/imported/hierarchy_finalize.glsl-ab12e79ac10bd77e392efcfd28f3bcf7.res"]
+
+[params]
+
