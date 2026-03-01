@@ -30,6 +30,7 @@ MAP_PETROLE,Petroleum,Pétrole,Öl
 MAP_RESOURCES,Resources,Ressources,Ressourcen
 MAP_TEMPERATURE,Temperature,Température,Temperatur
 MAP_RIVERS,Rivers/Lakes,Rivières/Lacs,Flüsse/Seen
+MAP_RIVER_TYPE,River type,Rivière type,Flusstyp
 MAP_ICE,Ice sheet,Banquise,Eisschicht
 MAP_BIOMES,Biomes,Biomes,Biome
 MAP_DEPARTEMENT,Departments,Départements,Departements
