@@ -30,10 +30,17 @@ MAP_PETROLE,Petroleum,Pétrole,Öl
 MAP_RESOURCES,Resources,Ressources,Ressourcen
 MAP_TEMPERATURE,Temperature,Température,Temperatur
 MAP_RIVERS,Rivers/Lakes,Rivières/Lacs,Flüsse/Seen
+MAP_RIVER_TYPE,River type,Rivière type,Flusstyp
 MAP_ICE,Ice sheet,Banquise,Eisschicht
 MAP_BIOMES,Biomes,Biomes,Biome
+MAP_DEPARTEMENT,Departments,Départements,Departements
 MAP_REGIONS,Regions,Régions,Regionen
+MAP_PAYS,Countries,Pays,Länder
+MAP_CONTINENTS,Continents,Continents,Kontinente
+MAP_DEPARTEMENT_MER,Departments sea,Mer des départements,Departementsmeer
 MAP_OCEAN_REGIONS,Ocean regions,Régions océaniques,Ozeanregionen
+MAP_BASSIN,Basins,Bassins,Becken
+MAP_OCEAN,Ocean,Océan,Ozean
 MAP_PREVIEW,Preview,Aperçu,Vorschau
 OCEAN_RATIO,Ocean coverage : {val},Couverture océanique : {val},Ozeanbedeckung : {val}
 
