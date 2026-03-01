@@ -203,6 +203,11 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	for key in final_result.keys():
 		exported_files[key] = final_result[key]
 	
+	# === EXPORT HIÉRARCHIE ADMINISTRATIVE (Step 4.6) ===
+	var hierarchy_result = _export_hierarchy_maps(gpu, output_dir)
+	for key in hierarchy_result.keys():
+		exported_files[key] = hierarchy_result[key]
+	
 	# === EXPORT RESSOURCES (Step 5) ===
 	var resources_result = _export_resources_maps(gpu, output_dir, width, height)
 	for key in resources_result.keys():
@@ -633,7 +638,7 @@ func _export_region_map(gpu: GPUContext, output_dir: String, _optimised_region_g
 	rd.sync()
 	
 	var tex_id = "region_map"  # R32UI - IDs bruts
-	var filename = "region_map.png"
+	var filename = "departement_map.png"
 	
 	if not gpu.textures.has(tex_id) or not gpu.textures[tex_id].is_valid():
 		print("  ⚠️ Texture 'region_map' non disponible, skip")
@@ -890,7 +895,7 @@ func _export_ocean_region_map(gpu: GPUContext, output_dir: String, _optimised_re
 	rd.sync()
 	
 	var tex_id = "ocean_region_map"  # R32UI - IDs bruts
-	var filename = "ocean_region_map.png"
+	var filename = "departement_mer_map.png"
 	
 	if not gpu.textures.has(tex_id) or not gpu.textures[tex_id].is_valid():
 		print("  ⚠️ Texture 'ocean_region_map' non disponible, skip")
@@ -1659,6 +1664,149 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 	
 	print("[Exporter] ✅ Final map export complete")
 	return result
+
+## ============================================================================
+## EXPORT HIÉRARCHIE ADMINISTRATIVE (GPU RGBA8 direct readback)
+## ============================================================================
+## Exporte les 6 niveaux hiérarchiques (3 terre + 3 mer) depuis les textures
+## RGBA8 déjà colorées par hierarchy_finalize.glsl
+
+func _export_hierarchy_maps(gpu: GPUContext, output_dir: String) -> Dictionary:
+	print("[Exporter] 🏛️ Construction hiérarchie administrative (CPU)...")
+	
+	var result: Dictionary = {}
+	var rd = gpu.rd
+	
+	if not rd:
+		push_error("[Exporter] ❌ RenderingDevice not available")
+		return result
+	
+	rd.submit()
+	rd.sync()
+	
+	# ─── Lecture des données R32UI ────────────────────────────────────────────
+	var land_data := PackedByteArray()
+	var sea_data := PackedByteArray()
+	var width: int = 0
+	var height: int = 0
+	
+	if gpu.textures.has("region_map") and gpu.textures["region_map"].is_valid():
+		land_data = rd.texture_get_data(gpu.textures["region_map"], 0)
+		var fmt = rd.texture_get_format(gpu.textures["region_map"])
+		width = fmt.width
+		height = fmt.height
+	
+	if width == 0 or land_data.is_empty():
+		print("  ⚠️ Pas de données region_map, hiérarchie ignorée")
+		return result
+	
+	if gpu.textures.has("ocean_region_map") and gpu.textures["ocean_region_map"].is_valid():
+		sea_data = rd.texture_get_data(gpu.textures["ocean_region_map"], 0)
+	
+	# ─── Merge maps (wrap horizontal) ────────────────────────────────────────
+	var merge_land := HierarchyBuilder.compute_merge_map(land_data, width, height)
+	var merge_sea: Dictionary = {}
+	if not sea_data.is_empty():
+		merge_sea = HierarchyBuilder.compute_merge_map(sea_data, width, height)
+	
+	# ─── Construction des hiérarchies (BFS) ──────────────────────────────────
+	print("  Hiérarchie terrestre :")
+	var land := HierarchyBuilder.build_land(land_data, width, height, merge_land)
+	# land = [dept→région, dept→pays, dept→continent]
+	
+	var sea: Array = [{}, {}, {}]
+	if not sea_data.is_empty():
+		print("  Hiérarchie maritime :")
+		sea = HierarchyBuilder.build_sea(sea_data, width, height, merge_sea)
+	# sea = [dept→région-mer, dept→bassin, dept→océan]
+	
+	# ─── Peinture et export (threadé) ────────────────────────────────────────
+	var exports: Array = [
+		[land_data, merge_land, land[0], "region_map.png",    "Régions terrestres"],
+		[land_data, merge_land, land[1], "pays_map.png",      "Pays"],
+		[land_data, merge_land, land[2], "continent_map.png", "Continents"],
+	]
+	if not sea_data.is_empty():
+		exports.append([sea_data, merge_sea, sea[0], "region_mer_map.png", "Régions maritimes"])
+		exports.append([sea_data, merge_sea, sea[1], "bassin_map.png",     "Bassins"])
+		exports.append([sea_data, merge_sea, sea[2], "ocean_map.png",      "Océans"])
+	
+	for entry in exports:
+		var data: PackedByteArray = entry[0]
+		var merge: Dictionary = entry[1]
+		var d2g: Dictionary = entry[2]
+		var filename: String = entry[3]
+		var label: String = entry[4]
+		
+		if d2g.is_empty():
+			print("  ⚠️ ", label, " — pas de données, ignoré")
+			continue
+		
+		# Assigner les couleurs step-17 aux groupes
+		var group_ids := HierarchyBuilder._unique_values(d2g)
+		var colors := HierarchyBuilder.assign_colors(group_ids)
+		
+		# Peindre l'image en parallèle
+		var output := PackedByteArray()
+		output.resize(width * height * 4)
+		
+		var rows_pt := ceili(float(height) / float(_nb_threads))
+		var threads: Array[Thread] = []
+		
+		for t in range(_nb_threads):
+			var sy := t * rows_pt
+			var ey := mini(sy + rows_pt, height)
+			if sy >= height:
+				break
+			var thread := Thread.new()
+			thread.start(_paint_hierarchy_rows.bind(
+				data, output, width, sy, ey, merge, d2g, colors))
+			threads.append(thread)
+		
+		for thread in threads:
+			thread.wait_to_finish()
+		
+		var img := Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, output)
+		var filepath := output_dir + "/" + filename
+		var err := img.save_png(filepath)
+		
+		if err == OK:
+			result[label] = filepath
+			print("  ✅ ", label, " → ", filename, " (", width, "×", height, ")")
+		else:
+			push_error("[Exporter] ❌ Échec sauvegarde ", filename, " : ", err)
+	
+	print("[Exporter] ✅ Hiérarchie exportée (", result.size(), " cartes)")
+	return result
+
+## Thread worker : peint les lignes d'une carte hiérarchique depuis les données R32UI.
+func _paint_hierarchy_rows(data: PackedByteArray, output: PackedByteArray,
+		width: int, start_y: int, end_y: int,
+		merge: Dictionary, d2g: Dictionary, colors: Dictionary) -> void:
+	for y in range(start_y, end_y):
+		for x in range(width):
+			var off := (y * width + x) * 4
+			var raw: int = data.decode_u32(off)
+			if raw == 0xFFFFFFFF:
+				output[off] = 0
+				output[off + 1] = 0
+				output[off + 2] = 0
+				output[off + 3] = 0
+				continue
+			var eff: int = merge.get(raw, raw)
+			var gid: int = d2g.get(eff, -1)
+			if gid == -1:
+				output[off] = 0
+				output[off + 1] = 0
+				output[off + 2] = 0
+				output[off + 3] = 0
+				continue
+			var c: Color = colors.get(gid, Color.TRANSPARENT)
+			output[off]     = int(c.r * 255.0)
+			output[off + 1] = int(c.g * 255.0)
+			output[off + 2] = int(c.b * 255.0)
+			output[off + 3] = int(c.a * 255.0)
+
 
 ## Compare deux couleurs avec tolérance pour erreurs de compression
 func _colors_equal(c1: Color, c2: Color) -> bool:

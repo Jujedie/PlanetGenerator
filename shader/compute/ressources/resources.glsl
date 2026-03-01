@@ -303,9 +303,6 @@ void main() {
     vec3 coords = getCylindricalCoords(pixel);
     float noise_scale = 4.0 / params.cylinder_radius;
     
-    // Hash de base pour ce pixel
-    uint pixel_hash = hash2(uint(pixel.x) + params.seed, uint(pixel.y));
-    
     // Domain warping commun (calculé une seule fois)
     vec3 warp = vec3(
         fbm(coords * noise_scale * 0.2 + vec3(50.0, 0.0, 0.0), 3, 0.5, 2.0, params.seed + 100000u),
@@ -315,16 +312,11 @@ void main() {
     
     vec3 warped_coords = coords + warp;
     
-    // === EARLY-OUT: Pré-sélection par hash probabiliste ===
-    // Au lieu de tester 115 ressources, on sélectionne un sous-ensemble candidat
-    // basé sur un hash spatial. Cela réduit drastiquement le travail par pixel.
+    // === ABONDANCE RÉGIONALE ===
+    // Pour chaque ressource, un bruit basse fréquence crée des zones
+    // plus ou moins riches — variation douce, jamais binaire (plus de tout-ou-rien).
     
-    // Cellule spatiale grossière pour cohérence locale
-    float cell_scale = noise_scale * 0.15;
-    vec3 cell_pos = floor(warped_coords * cell_scale / 0.8);
-    uint cell_hash = hash(uint(cell_pos.x + 10000.0) ^ hash(uint(cell_pos.y + 10000.0) ^ hash(uint(cell_pos.z + 10000.0) + params.seed)));
-    
-    // Pré-calculer le facteur géologique par type (0-5) pour éviter 
+    // Pré-calculer le facteur géologique par type (0-5) pour éviter
     // de recalculer getElevationFactor pour chaque ressource
     float geo_factors[6];
     geo_factors[0] = getElevationFactor_type(0, elevation, params.sea_level);
@@ -339,56 +331,80 @@ void main() {
     int best_resource_id = -1;
     float best_cluster_id = 0.0;
     
-    // === Boucle optimisée : tester les ressources avec early-out ===
+    // === Boucle sur toutes les ressources ===
     for (int i = 0; i < NUM_RESOURCES; i++) {
         float prob = RESOURCE_PROBABILITIES[i];
-        
-        // OPTIMISATION: Skip rapide par probabilité
-        // Hash unique par ressource + cellule spatiale
-        uint res_cell_hash = hash(cell_hash + uint(i) * 7919u);
-        float res_rand = rand(res_cell_hash);
-        
-        // Probabilité normalisée (échelle log pour couvrir la grande plage)
-        // Les très rares (prob < 0.0001) sont filtrées agressivement
-        float skip_threshold = clamp(prob * 200.0, 0.01, 1.0);
-        if (res_rand > skip_threshold) continue;
         
         // Facteur géologique (lookup pré-calculé)
         int geo_type = RESOURCE_GEO_TYPE[i];
         float geo_factor = geo_factors[geo_type];
-        if (geo_factor < 0.1) continue;
+        if (geo_factor < 0.05) continue;
         
-        float size = RESOURCE_SIZES[i] * (float(params.width) / 2048.0);
         uint resource_seed = params.seed + uint(i) * 50000u;
+        
+        // === ABONDANCE RÉGIONALE par ressource ===
+        // Bruit très basse fréquence → zones riches/pauvres à l'échelle continentale
+        // Chaque ressource a son propre motif régional (seed unique)
+        float regional = fbm(warped_coords * noise_scale * 0.08, 2, 0.5, 2.0, resource_seed + 80000u);
+        
+        // La probabilité contrôle l'étendue des zones riches :
+        //   Commun (prob élevée) → seuil bas, zones riches partout
+        //   Rare (prob faible) → seuil haut, zones riches limitées
+        float prob_norm = clamp((log2(max(prob, 1e-8)) + 27.0) / 27.0, 0.0, 1.0);
+        float regional_center = mix(0.70, 0.25, prob_norm);
+        float regional_factor = smoothstep(regional_center - 0.15, regional_center + 0.15, regional);
+        
+        // GARANTIE : plancher minimal pour que la ressource existe toujours
+        regional_factor = max(regional_factor, mix(0.05, 0.15, prob_norm));
+        
+        // Early-out si la combinaison géo × régionale est trop faible
+        if (regional_factor * geo_factor < 0.02) continue;
+        
+        // === TAILLE DES DÉPÔTS (réduite + variée) ===
+        float base_size = RESOURCE_SIZES[i] * (float(params.width) / 2048.0);
+        // Plafonner les grandes tailles pour éviter les blobs uniformes
+        float size = min(base_size, 400.0) * mix(0.6, 1.0, rand(hash(resource_seed + 999u)));
         float resource_scale = noise_scale * (60.0 / max(size, 1.0));
         
-        // Cellular noise pour clusters
-        float cell_dist = cellularNoise(warped_coords * resource_scale, resource_seed);
+        // === DÉPÔTS PRINCIPAUX (clusters) ===
+        float cell_dist_main = cellularNoise(warped_coords * resource_scale, resource_seed);
+        float presence_main = 1.0 - smoothstep(0.0, 0.45, cell_dist_main);
         
-        // Présence avec seuil
-        float presence = 1.0 - smoothstep(0.0, 0.5, cell_dist);
-        if (presence < 0.05) continue; // Early-out si trop loin d'un centre
+        float presence = presence_main;
         
-        // Variation de détail (fBm à 3 octaves seulement)
+        // === FILONS SECONDAIRES (plus petits, plus nombreux) ===
+        // Seulement calculé hors des dépôts principaux pour économiser du calcul
+        if (presence < 0.15) {
+            float vein_scale = resource_scale * 3.0;
+            float cell_dist_vein = cellularNoise(warped_coords * vein_scale, resource_seed + 30000u);
+            float presence_vein = (1.0 - smoothstep(0.0, 0.30, cell_dist_vein)) * 0.45;
+            presence = max(presence, presence_vein);
+        }
+        
+        if (presence < 0.03) continue;
+        
+        // Variation de détail (fBm à 3 octaves)
         float detail = fbm(warped_coords * resource_scale * 1.2, 3, 0.5, 2.0, resource_seed + 10000u);
-        presence *= mix(0.6, 1.0, detail);
+        presence *= mix(0.5, 1.0, detail);
         
         // Appliquer facteurs
         presence *= geo_factor;
+        presence *= regional_factor;
         presence *= params.global_richness;
         
-        // Intensité
-        float raw_intensity = smoothstep(0.05, 0.7, presence);
+        // Intensité finale
+        float raw_intensity = smoothstep(0.02, 0.55, presence);
         
-        // Modulation probabiliste douce
-        float probability_factor = pow(prob * 4.0, 0.25);
-        probability_factor = clamp(probability_factor, 0.5, 1.0);
-        raw_intensity *= probability_factor;
+        // La probabilité module l'intensité maximale, PAS la présence
+        // Rares = dépôts moins concentrés, pas absents
+        float prob_factor = pow(clamp(prob * 10.0, 0.001, 1.0), 0.12);
+        prob_factor = clamp(prob_factor, 0.35, 1.0);
+        raw_intensity *= prob_factor;
         
-        if (raw_intensity > 0.02 && raw_intensity > best_intensity) {
+        if (raw_intensity > 0.01 && raw_intensity > best_intensity) {
             best_intensity = raw_intensity;
             best_resource_id = i;
-            best_cluster_id = cell_dist * 1000.0;
+            best_cluster_id = cell_dist_main * 1000.0;
         }
     }
     
