@@ -921,6 +921,39 @@ func readback_texture(tex_id: String) -> Image:
 	)
 	return img
 
+# === CRÉATION DES TEXTURES GAZ GÉANTE MULTI-PASSES ===
+func initialize_gas_giant_textures() -> void:
+	"""
+	Initialise les textures du pipeline gazeux multi-passes :
+	- gas_velocity (RGBA32F) : champ de vélocité statique (R=vx, G=vy, B=vorticité)
+	- gas_dye_a / gas_dye_b (RGBA32F) : colorant advecté en ping-pong
+	"""
+	var format_rgba32f := RDTextureFormat.new()
+	format_rgba32f.width = resolution.x
+	format_rgba32f.height = resolution.y
+	format_rgba32f.format = FORMAT_STATE
+	format_rgba32f.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT |
+		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	)
+
+	for tex_id in ["gas_velocity", "gas_dye_a", "gas_dye_b"]:
+		if not textures.has(tex_id):
+			var data = PackedByteArray()
+			data.resize(resolution.x * resolution.y * 16)
+			data.fill(0)
+			var view := RDTextureView.new()
+			var rid := rd.texture_create(format_rgba32f, view, [data])
+			if rid.is_valid():
+				textures[tex_id] = rid
+			else:
+				push_error("❌ Échec création texture " + tex_id)
+
+	print("✅ Textures gaz géante (multi-passes) créées (3x RGBA32F)")
+
 # === READBACK TEXTURE RAW ===
 func readback_texture_raw(tex_id: String) -> PackedByteArray:
 	"""
