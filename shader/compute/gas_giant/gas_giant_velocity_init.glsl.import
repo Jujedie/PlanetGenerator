@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://cjlii2a5mw36r"
+path="res://.godot/imported/gas_giant_velocity_init.glsl-1fe110f72725c17e4faefa23745ed0d1.res"
+
+[deps]
+
+source_file="res://shader/compute/gas_giant/gas_giant_velocity_init.glsl"
+dest_files=["res://.godot/imported/gas_giant_velocity_init.glsl-1fe110f72725c17e4faefa23745ed0d1.res"]
+
+[params]
+
