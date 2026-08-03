@@ -3974,7 +3974,18 @@ func run_gas_giant_phase(params: Dictionary, w: int, h: int) -> void:
 	var num_bands = int(params.get("gas_giant_num_bands", 12))
 	var jet_strength = float(params.get("gas_giant_jet_strength", 4.0))
 	var eddy_strength = float(params.get("gas_giant_eddy_strength", 2.5))
-	var advection_iterations = int(params.get("gas_giant_advection_iterations", 40))
+	# Scale iterations with resolution: displacement per iteration is
+	# roughly constant in PIXELS (velocity + dt are resolution-independent
+	# by design), so the fraction of the circumference actually mixed per
+	# iteration shrinks as resolution grows. Compensate by running more,
+	# small, accurate steps at higher resolution instead of fewer big ones
+	# -- same principle as river_propagation's max(w,h)-scaled loop.
+	var base_iterations = int(params.get("gas_giant_advection_iterations", 40))
+	var reference_width = float(params.get("gas_giant_reference_width", 1024.0))
+	var resolution_scale = max(float(w) / reference_width, 1.0)
+	var advection_iterations = int(round(float(base_iterations) * resolution_scale))
+	# Sanity cap so extreme planet sizes don't balloon generation time unboundedly
+	advection_iterations = clampi(advection_iterations, base_iterations, base_iterations * 8)
 	var advection_dt = float(params.get("gas_giant_advection_dt", 1.4))
 	var advection_sharpen = float(params.get("gas_giant_advection_sharpen", 1.03))
 
