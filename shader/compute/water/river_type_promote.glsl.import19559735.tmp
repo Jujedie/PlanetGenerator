@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://dtxidcvx5od6"
+path="res://.godot/imported/river_type_promote.glsl-477ce289574f6d801907740936b490b6.res"
+
+[deps]
+
+source_file="res://shader/compute/water/river_type_promote.glsl"
+dest_files=["res://.godot/imported/river_type_promote.glsl-477ce289574f6d801907740936b490b6.res"]
+
+[params]
+

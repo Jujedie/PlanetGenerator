@@ -3974,20 +3974,26 @@ func run_gas_giant_phase(params: Dictionary, w: int, h: int) -> void:
 	var num_bands = int(params.get("gas_giant_num_bands", 12))
 	var jet_strength = float(params.get("gas_giant_jet_strength", 4.0))
 	var eddy_strength = float(params.get("gas_giant_eddy_strength", 2.5))
-	# Scale iterations with resolution: displacement per iteration is
-	# roughly constant in PIXELS (velocity + dt are resolution-independent
-	# by design), so the fraction of the circumference actually mixed per
-	# iteration shrinks as resolution grows. Compensate by running more,
-	# small, accurate steps at higher resolution instead of fewer big ones
-	# -- same principle as river_propagation's max(w,h)-scaled loop.
+	var advection_dt = float(params.get("gas_giant_advection_dt", 1.4))
+
+	# --- Iteration count: scale with resolution -----------------------------
+	# Displacement per iteration is roughly constant in PIXELS (velocity/dt
+	# are resolution-independent by design), so the fraction of the
+	# circumference actually mixed per iteration shrinks as resolution
+	# grows. Compensate with more, smaller, accurate steps at higher
+	# resolution -- same principle as river_propagation's max(w,h)-scaled loop.
 	var base_iterations = int(params.get("gas_giant_advection_iterations", 40))
 	var reference_width = float(params.get("gas_giant_reference_width", 1024.0))
 	var resolution_scale = max(float(w) / reference_width, 1.0)
 	var advection_iterations = int(round(float(base_iterations) * resolution_scale))
-	# Sanity cap so extreme planet sizes don't balloon generation time unboundedly
 	advection_iterations = clampi(advection_iterations, base_iterations, base_iterations * 8)
-	var advection_dt = float(params.get("gas_giant_advection_dt", 1.4))
-	var advection_sharpen = float(params.get("gas_giant_advection_sharpen", 1.03))
+
+	# --- Sharpen: keep TOTAL compounded contrast fixed, not per-step -------
+	# sharpen^N compounds exponentially. 1.03 over the original 40 iterations
+	# gives ~3.26x total contrast, which is what actually looked good -- so
+	# that's the target we preserve regardless of how many iterations run.
+	var target_total_sharpen = float(params.get("gas_giant_target_sharpen", 3.26))
+	var advection_sharpen = pow(target_total_sharpen, 1.0 / float(advection_iterations))
 
 	# === PASSE 1 : CHAMP DE VÉLOCITÉ (calculé une seule fois) ===
 	_dispatch_gas_giant_velocity_init(w, h, groups_x, groups_y, seed_val, cylinder_radius, num_bands, jet_strength, eddy_strength)
@@ -3996,7 +4002,7 @@ func run_gas_giant_phase(params: Dictionary, w: int, h: int) -> void:
 	_dispatch_gas_giant_dye_init(w, h, groups_x, groups_y, seed_val, cylinder_radius, avg_temperature, num_bands)
 
 	# === PASSE 3 : ADVECTION (ping-pong dye_a <-> dye_b) ===
-	print("  • Advection du colorant (", advection_iterations, " passes)...")
+	print("  • Advection du colorant (", advection_iterations, " passes, sharpen/step=", advection_sharpen, ")...")
 	for pass_idx in range(advection_iterations):
 		var use_swap = (pass_idx % 2 == 1)
 		_dispatch_gas_giant_advect(w, h, groups_x, groups_y, pass_idx, advection_dt, advection_sharpen, use_swap)
@@ -4009,7 +4015,6 @@ func run_gas_giant_phase(params: Dictionary, w: int, h: int) -> void:
 	_dispatch_gas_giant_final(w, h, groups_x, groups_y, seed_val, cylinder_radius, avg_temperature)
 
 	print("[Orchestrator] ✅ Pipeline gazeuse terminée")
-
 
 func _dispatch_gas_giant_velocity_init(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, cylinder_radius: float, num_bands: int, jet_strength: float, eddy_strength: float) -> void:
 	if not gpu.shaders.has("gas_giant_velocity_init") or not gpu.shaders["gas_giant_velocity_init"].is_valid():
