@@ -3994,16 +3994,24 @@ func run_gas_giant_phase(params: Dictionary, w: int, h: int) -> void:
 
 	# === PASSE 3 : ADVECTION (ping-pong dye_a <-> dye_b) ===
 	print("  • Advection du colorant (", advection_iterations, " passes, sharpen/step=", advection_sharpen, ")...")
-	for pass_idx in range(advection_iterations):
-		var use_swap = (pass_idx % 2 == 1)
-		_dispatch_gas_giant_advect(w, h, groups_x, groups_y, pass_idx, advection_dt, advection_sharpen, use_swap)
+	var advection_completed := _dispatch_gas_giant_advection(
+		w,
+		h,
+		groups_x,
+		groups_y,
+		advection_iterations,
+		advection_dt,
+		advection_sharpen,
+	)
 
-	# Si nombre impair de passes, le résultat final est dans dye_b -> copier vers dye_a
-	if advection_iterations % 2 == 1:
-		_copy_texture(gpu.textures["gas_dye_b"], gpu.textures["gas_dye_a"], w, h)
+	# The final composition can consume either side of the ping-pong pair,
+	# avoiding another GPU submission just to copy an odd final pass.
+	var final_dye_texture: RID = gpu.textures["gas_dye_a"]
+	if advection_completed and advection_iterations % 2 == 1:
+		final_dye_texture = gpu.textures["gas_dye_b"]
 
 	# === PASSE 4 : COMPOSITION FINALE ===
-	_dispatch_gas_giant_final(w, h, groups_x, groups_y, seed_val, cylinder_radius, avg_temperature)
+	_dispatch_gas_giant_final(w, h, groups_x, groups_y, seed_val, cylinder_radius, avg_temperature, final_dye_texture)
 
 	print("[Orchestrator] ✅ Pipeline gazeuse terminée")
 
@@ -4093,61 +4101,100 @@ func _dispatch_gas_giant_dye_init(w: int, h: int, groups_x: int, groups_y: int, 
 	rd.free_rid(tex_set)
 
 
-func _dispatch_gas_giant_advect(w: int, h: int, groups_x: int, groups_y: int, pass_index: int, dt: float, sharpen: float, use_swap: bool) -> void:
+func _dispatch_gas_giant_advection(w: int, h: int, groups_x: int, groups_y: int, iterations: int, dt: float, sharpen: float) -> bool:
 	if not gpu.shaders.has("gas_giant_advect") or not gpu.shaders["gas_giant_advect"].is_valid():
 		push_warning("[Orchestrator] ⚠️ gas_giant_advect shader non disponible")
-		return
+		return false
+	if iterations <= 0:
+		return true
 
-	var input_tex = gpu.textures["gas_dye_a"] if not use_swap else gpu.textures["gas_dye_b"]
-	var output_tex = gpu.textures["gas_dye_b"] if not use_swap else gpu.textures["gas_dye_a"]
+	# Parameters must remain distinct because all commands are submitted
+	# together. Texture bindings only have two ping-pong configurations.
+	# Keep every RID alive until the single GPU sync below.
+	var texture_sets: Array[RID] = []
+	var param_buffers: Array[RID] = []
+	var param_sets: Array[RID] = []
 
-	var tex_uniforms: Array[RDUniform] = [
-		gpu.create_texture_uniform(0, gpu.textures["gas_velocity"]),
-		gpu.create_texture_uniform(1, input_tex),
-		gpu.create_texture_uniform(2, output_tex),
-	]
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["gas_giant_advect"], 0)
+	for swap_index in range(mini(iterations, 2)):
+		var use_swap := swap_index == 1
+		var input_tex: RID = gpu.textures["gas_dye_b"] if use_swap else gpu.textures["gas_dye_a"]
+		var output_tex: RID = gpu.textures["gas_dye_a"] if use_swap else gpu.textures["gas_dye_b"]
 
-	var buffer_bytes = PackedByteArray()
-	buffer_bytes.resize(32)
-	buffer_bytes.encode_u32(0, w)
-	buffer_bytes.encode_u32(4, h)
-	buffer_bytes.encode_u32(8, pass_index)
-	buffer_bytes.encode_float(12, dt)
-	buffer_bytes.encode_float(16, sharpen)
-	buffer_bytes.encode_float(20, 0.0)
-	buffer_bytes.encode_float(24, 0.0)
-	buffer_bytes.encode_float(28, 0.0)
+		var tex_uniforms: Array[RDUniform] = [
+			gpu.create_texture_uniform(0, gpu.textures["gas_velocity"]),
+			gpu.create_texture_uniform(1, input_tex),
+			gpu.create_texture_uniform(2, output_tex),
+		]
+		var tex_set := rd.uniform_set_create(tex_uniforms, gpu.shaders["gas_giant_advect"], 0)
+		if not tex_set.is_valid():
+			push_error("[Orchestrator] ❌ Failed to create gas advection texture set")
+			_free_rid_array(param_sets)
+			_free_rid_array(param_buffers)
+			_free_rid_array(texture_sets)
+			return false
+		texture_sets.append(tex_set)
 
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["gas_giant_advect"], 1)
+	for pass_index in range(iterations):
+		var buffer_bytes := PackedByteArray()
+		buffer_bytes.resize(32)
+		buffer_bytes.encode_u32(0, w)
+		buffer_bytes.encode_u32(4, h)
+		buffer_bytes.encode_u32(8, pass_index)
+		buffer_bytes.encode_float(12, dt)
+		buffer_bytes.encode_float(16, sharpen)
+		buffer_bytes.encode_float(20, 0.0)
+		buffer_bytes.encode_float(24, 0.0)
+		buffer_bytes.encode_float(28, 0.0)
 
-	var compute_list = rd.compute_list_begin()
+		var param_buffer := rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+		if not param_buffer.is_valid():
+			push_error("[Orchestrator] ❌ Failed to create gas advection parameter buffer")
+			_free_rid_array(param_sets)
+			_free_rid_array(param_buffers)
+			_free_rid_array(texture_sets)
+			return false
+		param_buffers.append(param_buffer)
+
+		var param_uniform := RDUniform.new()
+		param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+		param_uniform.binding = 0
+		param_uniform.add_id(param_buffer)
+		var param_set := rd.uniform_set_create([param_uniform], gpu.shaders["gas_giant_advect"], 1)
+		if not param_set.is_valid():
+			push_error("[Orchestrator] ❌ Failed to create gas advection parameter set")
+			_free_rid_array(param_sets)
+			_free_rid_array(param_buffers)
+			_free_rid_array(texture_sets)
+			return false
+		param_sets.append(param_set)
+
+	var compute_list := rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["gas_giant_advect"])
-	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
-	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	for pass_index in range(iterations):
+		rd.compute_list_bind_uniform_set(compute_list, texture_sets[pass_index % 2], 0)
+		rd.compute_list_bind_uniform_set(compute_list, param_sets[pass_index], 1)
+		rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+		if pass_index + 1 < iterations:
+			rd.compute_list_add_barrier(compute_list)
 	rd.compute_list_end()
 
+	# One submit/sync replaces the previous CPU/GPU round-trip per iteration.
 	rd.submit()
 	rd.sync()
 
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	_free_rid_array(param_sets)
+	_free_rid_array(param_buffers)
+	_free_rid_array(texture_sets)
+	return true
 
 
-func _dispatch_gas_giant_final(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, cylinder_radius: float, avg_temperature: float) -> void:
+func _dispatch_gas_giant_final(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, cylinder_radius: float, avg_temperature: float, dye_texture: RID) -> void:
 	if not gpu.shaders.has("gas_giant_final") or not gpu.shaders["gas_giant_final"].is_valid():
 		push_warning("[Orchestrator] ⚠️ gas_giant_final shader non disponible")
 		return
 
 	var tex_uniforms: Array[RDUniform] = [
-		gpu.create_texture_uniform(0, gpu.textures["gas_dye_a"]),
+		gpu.create_texture_uniform(0, dye_texture),
 		gpu.create_texture_uniform(1, gpu.textures["gas_velocity"]),
 		gpu.create_texture_uniform(2, gpu.textures["climate"]),
 		gpu.create_texture_uniform(3, gpu.textures["final_map"]),
@@ -4557,6 +4604,11 @@ func export_example_to_image() -> Image:
 # ============================================================================
 # HELPERS METHODS
 # ============================================================================
+
+func _free_rid_array(rids: Array[RID]) -> void:
+	for rid in rids:
+		if rid.is_valid():
+			rd.free_rid(rid)
 
 ## Libère toutes les ressources GPU allouées par l'orchestrateur.
 ##

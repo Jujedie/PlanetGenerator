@@ -6,6 +6,8 @@ var maps: Array[String]
 var map_index: int = 0
 var langue: String = "fr"
 var _sfx_player: AudioStreamPlayer
+var _generation_epoch: int = 0
+var _is_exiting: bool = false
 
 # --- Constants ---
 const BASE_PATH_SLIDERS = "ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"
@@ -103,8 +105,13 @@ func _on_btn_comfirme_pressed() -> void:
 		lblMapStatus,
 	)
 	
-	# Connect Signal
-	planetGenerator.finished.connect(_on_planetGenerator_finished)
+	# Bind the current epoch so stale callbacks from a replaced generator can
+	# never operate on the new one.
+	var generation_epoch := _generation_epoch
+	planetGenerator.finished.connect(
+		_on_planetGenerator_finished.bind(generation_epoch),
+		CONNECT_ONE_SHOT,
+	)
 
 	print("Génération de la planète : " + nom.text)
 
@@ -115,22 +122,37 @@ func _on_btn_comfirme_pressed() -> void:
 
 
 func _release_planet_generator() -> void:
+	# Invalidate both the signal callback and its deferred UI continuation
+	# before releasing GPU state.
+	_generation_epoch += 1
 	if planetGenerator:
 		planetGenerator.cleanup()
 		planetGenerator = null
 
 
 func _exit_tree() -> void:
+	_is_exiting = true
 	_release_planet_generator()
 	GPUContext.shutdown_shared_device()
 
-func _on_planetGenerator_finished() -> void:
-	call_deferred("_on_planetGenerator_finished_main")
+func _on_planetGenerator_finished(generation_epoch: int) -> void:
+	call_deferred("_on_planetGenerator_finished_main", generation_epoch)
 
-func _on_planetGenerator_finished_main() -> void:
+func _on_planetGenerator_finished_main(generation_epoch: int) -> void:
+	if (
+		_is_exiting
+		or generation_epoch != _generation_epoch
+		or not is_instance_valid(planetGenerator)
+	):
+		return
+
 	# 1. Update 2D Maps (Standard Logic)
 	maps = planetGenerator.getMaps()
 	map_index = 0
+	if maps.is_empty():
+		push_warning("[Master] Generation completed without exportable maps")
+		_set_buttons_enabled(true)
+		return
 	
 	var img = Image.new()
 	var err = img.load(maps[map_index])

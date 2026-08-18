@@ -22,6 +22,7 @@ var use_gpu_acceleration: bool            = true
 # Generation parameters (compiled from UI)
 var generation_params: Dictionary = {}
 var _cleaned_up: bool = false
+var _generation_request_id: int = 0
 
 ## Constructeur de la classe PlanetGenerator.
 ##
@@ -109,10 +110,12 @@ func generate_planet() -> bool:
 	GPU path now uses call_deferred for render thread safety
 	"""
 	
-	if use_gpu_acceleration and gpu_orchestrator:
+	if not _cleaned_up and use_gpu_acceleration and gpu_orchestrator:
 		print("[PlanetGenerator] Starting GPU generation (render thread)...")
-		# Call on render thread instead of worker thread
-		call_deferred("_generate_planet_gpu_deferred")
+		# Cleanup or a newer request invalidates this deferred callback before it
+		# can touch the orchestrator.
+		_generation_request_id += 1
+		call_deferred("_generate_planet_gpu_deferred", _generation_request_id)
 		return true
 	else:
 		print("[PlanetGenerator] Cancelling generation: GPU acceleration not available")
@@ -123,12 +126,24 @@ func generate_planet() -> bool:
 ## Permet d'appeler [method generate_planet_gpu] via [method call_deferred]
 ## pour s'assurer que certaines initialisations contextuelles se font sur le thread principal
 ## avant de basculer sur le RenderingDevice.
-func _generate_planet_gpu_deferred():
+func _generate_planet_gpu_deferred(request_id: int) -> void:
 	"""
 	GPU generation executed on render thread
 	Called via call_deferred from generate_planet()
 	"""
 	
+	if (
+		request_id != _generation_request_id
+		or _cleaned_up
+		or not use_gpu_acceleration
+		or not is_instance_valid(gpu_orchestrator)
+	):
+		print("[PlanetGenerator] Ignoring cancelled deferred GPU generation")
+		return
+
+	# Keep the validated orchestrator alive for the synchronous simulation.
+	var orchestrator := gpu_orchestrator
+
 	# === INITIAL LOGGING ===
 	print("\n" + "=".repeat(60))
 	print("GPU-ACCELERATED PLANET GENERATION (RENDER THREAD)")
@@ -136,7 +151,11 @@ func _generate_planet_gpu_deferred():
 	
 	# === FULL SIMULATION ===
 	# Execute simulation synchronously on render thread
-	gpu_orchestrator.run_simulation()
+	orchestrator.run_simulation()
+
+	# A cancelled/replaced request must not notify the UI as completed.
+	if request_id != _generation_request_id or _cleaned_up:
+		return
 	
 	# === EXPORT ===
 	print("=".repeat(60))
@@ -287,9 +306,8 @@ func export_to_directory(output_dir: String) -> void:
 		
 		var exporter = PlanetExporter.new()
 		exporter.export_maps(gpu_orchestrator.gpu, output_dir, generation_params)
-		
-		# Cleanup GPU resources after export
-		cleanup()
+	else:
+		push_warning("[PlanetGenerator] Export skipped: generation resources are unavailable")
 	
 	print("[PlanetGenerator] Export complete")
 
@@ -301,10 +319,13 @@ func save_maps():
 
 ## Libère explicitement toutes les ressources GPU propres à cette planète
 ## avant qu'un nouveau générateur soit construit. La méthode est idempotente
-## afin que sauvegarde, remplacement et fermeture puissent tous l'appeler.
+## afin que remplacement et fermeture puissent tous deux l'appeler.
 func cleanup() -> void:
 	if _cleaned_up:
 		return
+
+	# Invalidate any generate_planet() call still waiting in the deferred queue.
+	_generation_request_id += 1
 	_cleaned_up = true
 
 	if gpu_orchestrator:
@@ -321,6 +342,10 @@ func cleanup() -> void:
 ## @return Array[String]: Liste des chemins complets vers les fichiers PNG générés.
 func getMaps() -> Array[String]:
 	"""Get temporary map file paths for UI preview"""
+	if _cleaned_up or not is_instance_valid(gpu_orchestrator):
+		push_warning("[PlanetGenerator] Cannot retrieve maps after cleanup")
+		return []
+
 	deleteImagesTemps()
 	
 	var temp_dir = "user://temp/"
