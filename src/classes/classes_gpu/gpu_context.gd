@@ -19,7 +19,10 @@ const FORMAT_RG32I = RenderingDevice.DATA_FORMAT_R32G32_SINT
 # temp_buffer : Buffer temporaire pour ping-pong
 # plates : PlateTexture (RGBA32F) - R=plate_id, G=velocity_x, B=velocity_y, A=convergence_type
 # crust_age : CrustAgeTexture (RGBA32F) - R=distance_km, G=age_ma, B=subsidence, A=valid
-static var TextureID : Array[String] = ["geo", "climate", "temp_buffer", "plates", "crust_age"]
+# crust_age_temp : Buffer ping-pong du Jump Flooding. Une seconde texture est
+# obligatoire : lire et écrire la même image pendant une passe JFA rend le
+# résultat dépendant de l'ordre d'exécution des workgroups GPU.
+static var TextureID : Array[String] = ["geo", "climate", "temp_buffer", "plates", "crust_age", "crust_age_temp"]
 
 # Textures Étape 2 - Érosion Hydraulique
 # geo_temp : Buffer ping-pong pour GeoTexture pendant l'érosion (RGBA32F)
@@ -1029,4 +1032,12 @@ func _exit_tree() -> void:
 
 ## À appeler uniquement après le nettoyage du dernier GPUContext actif.
 static func shutdown_shared_device() -> void:
+	if not _shared_rd:
+		return
+
+	# RenderingServer.create_local_rendering_device() returns an Object rather
+	# than a RefCounted resource. Dropping the static reference alone therefore
+	# leaves the device and its internal worker objects alive until process exit.
+	var device_to_free := _shared_rd
 	_shared_rd = null
+	device_to_free.free()

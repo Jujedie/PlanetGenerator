@@ -37,8 +37,8 @@ layout(set = 1, binding = 0, std140) uniform FlowParams {
     float min_slope;         // Pente minimale pour écoulement
     float sea_level;         // Niveau de la mer
     float gravity;           // Accélération gravitationnelle (9.81 pour Terre)
-    float padding1;
-    float padding2;
+    float pixel_size_x_m;   // Taille nominale E-O d'une cellule à l'équateur
+    float pixel_size_y_m;   // Taille N-S d'une cellule
 } params;
 
 // ============================================================================
@@ -53,13 +53,6 @@ const ivec2 NEIGHBORS[8] = ivec2[8](
     ivec2(-1, -1), ivec2(0, -1), ivec2(1, -1),
     ivec2(-1,  0),               ivec2(1,  0),
     ivec2(-1,  1), ivec2(0,  1), ivec2(1,  1)
-);
-
-// Distances aux voisins (1 pour cardinaux, sqrt(2) pour diagonaux)
-const float NEIGHBOR_DIST[8] = float[8](
-    1.41421, 1.0, 1.41421,
-    1.0,          1.0,
-    1.41421, 1.0, 1.41421
 );
 
 // ============================================================================
@@ -82,6 +75,27 @@ ivec2 getNeighborCoord(ivec2 pixel, int neighborIdx, int w, int h) {
     int nx = wrapX(pixel.x + offset.x, w);
     int ny = clampY(pixel.y + offset.y, h);
     return ivec2(nx, ny);
+}
+
+// Distance physique entre centres de cellules. En projection
+// équirectangulaire, la taille E-O diminue avec cos(latitude).
+float getNeighborDistanceMeters(ivec2 pixel, int neighborIdx, int h) {
+    vec2 offset = vec2(NEIGHBORS[neighborIdx]);
+    float latitude = ((float(pixel.y) + 0.5) / float(max(h, 1)) - 0.5) * PI;
+    float zonal_scale = max(abs(cos(latitude)), 0.05);
+    vec2 metric_offset = vec2(
+        offset.x * params.pixel_size_x_m * zonal_scale,
+        offset.y * params.pixel_size_y_m
+    );
+    return max(length(metric_offset), 1.0);
+}
+
+float effectiveFlowRate() {
+    // Le nombre d'itérations n'a pas encore une durée physique explicite, mais
+    // la gravité ne doit plus être ignorée. Le plancher évite de figer les
+    // petits mondes utilisés pour les aperçus actuels.
+    float gravity_scale = clamp(sqrt(max(params.gravity, 0.01) / 9.80665), 0.5, 1.75);
+    return clamp(params.flow_rate * gravity_scale, 0.0, 1.0);
 }
 
 // ============================================================================
@@ -136,7 +150,8 @@ void main() {
         float n_surface = n_height + n_water;
         
         // Pente vers le voisin
-        float slope = (surface - n_surface) / NEIGHBOR_DIST[i];
+        float neighbor_distance = getNeighborDistanceMeters(pixel, i, h);
+        float slope = (surface - n_surface) / neighbor_distance;
         
         if (slope > params.min_slope) {
             // Ce voisin est plus bas, on peut y envoyer de l'eau
@@ -146,7 +161,7 @@ void main() {
     
     // Distribuer notre eau vers les voisins plus bas (proportionnel à la pente)
     if (total_slope_down > 0.0 && water > MIN_WATER) {
-        float water_to_distribute = water * params.flow_rate;
+        float water_to_distribute = water * effectiveFlowRate();
         
         for (int i = 0; i < 8; i++) {
             ivec2 neighbor = getNeighborCoord(pixel, i, w, h);
@@ -156,7 +171,8 @@ void main() {
             float n_water = n_geo.a;
             float n_surface = n_height + n_water;
             
-            float slope = (surface - n_surface) / NEIGHBOR_DIST[i];
+            float neighbor_distance = getNeighborDistanceMeters(pixel, i, h);
+            float slope = (surface - n_surface) / neighbor_distance;
             
             if (slope > params.min_slope) {
                 float fraction = slope / total_slope_down;
@@ -175,7 +191,7 @@ void main() {
         float n_surface = n_height + n_water;
         
         // Le voisin est plus haut que nous ?
-        float slope = (n_surface - surface) / NEIGHBOR_DIST[i];
+        float slope = (n_surface - surface) / getNeighborDistanceMeters(neighbor, i, h);
         
         if (slope > params.min_slope && n_water > MIN_WATER) {
             // Calculer combien le voisin nous envoie
@@ -186,7 +202,7 @@ void main() {
                 ivec2 nn = getNeighborCoord(neighbor, j, w, h);
                 vec4 nn_geo = imageLoad(geo_input, nn);
                 float nn_surface = nn_geo.r + nn_geo.a;
-                float nn_slope = (n_surface - nn_surface) / NEIGHBOR_DIST[j];
+                float nn_slope = (n_surface - nn_surface) / getNeighborDistanceMeters(neighbor, j, h);
                 if (nn_slope > params.min_slope) {
                     n_total_slope_down += nn_slope;
                 }
@@ -196,7 +212,7 @@ void main() {
                 // Notre part de l'eau du voisin
                 float our_slope = slope;  // C'est la pente du voisin vers nous
                 float fraction = our_slope / n_total_slope_down;
-                float n_water_to_distribute = n_water * params.flow_rate;
+                float n_water_to_distribute = n_water * effectiveFlowRate();
                 water_received += n_water_to_distribute * fraction;
             }
         }

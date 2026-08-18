@@ -77,7 +77,7 @@ The maximum planet is represented by a logical tiled dataset, not by one
 
 ### Milestone 0 — Specification and roadmap
 
-Status: complete when this document is accepted.
+Status: complete (accepted 2026-08-18).
 
 Deliverables:
 
@@ -89,6 +89,23 @@ Deliverables:
 
 Goal: make the current-resolution generator physically coherent and
 deterministic before scaling it.
+
+Status: in progress.
+
+Current checkpoint (2026-08-18):
+
+- Fixed benchmark seeds and an automated GPU smoke scene are present.
+- Preliminary climate now feeds erosion; erosion ping-pong ownership and
+  physical neighbour distances are corrected.
+- Crust-age seeding, deterministic propagation, ocean-only subsidence, and the
+  configured subsidence coefficient are corrected.
+- Tectonic boundary relief is narrower and spatially modulated.
+- Repeated terrestrial and gas-giant smoke generations are deterministic;
+  gas giants exercise only their atmospheric phase and export only `final_map`.
+- Duplicate state-texture allocations and final shared-device leaks found by
+  the regression have been removed.
+- Full-resolution visual comparison of all three terrestrial benchmark cases
+  remains before this milestone can pass its acceptance gate.
 
 Work:
 

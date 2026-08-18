@@ -16,6 +16,7 @@ var rd: RenderingDevice
 var resolution: Vector2i
 var generation_params: Dictionary
 var _cleaned_up: bool = false
+var last_phase_timings_ms: Dictionary = {}
 
 # SSBO pour comptage de pixels par composante (water classification)
 var water_counter_buffer: RID = RID()
@@ -187,7 +188,7 @@ func _compile_all_shaders() -> bool:
 ##
 ## Crée les textures RGBA32F (128 bits par pixel) qui stockeront les données physiques
 func _init_textures():
-	"""Crée les textures GPU avec données initiales"""
+	"""Valide les textures d'état créées par GPUContext et recrée les absentes."""
 	
 	if not rd:
 		push_error("[Orchestrator] ❌ RD is null, cannot create textures")
@@ -210,15 +211,25 @@ func _init_textures():
 	zero_data.resize(size)
 	zero_data.fill(0)
 	
-	# Créer les textures
+	# GPUContext initialise déjà ces textures. L'ancienne version les recréait
+	# ici puis remplaçait leurs RIDs dans le dictionnaire sans libérer les RIDs
+	# d'origine (six textures perdues à chaque génération).
+	var created_count := 0
+	var reused_count := 0
 	for tex_name in gpu.textures.keys():
+		var existing_rid: RID = gpu.textures[tex_name]
+		if existing_rid.is_valid():
+			reused_count += 1
+			continue
+
 		var rid = rd.texture_create(fmt, RDTextureView.new(), [zero_data])
 		if not rid.is_valid():
 			push_error("[Orchestrator] ❌ Échec création texture: ", tex_name)
 			continue
 		gpu.textures[tex_name] = rid
+		created_count += 1
 	
-	print("[Orchestrator] ✅ Textures créées (4x ", int(size / 1024.0), " KB)")
+	print("[Orchestrator] ✅ Textures d'état: ", reused_count, " réutilisées, ", created_count, " recréées")
 
 # ============================================================================
 # INITIALISATION DES UNIFORM SETS
@@ -291,17 +302,34 @@ func _init_uniform_sets():
 	if gpu.shaders.has("crust_age_jfa") and gpu.shaders["crust_age_jfa"].is_valid():
 		print("  • Création uniform set: crust_age_jfa")
 		
-		# Set 0 : Textures (plates en lecture, crust_age en lecture/écriture)
-		var uniforms_jfa = [
+		# Set 0 A->B : plates + geo en lecture, crust_age -> crust_age_temp
+		var uniforms_jfa_ab = [
 			gpu.create_texture_uniform(0, gpu.textures["plates"]),
 			gpu.create_texture_uniform(1, gpu.textures["crust_age"]),
+			gpu.create_texture_uniform(2, gpu.textures["crust_age_temp"]),
+			gpu.create_texture_uniform(3, gpu.textures["geo"]),
 		]
 		
-		gpu.uniform_sets["crust_age_jfa_textures"] = rd.uniform_set_create(uniforms_jfa, gpu.shaders["crust_age_jfa"], 0)
+		gpu.uniform_sets["crust_age_jfa_textures"] = rd.uniform_set_create(uniforms_jfa_ab, gpu.shaders["crust_age_jfa"], 0)
 		if not gpu.uniform_sets["crust_age_jfa_textures"].is_valid():
-			push_error("[Orchestrator] ❌ Failed to create crust_age_jfa textures uniform set")
+			push_error("[Orchestrator] ❌ Failed to create crust_age_jfa A->B uniform set")
 		else:
-			print("    ✅ crust_age_jfa textures uniform set créé")
+			print("    ✅ crust_age_jfa A->B uniform set créé")
+
+		# Set 0 B->A : crust_age_temp -> crust_age. La passe d'initialisation
+		# utilise également ce set car elle ignore l'entrée et initialise A.
+		var uniforms_jfa_ba = [
+			gpu.create_texture_uniform(0, gpu.textures["plates"]),
+			gpu.create_texture_uniform(1, gpu.textures["crust_age_temp"]),
+			gpu.create_texture_uniform(2, gpu.textures["crust_age"]),
+			gpu.create_texture_uniform(3, gpu.textures["geo"]),
+		]
+
+		gpu.uniform_sets["crust_age_jfa_textures_swap"] = rd.uniform_set_create(uniforms_jfa_ba, gpu.shaders["crust_age_jfa"], 0)
+		if not gpu.uniform_sets["crust_age_jfa_textures_swap"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create crust_age_jfa B->A uniform set")
+		else:
+			print("    ✅ crust_age_jfa B->A uniform set créé")
 	else:
 		push_warning("[Orchestrator] ⚠️ crust_age_jfa shader invalide, uniform set ignoré")
 	
@@ -621,6 +649,8 @@ func run_simulation() -> void:
 	
 	var w = resolution.x
 	var h = resolution.y
+	last_phase_timings_ms.clear()
+	var simulation_started_usec = Time.get_ticks_usec()
 	
 	print("  Résolution de la simulation : ", w, "x", h)
 	
@@ -635,7 +665,9 @@ func run_simulation() -> void:
 		print("[Orchestrator] 🪐 Planète gazeuse détectée - pipeline simplifié")
 		
 		# Carte finale gazeuse (pipeline multi-passes, écoulement fluide par advection)
-		run_gas_giant_phase(generation_params, w, h)
+		_run_timed_phase("gas_giant", run_gas_giant_phase.bind(generation_params, w, h))
+		_record_total_simulation_time(simulation_started_usec)
+		_print_phase_timing_summary()
 		
 		print("=".repeat(60))
 		print("[Orchestrator] ✅ SIMULATION GAZEUSE TERMINÉE")
@@ -643,42 +675,49 @@ func run_simulation() -> void:
 		return
 
 	# === ÉTAPE 0 : GÉNÉRATION TOPOGRAPHIQUE DE BASE ===
-	run_base_elevation_phase(generation_params, w, h)
+	_run_timed_phase("base_elevation", run_base_elevation_phase.bind(generation_params, w, h))
 	
 	# === ÉTAPE 0.5 : ÂGE DE CROÛTE OCÉANIQUE (JFA) ===
-	run_crust_age_phase(generation_params, w, h)
+	_run_timed_phase("crust_age", run_crust_age_phase.bind(generation_params, w, h))
 	
 	# === ÉTAPE 0.6 : CRATÈRES D'IMPACT (planètes sans atmosphère) ===
-	run_cratering_phase(generation_params, w, h)
+	_run_timed_phase("cratering", run_cratering_phase.bind(generation_params, w, h))
+
+	# === ÉTAPE 1.5 : CLIMAT PRÉLIMINAIRE POUR L'ÉROSION ===
+	# L'érosion lit climate.G pour la pluie et climate.R pour le gel/évaporation.
+	# Ces canaux doivent être valides avant la première itération hydraulique.
+	_run_timed_phase("pre_erosion_climate", run_pre_erosion_climate_phase.bind(generation_params, w, h))
 	
 	# === ÉTAPE 2 : ÉROSION HYDRAULIQUE ===
-	run_erosion_phase(generation_params, w, h)
+	_run_timed_phase("erosion", run_erosion_phase.bind(generation_params, w, h))
 	
 	# === ÉTAPE 3 : ATMOSPHÈRE & CLIMAT ===
 	# IMPORTANT: Doit être exécuté AVANT la classification des eaux
 	# car les rivières dépendent des précipitations (climate texture canal G)
-	run_atmosphere_phase(generation_params, w, h)
+	_run_timed_phase("final_climate", run_atmosphere_phase.bind(generation_params, w, h))
 	
 	# === ÉTAPE 2.5 : CLASSIFICATION DES EAUX & RIVIÈRES ===
-	run_water_phase(generation_params, w, h)
+	_run_timed_phase("water", run_water_phase.bind(generation_params, w, h))
 	
 	# === ÉTAPE 3.5 : BANQUISE (après eau pour vérifier water_colored) ===
-	run_ice_caps_phase(generation_params, w, h)
+	_run_timed_phase("ice_caps", run_ice_caps_phase.bind(generation_params, w, h))
 	
 	# === ÉTAPE 4.1 : BIOMES ===
-	run_biome_phase(generation_params, w, h)
+	_run_timed_phase("biomes", run_biome_phase.bind(generation_params, w, h))
 	
 	# === ÉTAPE 4 : RÉGIONS ADMINISTRATIVES ===
-	run_region_phase(generation_params, w, h)
+	_run_timed_phase("land_regions", run_region_phase.bind(generation_params, w, h))
 	
 	# === ÉTAPE 4.5 : RÉGIONS OCÉANIQUES ===
-	run_ocean_region_phase(generation_params, w, h)
+	_run_timed_phase("ocean_regions", run_ocean_region_phase.bind(generation_params, w, h))
 	
 	# === ÉTAPE 5 : RESSOURCES & PÉTROLE ===
-	run_resources_phase(generation_params, w, h)
+	_run_timed_phase("resources", run_resources_phase.bind(generation_params, w, h))
 	
 	# === ÉTAPE 6 : FINAL MAP (COMBINAISON) ===
-	run_final_map_phase(generation_params, w, h)
+	_run_timed_phase("final_map", run_final_map_phase.bind(generation_params, w, h))
+	_record_total_simulation_time(simulation_started_usec)
+	_print_phase_timing_summary()
 	
 	print("[Orchestrator] 🧹 Nettoyage de ", _rids_to_free.size(), " ressources temporaires...")
 	if rd:
@@ -692,6 +731,22 @@ func run_simulation() -> void:
 	print("=".repeat(60))
 	print("[Orchestrator] ✅ SIMULATION TERMINÉE (Clean)")
 	print("=".repeat(60) + "\n")
+
+## Exécute une phase et conserve sa durée pour les benchmarks déterministes.
+func _run_timed_phase(phase_name: String, phase_callable: Callable) -> void:
+	var started_usec = Time.get_ticks_usec()
+	phase_callable.call()
+	var elapsed_ms = float(Time.get_ticks_usec() - started_usec) / 1000.0
+	last_phase_timings_ms[phase_name] = elapsed_ms
+	print("[Timing] ", phase_name, ": ", snappedf(elapsed_ms, 0.01), " ms")
+
+func _record_total_simulation_time(started_usec: int) -> void:
+	last_phase_timings_ms["total_simulation"] = float(Time.get_ticks_usec() - started_usec) / 1000.0
+
+func _print_phase_timing_summary() -> void:
+	print("[Timing] --- Simulation phase summary ---")
+	for phase_name in last_phase_timings_ms:
+		print("[Timing] ", phase_name, " = ", snappedf(float(last_phase_timings_ms[phase_name]), 0.01), " ms")
 
 # ============================================================================
 # ÉTAPE 0 : GÉNÉRATION TOPOGRAPHIQUE DE BASE
@@ -869,7 +924,12 @@ func run_crust_age_phase(params: Dictionary, w: int, h: int) -> void:
 	if not gpu.shaders.has("crust_age_finalize") or not gpu.shaders["crust_age_finalize"].is_valid():
 		push_warning("[Orchestrator] ⚠️ crust_age_finalize shader non disponible, phase ignorée")
 		return
-	if not gpu.uniform_sets.has("crust_age_jfa_textures") or not gpu.uniform_sets["crust_age_jfa_textures"].is_valid():
+	if (
+		not gpu.uniform_sets.has("crust_age_jfa_textures")
+		or not gpu.uniform_sets["crust_age_jfa_textures"].is_valid()
+		or not gpu.uniform_sets.has("crust_age_jfa_textures_swap")
+		or not gpu.uniform_sets["crust_age_jfa_textures_swap"].is_valid()
+	):
 		push_warning("[Orchestrator] ⚠️ crust_age_jfa uniform set non disponible, phase ignorée")
 		return
 	
@@ -883,6 +943,7 @@ func run_crust_age_phase(params: Dictionary, w: int, h: int) -> void:
 	var planet_radius = float(params.get("planet_radius", 6371.0))  # km
 	var max_age = float(params.get("max_crust_age", 200.0))  # Ma
 	var subsidence_coeff = float(params.get("subsidence_coeff", 2800.0))  # m
+	var sea_level = float(params.get("sea_level", 0.0))
 	
 	# Calculer le nombre de passes JFA
 	var max_dim = max(w, h)
@@ -893,28 +954,39 @@ func run_crust_age_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  JFA Passes: ", num_passes)
 	
 	# === PASSE 0 : INITIALISATION ===
-	_dispatch_jfa_pass(w, h, groups_x, groups_y, 0, max_dim, spreading_rate)
+	# La passe d'initialisation écrit toujours dans crust_age (B->A).
+	_dispatch_jfa_pass(w, h, groups_x, groups_y, 0, max_dim, spreading_rate, sea_level, true)
 	
 	# === PASSES 1+ : PROPAGATION JFA ===
 	var step_size = max_dim / 2
 	var pass_idx = 1
+	var current_is_primary = true
 	while step_size >= 1:
-		_dispatch_jfa_pass(w, h, groups_x, groups_y, pass_idx, step_size, spreading_rate)
+		# Si A est courant, écrire A->B. Sinon écrire B->A.
+		var write_to_primary = not current_is_primary
+		_dispatch_jfa_pass(w, h, groups_x, groups_y, pass_idx, step_size, spreading_rate, sea_level, write_to_primary)
+		current_is_primary = not current_is_primary
 		step_size = step_size / 2
+		pass_idx += 1
+
+	# La finalisation lit toujours crust_age. Si la dernière propagation a
+	# produit crust_age_temp, une dernière relaxation step=1 la ramène dans A.
+	if not current_is_primary:
+		_dispatch_jfa_pass(w, h, groups_x, groups_y, pass_idx, 1, spreading_rate, sea_level, true)
 		pass_idx += 1
 	
 	print("  JFA terminé après ", pass_idx, " passes")
 	
 	# === PASSE FINALE : CALCUL ÂGE ET SUBSIDENCE ===
-	_dispatch_crust_age_finalize(w, h, groups_x, groups_y, spreading_rate, planet_radius, max_age, subsidence_coeff)
+	_dispatch_crust_age_finalize(w, h, groups_x, groups_y, spreading_rate, planet_radius, max_age, subsidence_coeff, sea_level)
 	
 	print("[Orchestrator] ✅ Phase 0.5 : Âge de croûte calculé")
 
 ## Dispatch une passe JFA
-func _dispatch_jfa_pass(w: int, h: int, groups_x: int, groups_y: int, pass_index: int, step_size: int, spreading_rate: float) -> void:
+func _dispatch_jfa_pass(w: int, h: int, groups_x: int, groups_y: int, pass_index: int, step_size: int, spreading_rate: float, sea_level: float, use_swap: bool) -> void:
 	# Structure UBO pour crust_age_jfa:
 	# uint width, height, pass_index, step_size (16 bytes)
-	# float spreading_rate, padding1, padding2, padding3 (16 bytes)
+	# float spreading_rate, sea_level, padding2, padding3 (16 bytes)
 	# Total: 32 bytes
 	
 	var buffer_bytes = PackedByteArray()
@@ -925,7 +997,7 @@ func _dispatch_jfa_pass(w: int, h: int, groups_x: int, groups_y: int, pass_index
 	buffer_bytes.encode_u32(8, pass_index)     # pass_index
 	buffer_bytes.encode_u32(12, step_size)     # step_size
 	buffer_bytes.encode_float(16, spreading_rate)  # spreading_rate
-	buffer_bytes.encode_float(20, 0.0)         # padding1
+	buffer_bytes.encode_float(20, sea_level)   # sea_level
 	buffer_bytes.encode_float(24, 0.0)         # padding2
 	buffer_bytes.encode_float(28, 0.0)         # padding3
 	
@@ -947,7 +1019,8 @@ func _dispatch_jfa_pass(w: int, h: int, groups_x: int, groups_y: int, pass_index
 	
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["crust_age_jfa"])
-	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["crust_age_jfa_textures"], 0)
+	var uniform_set_name = "crust_age_jfa_textures_swap" if use_swap else "crust_age_jfa_textures"
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets[uniform_set_name], 0)
 	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
@@ -959,10 +1032,10 @@ func _dispatch_jfa_pass(w: int, h: int, groups_x: int, groups_y: int, pass_index
 	rd.free_rid(param_buffer)
 
 ## Dispatch la passe de finalisation (calcul âge + subsidence)
-func _dispatch_crust_age_finalize(w: int, h: int, groups_x: int, groups_y: int, spreading_rate: float, planet_radius: float, max_age: float, subsidence_coeff: float) -> void:
+func _dispatch_crust_age_finalize(w: int, h: int, groups_x: int, groups_y: int, spreading_rate: float, planet_radius: float, max_age: float, subsidence_coeff: float, sea_level: float) -> void:
 	# Structure UBO pour crust_age_finalize:
 	# uint width, height (8 bytes)
-	# float spreading_rate, planet_radius, max_age, subsidence_coeff, padding1, padding2 (24 bytes)
+	# float spreading_rate, planet_radius, max_age, subsidence_coeff, sea_level, padding2 (24 bytes)
 	# Total: 32 bytes
 	
 	var buffer_bytes = PackedByteArray()
@@ -974,7 +1047,7 @@ func _dispatch_crust_age_finalize(w: int, h: int, groups_x: int, groups_y: int, 
 	buffer_bytes.encode_float(12, planet_radius)    # planet_radius
 	buffer_bytes.encode_float(16, max_age)          # max_age
 	buffer_bytes.encode_float(20, subsidence_coeff) # subsidence_coeff
-	buffer_bytes.encode_float(24, 0.0)              # padding1
+	buffer_bytes.encode_float(24, sea_level)         # sea_level
 	buffer_bytes.encode_float(28, 0.0)              # padding2
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
@@ -1176,7 +1249,10 @@ func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
 	# Capacity multiplier: 1.0 → 2.5 pour transport plus efficace
 	var capacity_multiplier = float(params.get("capacity_multiplier", 2.5))
 	var sea_level = float(params.get("sea_level", 0.0))
-	var gravity = compute_gravity(float(params.get("planet_radius", 6371.0)), float(params.get("planet_density", 5500.0)))  # Default Earth-like density
+	var planet_radius_km = float(params.get("planet_radius", 6371.0))
+	var gravity = compute_gravity(planet_radius_km, float(params.get("planet_density", 5.51)))
+	var pixel_size_x_m = (2.0 * PI * planet_radius_km * 1000.0) / float(max(w, 1))
+	var pixel_size_y_m = (PI * planet_radius_km * 1000.0) / float(max(h, 1))
 	
 	# Paramètres pour l'accumulation de flux
 	var flux_iterations = int(params.get("flux_iterations", 10))
@@ -1187,19 +1263,22 @@ func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  Rain Rate: ", rain_rate, " | Evap Rate: ", evap_rate)
 	print("  Flow Rate: ", flow_rate)
 	print("  Erosion/Deposition: ", erosion_rate, "/", deposition_rate)
+	print("  Nominal cell size: ", snappedf(pixel_size_x_m, 0.01), "m × ", snappedf(pixel_size_y_m, 0.01), "m")
+	print("  Surface gravity: ", snappedf(gravity, 0.001), " m/s²")
 	
 	# === BOUCLE D'ÉROSION ===
-	for iter in range(erosion_iterations):
-		var use_swap = (iter % 2 == 1)
-		
+	for _iter in range(erosion_iterations):
 		# === PASSE 1 : PLUIE + ÉVAPORATION ===
+		# geo est toujours l'état autoritatif au début d'une itération.
 		_dispatch_erosion_rainfall(w, h, groups_x, groups_y, rain_rate, evap_rate, sea_level)
 		
-		# === PASSE 2 : ÉCOULEMENT ===
-		_dispatch_erosion_flow(w, h, groups_x, groups_y, flow_rate, sea_level, gravity, use_swap)
+		# === PASSE 2 : ÉCOULEMENT A->B ===
+		_dispatch_erosion_flow(w, h, groups_x, groups_y, flow_rate, sea_level, gravity, pixel_size_x_m, pixel_size_y_m, false)
 		
-		# === PASSE 3 : TRANSPORT SÉDIMENT ===
-		_dispatch_erosion_sediment(w, h, groups_x, groups_y, erosion_rate, deposition_rate, capacity_multiplier, sea_level, not use_swap)
+		# === PASSE 3 : TRANSPORT SÉDIMENT B->A ===
+		# Chaque itération se termine donc dans geo; aucune itération impaire ne
+		# peut relire ou restaurer un état temporaire obsolète.
+		_dispatch_erosion_sediment(w, h, groups_x, groups_y, erosion_rate, deposition_rate, capacity_multiplier, sea_level, pixel_size_x_m, pixel_size_y_m, true)
 	
 	# === PASSE 4 : ACCUMULATION DE FLUX (pour rivières) ===
 	print("  • Accumulation de flux (", flux_iterations, " passes)")
@@ -1259,7 +1338,7 @@ func _dispatch_erosion_rainfall(w: int, h: int, groups_x: int, groups_y: int, ra
 	rd.free_rid(param_buffer)
 
 ## Dispatch le shader d'écoulement
-func _dispatch_erosion_flow(w: int, h: int, groups_x: int, groups_y: int, flow_rate: float, sea_level: float, gravity: float, use_swap: bool) -> void:
+func _dispatch_erosion_flow(w: int, h: int, groups_x: int, groups_y: int, flow_rate: float, sea_level: float, gravity: float, pixel_size_x_m: float, pixel_size_y_m: float, use_swap: bool) -> void:
 	var uniform_set_name = "erosion_flow_textures_swap" if use_swap else "erosion_flow_textures"
 	if not gpu.uniform_sets.has(uniform_set_name) or not gpu.uniform_sets[uniform_set_name].is_valid():
 		return
@@ -1267,7 +1346,7 @@ func _dispatch_erosion_flow(w: int, h: int, groups_x: int, groups_y: int, flow_r
 	# Structure UBO (std140, 32 bytes):
 	# uint width, height (8 bytes)
 	# float flow_rate, min_slope, sea_level, gravity (16 bytes)
-	# padding (8 bytes)
+	# float pixel_size_x_m, pixel_size_y_m (8 bytes)
 	
 	var min_slope = 0.001
 	
@@ -1280,8 +1359,8 @@ func _dispatch_erosion_flow(w: int, h: int, groups_x: int, groups_y: int, flow_r
 	buffer_bytes.encode_float(12, min_slope)
 	buffer_bytes.encode_float(16, sea_level)
 	buffer_bytes.encode_float(20, gravity)
-	buffer_bytes.encode_float(24, 0.0)  # padding1
-	buffer_bytes.encode_float(28, 0.0)  # padding2
+	buffer_bytes.encode_float(24, pixel_size_x_m)
+	buffer_bytes.encode_float(28, pixel_size_y_m)
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
 	if not param_buffer.is_valid():
@@ -1311,20 +1390,21 @@ func _dispatch_erosion_flow(w: int, h: int, groups_x: int, groups_y: int, flow_r
 	rd.free_rid(param_buffer)
 
 ## Dispatch le shader de transport de sédiments
-func _dispatch_erosion_sediment(w: int, h: int, groups_x: int, groups_y: int, erosion_rate: float, deposition_rate: float, capacity_multiplier: float, sea_level: float, use_swap: bool) -> void:
+func _dispatch_erosion_sediment(w: int, h: int, groups_x: int, groups_y: int, erosion_rate: float, deposition_rate: float, capacity_multiplier: float, sea_level: float, pixel_size_x_m: float, pixel_size_y_m: float, use_swap: bool) -> void:
 	var uniform_set_name = "erosion_sediment_textures_swap" if use_swap else "erosion_sediment_textures"
 	if not gpu.uniform_sets.has(uniform_set_name) or not gpu.uniform_sets[uniform_set_name].is_valid():
 		return
 	
 	# Structure UBO (std140, 32 bytes):
 	# uint width, height (8 bytes)
-	# float erosion_rate, deposition_rate, capacity_multiplier, min_slope, sea_level, bedrock_hardness (24 bytes)
+	# float erosion_rate, deposition_rate, capacity_multiplier, min_slope,
+	# sea_level, bedrock_hardness, pixel_size_x_m, pixel_size_y_m (32 bytes)
 	
 	var min_slope = 0.001
 	var bedrock_hardness = 0.5
 	
 	var buffer_bytes = PackedByteArray()
-	buffer_bytes.resize(32)
+	buffer_bytes.resize(48)
 	
 	buffer_bytes.encode_u32(0, w)
 	buffer_bytes.encode_u32(4, h)
@@ -1334,6 +1414,10 @@ func _dispatch_erosion_sediment(w: int, h: int, groups_x: int, groups_y: int, er
 	buffer_bytes.encode_float(20, min_slope)
 	buffer_bytes.encode_float(24, sea_level)
 	buffer_bytes.encode_float(28, bedrock_hardness)
+	buffer_bytes.encode_float(32, pixel_size_x_m)
+	buffer_bytes.encode_float(36, pixel_size_y_m)
+	buffer_bytes.encode_float(40, 0.0)
+	buffer_bytes.encode_float(44, 0.0)
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
 	if not param_buffer.is_valid():
@@ -1416,6 +1500,27 @@ func _dispatch_erosion_flux_accumulation(w: int, h: int, groups_x: int, groups_y
 # ============================================================================
 # ÉTAPE 3 : ATMOSPHÈRE & CLIMAT
 # ============================================================================
+
+## Calcule uniquement température et précipitation sur le relief pré-érodé.
+## Ce pré-passage fournit à l'érosion une pluie valide sans générer deux fois
+## les nuages. Le passage climatique complet est recalculé après l'érosion.
+func run_pre_erosion_climate_phase(params: Dictionary, w: int, h: int) -> void:
+	var atmosphere_type = int(params.get("planet_type", 0))
+	if atmosphere_type in [Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE]:
+		return
+
+	print("[Orchestrator] 🌦️ Phase 1.5 : Climat préliminaire pour l'érosion")
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+	var seed_val = int(params.get("seed", 12345))
+	var avg_temperature = float(params.get("avg_temperature", 15.0))
+	var avg_precipitation = float(params.get("global_humidity", 0.5))
+	var sea_level = float(params.get("sea_level", 0.0))
+	var cylinder_radius = float(w) / (2.0 * PI)
+
+	_dispatch_temperature(w, h, groups_x, groups_y, seed_val, avg_temperature, sea_level, cylinder_radius, atmosphere_type)
+	_dispatch_precipitation(w, h, groups_x, groups_y, seed_val, avg_precipitation, cylinder_radius, atmosphere_type, sea_level)
+	print("[Orchestrator] ✅ Climat préliminaire prêt")
 
 ## Génère les cartes climatiques : température, précipitation, nuages, banquise.
 ##
@@ -4673,4 +4778,8 @@ func _copy_texture(src: RID, dst: RID, width: int, height: int) -> void:
 ## @return float: La gravité en m/s² (ou unités sim).
 func compute_gravity(radius: float, density: float) -> float:
 	const G = 6.67430e-11 # constante gravitationnelle en m^3·kg^-1·s^-2
-	return (4.0 / 3.0) * PI * G * density * radius
+	# Les paramètres de l'interface sont en kilomètres et g/cm³. Convertir en
+	# unités SI avant d'appliquer g = 4/3 * PI * G * rho * R.
+	var radius_m = max(radius, 0.0) * 1000.0
+	var density_kg_m3 = max(density, 0.0) * 1000.0
+	return (4.0 / 3.0) * PI * G * density_kg_m3 * radius_m

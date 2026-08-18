@@ -38,6 +38,10 @@ layout(set = 1, binding = 0, std140) uniform SedimentParams {
     float min_slope;             // Pente minimale pour érosion
     float sea_level;             // Niveau de la mer
     float bedrock_hardness;      // Résistance du bedrock (0-1)
+    float pixel_size_x_m;        // Taille nominale E-O à l'équateur
+    float pixel_size_y_m;        // Taille N-S
+    float padding1;
+    float padding2;
 } params;
 
 // ============================================================================
@@ -47,6 +51,10 @@ layout(set = 1, binding = 0, std140) uniform SedimentParams {
 // Seuil réduit de 0.0001 à 0.00005 pour propager eau plus loin
 const float MIN_WATER = 0.00005;
 const float MIN_SEDIMENT = 0.00001;
+const float PI = 3.14159265359;
+// Conversion entre un pas d'érosion (temps géologique abstrait) et une
+// épaisseur transportable. Cette constante est indépendante de la résolution.
+const float CAPACITY_LENGTH_SCALE_M = 500.0;
 
 // Offsets des 4 voisins cardinaux (pour calcul de pente)
 const ivec2 CARDINAL[4] = ivec2[4](
@@ -71,6 +79,8 @@ int clampY(int y, int h) {
 /// Calculer la pente maximale descendante
 float calculateMaxSlope(ivec2 pixel, float surface, int w, int h) {
     float max_slope = 0.0;
+    float latitude = ((float(pixel.y) + 0.5) / float(max(h, 1)) - 0.5) * PI;
+    float zonal_scale = max(abs(cos(latitude)), 0.05);
     
     for (int i = 0; i < 4; i++) {
         int nx = wrapX(pixel.x + CARDINAL[i].x, w);
@@ -79,7 +89,10 @@ float calculateMaxSlope(ivec2 pixel, float surface, int w, int h) {
         vec4 n_geo = imageLoad(geo_input, ivec2(nx, ny));
         float n_surface = n_geo.r + n_geo.a;
         
-        float slope = (surface - n_surface);
+        float distance_m = CARDINAL[i].x != 0
+            ? params.pixel_size_x_m * zonal_scale
+            : params.pixel_size_y_m;
+        float slope = (surface - n_surface) / max(distance_m, 1.0);
         max_slope = max(max_slope, slope);
     }
     
@@ -132,9 +145,10 @@ void main() {
     float velocity = flux / max(water, MIN_WATER);
     velocity = clamp(velocity, 0.0, 25.0);
     
-    // Capacité de transport améliorée : C = Kc * slope * sqrt(velocity) * water * 2.0
-    // Formule avec racine carrée pour favoriser zones humides
-    float capacity = params.capacity_multiplier * max_slope * sqrt(velocity) * water * 2.0;
+    // La pente est sans unité; la longueur de référence restitue une capacité
+    // dans l'échelle des hauteurs, indépendamment de la résolution de la carte.
+    float capacity = params.capacity_multiplier * max_slope * sqrt(velocity) * water
+        * CAPACITY_LENGTH_SCALE_M;
     capacity = max(capacity, 0.0);
     
     // === ÉROSION OU DÉPÔT ===

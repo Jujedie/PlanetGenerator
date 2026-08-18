@@ -460,10 +460,10 @@ PlateInfo findClosestPlate(vec2 uv, uint seed) {
     // Distance au bord (en radians, typiquement 0 à ~0.5)
     float borderDist = secondDist - minDist;
     
-    // Décroissance exponentielle pour effet localisé aux bordures
-    // Facteur 35 : effet significatif jusqu'à ~0.06 rad (~3.5°, ~250km)
-    // Cela crée des chaînes de montagnes réalistes de 100-250km de large
-    float borderStrength = exp(-borderDist * 35.0);
+    // Décroissance exponentielle localisée aux bordures. L'ancien facteur 35
+    // rendait chaque frontière visible sur une bande très large et produisait
+    // des lineaments continus à l'échelle du globe.
+    float borderStrength = exp(-borderDist * 52.0);
     borderStrength = clamp(borderStrength, 0.0, 1.0);
     
     // Vélocités des deux plaques
@@ -519,7 +519,15 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
     
     // Bruit local pour variation le long de la frontière
     float localNoise = fbm(coords * 0.02, 4, 0.6, 2.0, seed + 88888u);
-    float variation = 0.7 + 0.6 * localNoise;  // [0.7, 1.3]
+    float variation = clamp(0.72 + 0.38 * localNoise, 0.35, 1.10);
+
+    // Toutes les portions d'une limite de plaques ne produisent pas une forme
+    // topographique également marquée. Cette modulation à grande échelle évite
+    // les longues cicatrices uniformes tout en conservant la continuité de la
+    // limite tectonique sous-jacente.
+    float activityNoise = fbm(coords * 0.006, 3, 0.55, 2.0, seed + 918273u);
+    float boundaryActivity = mix(0.30, 1.0, smoothstep(-0.35, 0.35, activityNoise));
+    strength *= boundaryActivity;
     
     if (convergence > 0.2) {
         // === CONVERGENCE ===
@@ -536,7 +544,7 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
             if (info.borderDist < 0.01) {
                 // Fosse profonde (atténuée sous l'eau et sur les continents)
                 // Réduit à -1200m pour bordures tectoniques moins marquées
-                uplift = -strength * 1200.0 * conv_strength * underwaterDamping * localTrenchAttenuation;
+                uplift = -strength * 1000.0 * conv_strength * underwaterDamping * localTrenchAttenuation;
             } else if (info.borderDist < 0.03) {
                 // Arc insulaire (50-100km en arrière de la fosse)
                 float arcFactor = smoothstep(0.01, 0.015, info.borderDist) * 
@@ -548,7 +556,7 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
             if (isOceanic1) {
                 // Ce côté est océanique - FOSSE (atténuée sous l'eau et sur les continents)
                 // Réduit à -1000m pour bordures moins excessives
-                uplift = -strength * 1000.0 * conv_strength * underwaterDamping * localTrenchAttenuation;
+                uplift = -strength * 850.0 * conv_strength * underwaterDamping * localTrenchAttenuation;
             } else {
                 // Ce côté est continental - CORDILLÈRE
                 // Réduit de 3000m à 1800m
@@ -561,7 +569,7 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
         
         if (isOceanic1 && isOceanic2) {
             // Dorsale médio-océanique
-            uplift = strength * 2500.0 * div_strength;
+            uplift = strength * 1700.0 * div_strength;
         } else if (!isOceanic1 && !isOceanic2) {
             // Rift continental (Vallée du Rift)
             // Vallée centrale + épaules surélevées
@@ -886,7 +894,10 @@ void main() {
     vec4 geo_data = vec4(height, bedrock, sediment, water_height);
     imageStore(geo_texture, pixel, geo_data);
     
-    // PlatesTexture : plate_id, velocity_x, velocity_y, convergence_type
+    // PlatesTexture : plate_id, velocity_x, velocity_y, signed boundary signal.
+    // Le canal A vaut zéro à l'intérieur des plaques et tend vers -1/+1 au
+    // coeur d'une limite divergente/convergente. L'ancienne valeur catégorielle
+    // remplissait des régions entières et transformait ces régions en seeds JFA.
     float convergenceType = 0.0;
     if (plateInfo.convergence > 0.2) convergenceType = 1.0;
     else if (plateInfo.convergence < -0.2) convergenceType = -1.0;
@@ -895,7 +906,7 @@ void main() {
         float(plateInfo.plateId), 
         plateInfo.velocity1.x, 
         plateInfo.velocity1.y, 
-        convergenceType
+        convergenceType * plateInfo.borderStrength
     );
     imageStore(plates_texture, pixel, plate_data);
 }

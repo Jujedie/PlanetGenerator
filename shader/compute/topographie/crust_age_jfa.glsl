@@ -28,9 +28,12 @@ layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 // BINDINGS
 // ============================================================================
 
-// Set 0: Textures
+// Set 0: Textures. JFA must use distinct input/output images; using one image
+// for both creates cross-workgroup read/write races and non-deterministic ages.
 layout(set = 0, binding = 0, rgba32f) uniform readonly  image2D plates_texture;
-layout(set = 0, binding = 1, rgba32f) uniform           image2D crust_age_texture;
+layout(set = 0, binding = 1, rgba32f) uniform readonly  image2D crust_age_input;
+layout(set = 0, binding = 2, rgba32f) uniform writeonly image2D crust_age_output;
+layout(set = 0, binding = 3, rgba32f) uniform readonly  image2D geo_texture;
 
 // Set 1: Paramètres
 layout(set = 1, binding = 0) uniform Params {
@@ -39,7 +42,7 @@ layout(set = 1, binding = 0) uniform Params {
     uint pass_index;    // 0 = initialisation, 1+ = propagation JFA
     uint step_size;     // Taille du saut (commence à max_dim/2, divisé par 2 à chaque passe)
     float spreading_rate;  // Taux d'expansion en km/Ma (non utilisé ici)
-    float padding1;
+    float sea_level;
     float padding2;
     float padding3;
 } params;
@@ -51,8 +54,10 @@ layout(set = 1, binding = 0) uniform Params {
 // Valeur "invalide" pour seed
 const float NO_SEED = -1.0;
 
-// Seuil pour détecter une dorsale (divergence < -0.2)
-const float RIDGE_THRESHOLD = -0.2;
+// Le canal A de plates_texture est un signal de frontière signé et pondéré
+// par la proximité réelle de la frontière. Un seuil fort conserve uniquement
+// le coeur des dorsales divergentes.
+const float RIDGE_THRESHOLD = -0.68;
 
 // Distance infinie (initialement)
 const float INF_DIST = 1e20;
@@ -103,10 +108,14 @@ void main() {
     if (params.pass_index == 0u) {
         // Lire les données de plaque
         vec4 plate_data = imageLoad(plates_texture, pixel);
-        float convergence_type = plate_data.a;
+        float boundary_signal = plate_data.a;
+        float terrain_height = imageLoad(geo_texture, pixel).r;
         
-        // Est-ce une dorsale (frontière divergente)?
-        bool isRidge = convergence_type < RIDGE_THRESHOLD;
+        // Une seed de croûte océanique doit être à la fois sur le coeur d'une
+        // limite divergente et actuellement sous le niveau marin. Cela empêche
+        // les rifts continentaux et les intérieurs de plaques de devenir des
+        // sources de subsidence océanique.
+        bool isRidge = boundary_signal < RIDGE_THRESHOLD && terrain_height < params.sea_level;
         
         vec4 result;
         if (isRidge) {
@@ -126,14 +135,14 @@ void main() {
                 0.0              // A: invalide
             );
         }
-        imageStore(crust_age_texture, pixel, result);
+        imageStore(crust_age_output, pixel, result);
         return;
     }
     
     // === PASSES 1+: PROPAGATION JFA ===
     
     // Lire l'état actuel
-    vec4 current = imageLoad(crust_age_texture, pixel);
+    vec4 current = imageLoad(crust_age_input, pixel);
     
     float best_seed_x = current.r;
     float best_seed_y = current.g;
@@ -148,7 +157,7 @@ void main() {
             int ny = clampY(pixel.y + dy * stepSize, int(params.height));
             
             ivec2 neighbor = ivec2(nx, ny);
-            vec4 neighbor_data = imageLoad(crust_age_texture, neighbor);
+            vec4 neighbor_data = imageLoad(crust_age_input, neighbor);
             
             // Le voisin a-t-il un seed valide?
             if (neighbor_data.r != NO_SEED) {
@@ -171,5 +180,5 @@ void main() {
     // Écrire le résultat
     vec4 result = vec4(best_seed_x, best_seed_y, best_dist_sq, 
                        (best_seed_x != NO_SEED) ? 1.0 : 0.0);
-    imageStore(crust_age_texture, pixel, result);
+    imageStore(crust_age_output, pixel, result);
 }
