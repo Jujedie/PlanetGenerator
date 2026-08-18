@@ -12,9 +12,9 @@
 // Utilise l'elevation remplie (Planchon-Darboux) pour garantir qu'aucune
 // depression terrestre ne bloque l'ecoulement.
 //
-// Gestion des zones plates :
-// - Une micro-perturbation basee sur un hash est ajoutee a la hauteur
-//   pour casser les egalites et garantir un ecoulement meme sur terrain plat.
+// La surface de routage fournie par le Priority-Flood possède déjà un gradient
+// strict vers son exutoire. Aucun bruit n'est ajouté ici : la direction reste
+// une fonction pure de ce potentiel et ne peut pas former de cycle.
 //
 // Entrees :
 // - filled_elevation (R32F) : Elevation apres remplissage des depressions
@@ -73,15 +73,6 @@ int clampY(int y, int h) {
     return clamp(y, 0, h - 1);
 }
 
-/// Hash pseudo-aleatoire pour micro-perturbation des zones plates
-float microPerturbation(ivec2 pixel, uint seed) {
-    uint h = uint(pixel.x) * 374761393u + uint(pixel.y) * 668265263u + seed;
-    h = (h ^ (h >> 13u)) * 1274126177u;
-    h ^= h >> 16u;
-    // Perturbation tres faible : entre 0 et 0.001 metre
-    return float(h & 0xFFFFu) / 65535.0 * 0.001;
-}
-
 // ============================================================================
 // MAIN
 // ============================================================================
@@ -107,9 +98,9 @@ void main() {
         return;
     }
 
-    // Hauteur du pixel courant avec micro-perturbation
+    // Hauteur du pixel courant sur le potentiel de routage strict.
     float my_height = imageLoad(filled_elevation, pixel).r;
-    float my_perturbed = my_height + microPerturbation(pixel, params.seed);
+    float my_perturbed = my_height;
 
     // Chercher le voisin avec la plus forte pente descendante
     uint best_dir = DIR_SINK;
@@ -120,7 +111,7 @@ void main() {
         int ny = clampY(pixel.y + NEIGHBORS[i].y, h);
 
         float n_height = imageLoad(filled_elevation, ivec2(nx, ny)).r;
-        float n_perturbed = n_height + microPerturbation(ivec2(nx, ny), params.seed);
+        float n_perturbed = n_height;
 
         // Pixels d'eau voisins : consideres comme etant au niveau de la mer
         // (attire l'ecoulement vers l'ocean)

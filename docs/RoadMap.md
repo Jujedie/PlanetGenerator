@@ -145,6 +145,26 @@ Acceptance gate:
 Goal: build a conserved and hierarchical drainage system on the corrected
 terrain.
 
+Status: implementation and automated acceptance complete (2026-08-19).
+
+Validation checkpoint:
+
+- A deterministic Priority-Flood now converges by exhausting its priority
+  queue; the former fixed 200-pass depression approximation is not used.
+- D8 directions come directly from the Priority-Flood parent forest, making
+  the drainage graph acyclic by construction and preserving periodic X links.
+- Each land cell contributes precipitation once, followed by exact topological
+  accumulation; `river_iterations` no longer affects the result.
+- River hierarchy follows monotonic accumulated-flux thresholds without the
+  former fixed 500-pass type-promotion loop.
+- Lakes are derived from complete basin depth and filtered by a minimum
+  connected area (32 cells by default), removing isolated depression speckle.
+- The repeated 128 × 64 regression has identical hashes with
+  `river_iterations` set to 1 and 9,999.
+- At 942 × 471, all 261,110 land cells were processed with zero unresolved
+  cells, zero non-polar sinks, 205 seam-crossing flow links, zero downstream
+  flux/type violations, and relative mass error below 0.000000001.
+
 Work:
 
 - Replace fixed-pass depression filling with a convergent method.

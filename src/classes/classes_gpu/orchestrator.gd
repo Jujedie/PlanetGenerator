@@ -17,6 +17,7 @@ var resolution: Vector2i
 var generation_params: Dictionary
 var _cleaned_up: bool = false
 var last_phase_timings_ms: Dictionary = {}
+var last_hydrology_stats: Dictionary = {}
 
 # SSBO pour comptage de pixels par composante (water classification)
 var water_counter_buffer: RID = RID()
@@ -1939,241 +1940,157 @@ func _get_or_create_linear_sampler() -> RID:
 ## @param w: Largeur de la texture
 ## @param h: Hauteur de la texture
 func run_water_phase(params: Dictionary, w: int, h: int) -> void:
-	print("[Orchestrator] 💧 Phase 2.5 : Classification des Eaux & Rivières")
-	
-	var groups_x = ceili(float(w) / 16.0)
-	var groups_y = ceili(float(h) / 16.0)
-	
-	var seed_val = int(params.get("seed", 12345))
-	var sea_level = float(params.get("sea_level", 0.0))
-	var atmosphere_type = int(params.get("planet_type", 0))
-	
-	# Toujours initialiser les textures d'eau (nécessaires pour final_map même sans eau)
+	print("[Orchestrator] 💧 Phase 2.5 : Hydrologie déterministe")
+	last_hydrology_stats.clear()
+
+	var groups_x := ceili(float(w) / 16.0)
+	var groups_y := ceili(float(h) / 16.0)
+	var seed_val := int(params.get("seed", 12345))
+	var sea_level := float(params.get("sea_level", 0.0))
+	var atmosphere_type := int(params.get("planet_type", 0))
+
+	# Les textures restent initialisées même lorsqu'un type de planète ne peut
+	# pas avoir d'eau liquide, car les phases finales les référencent.
 	gpu.initialize_water_textures()
-	
-	# Planètes sans eau liquide : Sans atmosphère (3) et Stérile (5)
 	if atmosphere_type in [Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE]:
+		last_hydrology_stats = {"skipped_no_liquid_water": true}
 		print("  ⏭️ Planète sans eau liquide (type=", atmosphere_type, ")")
 		return
-	
-	# Paramètres de classification des eaux
-	var saltwater_min_size = int(params.get("saltwater_min_size", 1000))
-	var freshwater_max_size = int(params.get("freshwater_max_size", 999))
-	var lake_threshold = float(params.get("lake_threshold", 5.0))  # Profondeur min pour lac altitude
-	
-	# Paramètres de rivières
-	var river_iterations = int(params.get("river_iterations", 2000))
-	var river_precip_scale = float(params.get("river_precip_scale", 1.0))
+
+	var saltwater_min_size := maxi(int(params.get("saltwater_min_size", 1000)), 1)
+	var freshwater_min_size := maxi(int(params.get("freshwater_min_size", 32)), 1)
+	var lake_threshold := maxf(float(params.get("lake_threshold", 5.0)), 0.01)
+	var river_precip_scale := maxf(float(params.get("river_precip_scale", 1.0)), 0.0)
 
 	print("  Seed: ", seed_val, " | Sea Level: ", sea_level)
-	print("  Saltwater Min Size: ", saltwater_min_size, " pixels | Freshwater Max Size: ", freshwater_max_size, " pixels")
-	print("  River Iterations: ", river_iterations)
-	
-	# === PASSE 1 : WATER FILL - Identification des zones d'eau ===
-	print("  • Identification des zones d'eau...")
-	_dispatch_water_fill(w, h, groups_x, groups_y, sea_level, lake_threshold)
-	
-	# === PASSE 2 : COMPOSANTES CONNEXES - Local + Pointer Jumping ===
-	print("  • Regroupement en composantes connexes...")
-	var max_dim = maxi(w, h)
-	
-	# Avec pointer jumping (3 sauts par passe), chaque passe propage de ~8 pixels
-	# et double/triple la distance de convergence.
-	# log2(max_dim) * 4 passes devrait suffire largement
-	var num_passes = int(ceil(log(float(max_dim)) / log(2.0))) * 4
-	num_passes = maxi(num_passes, 40)  # Minimum 40 passes
-	
-	for pass_idx in range(num_passes):
-		var use_swap = (pass_idx % 2 == 1)
-		_dispatch_water_jfa(w, h, groups_x, groups_y, 1, pass_idx, use_swap)
-	
-	print("    Propagation terminée: ", num_passes, " passes")
-	
-	# Si nombre impair de passes, le résultat final est dans temp → copier vers component
-	if num_passes % 2 == 1:
-		_copy_texture(gpu.textures["water_component_temp"], gpu.textures["water_component"], w, h)
-	
-	# === PASSE 3 : WATER TO COLOR - Coloration par taille ===
-	# NOUVEAU SYSTÈME : Génère directement water_colored (RGBA8)
-	# - D'abord comptage des pixels par composante
-	# - Puis coloration : grandes zones = eau salée, petites zones = eau douce
-	print("  • Coloration des eaux (eau salée/douce par taille)...")
-	
-	# Initialiser la texture water_colored
-	gpu.initialize_final_map_textures()  # Crée water_colored et final_map
-	
-	# Créer le buffer de comptage (SSBO)
-	var counter_buffer_size = w * h * 4  # 4 bytes par pixel (uint)
-	var counter_data = PackedByteArray()
-	counter_data.resize(counter_buffer_size)
-	counter_data.fill(0)
-	var counter_buffer = rd.storage_buffer_create(counter_buffer_size, counter_data)
-	
-	# Passe 1 : Comptage
-	_dispatch_water_to_color(w, h, groups_x, groups_y, 0, sea_level, atmosphere_type, freshwater_max_size, counter_buffer)
-	
-	# SYNCHRONISATION GPU - Attendre que tous les comptages atomiques soient terminés
-	rd.submit()
-	rd.sync()
-	
-	# Passe 2 : Coloration initiale
-	_dispatch_water_to_color(w, h, groups_x, groups_y, 1, sea_level, atmosphere_type, freshwater_max_size, counter_buffer)
-	
-	rd.submit()
-	rd.sync()
-	
-	# Passe 3 : Fusion eau douce touchant eau salée → eau salée
-	# Répéter plusieurs fois pour propager la conversion
-	print("  • Fusion eau douce adjacente à eau salée...")
-	for i in range(10):  # 10 passes de fusion
-		_dispatch_water_to_color(w, h, groups_x, groups_y, 2, sea_level, atmosphere_type, freshwater_max_size, counter_buffer)
-		rd.submit()
-		rd.sync()
-	
-	# DEBUG : Lire quelques valeurs du buffer de comptage pour vérifier
-	var counter_bytes = rd.buffer_get_data(counter_buffer)
-	var max_component_size = 0
-	var non_zero_components = 0
-	var total_water_pixels = 0
-	var saltwater_components = 0
-	var freshwater_components = 0
-	
-	# Vérifier TOUS les seeds possibles
-	for i in range(counter_bytes.size() / 4):
-		var count = counter_bytes.decode_u32(i * 4)
-		if count > 0:
-			non_zero_components += 1
-			total_water_pixels += count
-			max_component_size = maxi(max_component_size, count)
-			if count > freshwater_max_size:
-				saltwater_components += 1
-			else:
-				freshwater_components += 1
-	
-	print("  DEBUG - Composantes: ", non_zero_components, " | Pixels eau: ", total_water_pixels)
-	print("  DEBUG - Taille max: ", max_component_size, " | Saltwater: ", saltwater_components, " | Freshwater: ", freshwater_components)
-	
-	# Libérer le buffer de comptage
-	rd.free_rid(counter_buffer)
-	
-	# === PASSE 4 : DEPRESSION FILLING (Planchon-Darboux) ===
-	# Remplit les depressions du terrain pour garantir un ecoulement continu.
-	# Utilise river_flux / river_flux_temp (R32F) comme buffers ping-pong.
-	var fill_iterations = 200
-	print("  • Remplissage des dépressions Planchon-Darboux (", fill_iterations, " passes)...")
+	print("  Lake minimum: ", lake_threshold, "m depth / ", freshwater_min_size, " cells")
+	print("  Saltwater minimum: ", saltwater_min_size, " connected cells")
 
-	# Init (mode=0) : écrit dans river_flux_temp (use_swap=false → out=river_flux_temp)
-	_dispatch_fill_depression(w, h, groups_x, groups_y, sea_level, 0, false)
+	# 1. Le premier masque ne contient que l'océan thermiquement liquide.
+	# Les lacs seront dérivés ensuite de la profondeur réelle des bassins.
+	print("  • Initialisation du masque océanique...")
+	_dispatch_water_fill(w, h, groups_x, groups_y, sea_level, 0.0)
 
-	# Iterate (mode=1) : ping-pong entre river_flux_temp et river_flux
-	for fill_pass in range(fill_iterations):
-		# Passe 0: in=river_flux_temp, out=river_flux (use_swap=true car init a écrit dans river_flux_temp)
-		# Passe 1: in=river_flux, out=river_flux_temp (use_swap=false)
-		# etc.
-		var use_swap_fill = ((fill_pass + 1) % 2 == 1)
-		_dispatch_fill_depression(w, h, groups_x, groups_y, sea_level, 1, use_swap_fill)
+	# 2. Priority-Flood exact : convergence par épuisement de la file de
+	# priorité, sans nombre de passes arbitraire. Le solveur classe ensuite les
+	# composantes d'eau exactes avec wrap horizontal.
+	print("  • Priority-Flood convergent et classification des bassins...")
+	var solver := HydrologySolver.new()
+	var surface_result := solver.solve_surface_and_water(
+		rd.texture_get_data(gpu.textures["geo"], 0),
+		rd.texture_get_data(gpu.textures["climate"], 0),
+		rd.texture_get_data(gpu.textures["water_mask"], 0),
+		w,
+		h,
+		sea_level,
+		lake_threshold,
+		freshwater_min_size,
+		saltwater_min_size,
+		atmosphere_type,
+	)
+	if surface_result.is_empty():
+		push_error("[Orchestrator] Hydrology surface solve failed")
+		return
 
-	# Après 200 passes (pair), le résultat final est dans river_flux_temp
-	# Copier vers river_flux pour que flow_direction le lise
-	if fill_iterations % 2 == 0:
-		_copy_texture(gpu.textures["river_flux_temp"], gpu.textures["river_flux"], w, h)
-	# (si impair, le résultat est déjà dans river_flux)
+	gpu.initialize_final_map_textures()
+	var water_mask_data: PackedByteArray = surface_result["water_mask"]
+	var water_color_data: PackedByteArray = surface_result["water_colored"]
+	var flow_direction_data: PackedByteArray = surface_result["flow_direction"]
+	rd.texture_update(gpu.textures["water_mask"], 0, water_mask_data)
+	rd.texture_update(gpu.textures["water_colored"], 0, water_color_data)
+	rd.texture_update(gpu.textures["flow_direction"], 0, flow_direction_data)
+	last_hydrology_stats = Dictionary(surface_result["stats"]).duplicate()
 
-	print("    ✅ Dépressions remplies")
+	print(
+		"    Lacs conservés: ", last_hydrology_stats.get("lake_components_retained", 0),
+		" | cellules lac supprimées: ", last_hydrology_stats.get("lake_cells_removed", 0),
+		" | composantes eau: ", last_hydrology_stats.get("water_components", 0),
+	)
 
-	# === PASSE 5 : FLOW DIRECTION - Calcul des directions D8 ===
-	# Lit river_flux comme élévation remplie (filled_elevation)
-	print("  • Calcul des directions d'écoulement D8 (sur terrain rempli)...")
-	_dispatch_river_flow_direction(w, h, groups_x, groups_y, seed_val, sea_level)
+	# 3. Le parent enregistré lors du Priority-Flood forme directement une
+	# forêt D8 sans cycle. Cela évite de reconstruire un graphe ambigu sur les
+	# plateaux remplis.
+	print("  • Directions D8 dérivées de la forêt Priority-Flood")
 
-	# === PASSE 6 : RIVER SOURCES - Initialisation distribuée du flux ===
-	# Réinitialise river_flux avec les précipitations (écrase l'élévation remplie)
-	print("  • Initialisation distribuée du flux (précipitations)...")
+	# 4. Chaque cellule terrestre reçoit exactement une contribution locale.
 	_dispatch_river_sources(w, h, groups_x, groups_y, sea_level, river_precip_scale)
 
-	# === PASSE 7 : RIVER PROPAGATION - Accumulation du flux ===
-	var effective_river_iterations = maxi(river_iterations, maxi(w, h))
-	print("  • Propagation des rivières (", effective_river_iterations, " passes)...")
-	for pass_idx_ in range(effective_river_iterations):
-		var use_swap = (pass_idx_ % 2 == 1)
-		_dispatch_river_propagation(w, h, groups_x, groups_y, pass_idx_, sea_level, river_precip_scale, use_swap)
+	# 5. Accumulation topologique exacte. river_iterations n'est volontairement
+	# plus lu : le réseau ne dépend d'aucun compteur de propagation.
+	print("  • Accumulation topologique conservatrice...")
+	var accumulation_result := solver.accumulate_flow(
+		flow_direction_data,
+		water_mask_data,
+		rd.texture_get_data(gpu.textures["river_flux"], 0),
+		w,
+		h,
+	)
+	if accumulation_result.is_empty():
+		push_error("[Orchestrator] Hydrology flow accumulation failed")
+		return
 
-	# Si nombre impair de passes, copier le résultat
-	if effective_river_iterations % 2 == 1:
-		_copy_texture(gpu.textures["river_flux_temp"], gpu.textures["river_flux"], w, h)
+	var accumulated_flux: PackedByteArray = accumulation_result["flux_data"]
+	rd.texture_update(gpu.textures["river_flux"], 0, accumulated_flux)
+	last_hydrology_stats.merge(Dictionary(accumulation_result["stats"]), true)
+	var max_flux := float(accumulation_result["max_land_flux"])
+	last_hydrology_stats["max_land_flux"] = max_flux
 
-	# === PASSE 7.5 : READBACK MAX FLUX pour seuils adaptatifs ===
-	print("  • Lecture du flux maximum pour seuils adaptatifs...")
-	rd.submit()
-	rd.sync()
-	var flux_bytes = rd.texture_get_data(gpu.textures["river_flux"], 0)
-	var max_flux: float = 0.0
-	var num_pixels = flux_bytes.size() / 4  # R32F = 4 bytes par pixel
-	for px_idx in range(num_pixels):
-		var val = flux_bytes.decode_float(px_idx * 4)
-		if val > max_flux:
-			max_flux = val
+	var unresolved := int(last_hydrology_stats.get("unresolved_land_cells", 0))
+	var nonpolar_sinks := int(last_hydrology_stats.get("nonpolar_land_sinks", 0))
+	var relative_mass_error := float(last_hydrology_stats.get("relative_mass_error", 1.0))
+	if unresolved > 0:
+		push_error("[Hydrology] Drainage graph contains %d unresolved cells" % unresolved)
+	if nonpolar_sinks > 0:
+		push_error("[Hydrology] Drainage graph contains %d invalid non-polar sinks" % nonpolar_sinks)
+	if relative_mass_error > 0.0001:
+		push_error("[Hydrology] Flux conservation error: %.8f" % relative_mass_error)
 
-	print("    Max flux détecté: ", max_flux)
+	print(
+		"    Terrain traité: ", last_hydrology_stats.get("processed_land_cells", 0),
+		"/", last_hydrology_stats.get("land_cells", 0),
+		" | erreur de masse relative: ", snappedf(relative_mass_error, 0.00000001),
+		" | liens de seam: ", last_hydrology_stats.get("seam_flow_links", 0),
+	)
 
-	# Seuils adaptatifs basés sur le flux maximum
-	# SCALING PAR TAILLE DE CARTE : sur les petites cartes, les drainage networks
-	# sont proportionnellement plus denses visuellement. On augmente les seuils
-	# pour compenser, en prenant une carte de référence de 2000×1000 pixels.
-	var map_pixels = float(w * h)
-	var reference_pixels = 2000.0 * 1000.0  # 2M pixels comme référence
-	var density_scale = sqrt(reference_pixels / maxf(map_pixels, 1.0))
-	density_scale = clampf(density_scale, 0.5, 4.0)  # Borner le facteur
-	print("    Density scale (map size correction): ", density_scale, " (map: ", w, "x", h, " = ", int(map_pixels), " px)")
+	# 6. Une hiérarchie basée sur le flux accumulé est monotone vers l'aval :
+	# affluent -> rivière -> fleuve. L'ancienne promotion sur 500 passes est
+	# supprimée, tout comme sa dépendance à une distance arbitraire.
+	var map_pixels := float(w * h)
+	var reference_pixels := 2000.0 * 1000.0
+	var density_scale := clampf(sqrt(reference_pixels / maxf(map_pixels, 1.0)), 0.5, 4.0)
+	var river_affluent_threshold := max_flux * 0.005 * density_scale
+	var river_riviere_threshold := max_flux * 0.02 * density_scale
+	var river_fleuve_threshold := max_flux * 0.08 * density_scale
+	if max_flux <= 0.0:
+		river_affluent_threshold = INF
+		river_riviere_threshold = INF
+		river_fleuve_threshold = INF
 
-	var river_affluent_threshold: float
-	var river_riviere_threshold: float
-	var river_fleuve_threshold: float
-
-	if max_flux > 100.0:
-		# Seuils adaptatifs : pourcentage du max, ajustés par la taille de la carte
-		# Avec type promotion, les seuils bas suffisent car la promotion
-		# propage le type fleuve/riviere en amont le long du chenal principal
-		river_affluent_threshold = max_flux * 0.005 * density_scale
-		river_riviere_threshold  = max_flux * 0.02  * density_scale
-		river_fleuve_threshold   = max_flux * 0.08  * density_scale
-	else:
-		# Fallback si flux très faible (ne devrait pas arriver avec depression filling)
-		river_affluent_threshold = 10.0 * density_scale
-		river_riviere_threshold  = 30.0 * density_scale
-		river_fleuve_threshold   = 60.0 * density_scale
-
-	# Stocker dans params pour l'exporter
 	params["river_affluent_threshold"] = river_affluent_threshold
-	params["river_riviere_threshold"]  = river_riviere_threshold
-	params["river_fleuve_threshold"]   = river_fleuve_threshold
+	params["river_riviere_threshold"] = river_riviere_threshold
+	params["river_fleuve_threshold"] = river_fleuve_threshold
+	last_hydrology_stats["river_affluent_threshold"] = river_affluent_threshold
+	last_hydrology_stats["river_riviere_threshold"] = river_riviere_threshold
+	last_hydrology_stats["river_fleuve_threshold"] = river_fleuve_threshold
 
-	print("    Seuils adaptatifs: affluent=", river_affluent_threshold,
-		" | rivière=", river_riviere_threshold,
-		" | fleuve=", river_fleuve_threshold)
-
-	# === PASSE 8 : TYPE ASSIGN - Classification initiale par flux ===
-	# Note: ocean_connect est inutile avec depression filling (tout le terrain
-	# draine vers l'eau), et type_assign ecrase ocean_reachable de toute facon.
-	print("  • Classification initiale des types de rivière (flux → type)...")
-	_dispatch_river_type_assign(w, h, groups_x, groups_y, river_affluent_threshold, river_riviere_threshold, river_fleuve_threshold)
-
-	# === PASSE 9 : TYPE PROMOTE - Promotion du type le long du chenal principal ===
-	var promote_iterations = 500
-	print("  • Promotion des types de rivière (", promote_iterations, " passes)...")
-	for pass_idx_ in range(promote_iterations):
-		var use_swap = (pass_idx_ % 2 == 1)
-		_dispatch_river_type_promote(w, h, groups_x, groups_y, use_swap)
-
-	# Si nombre impair de passes, copier le résultat
-	if promote_iterations % 2 == 1:
-		_copy_texture(gpu.textures["ocean_reachable_temp"], gpu.textures["ocean_reachable"], w, h)
-
-	# === PASSE 10 : RIVER CLASSIFY - Classification des rivières en biomes ===
-	print("  • Classification des rivières en biomes (type promu)...")
+	print(
+		"    Flux max: ", max_flux,
+		" | seuils: ", river_affluent_threshold,
+		" / ", river_riviere_threshold,
+		" / ", river_fleuve_threshold,
+	)
+	_dispatch_river_type_assign(
+		w,
+		h,
+		groups_x,
+		groups_y,
+		river_affluent_threshold,
+		river_riviere_threshold,
+		river_fleuve_threshold,
+	)
 	_dispatch_river_classify(w, h, groups_x, groups_y, atmosphere_type)
 
-	print("[Orchestrator] ✅ Phase 2.5 : Classification des eaux terminée")
+	print("[Orchestrator] ✅ Phase 2.5 : Hydrologie terminée")
 
 ## Dispatch le shader d'identification des zones d'eau
 func _dispatch_water_fill(w: int, h: int, groups_x: int, groups_y: int, sea_level: float, lake_threshold: float) -> void:

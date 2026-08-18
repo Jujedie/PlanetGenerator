@@ -2,13 +2,15 @@
 #version 450
 
 // ============================================================================
-// WATER FILL SHADER - Identification des zones d'eau
+// WATER FILL SHADER - Initialisation des exutoires océaniques
 // ============================================================================
 // Étape 1 du système d'eau :
-// - Identifie les pixels sous le niveau de la mer (eau potentielle)
-// - Identifie les lacs en altitude (dépressions au-dessus du niveau mer)
+// - Identifie uniquement les pixels sous le niveau de la mer (eau potentielle)
 // - Vérifie la température : l'eau liquide n'existe que si T ∈ [0°C, 100°C]
 // - Initialise les seeds JFA pour la détection des composantes connexes
+//
+// Les lacs sont construits après le Priority-Flood à partir de la profondeur
+// et de l'aire réelles des bassins, jamais à partir d'un minimum local isolé.
 //
 // Entrées :
 // - GeoTexture (RGBA32F) : R=height (altitude en mètres)
@@ -40,7 +42,7 @@ layout(set = 1, binding = 0, std140) uniform WaterParams {
     uint width;           // Largeur texture
     uint height;          // Hauteur texture
     float sea_level;      // Niveau de la mer
-    float lake_threshold; // Seuil pour détection des lacs en altitude (profondeur min)
+    float lake_threshold; // Réservé pour compatibilité UBO (non utilisé)
 } params;
 
 // ============================================================================
@@ -55,22 +57,6 @@ const uint WATER_POTENTIAL = 1u;  // Eau potentielle (sera classifiée après)
 // Au dessus de WATER_MAX_TEMP → vapeur (pas d'eau liquide)
 const float WATER_MIN_TEMP = -21.0;    // Point de congélation (°C)
 const float WATER_MAX_TEMP = 100.0;  // Point d'ébullition (°C)
-
-// 4 voisins cardinaux pour détection dépressions
-const ivec2 NEIGHBORS_4[4] = ivec2[4](
-    ivec2(-1, 0), ivec2(1, 0), ivec2(0, -1), ivec2(0, 1)
-);
-
-// Voisinage étendu pour détection robuste des lacs (rayon 2, 12 voisins)
-const int LAKE_NEIGHBOR_COUNT = 12;
-const ivec2 LAKE_NEIGHBORS[12] = ivec2[12](
-    // Rayon 1 : cardinaux
-    ivec2(-1, 0), ivec2(1, 0), ivec2(0, -1), ivec2(0, 1),
-    // Rayon 1 : diagonaux
-    ivec2(-1, -1), ivec2(1, -1), ivec2(-1, 1), ivec2(1, 1),
-    // Rayon 2 : cardinaux
-    ivec2(-2, 0), ivec2(2, 0), ivec2(0, -2), ivec2(0, 2)
-);
 
 // ============================================================================
 // FONCTIONS UTILITAIRES
@@ -123,35 +109,6 @@ void main() {
     //    dans des zones chaudes (>100°C) où l'eau ne devrait pas exister.
     if (height < params.sea_level && temperature_allows_water) {
         is_water = true;
-    }
-    // 2. Détection des lacs en altitude (dépressions locales)
-    //    Aussi conditionné par la température
-    //    Le lake_threshold agit comme un seuil de profondeur minimale :
-    //    plus il est élevé, moins il y a de lacs (seules les grosses dépressions passent).
-    //    On vérifie 12 voisins (rayon 2) : TOUS doivent être plus hauts que le pixel central.
-    //    La différence minimale entre le voisin le plus bas et le centre doit dépasser le seuil.
-    else if (params.lake_threshold > 0.0 && temperature_allows_water) {
-        bool is_depression = true;
-        float min_neighbor_height = 1e10;
-        
-        for (int i = 0; i < LAKE_NEIGHBOR_COUNT; i++) {
-            int nx = wrapX(pixel.x + LAKE_NEIGHBORS[i].x, w);
-            int ny = clampY(pixel.y + LAKE_NEIGHBORS[i].y, h);
-            
-            float n_height = imageLoad(geo_texture, ivec2(nx, ny)).r;
-            min_neighbor_height = min(min_neighbor_height, n_height);
-            
-            // Si un voisin est plus bas ou au même niveau, pas une dépression
-            if (n_height <= height) {
-                is_depression = false;
-                break;  // Pas besoin de continuer
-            }
-        }
-        
-        // C'est un lac si c'est une dépression dont la profondeur dépasse le seuil
-        if (is_depression && (min_neighbor_height - height) > params.lake_threshold) {
-            is_water = true;
-        }
     }
     
     // === ÉCRITURE DES RÉSULTATS ===
