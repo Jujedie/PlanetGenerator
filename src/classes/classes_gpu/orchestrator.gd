@@ -15,6 +15,7 @@ var rd: RenderingDevice
 
 var resolution: Vector2i
 var generation_params: Dictionary
+var _cleaned_up: bool = false
 
 # SSBO pour comptage de pixels par composante (water classification)
 var water_counter_buffer: RID = RID()
@@ -158,6 +159,9 @@ func _compile_all_shaders() -> bool:
 		{"path": "res://shader/compute/water/water_to_color.glsl", "name": "water_to_color", "critical": false},
 		# Shader Gas Giant Final Map (Type 6 - Gazeuse)
 		{"path": "res://shader/compute/gas_giant_final.glsl", "name": "gas_giant_final", "critical": false},
+		{"path": "res://shader/compute/gas_giant/gas_giant_velocity_init.glsl", "name": "gas_giant_velocity_init", "critical": false},
+		{"path": "res://shader/compute/gas_giant/gas_giant_dye_init.glsl", "name": "gas_giant_dye_init", "critical": false},
+		{"path": "res://shader/compute/gas_giant/gas_giant_advect.glsl", "name": "gas_giant_advect", "critical": false},
 	]
 	
 	var all_critical_loaded = true
@@ -624,25 +628,14 @@ func run_simulation() -> void:
 
 	# === TYPE 6 (GAZEUSE) : Pipeline simplifié ===
 	# Les planètes gazeuses n'ont pas de surface solide.
-	# On ne génère que température, précipitation et une carte finale spéciale.
+	# Leur météorologie visible est générée directement par le pipeline
+	# gazeux : aucune carte de température/précipitation terrestre n'est créée.
 	var atmosphere_type = int(generation_params.get("planet_type", 0))
 	if atmosphere_type == Enum.TYPE_GAZEUZE:
 		print("[Orchestrator] 🪐 Planète gazeuse détectée - pipeline simplifié")
 		
-		var groups_x = ceili(float(w) / 16.0)
-		var groups_y = ceili(float(h) / 16.0)
-		var seed_val = int(generation_params.get("seed", 12345))
-		var avg_temperature = float(generation_params.get("avg_temperature", 15.0))
-		var avg_precipitation = float(generation_params.get("global_humidity", 0.5))
-		var sea_level = float(generation_params.get("sea_level", 0.0))
-		var cylinder_radius = float(w) / (2.0 * PI)
-		
-		# Température et précipitation (réutilise les shaders existants, geo=0 → pas de gradient d'altitude)
-		_dispatch_temperature(w, h, groups_x, groups_y, seed_val, avg_temperature, sea_level, cylinder_radius, atmosphere_type)
-		_dispatch_precipitation(w, h, groups_x, groups_y, seed_val, avg_precipitation, cylinder_radius, atmosphere_type, sea_level)
-		
-		# Carte finale gazeuse (shader spécifique)
-		run_gas_giant_final_phase(generation_params, w, h)
+		# Carte finale gazeuse (pipeline multi-passes, écoulement fluide par advection)
+		run_gas_giant_phase(generation_params, w, h)
 		
 		print("=".repeat(60))
 		print("[Orchestrator] ✅ SIMULATION GAZEUSE TERMINÉE")
@@ -3947,6 +3940,252 @@ func _dispatch_resources(w: int, h: int, groups_x: int, groups_y: int, seed_val:
 # ÉTAPE 6 BIS : FINAL MAP GAZEUSE (TYPE 6)
 # ============================================================================
 
+## Exécute le pipeline complet de génération d'une planète gazeuse :
+## 1. Calcul du champ de vélocité (jets zonaux + tourbillons curl-noise)
+## 2. Initialisation du colorant (bandes de couleur)
+## 3. Advection semi-lagrangienne du colorant sur N itérations (ping-pong)
+## 4. Composition finale (climat + tempêtes + assombrissement polaire)
+func run_gas_giant_phase(params: Dictionary, w: int, h: int) -> void:
+	print("[Orchestrator] 🪐 Pipeline gazeuse multi-passes (advection fluide)")
+
+	if not rd:
+		push_warning("[Orchestrator] ⚠️ RD non disponible, pipeline gazeuse ignoré")
+		return
+
+	gpu.initialize_gas_giant_textures()
+	gpu.initialize_final_map_textures()
+
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+
+	var seed_val = int(params.get("seed", 12345))
+	var cylinder_radius = float(w) / (2.0 * PI)
+	var avg_temperature = float(params.get("avg_temperature", 15.0))
+	var num_bands = clampi(int(params.get("gas_giant_num_bands", 12)), 6, 24)
+	var jet_strength = float(params.get("gas_giant_jet_strength", 4.0))
+	var eddy_strength = float(params.get("gas_giant_eddy_strength", 2.5))
+	var advection_dt = float(params.get("gas_giant_advection_dt", 1.4))
+
+	# --- Iteration count: scale with resolution -----------------------------
+	# Displacement per iteration is roughly constant in PIXELS (velocity/dt
+	# are resolution-independent by design), so the fraction of the
+	# circumference actually mixed per iteration shrinks as resolution
+	# grows. Compensate with more, smaller, accurate steps at higher
+	# resolution -- same principle as river_propagation's max(w,h)-scaled loop.
+	var base_iterations = int(params.get("gas_giant_advection_iterations", 40))
+	var reference_width = float(params.get("gas_giant_reference_width", 1024.0))
+	var resolution_scale = max(float(w) / reference_width, 1.0)
+	var advection_iterations = int(round(float(base_iterations) * resolution_scale))
+	advection_iterations = clampi(advection_iterations, base_iterations, base_iterations * 8)
+
+	# --- Sharpen: keep TOTAL compounded contrast fixed, not per-step -------
+	# La correction agit maintenant sur la saturation autour de la luminance,
+	# pas sur chaque canal autour de 0.5. Une correction totale faible conserve
+	# les filaments sans pousser les bandes claires vers le blanc pur ni les
+	# bandes sombres vers le noir.
+	var target_total_sharpen = clampf(float(params.get("gas_giant_target_sharpen", 1.18)), 1.0, 1.5)
+	var advection_sharpen = pow(target_total_sharpen, 1.0 / float(advection_iterations))
+
+	# === PASSE 1 : CHAMP DE VÉLOCITÉ (calculé une seule fois) ===
+	_dispatch_gas_giant_velocity_init(w, h, groups_x, groups_y, seed_val, cylinder_radius, num_bands, jet_strength, eddy_strength)
+
+	# === PASSE 2 : INITIALISATION DU COLORANT ===
+	_dispatch_gas_giant_dye_init(w, h, groups_x, groups_y, seed_val, cylinder_radius, avg_temperature, num_bands)
+
+	# === PASSE 3 : ADVECTION (ping-pong dye_a <-> dye_b) ===
+	print("  • Advection du colorant (", advection_iterations, " passes, sharpen/step=", advection_sharpen, ")...")
+	for pass_idx in range(advection_iterations):
+		var use_swap = (pass_idx % 2 == 1)
+		_dispatch_gas_giant_advect(w, h, groups_x, groups_y, pass_idx, advection_dt, advection_sharpen, use_swap)
+
+	# Si nombre impair de passes, le résultat final est dans dye_b -> copier vers dye_a
+	if advection_iterations % 2 == 1:
+		_copy_texture(gpu.textures["gas_dye_b"], gpu.textures["gas_dye_a"], w, h)
+
+	# === PASSE 4 : COMPOSITION FINALE ===
+	_dispatch_gas_giant_final(w, h, groups_x, groups_y, seed_val, cylinder_radius, avg_temperature)
+
+	print("[Orchestrator] ✅ Pipeline gazeuse terminée")
+
+func _dispatch_gas_giant_velocity_init(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, cylinder_radius: float, num_bands: int, jet_strength: float, eddy_strength: float) -> void:
+	if not gpu.shaders.has("gas_giant_velocity_init") or not gpu.shaders["gas_giant_velocity_init"].is_valid():
+		push_warning("[Orchestrator] ⚠️ gas_giant_velocity_init shader non disponible")
+		return
+
+	var tex_uniforms: Array[RDUniform] = [
+		gpu.create_texture_uniform(0, gpu.textures["gas_velocity"]),
+	]
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["gas_giant_velocity_init"], 0)
+
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	buffer_bytes.encode_u32(0, seed_val)
+	buffer_bytes.encode_u32(4, w)
+	buffer_bytes.encode_u32(8, h)
+	buffer_bytes.encode_float(12, cylinder_radius)
+	buffer_bytes.encode_u32(16, num_bands)
+	buffer_bytes.encode_float(20, jet_strength)
+	buffer_bytes.encode_float(24, eddy_strength)
+	buffer_bytes.encode_float(28, 0.0)
+
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["gas_giant_velocity_init"], 1)
+
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["gas_giant_velocity_init"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+
+	rd.submit()
+	rd.sync()
+
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+
+func _dispatch_gas_giant_dye_init(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, cylinder_radius: float, avg_temperature: float, num_bands: int) -> void:
+	if not gpu.shaders.has("gas_giant_dye_init") or not gpu.shaders["gas_giant_dye_init"].is_valid():
+		push_warning("[Orchestrator] ⚠️ gas_giant_dye_init shader non disponible")
+		return
+
+	var tex_uniforms: Array[RDUniform] = [
+		gpu.create_texture_uniform(0, gpu.textures["gas_dye_a"]),
+	]
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["gas_giant_dye_init"], 0)
+
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	buffer_bytes.encode_u32(0, seed_val)
+	buffer_bytes.encode_u32(4, w)
+	buffer_bytes.encode_u32(8, h)
+	buffer_bytes.encode_u32(12, num_bands)
+	buffer_bytes.encode_float(16, cylinder_radius)
+	buffer_bytes.encode_float(20, avg_temperature)
+	buffer_bytes.encode_float(24, 0.0)
+	buffer_bytes.encode_float(28, 0.0)
+
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["gas_giant_dye_init"], 1)
+
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["gas_giant_dye_init"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+
+	rd.submit()
+	rd.sync()
+
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+
+func _dispatch_gas_giant_advect(w: int, h: int, groups_x: int, groups_y: int, pass_index: int, dt: float, sharpen: float, use_swap: bool) -> void:
+	if not gpu.shaders.has("gas_giant_advect") or not gpu.shaders["gas_giant_advect"].is_valid():
+		push_warning("[Orchestrator] ⚠️ gas_giant_advect shader non disponible")
+		return
+
+	var input_tex = gpu.textures["gas_dye_a"] if not use_swap else gpu.textures["gas_dye_b"]
+	var output_tex = gpu.textures["gas_dye_b"] if not use_swap else gpu.textures["gas_dye_a"]
+
+	var tex_uniforms: Array[RDUniform] = [
+		gpu.create_texture_uniform(0, gpu.textures["gas_velocity"]),
+		gpu.create_texture_uniform(1, input_tex),
+		gpu.create_texture_uniform(2, output_tex),
+	]
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["gas_giant_advect"], 0)
+
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, pass_index)
+	buffer_bytes.encode_float(12, dt)
+	buffer_bytes.encode_float(16, sharpen)
+	buffer_bytes.encode_float(20, 0.0)
+	buffer_bytes.encode_float(24, 0.0)
+	buffer_bytes.encode_float(28, 0.0)
+
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["gas_giant_advect"], 1)
+
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["gas_giant_advect"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+
+	rd.submit()
+	rd.sync()
+
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
+
+func _dispatch_gas_giant_final(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, cylinder_radius: float, avg_temperature: float) -> void:
+	if not gpu.shaders.has("gas_giant_final") or not gpu.shaders["gas_giant_final"].is_valid():
+		push_warning("[Orchestrator] ⚠️ gas_giant_final shader non disponible")
+		return
+
+	var tex_uniforms: Array[RDUniform] = [
+		gpu.create_texture_uniform(0, gpu.textures["gas_dye_a"]),
+		gpu.create_texture_uniform(1, gpu.textures["gas_velocity"]),
+		gpu.create_texture_uniform(2, gpu.textures["climate"]),
+		gpu.create_texture_uniform(3, gpu.textures["final_map"]),
+	]
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["gas_giant_final"], 0)
+
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, seed_val)
+	buffer_bytes.encode_float(12, cylinder_radius)
+	buffer_bytes.encode_float(16, avg_temperature)
+	buffer_bytes.encode_float(20, 0.0)
+	buffer_bytes.encode_float(24, 0.0)
+	buffer_bytes.encode_float(28, 0.0)
+
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["gas_giant_final"], 1)
+
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["gas_giant_final"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+
+	rd.submit()
+	rd.sync()
+
+	rd.free_rid(param_set)
+	rd.free_rid(param_buffer)
+	rd.free_rid(tex_set)
+
 ## Génère la carte finale pour une planète gazeuse.
 ##
 ## Utilise le shader gas_giant_final qui lit climate_texture (R=temp, G=humidity)
@@ -4323,29 +4562,41 @@ func export_example_to_image() -> Image:
 ##
 ## Détruit manuellement les RIDs des textures, pipelines, shaders et uniform sets
 ## via [method RenderingDevice.free_rid] pour éviter les fuites de VRAM.
-func cleanup():
+func cleanup() -> void:
 	"""Nettoyage manuel - appeler avant de détruire l'orchestrateur"""
-	
+	if _cleaned_up:
+		return
+	_cleaned_up = true
+
 	if not rd:
-		push_warning("[Orchestrator] RD is null, skipping cleanup")
+		gpu = null
 		return
 	
 	print("[Orchestrator] 🧹 Nettoyage des ressources persistantes...")
-	
-	gpu._exit_tree()
+
+	# S'assurer qu'aucune commande n'utilise encore les ressources que nous
+	# allons libérer. C'est indispensable avant de remplacer un device local.
+	rd.submit()
+	rd.sync()
+
+	# Les uniform sets doivent disparaître avant le sampler qu'ils référencent.
+	if gpu:
+		gpu.cleanup()
+
+	if _linear_sampler.is_valid():
+		rd.free_rid(_linear_sampler)
+		_linear_sampler = RID()
+
+	if water_counter_buffer.is_valid():
+		rd.free_rid(water_counter_buffer)
+		water_counter_buffer = RID()
+
+	# Relâcher les références propres à cet orchestrateur. GPUContext conserve
+	# un device partagé pour éviter les create/destroy Vulkan successifs.
+	gpu = null
+	rd = null
 	
 	print("[Orchestrator] ✅ Ressources libérées")
-
-## Intercepte la suppression de l'objet pour forcer le nettoyage.
-##
-## Garantit que [method cleanup] est appelée même si le script est libéré brusquement.
-##
-## @param what: Type de notification Godot.
-func _notification(what: int) -> void:
-	"""Nettoyage automatique quand l'objet est détruit"""
-	if what == NOTIFICATION_PREDELETE:
-		# cleanup()  # Commented out to prevent null instance error
-		pass
 
 ## Copie une texture vers une autre (pour résoudre les problèmes de ping-pong)
 func _copy_texture(src: RID, dst: RID, width: int, height: int) -> void:

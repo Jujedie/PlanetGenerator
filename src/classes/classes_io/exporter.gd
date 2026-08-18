@@ -83,16 +83,13 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	rd.sync()
 	
 	# === TYPE 6 (GAZEUSE) : Export simplifié ===
-	# Seulement température, précipitation et carte finale
+	# Une géante gazeuse n'a pas de surface sur laquelle les cartes de climat
+	# terrestres auraient un sens. Son rendu atmosphérique est entièrement
+	# contenu dans final_map.
 	var planet_type = int(params.get("planet_type", 0))
 	if planet_type == 6:  # TYPE_GAZEUZE
-		print("[Exporter] 🪐 Export gazeuse - cartes limitées (température, précipitation, final)")
+		print("[Exporter] 🪐 Export gazeuse - carte atmosphérique finale uniquement")
 		var exported_files = {}
-		
-		# Export climat (température + précipitation colorées seulement)
-		var climate_result = _export_climate_maps_gas_giant(gpu, output_dir)
-		for key in climate_result.keys():
-			exported_files[key] = climate_result[key]
 		
 		# Export final map
 		var final_result = _export_final_map(gpu, output_dir)
@@ -156,7 +153,7 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	# === EXPORT CLIMAT (Step 3) - Optimisé RGBA8 Direct ===
 	# Pour les planètes sans atmosphère ou stériles, exporter seulement temp/precip (pas nuages/banquise)
 	if planet_type in [3, 5]:  # TYPE_NO_ATMOS, TYPE_STERILE
-		var climate_result = _export_climate_maps_gas_giant(gpu, output_dir)  # Réutilise: exporte seulement temp + precip
+		var climate_result = _export_climate_maps_without_clouds(gpu, output_dir)
 		for key in climate_result.keys():
 			exported_files[key] = climate_result[key]
 	else:
@@ -462,13 +459,13 @@ func _export_raw_heightmap(geo_img: Image, output_dir: String, width: int, heigh
 		return ""
 
 # ============================================================================
-# EXPORT CLIMAT GAZEUSE (température + précipitation seulement)
+# EXPORT CLIMAT SANS NUAGES (température + précipitation seulement)
 # ============================================================================
 
-## Exporte uniquement température et précipitation pour les planètes gazeuses.
-## Pas de nuages ni de banquise car il n'y a pas de surface.
-func _export_climate_maps_gas_giant(gpu: GPUContext, output_dir: String) -> Dictionary:
-	print("[Exporter] 🪐 Exporting gas giant climate maps (temp + precip)...")
+## Exporte uniquement température et précipitation pour les planètes sans
+## couches nuageuses exportables (types sans atmosphère et stérile).
+func _export_climate_maps_without_clouds(gpu: GPUContext, output_dir: String) -> Dictionary:
+	print("[Exporter] Exporting climate maps without clouds (temp + precip)...")
 	
 	var result = {}
 	var rd = gpu.rd
@@ -480,7 +477,7 @@ func _export_climate_maps_gas_giant(gpu: GPUContext, output_dir: String) -> Dict
 	rd.submit()
 	rd.sync()
 	
-	# Seulement température et précipitation pour les gazeuses
+	# Seulement température et précipitation, sans nuages ni banquise
 	var climate_textures = {
 		"temperature_colored": "temperature_map.png",
 		"precipitation_colored": "precipitation_map.png",
@@ -523,7 +520,7 @@ func _export_climate_maps_gas_giant(gpu: GPUContext, output_dir: String) -> Dict
 		else:
 			push_error("[Exporter] ❌ Failed to save ", filename, ": ", save_err)
 	
-	print("[Exporter] ✅ Gas giant climate export complete: ", result.size(), " maps")
+	print("[Exporter] ✅ Cloudless climate export complete: ", result.size(), " maps")
 	return result
 
 # ============================================================================
@@ -1623,7 +1620,10 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 	
 	# === POST-TRAITEMENT CPU : Assombrir les pixels eau ===
 	# Lire la texture geo pour identifier les pixels eau (élévation < 0)
-	if gpu.textures.has("geo") and gpu.textures["geo"].is_valid():
+	# La texture geo n'a aucune signification pour une géante gazeuse et n'est
+	# volontairement jamais utilisée pour modifier son rendu final.
+	var planet_type = int(params.get("planet_type", 0))
+	if planet_type != Enum.TYPE_GAZEUZE and gpu.textures.has("geo") and gpu.textures["geo"].is_valid():
 		var geo_data = rd.texture_get_data(gpu.textures["geo"], 0)
 		
 		if geo_data.size() > 0:
@@ -1649,7 +1649,7 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 						water_pixels_darkened += 1
 			
 			print("  Water pixels darkened: ", water_pixels_darkened)
-	else:
+	elif planet_type != Enum.TYPE_GAZEUZE:
 		print("  ⚠️ geo texture not available, skipping water darkening")
 	
 	# Sauvegarder en PNG
