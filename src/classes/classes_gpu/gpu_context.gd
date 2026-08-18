@@ -1,6 +1,11 @@
 extends RefCounted
 class_name GPUContext
 
+# Conserver un seul device Vulkan local pour toute l'application. Certains
+# pilotes imposent une limite pratique au nombre de créations/destructions
+# successives, même quand tous les RIDs ont été correctement libérés.
+static var _shared_rd: RenderingDevice = null
+
 # === CONSTANTES DE CONFIGURATION ===
 const FORMAT_STATE = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
 const FORMAT_RGBA8 = RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM
@@ -74,10 +79,17 @@ var shaders: Dictionary = {}
 var pipelines: Dictionary = {}
 var uniform_sets: Dictionary = {}
 var resolution: Vector2i
+var _cleaned_up: bool = false
 
 func _init(resolution_param: Vector2i) -> void:
 	self.resolution = resolution_param
-	rd = RenderingServer.create_local_rendering_device()
+
+	if _shared_rd:
+		rd = _shared_rd
+	else:
+		rd = RenderingServer.create_local_rendering_device()
+		if rd:
+			_shared_rd = rd
 	
 	if not rd:
 		push_error("❌ FATAL: Impossible de créer le RenderingDevice local")
@@ -967,10 +979,15 @@ func readback_texture_raw(tex_id: String) -> PackedByteArray:
 	return rd.texture_get_data(textures[tex_id], 0)
 
 # === NETTOYAGE ===
-func _exit_tree() -> void:
+func cleanup() -> void:
+	"""Libère les RIDs et la référence au RenderingDevice une seule fois."""
+	if _cleaned_up:
+		return
+	_cleaned_up = true
+
 	# Vérifier que le RenderingDevice est toujours valide
 	if not rd:
-		print("⚠️ RenderingDevice déjà libéré, skip cleanup")
+		print("⚠️ RenderingDevice déjà libéré, nettoyage ignoré")
 		return
 	
 	# Libérer les ressources dans l'ordre inverse de création
@@ -997,5 +1014,19 @@ func _exit_tree() -> void:
 		if rid and rid.is_valid():
 			rd.free_rid(rid)
 	textures.clear()
+
+	# Le device partagé reste vivant pour la prochaine génération ; seule la
+	# référence de ce contexte terminé est relâchée.
+	rd = null
 	
 	print("✅ Ressources GPU libérées proprement")
+
+
+## Alias conservé pour les anciens appels internes.
+func _exit_tree() -> void:
+	cleanup()
+
+
+## À appeler uniquement après le nettoyage du dernier GPUContext actif.
+static func shutdown_shared_device() -> void:
+	_shared_rd = null

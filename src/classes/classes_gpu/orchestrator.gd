@@ -15,6 +15,7 @@ var rd: RenderingDevice
 
 var resolution: Vector2i
 var generation_params: Dictionary
+var _cleaned_up: bool = false
 
 # SSBO pour comptage de pixels par composante (water classification)
 var water_counter_buffer: RID = RID()
@@ -4561,29 +4562,41 @@ func export_example_to_image() -> Image:
 ##
 ## Détruit manuellement les RIDs des textures, pipelines, shaders et uniform sets
 ## via [method RenderingDevice.free_rid] pour éviter les fuites de VRAM.
-func cleanup():
+func cleanup() -> void:
 	"""Nettoyage manuel - appeler avant de détruire l'orchestrateur"""
-	
+	if _cleaned_up:
+		return
+	_cleaned_up = true
+
 	if not rd:
-		push_warning("[Orchestrator] RD is null, skipping cleanup")
+		gpu = null
 		return
 	
 	print("[Orchestrator] 🧹 Nettoyage des ressources persistantes...")
-	
-	gpu._exit_tree()
+
+	# S'assurer qu'aucune commande n'utilise encore les ressources que nous
+	# allons libérer. C'est indispensable avant de remplacer un device local.
+	rd.submit()
+	rd.sync()
+
+	# Les uniform sets doivent disparaître avant le sampler qu'ils référencent.
+	if gpu:
+		gpu.cleanup()
+
+	if _linear_sampler.is_valid():
+		rd.free_rid(_linear_sampler)
+		_linear_sampler = RID()
+
+	if water_counter_buffer.is_valid():
+		rd.free_rid(water_counter_buffer)
+		water_counter_buffer = RID()
+
+	# Relâcher les références propres à cet orchestrateur. GPUContext conserve
+	# un device partagé pour éviter les create/destroy Vulkan successifs.
+	gpu = null
+	rd = null
 	
 	print("[Orchestrator] ✅ Ressources libérées")
-
-## Intercepte la suppression de l'objet pour forcer le nettoyage.
-##
-## Garantit que [method cleanup] est appelée même si le script est libéré brusquement.
-##
-## @param what: Type de notification Godot.
-func _notification(what: int) -> void:
-	"""Nettoyage automatique quand l'objet est détruit"""
-	if what == NOTIFICATION_PREDELETE:
-		# cleanup()  # Commented out to prevent null instance error
-		pass
 
 ## Copie une texture vers une autre (pour résoudre les problèmes de ping-pong)
 func _copy_texture(src: RID, dst: RID, width: int, height: int) -> void:

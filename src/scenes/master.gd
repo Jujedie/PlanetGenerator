@@ -83,16 +83,22 @@ func _on_btn_comfirme_pressed() -> void:
 	# UI Gather Data
 	var nom          = get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Name_Param/HBoxContainer/LineEdit")
 	var lblMapStatus = $"ImageFrame/LabelNomMap"
+	var generation_params = _compile_generation_params()
 
 	# Reset state
 	maps      = []
 	map_index = 0
 	$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = load("res://data/img/UI/no_data.png")
 
+	# Le constructeur du nouveau générateur acquiert immédiatement le device
+	# partagé et alloue ses textures. Libérer l'ancienne planète AVANT d'évaluer
+	# PlanetGenerator.new() empêche le chevauchement de deux jeux de ressources.
+	_release_planet_generator()
+
 	# Initialize Generator
 	planetGenerator = PlanetGenerator.new(
 		nom.text, 
-		_compile_generation_params(),
+		generation_params,
 		"user://temp/",
 		lblMapStatus,
 	)
@@ -102,10 +108,21 @@ func _on_btn_comfirme_pressed() -> void:
 
 	print("Génération de la planète : " + nom.text)
 
-	planetGenerator.generate_planet()
+	var generation_started = planetGenerator.generate_planet()
 
-	# Disable UI
-	_set_buttons_enabled(false)
+	# Ne pas bloquer l'interface si l'initialisation GPU a tout de même échoué.
+	_set_buttons_enabled(not generation_started)
+
+
+func _release_planet_generator() -> void:
+	if planetGenerator:
+		planetGenerator.cleanup()
+		planetGenerator = null
+
+
+func _exit_tree() -> void:
+	_release_planet_generator()
+	GPUContext.shutdown_shared_device()
 
 func _on_planetGenerator_finished() -> void:
 	call_deferred("_on_planetGenerator_finished_main")

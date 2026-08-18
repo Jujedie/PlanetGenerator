@@ -21,6 +21,7 @@ var use_gpu_acceleration: bool            = true
 
 # Generation parameters (compiled from UI)
 var generation_params: Dictionary = {}
+var _cleaned_up: bool = false
 
 ## Constructeur de la classe PlanetGenerator.
 ##
@@ -68,7 +69,7 @@ func _init_gpu_system() -> void:
 	"""Initialize GPU acceleration if available"""
 	
 	var gpu_context = GPUContext.new(generation_params["resolution"])
-	if not gpu_context or not gpu_context.rd and not gpu_context.shaders:
+	if not gpu_context or not gpu_context.rd:
 		push_warning("[PlanetGenerator] GPUContext or RD not available")
 		use_gpu_acceleration = false
 		return
@@ -102,7 +103,7 @@ func update_map_status(map_key: String) -> void:
 ##
 ## Démarre le processus de génération. Selon la configuration interne, 
 ## cette méthode initie la séquence GPU ([method generate_planet_gpu]).
-func generate_planet():
+func generate_planet() -> bool:
 	"""
 	Entry point - routes to GPU or CPU
 	GPU path now uses call_deferred for render thread safety
@@ -112,8 +113,10 @@ func generate_planet():
 		print("[PlanetGenerator] Starting GPU generation (render thread)...")
 		# Call on render thread instead of worker thread
 		call_deferred("_generate_planet_gpu_deferred")
+		return true
 	else:
 		print("[PlanetGenerator] Cancelling generation: GPU acceleration not available")
+		return false
 
 ## Wrapper pour l'exécution différée de la génération GPU.
 ##
@@ -286,8 +289,7 @@ func export_to_directory(output_dir: String) -> void:
 		exporter.export_maps(gpu_orchestrator.gpu, output_dir, generation_params)
 		
 		# Cleanup GPU resources after export
-		gpu_orchestrator.cleanup()
-		gpu_orchestrator = null
+		cleanup()
 	
 	print("[PlanetGenerator] Export complete")
 
@@ -295,6 +297,21 @@ func export_to_directory(output_dir: String) -> void:
 func save_maps():
 	"""Legacy save to default directory"""
 	export_to_directory(cheminSauvegarde)
+
+
+## Libère explicitement toutes les ressources GPU propres à cette planète
+## avant qu'un nouveau générateur soit construit. La méthode est idempotente
+## afin que sauvegarde, remplacement et fermeture puissent tous l'appeler.
+func cleanup() -> void:
+	if _cleaned_up:
+		return
+	_cleaned_up = true
+
+	if gpu_orchestrator:
+		gpu_orchestrator.cleanup()
+		gpu_orchestrator = null
+
+	use_gpu_acceleration = false
 
 ## Retourne la liste des chemins de fichiers des cartes générées.
 ##
@@ -367,15 +384,3 @@ static func deleteImagesTemps():
 		dir.remove(file_name)
 		file_name = dir.get_next()
 	dir.list_dir_end()
-
-## Gestionnaire de notifications système Godot.
-##
-## Intercepte [constant Node.NOTIFICATION_PREDELETE] pour assurer le nettoyage
-## propre des ressources GPU (via [method GPUOrchestrator.cleanup]) lors de la destruction de l'objet.
-##
-## @param what: L'identifiant de la notification.
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_PREDELETE:
-		if gpu_orchestrator:
-			gpu_orchestrator.cleanup()
-			gpu_orchestrator = null
