@@ -8,9 +8,9 @@
 // sera ensuite étiré/tourbillonné par gas_giant_advect.glsl le long du champ
 // de vélocité calculé dans gas_giant_velocity_init.glsl.
 //
-// La sélection de palette (scheme_a/scheme_b/scheme_blend) est une fonction
-// pure du seed : elle est recalculée à l'identique dans gas_giant_final.glsl
-// pour rester synchronisée sans avoir besoin de la transmettre par texture.
+// La sélection d'une famille de couleurs cohérente est une fonction pure du
+// seed. Les familles ne sont pas croisées : un mélange arbitraire de teintes
+// chaudes et violettes produisait parfois des palettes rose néon.
 //
 // Sortie :
 // - dye_texture (RGBA32F) : RGB = couleur initiale, A = densité (1.0)
@@ -138,13 +138,12 @@ void main() {
     vec3 cyl = getCylindricalCoords(pos, params.width, params.height, params.cylinder_radius);
     float base_freq = 1.4 / params.cylinder_radius;
 
-    // Même sélection de schéma que la passe finale (fonction pure du seed)
+    // Une seule famille atmosphérique par planète. La variation de luminosité
+    // reste modérée afin de conserver des couleurs de nuages plausibles.
     const uint NUM_SCHEMES = 6u;
     uint scheme_hash = hash(params.seed + 77777u);
-    uint scheme_a = scheme_hash % NUM_SCHEMES;
-    uint scheme_b = hash(scheme_hash + 13u) % NUM_SCHEMES;
-    if (scheme_b == scheme_a) scheme_b = (scheme_a + 1u) % NUM_SCHEMES;
-    float scheme_blend = hashFloat(params.seed + 88888u) * 0.6;
+    uint scheme = scheme_hash % NUM_SCHEMES;
+    float palette_exposure = mix(0.90, 1.02, hashFloat(params.seed + 88888u));
 
     // Largeur de bande légèrement modulée pour éviter la répétition parfaite
     float width_noise = fbm(cyl * base_freq * 0.15, 3, 0.5, 2.0, params.seed + 9000u);
@@ -155,15 +154,15 @@ void main() {
     int band_index_a = int(floor(band_continuous)) % int(params.num_bands);
     int band_index_b = (band_index_a + 1) % int(params.num_bands);
 
-    vec3 color_a = mix(getSchemeColor(scheme_a, band_index_a), getSchemeColor(scheme_b, band_index_a), scheme_blend);
-    vec3 color_b = mix(getSchemeColor(scheme_a, band_index_b), getSchemeColor(scheme_b, band_index_b), scheme_blend);
+    vec3 color_a = getSchemeColor(scheme, band_index_a);
+    vec3 color_b = getSchemeColor(scheme, band_index_b);
     float blend = smoothstep(-0.3, 0.3, band_value);
-    vec3 color = mix(color_a, color_b, blend);
+    vec3 color = mix(color_a, color_b, blend) * palette_exposure;
 
     // Petit grain de texture initial : c'est ce grain que l'advection va
     // étirer en filaments cohérents au fil des itérations.
     float grain = fbm(cyl * base_freq * 5.0, 3, 0.5, 2.0, params.seed + 6000u);
-    color += vec3((grain - 0.5) * 0.08);
+    color += vec3((grain - 0.5) * 0.045);
 
-    imageStore(dye_texture, pos, vec4(clamp(color, 0.0, 1.0), 1.0));
+    imageStore(dye_texture, pos, vec4(clamp(color, 0.02, 0.92), 1.0));
 }

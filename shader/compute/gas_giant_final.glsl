@@ -10,12 +10,14 @@
 //
 // Toute la "forme" fluide (bandes déformées, filaments, tourbillons) vient
 // déjà du colorant advecté -- cette passe ne fait plus que l'habillage
-// final (climat + tempêtes + éclairage).
+// final (structure turbulente + éclairage).
 //
 // Entrées :
 // - dye_texture (RGBA32F)      : colorant advecté (gas_giant_advect.glsl)
 // - velocity_texture (RGBA32F) : R=vx, G=vy, B=vorticité locale
-// - climate_texture (RGBA32F)  : R=température, G=humidité
+// - climate_texture (RGBA32F)  : réservée pour compatibilité de binding ;
+//                                les géantes ne lancent plus les cartes de
+//                                climat terrestre
 //
 // Sortie :
 // - final_map (RGBA8) : Carte finale colorée
@@ -87,24 +89,13 @@ void main() {
     float lat = (v - 0.5) * 2.0;
     float abs_lat = abs(lat);
 
-    vec4 climate = imageLoad(climate_texture, pos);
-    float temperature = climate.r;
-    float humidity = climate.g;
-
     vec4 dye = imageLoad(dye_texture, pos);
     vec3 base_color = dye.rgb;
 
-    // === Modulation climatique ===
-    float temp_normalized = clamp((temperature - params.avg_temperature + 30.0) / 60.0, 0.0, 1.0);
-    base_color *= mix(0.85, 1.15, temp_normalized);
-
-    float saturation_boost = mix(0.9, 1.1, humidity);
-    vec3 grey = vec3(dot(base_color, vec3(0.299, 0.587, 0.114)));
-    base_color = mix(grey, base_color, saturation_boost);
-
-    // === Tempêtes : détectées directement depuis la vorticité stockée dans
-    //     le champ de vélocité (canal .b), moyennée sur les 4 voisins directs
-    //     pour éviter un bruit pixel-à-pixel trop dur. ===
+    // === Turbulence des sommets nuageux ===
+    // La vorticité est moyennée sur les voisins. Elle n'est plus peinte avec
+    // une couleur sombre : les maxima du curl-noise sont des filaments, pas des
+    // tempêtes ovales, et leur teinte foncée créait les taches verticales.
     float vC = imageLoad(velocity_texture, pos).b;
     float vN = imageLoad(velocity_texture, ivec2(pos.x, max(pos.y - 1, 0))).b;
     float vS = imageLoad(velocity_texture, ivec2(pos.x, min(pos.y + 1, h - 1))).b;
@@ -112,21 +103,30 @@ void main() {
     float vW = imageLoad(velocity_texture, ivec2((pos.x - 1 + w) % w, pos.y)).b;
     float vorticity_avg = (vC + vN + vS + vE + vW) / 5.0;
 
-    float vortex_strength = smoothstep(0.55, 0.95, vorticity_avg);
+    float vortex_strength = smoothstep(0.60, 1.05, vorticity_avg);
 
     const uint NUM_SCHEMES = 6u;
     uint scheme_hash = hash(params.seed + 77777u);
     uint scheme_a = scheme_hash % NUM_SCHEMES;
     vec3 spot_tint = getSpotColor(scheme_a);
-    vec3 vortex_color = mix(base_color * 0.7, spot_tint * 0.85, 0.5);
-    base_color = mix(base_color, vortex_color, vortex_strength * 0.6);
+    float base_luminance = dot(base_color, vec3(0.2126, 0.7152, 0.0722));
+    vec3 soft_storm_tint = mix(vec3(base_luminance), spot_tint, 0.20);
+    base_color = mix(base_color, soft_storm_tint, vortex_strength * 0.12);
+    base_color *= mix(1.0, 1.035, vortex_strength);
 
     // === Assombrissement aux pôles ===
     float polar_darkening = 1.0 - pow(abs_lat, 3.0) * 0.25;
     base_color *= polar_darkening;
 
-    // === Clamp final ===
-    base_color = clamp(base_color, vec3(0.0), vec3(1.0));
+    // === Compression des hautes lumières ===
+    // Préserver des zones claires sans autoriser de grandes surfaces à 1.0.
+    // Le plafond de luminance et celui des canaux rendent toutes les palettes
+    // sûres, y compris après advection et turbulence.
+    float luminance = dot(base_color, vec3(0.2126, 0.7152, 0.0722));
+    base_color *= min(1.0, 0.80 / max(luminance, 0.001));
+    float peak = max(base_color.r, max(base_color.g, base_color.b));
+    base_color *= min(1.0, 0.90 / max(peak, 0.001));
+    base_color = clamp(base_color, vec3(0.015), vec3(0.90));
 
     imageStore(final_map, pos, vec4(base_color, 1.0));
 }

@@ -627,22 +627,11 @@ func run_simulation() -> void:
 
 	# === TYPE 6 (GAZEUSE) : Pipeline simplifié ===
 	# Les planètes gazeuses n'ont pas de surface solide.
-	# On ne génère que température, précipitation et une carte finale spéciale.
+	# Leur météorologie visible est générée directement par le pipeline
+	# gazeux : aucune carte de température/précipitation terrestre n'est créée.
 	var atmosphere_type = int(generation_params.get("planet_type", 0))
 	if atmosphere_type == Enum.TYPE_GAZEUZE:
 		print("[Orchestrator] 🪐 Planète gazeuse détectée - pipeline simplifié")
-		
-		var groups_x = ceili(float(w) / 16.0)
-		var groups_y = ceili(float(h) / 16.0)
-		var seed_val = int(generation_params.get("seed", 12345))
-		var avg_temperature = float(generation_params.get("avg_temperature", 15.0))
-		var avg_precipitation = float(generation_params.get("global_humidity", 0.5))
-		var sea_level = float(generation_params.get("sea_level", 0.0))
-		var cylinder_radius = float(w) / (2.0 * PI)
-		
-		# Température et précipitation (réutilise les shaders existants, geo=0 → pas de gradient d'altitude)
-		_dispatch_temperature(w, h, groups_x, groups_y, seed_val, avg_temperature, sea_level, cylinder_radius, atmosphere_type)
-		_dispatch_precipitation(w, h, groups_x, groups_y, seed_val, avg_precipitation, cylinder_radius, atmosphere_type, sea_level)
 		
 		# Carte finale gazeuse (pipeline multi-passes, écoulement fluide par advection)
 		run_gas_giant_phase(generation_params, w, h)
@@ -3971,7 +3960,7 @@ func run_gas_giant_phase(params: Dictionary, w: int, h: int) -> void:
 	var seed_val = int(params.get("seed", 12345))
 	var cylinder_radius = float(w) / (2.0 * PI)
 	var avg_temperature = float(params.get("avg_temperature", 15.0))
-	var num_bands = int(params.get("gas_giant_num_bands", 12))
+	var num_bands = clampi(int(params.get("gas_giant_num_bands", 12)), 6, 24)
 	var jet_strength = float(params.get("gas_giant_jet_strength", 4.0))
 	var eddy_strength = float(params.get("gas_giant_eddy_strength", 2.5))
 	var advection_dt = float(params.get("gas_giant_advection_dt", 1.4))
@@ -3989,10 +3978,11 @@ func run_gas_giant_phase(params: Dictionary, w: int, h: int) -> void:
 	advection_iterations = clampi(advection_iterations, base_iterations, base_iterations * 8)
 
 	# --- Sharpen: keep TOTAL compounded contrast fixed, not per-step -------
-	# sharpen^N compounds exponentially. 1.03 over the original 40 iterations
-	# gives ~3.26x total contrast, which is what actually looked good -- so
-	# that's the target we preserve regardless of how many iterations run.
-	var target_total_sharpen = float(params.get("gas_giant_target_sharpen", 3.26))
+	# La correction agit maintenant sur la saturation autour de la luminance,
+	# pas sur chaque canal autour de 0.5. Une correction totale faible conserve
+	# les filaments sans pousser les bandes claires vers le blanc pur ni les
+	# bandes sombres vers le noir.
+	var target_total_sharpen = clampf(float(params.get("gas_giant_target_sharpen", 1.18)), 1.0, 1.5)
 	var advection_sharpen = pow(target_total_sharpen, 1.0 / float(advection_iterations))
 
 	# === PASSE 1 : CHAMP DE VÉLOCITÉ (calculé une seule fois) ===

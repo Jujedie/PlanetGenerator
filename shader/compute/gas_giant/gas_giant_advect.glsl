@@ -25,7 +25,7 @@ layout(set = 1, binding = 0, std140) uniform AdvectParams {
     uint height;
     uint pass_index;
     float dt;         // pas d'advection (en pixels par itération)
-    float sharpen;     // contre le flou de l'interpolation bilinéaire répétée (1.0 = neutre)
+    float sharpen;     // conservation douce de saturation (1.0 = neutre)
     float padding1;
     float padding2;
     float padding3;
@@ -80,12 +80,13 @@ void main() {
 
     vec4 advected = sampleDyeBilinear(prev_pos, w, h);
 
-    // Léger regain de contraste pour compenser le flou introduit par
-    // l'interpolation bilinéaire répétée sur de nombreuses itérations
-    // (sinon les filaments finissent dilués en gris uniforme au bout
-    // de quelques dizaines de passes).
-    vec3 color = (advected.rgb - vec3(0.5)) * params.sharpen + vec3(0.5);
-    color = clamp(color, 0.0, 1.0);
+    // Compenser doucement la désaturation de l'interpolation bilinéaire.
+    // L'ancienne correction autour de gris=0.5 amplifiait la luminance à
+    // chaque passe : les nuages clairs finissaient blancs et les canaux faibles
+    // noirs, d'où les aplats surexposés et les filaments sombres.
+    float luminance = dot(advected.rgb, vec3(0.2126, 0.7152, 0.0722));
+    vec3 color = mix(vec3(luminance), advected.rgb, params.sharpen);
+    color = clamp(color, vec3(0.01), vec3(0.99));
 
     imageStore(dye_output, pos, vec4(color, advected.a));
 }
