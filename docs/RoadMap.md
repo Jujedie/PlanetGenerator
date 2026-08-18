@@ -1,91 +1,374 @@
-# GEMINI.md - Manifeste Technique : PlanetGenerator Final-Upgrade
+# PlanetGenerator — Final Development Roadmap
 
-## 1. Vision du Projet
-Le projet **PlanetGenerator Final-Upgrade** vise à remplacer l'ancienne génération procédurale basée sur le CPU (Legacy Generators) par une architecture **massivement parallèle sur GPU (Compute Shaders)** sous Godot 4.x.
+This document is the authoritative implementation roadmap for PlanetGenerator.
+Milestones are completed in order. Work does not advance to the next milestone
+until the current milestone's acceptance gate passes.
 
-L'objectif n'est pas seulement d'optimiser les performances, mais de changer de paradigme : passer d'une **génération par bruit** (Perlin/Simplex aléatoire) à une **génération par simulation** (processus géophysiques réalistes).
+## 1. Product goals and locked constraints
 
-## 2. Objectifs Fondamentaux
+PlanetGenerator will remain a standalone Godot 4.x application while the
+generation system is developed and validated. After the complete application
+passes its validation suite, a dedicated addon branch will package the stable,
+UI-independent generator for direct use inside other Godot games.
 
-### A. Réalisme Scientifique ("Hard Science")
-Les cartes générées ne doivent pas être de simples textures de bruit. Elles doivent être le résultat de l'interaction de lois physiques :
-* **Géologie :** Tectonique des plaques, dérive, collision et subduction.
-* **Hydrologie :** Écoulement réaliste des fluides, érosion hydraulique, transport de sédiments.
-* **Climatologie :** Circulation atmosphérique, influence de l'altitude sur la température, cycle de l'eau.
-* **Topologie :** Les cartes doivent être **Seamless (Cycliques)** sur l'axe X (Longitude) pour permettre une projection planétaire cohérente.
+### 1.1 Global solid-surface maps
 
-### B. Parité Fonctionnelle avec le Legacy (Sorties Équivalentes)
-Le nouveau système doit être capable de produire **toutes les données** que produisaient les générateurs CPU "Legacy", mais avec une qualité et une cohérence supérieures.
-Le reste du jeu (gameplay, rendu) s'attend à recevoir des textures spécifiques (Hauteur, Humidité, Température, Biome). Le moteur GPU doit fournir ces outputs.
+- Maximum reference planet: Venus radius, 6,051.8 km.
+- Canonical maximum grid: 30,339 × 15,170 cells.
+- Projection target: equal-area.
+- Cell meaning: approximately 1 pixel = 1 km².
+- Storage and processing tile size: 2,048 × 2,048 pixels.
+- Maximum-grid layout: 15 × 8 tiles, with cropped edge tiles.
+- Every layer uses the same logical dimensions, coordinate transform, tile
+  indices, edge rules, and generator version.
+- Horizontal wrapping must be seamless.
+- Hard generation ceiling: 5 GiB of VRAM.
+- Preferred working ceiling: 4 GiB of VRAM or less.
+- Identical seeds, parameters, and generator versions must produce identical
+  results.
 
-### C. Architecture GPU Consolidée (Pas de "1 Shader = 1 Map")
-Contrairement à l'approche CPU modulaire (un script par type de carte), l'approche GPU doit être **intégrée et systémique**.
-**Nous ne ferons pas un shader par carte.** Nous ferons des shaders de **simulation** qui génèrent plusieurs cartes en sortie simultanément via des `Texture2DArray` ou des canaux RGBA compressés.
+The maximum planet is represented by a logical tiled dataset, not by one
+30,339-pixel-wide Godot texture.
 
----
+### 1.2 Gas giants
 
-## 3. Stratégie de Remplacement (Legacy vs GPU)
+- Gas giants generate atmospheric outputs only.
+- Terrestrial precipitation, temperature, river, biome, region, resource, and
+  surface-zone outputs are not generated unless a future atmospheric model
+  explicitly requires an equivalent layer.
+- The gas-giant path must remain deterministic, avoid dark artifacts and
+  uncontrolled highlights, and support repeated generation without retained
+  GPU resources.
 
-Voici comment les modules CPU disparates seront fusionnés en pipelines de simulation GPU cohérents :
+### 1.3 Detailed local zones
 
-| Générateur Legacy (CPU) | Système GPU (Compute Shaders) | Description de la Simulation |
-| :--- | :--- | :--- |
-| **ElevationMapGenerator** | **1. Tectonic & Orogeny Pipeline** | Simule le mouvement des plaques (Voronoi) et le soulèvement des montagnes aux zones de collision. Génère la *HeightMap* de base. |
-| **RiverMapGenerator**<br>**WaterMapGenerator**<br>**Elevation (Erosion)** | **2. Hydraulic Erosion Pipeline** | Simule la pluie, le flux d'eau, l'érosion du terrain et le dépôt de sédiments. Génère la *HeightMap Finale*, la *WaterMask*, et la *RiverFluxMap*. |
-| **TemperatureMapGenerator**<br>**PrecipitationMapGenerator**<br>**NuageMapGenerator**<br>**BanquiseMapGenerator** | **3. Atmosphere & Climate Pipeline** | Simule la thermodynamique globale. La température dépend de la latitude et de l'altitude (issue de l'étape 2). L'humidité est transportée par les vents. Génère *TempMap*, *WetnessMap*, *IceMask*. |
-| **BiomeMapGenerator**<br>**RegionMapGenerator** | **4. Biosphere Classification** | Un shader léger qui lit les résultats précédents (Hauteur, Temp, Humidité) et applique un Diagramme de Whittaker pour classifier les pixels. Génère *BiomeMap* et *RegionMap*. |
-| **RessourceMapGenerator**<br>**OilMapGenerator** | **5. Geological Resource Layer** | Déduit les ressources en fonction de l'historique géologique (ex: Pétrole là où l'eau a stagné longtemps, Charbon dans les zones de forêts denses anciennes). |
+- Each global solid-surface cell addresses a 1 km × 1 km local zone.
+- Initial detailed-zone target: 1,024 × 1,024 samples, approximately 0.98 metres
+  per local sample.
+- Local generation uses absolute planet-space coordinates, shared global
+  features, overlap halos, and deterministic seeds.
+- Adjacent zones must be seamless and independent of request order.
+- Gas giants do not expose solid-surface local zones.
 
----
+### 1.4 Application and addon
 
-## 4. Pipeline Technique (Godot 4 & Vulkan)
+- The standalone application is the reference implementation.
+- All generator logic should be kept UI-independent where practical, even
+  before addon extraction.
+- No HTTP server, network port, or web backend will be implemented.
+- After the application is complete, a dedicated addon branch will expose the
+  generator through direct GDScript functions, asynchronous jobs, resources,
+  and signals inside a consuming Godot game.
 
-### Orchestrateur (`orchestrator.gd`)
-Le chef d'orchestre GDScript qui ne fait aucun calcul lourd. Son rôle est de :
-1.  Préparer les **Uniform Buffers** (Paramètres de simulation : gravité, niveau de la mer, nombre de plaques).
-2.  Gérer les **Storage Buffers** et **Textures** (Mémoire VRAM partagée entre les shaders).
-3.  Lancer les **Compute Lists** (Dispatch) dans le bon ordre.
-4.  Gérer les **Barrières de Mémoire** pour éviter que l'érosion ne commence avant que la tectonique ne soit finie.
+## 2. Development rules
 
-### Structure des Données (Optimisation)
-Pour réduire les transferts mémoire, nous utiliserons le "Texture Packing".
-* **GeoTexture (RGBA Float32) :**
-    * R : Height (Hauteur)
-    * G : Bedrock (Roche dure)
-    * B : Sediment (Sédiments meubles)
-    * A : Water Height (Hauteur d'eau)
-* **ClimateTexture (RGBA Float16) :**
-    * R : Temperature
-    * G : Humidity/Precipitation
-    * B : Wind X
-    * A : Wind Y
+- Correctness is established before performance optimization.
+- Performance is measured before and after each optimization.
+- Fixed benchmark seeds are retained for the lifetime of the project.
+- Intermediate maps are used to identify the stage that introduces an artifact.
+- Raw physical data is kept separate from display colors and cartographic
+  overlays.
+- Large-planet work must never rely on a full-resolution monolithic GPU texture.
+- Each milestone includes deterministic regression tests where applicable.
+- New code must preserve safe RenderingDevice ownership and reliable cleanup
+  across cancellation, regeneration, application exit, and export.
 
-### Contraintes Critiques
-1.  **Seamless X :** Tous les calculs de distance (Voronoi, Bruit, Érosion) doivent utiliser une fonction de distance cyclique (`min(dx, width - dx)`).
-2.  **LOD (Level of Detail) :** Le système doit être capable de générer une basse résolution pour la vue orbitale et une haute résolution pour la vue locale (future implémentation).
-3.  **Non-Bloquant :** L'orchestrateur doit utiliser `RenderingDevice` de manière asynchrone pour ne pas geler l'interface du jeu pendant la génération.
-4.  **Performance :** Dans un temps futur, envisager l'implémentation de techniques d'optimisation GPU avancées (telles que le culling spatial ou les compute shaders multi-pass) pour améliorer les performances sur des résolutions élevées.
----
+## 3. Milestone roadmap
 
-## 5. État Actuel et Prochaines Étapes
+### Milestone 0 — Specification and roadmap
 
-Le projet a migré avec succès les bases de l'infrastructure GPU.
-* ❌ **Intégration des types de planètes :** Actuellement, aucune différenciation entre planètes terrestres, gazeuses ou océaniques n'est implémentée. Cela doit être ajouté pour permettre des variations dans les simulations géophysiques.
-Par exemples il ne devrait pas y avoir d'érosion hydraulique sur une planète gazeuse ou sans atmosphère.
-De même des cratères d'impact devraient être simulés sur des planètes sans atmosphère.
-* ✅ **Infrastructure :** `orchestrator.gd` et `gpu_context.gd` fonctionnels.
-* 🚧 **Tectonique :** Peaufiner l'implémentation de base Voronoi (à raffiner pour le réalisme des failles, aussi créer la map water).
-* 🚧 **Érosion :** Peaufiner la simulation hydraulique fonctionnelle (UBO corrigés).
-* 🚧 **Cratering :** À implémenter pour simuler les impacts sur les planètes sans atmosphère.
-* 🚧 **Hydrologie :** Intégration partielle, nécessite des ajustements pour le transport des sédiments, rivières fleuves, fleuves affluents, lacs etc..
-* 🚧 **Atmosphère :** Shader existant mais doit être connecté aux données d'élévation réelles.
-* ❌ **Température & Précipitations :** À intégrer dans le pipeline Atmosphère.
-* ❌ **Banquises :** À implémenter dans le pipeline température.
-* ❌ **Biomes & Ressources :** À implémenter en tant que shaders de post-traitement.
-* ❌ **Régions :** À implémenter en tant que shaders de post-traitement.
-* ❌ **Preview 2D View :** Implémentation dans exporter.gd.
-* ❌ **Rendu Final :** Implémentation dans exporter.gd.
+Status: complete when this document is accepted.
 
+Deliverables:
 
-**Note au développeur (Toi) :**
-Toute modification du code doit prioriser la stabilité des buffers GPU (attention aux alignements std140/std430) et la cohérence physique des résultats.
+- Locked physical scale, maximum grid, tile size, VRAM ceiling, local-zone
+  contract, application-first release order, and addon strategy.
+- Ordered milestones and explicit acceptance gates.
+
+### Milestone 1 — Terrain, tectonics, crust age, and erosion correctness
+
+Goal: make the current-resolution generator physically coherent and
+deterministic before scaling it.
+
+Work:
+
+1. Establish permanent benchmark seeds for a balanced terrestrial planet, a
+   mountainous/dry planet, an ocean-heavy planet, and a gas giant.
+2. Record per-stage duration, intermediate outputs, elevation statistics, GPU
+   synchronization/readback counts, and available memory measurements.
+3. Provide erosion with valid preliminary rainfall before hydraulic erosion;
+   compute the final climate after erosion.
+4. Correct erosion ping-pong buffer ownership so every iteration consumes the
+   latest terrain state and leaves the final state in the authoritative texture.
+5. Make slope and erosion calculations use a declared physical horizontal
+   distance instead of assuming that one neighbour is one unit at every
+   resolution.
+6. Restrict spreading-ridge seeds to actual divergent oceanic boundaries.
+7. Make crust-age propagation deterministic with separate read/write state.
+8. Apply oceanic subsidence only to oceanic crust and make the configured
+   subsidence coefficient effective.
+9. Reduce continuous synthetic tectonic lineaments and prevent boundary types
+   from being applied across broad plate-pair regions.
+10. Verify gas-giant output selection and retain the existing stability guards
+    for repeated generation.
+
+Acceptance gate:
+
+- Erosion produces visible and measurable terrain change.
+- Continental interiors are not crossed by unexplained global trenches.
+- Continental lowlands are not treated as old oceanic crust.
+- The final erosion state is read by every downstream phase.
+- Repeated runs with the same seed and parameters are identical.
+- Gas giants export only intended atmospheric outputs.
+- Available static and runtime validation passes without new shader or GDScript
+  errors.
+
+### Milestone 2 — Hydrology, lakes, and river correctness
+
+Goal: build a conserved and hierarchical drainage system on the corrected
+terrain.
+
+Work:
+
+- Replace fixed-pass depression filling with a convergent method.
+- Calculate consistent downstream flow directions.
+- Add precipitation once per cell and conserve accumulated flux.
+- Remove river-layout dependence on an arbitrary propagation iteration count.
+- Establish tributary, river, and major-river hierarchy.
+- Separate real lakes from high-frequency one-pixel depressions.
+- Preserve drainage across the horizontal planet seam.
+- Ensure rivers terminate in oceans, valid lakes, or valid closed basins.
+
+Acceptance gate:
+
+- Flux is conserved within documented tolerances.
+- River structure is stable when redundant iteration counts change.
+- Tributaries converge into progressively larger rivers.
+- Artificial lake speckle is removed.
+- Hydrology is deterministic and horizontally seamless.
+
+### Milestone 3 — Core optimization and resource lifecycle
+
+Goal: optimize verified behavior before introducing maximum-scale tiling.
+
+Work:
+
+- Measure GPU simulation, synchronization, readback, CPU conversion, PNG
+  compression, peak VRAM, peak system RAM, and total generation time.
+- Batch dependent compute dispatches and remove unnecessary `rd.sync()` calls.
+- Synchronize only at true CPU dependencies and readbacks.
+- Categorize textures as permanent, next-phase, temporary, export-only, or
+  debug-only; release or reuse them after their final consumer.
+- Replace unnecessarily wide texture formats with R8, R16, R32F, R16UI,
+  R32UI, or RGBA8 as appropriate.
+- Remove simultaneous full-map RGBA32F CPU readbacks.
+- Export map-by-map and later tile-by-tile.
+- Replace the misleading generation-thread setting with an automatic,
+  export-specific CPU worker policy.
+- Keep a single controlled GPU generation queue.
+
+Acceptance gate:
+
+- Correctness benchmarks remain equivalent within documented tolerances.
+- Synchronization and readback time are materially reduced.
+- At least 20 consecutive current-resolution generations complete without
+  retained VRAM, crashes, or blocked generation.
+- Export memory no longer scales as multiple simultaneous RGBA32F maps.
+- CPU worker count is automatic or explicitly labelled as export-only.
+
+### Milestone 4 — Canonical coordinates and tiled layer contract
+
+Goal: establish one authoritative coordinate and storage model for every map.
+
+Work:
+
+- Decouple physical radius from sampling resolution.
+- Implement the equal-area logical coordinate system.
+- Define world-to-global-cell and global-cell-to-world transforms.
+- Define horizontal wrapping, polar behavior, tile addressing, edge cropping,
+  layer formats, and no-data values.
+- Define deterministic zoom/LOD downsampling rules.
+- Write a versioned planet manifest containing seed, parameters, generator
+  version, radius, projection, dimensions, cell area, tile size, layer formats,
+  palette version, and checksums.
+
+Acceptance gate:
+
+- Every layer resolves a world coordinate to the same cell and tile.
+- Coordinate conversions round-trip within documented precision.
+- The tile set covers the logical grid exactly without gaps or overlaps.
+- The maximum grid represents approximately one cell per km².
+
+### Milestone 5 — Tiled global generation under 5 GiB
+
+Goal: generate maximum-scale planets without monolithic textures.
+
+Work:
+
+- Generate 2,048-pixel tiles with phase-specific overlap halos.
+- Evaluate procedural fields in absolute planet coordinates.
+- Crop halos only after neighbourhood-dependent processing.
+- Store completed tile results outside active VRAM.
+- Provide cross-tile tectonic, climate, and hydrology context.
+- Implement hierarchical global drainage routing.
+- Stream tile readbacks and exports.
+- Reject allocations that would exceed the configured VRAM budget.
+- Support cancellation and recovery without corrupting completed tiles.
+
+Acceptance gate:
+
+- Every phase remains below the 5 GiB hard ceiling and preferably below 4 GiB.
+- No texture exceeds Godot or device dimension limits.
+- Adjacent global tiles match at shared boundaries.
+- Cancellation, cleanup, and regeneration leave the GPU usable.
+
+### Milestone 6 — Cartographic rendering and colors
+
+Goal: produce readable military-style topographic maps without baking style
+into the physical simulation data.
+
+Work:
+
+- Implement palette-driven terrain, water, and biome coloring.
+- Add elevation contours, bathymetric contours, coastlines, subtle hillshade,
+  coordinate grids, labels/markers, and zoom-dependent line widths.
+- Suggested contour intervals:
+
+| View | Minor contour | Major contour |
+| --- | ---: | ---: |
+| Planet | 250 m | 1,000 m |
+| Regional | 50 m | 250 m |
+| Local zone | 5 m | 25 m |
+
+- Keep raw height, climate, water, biome, and region data independent of the
+  selected display palette.
+
+Acceptance gate:
+
+- Changing palettes does not require regenerating physical data.
+- Contours and hillshade remain seamless across tiles.
+- Colors avoid uncontrolled brightness and retain readable terrain classes.
+- Coastline, elevation, water, and grid information remain legible at each LOD.
+
+### Milestone 7 — Seamless detailed 1 km² local zones
+
+Goal: allow games to request deterministic high-resolution terrain for any
+solid-surface global cell.
+
+Work:
+
+- Address a zone by planet ID, generator version, and global cell coordinate.
+- Generate local data in absolute metre-space.
+- Use global elevation, climate, hydrology, biome, coast, and tectonic features
+  as the local macro constraints.
+- Generate overlap halos and crop only after local processing.
+- Run detailed erosion on regional patches rather than isolated 1 km zones.
+- Refine globally defined rivers, coasts, faults, and future roads locally.
+- Place vegetation, rocks, resources, and spawn data with deterministic
+  world-space sampling.
+- Cache versioned local-zone results.
+
+Initial local outputs:
+
+- Detailed height, normals, and slope.
+- Water depth and river/coast masks.
+- Biome and material weights.
+- Soil and rock classification.
+- Resource, spawn, and vegetation-density masks.
+
+Acceptance gate:
+
+- A 3 × 3 group generated separately and in random order assembles without
+  height, normal, hydrology, material, or object-placement seams.
+- Shared boundary samples match exactly where exact equality is required.
+- Repeating a request produces identical results.
+
+### Milestone 8 — Standalone application stabilization
+
+Goal: prove the complete generator before extracting an addon.
+
+Work:
+
+- Run a complete Venus-scale generation.
+- Validate peak VRAM and system-RAM behavior.
+- Validate deterministic global tile and local-zone hashes.
+- Test cancellation and application exit during every major phase.
+- Generate at least 50 planets consecutively without GPU lifecycle failures or
+  increasing retained memory.
+- Test all supported planet types and relevant output contracts.
+
+Acceptance gate:
+
+- Venus-scale generation stays below 5 GiB VRAM.
+- Repeated generation, cancellation, cleanup, and export remain stable.
+- The standalone application is considered the stable reference release.
+
+### Milestone 9 — Dedicated Godot addon branch
+
+Goal: package the proven generator for direct use inside Godot games.
+
+This milestone begins only after Milestone 8 passes. A dedicated addon branch is
+created from the validated application version.
+
+Work:
+
+- Package the stable core under an addon-oriented directory structure.
+- Remove dependencies on application UI nodes, sliders, labels, and hard-coded
+  temporary paths.
+- Represent inputs with validated generation-spec resources.
+- Expose asynchronous functions, jobs, resources, progress signals,
+  cancellation, manifests, global-tile access, and local-zone requests.
+- Preserve one safe RenderingDevice owner and one controlled GPU queue.
+- Keep the standalone UI out of the distributed addon.
+- Do not add HTTP, sockets, ports, or web-server infrastructure.
+
+Representative in-game calls:
+
+```gdscript
+var planet_job = PlanetGeneratorService.generate_planet(spec)
+var zone_job = PlanetGeneratorService.generate_local_zone(
+    planet_id,
+    Vector2i(global_x, global_y),
+    1024
+)
+```
+
+Acceptance gate:
+
+- The addon can be enabled in a clean Godot 4.x game project.
+- A game can generate planets and local zones through direct functions and
+  signals without loading the standalone UI.
+- Addon results match the validated standalone application.
+
+### Milestone 10 — Consuming-game integration
+
+Goal: validate real use of the addon in a game.
+
+Work:
+
+- Integrate the addon into a representative game project.
+- Load global tiles by layer and LOD.
+- Request and cache local zones during gameplay.
+- Validate progress, cancellation, errors, cleanup, and save compatibility.
+- Document the public resources, functions, signals, output formats, and version
+  compatibility policy.
+
+Acceptance gate:
+
+- The game can call the generator directly without a web server or external
+  process.
+- Global and local data remain deterministic and seamless.
+- Generation respects the same memory and lifecycle guarantees as the app.
+
+## 4. Immediate execution order
+
+The next implementation work is Milestone 1:
+
+1. Establish benchmark seeds and per-stage evidence.
+2. Correct erosion rainfall ordering and buffer flow.
+3. Correct crust-age boundary seeding, propagation, and subsidence masking.
+4. Make erosion distances resolution-aware.
+5. Reduce unrealistic tectonic lineaments.
+6. Run static/runtime validation and compare the fixed seeds.
+
+Milestone 2 does not begin until the Milestone 1 acceptance gate passes.
