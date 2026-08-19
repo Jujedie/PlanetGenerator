@@ -35,9 +35,16 @@ func _run() -> void:
 	var deterministic: bool = (
 		first["crust_hash"] == second["crust_hash"]
 		and first["eroded_geo_hash"] == second["eroded_geo_hash"]
+		and first["cloud_hash"] == second["cloud_hash"]
 	)
 	var erosion_visible := float(first["max_erosion_delta_m"]) > 0.0001
+	var erosion_preserves_land := int(first["eroded_land_below_sea"]) == 0
 	var land_preserved := int(first["modified_land_pixels_by_subsidence"]) == 0
+	var cloud_contract := (
+		int(first["cloud_alpha_violations"]) == 0
+		and int(first["cloud_max_density"]) > int(first["cloud_min_density"])
+	)
+	var seam_merge_safe := _validate_seam_merge_contract()
 	var gas_deterministic: bool = first_gas["final_hash"] == second_gas["final_hash"]
 	var gas_export_contract: bool = (
 		first_gas["exported_keys"] == ["final_map"]
@@ -49,7 +56,11 @@ func _run() -> void:
 	print("[Milestone1Smoke] crust_hash=", first["crust_hash"])
 	print("[Milestone1Smoke] eroded_geo_hash=", first["eroded_geo_hash"])
 	print("[Milestone1Smoke] max_erosion_delta_m=", first["max_erosion_delta_m"])
+	print("[Milestone1Smoke] eroded_land_below_sea=", first["eroded_land_below_sea"])
 	print("[Milestone1Smoke] modified_land_pixels_by_subsidence=", first["modified_land_pixels_by_subsidence"])
+	print("[Milestone1Smoke] cloud_density_range=", first["cloud_min_density"], "..", first["cloud_max_density"])
+	print("[Milestone1Smoke] cloud_alpha_violations=", first["cloud_alpha_violations"])
+	print("[Milestone1Smoke] seam_merge_safe=", seam_merge_safe)
 	print("[Milestone1Smoke] deterministic=", deterministic)
 	print("[Milestone1Smoke] gas_final_hash=", first_gas["final_hash"])
 	print("[Milestone1Smoke] gas_exported_keys=", first_gas["exported_keys"])
@@ -62,14 +73,29 @@ func _run() -> void:
 		push_error("Milestone 1 output is not deterministic for the fixed seed")
 	if not erosion_visible:
 		push_error("Hydraulic erosion did not produce a measurable height change")
+	if not erosion_preserves_land:
+		push_error("Hydraulic erosion converted continental cells into ocean")
 	if not land_preserved:
 		push_error("Oceanic subsidence modified cells that were land before crust-age finalization")
+	if not cloud_contract:
+		push_error("Cloud export is uniform or does not use the opaque density-mask contract")
+	if not seam_merge_safe:
+		push_error("Distinct administrative regions were merged across the horizontal seam")
 	if not gas_deterministic:
 		push_error("Gas-giant output is not deterministic for the fixed seed")
 	if not gas_export_contract:
 		push_error("Gas-giant generation/export produced terrestrial phases or outputs")
 
-	var passed: bool = deterministic and erosion_visible and land_preserved and gas_deterministic and gas_export_contract
+	var passed: bool = (
+		deterministic
+		and erosion_visible
+		and erosion_preserves_land
+		and land_preserved
+		and cloud_contract
+		and seam_merge_safe
+		and gas_deterministic
+		and gas_export_contract
+	)
 	_quit(0 if passed else 1)
 
 func _quit(exit_code: int) -> void:
@@ -127,9 +153,12 @@ func _generate_snapshot() -> Dictionary:
 	orchestrator.run_pre_erosion_climate_phase(params, TEST_RESOLUTION.x, TEST_RESOLUTION.y)
 	orchestrator.run_erosion_phase(params, TEST_RESOLUTION.x, TEST_RESOLUTION.y)
 	var eroded_geo := gpu.readback_texture_raw("geo")
+	orchestrator.run_atmosphere_phase(params, TEST_RESOLUTION.x, TEST_RESOLUTION.y)
+	var cloud_data := gpu.readback_texture_raw("clouds")
 
 	var modified_land_pixels := 0
 	var max_erosion_delta := 0.0
+	var eroded_land_below_sea := 0
 	var pixel_count := TEST_RESOLUTION.x * TEST_RESOLUTION.y
 	for pixel_index in range(pixel_count):
 		var offset := pixel_index * 16
@@ -139,16 +168,39 @@ func _generate_snapshot() -> Dictionary:
 
 		if base_height >= float(params["sea_level"]) and abs(crust_height - base_height) > 0.0001:
 			modified_land_pixels += 1
+		if crust_height >= float(params["sea_level"]) and eroded_height < float(params["sea_level"]):
+			eroded_land_below_sea += 1
 		max_erosion_delta = max(max_erosion_delta, abs(eroded_height - crust_height))
+
+	var cloud_min_density := 255
+	var cloud_max_density := 0
+	var cloud_alpha_violations := 0
+	for offset in range(0, cloud_data.size(), 4):
+		cloud_min_density = mini(cloud_min_density, int(cloud_data[offset]))
+		cloud_max_density = maxi(cloud_max_density, int(cloud_data[offset]))
+		if int(cloud_data[offset + 3]) != 255:
+			cloud_alpha_violations += 1
 
 	var result := {
 		"crust_hash": hash(crust_data),
 		"eroded_geo_hash": hash(eroded_geo),
 		"modified_land_pixels_by_subsidence": modified_land_pixels,
 		"max_erosion_delta_m": max_erosion_delta,
+		"eroded_land_below_sea": eroded_land_below_sea,
+		"cloud_hash": hash(cloud_data),
+		"cloud_min_density": cloud_min_density,
+		"cloud_max_density": cloud_max_density,
+		"cloud_alpha_violations": cloud_alpha_violations,
 	}
 	orchestrator.cleanup()
 	return result
+
+func _validate_seam_merge_contract() -> bool:
+	var data := PackedByteArray()
+	data.resize(8)
+	data.encode_u32(0, 11)
+	data.encode_u32(4, 22)
+	return HierarchyBuilder.compute_merge_map(data, 2, 1).is_empty()
 
 func _generate_gas_snapshot() -> Dictionary:
 	var params := {

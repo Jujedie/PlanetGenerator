@@ -674,10 +674,6 @@ func _export_region_map(gpu: GPUContext, output_dir: String, _optimised_region_g
 	
 	# Dictionnaire: region_id -> premier pixel où on l'a vu
 	var region_first_seen: Dictionary = {}
-	# Pour fusionner les régions qui touchent les bords (wrap horizontal)
-	# On stocke les IDs vus sur la colonne 0 et la colonne width-1
-	var left_edge_ids: Dictionary = {}  # y -> id
-	var right_edge_ids: Dictionary = {}  # y -> id
 	
 	for y in range(height):
 		for x in range(width):
@@ -690,43 +686,19 @@ func _export_region_map(gpu: GPUContext, output_dir: String, _optimised_region_g
 			
 			if not region_first_seen.has(region_id):
 				region_first_seen[region_id] = Vector2i(x, y)
-			
-			# Enregistrer les IDs sur les bords
-			if x == 0:
-				left_edge_ids[y] = region_id
-			elif x == width - 1:
-				right_edge_ids[y] = region_id
-	
-	# Fusionner les régions qui se touchent via le wrap horizontal
-	# Une région sur le bord droit (x=width-1) est adjacente au bord gauche (x=0)
-	var merge_map: Dictionary = {}  # id_to_merge -> id_target
-	for y in right_edge_ids.keys():
-		if left_edge_ids.has(y):
-			var right_id = right_edge_ids[y]
-			var left_id = left_edge_ids[y]
-			if right_id != left_id and right_id != 0xFFFFFFFF and left_id != 0xFFFFFFFF:
-				# Fusionner le plus grand ID vers le plus petit
-				var keep_id = min(right_id, left_id)
-				var merge_id = max(right_id, left_id)
-				merge_map[merge_id] = keep_id
-	
-	# Appliquer la transitivité des fusions
-	for merge_id in merge_map.keys():
-		var target = merge_map[merge_id]
-		while merge_map.has(target):
-			target = merge_map[target]
-		merge_map[merge_id] = target
-	
-	print("    Found ", region_first_seen.size(), " unique regions, ", merge_map.size(), " to merge via wrap")
+
+	# Deux IDs différents qui se touchent sur la couture sont voisins, pas une
+	# seule région. Le JFA conserve déjà un même ID à travers le wrap.
+	var merge_map := HierarchyBuilder.compute_merge_map(data, width, height)
+
+	print("    Found ", region_first_seen.size(), " unique regions")
 	
 	# =========================================================================
 	# PHASE 2 : Assigner les couleurs séquentiellement (système Region.gd)
 	# =========================================================================
-	print("  Phase 2: Assigning colors (Region.gd step=17 system)...")
+	print("  Phase 2: Assigning deterministic high-contrast colors...")
 	
 	var id_to_color: Dictionary = {}
-	var color_counter: Array = [0, 0, 0, 255]  # R, G, B, A
-	const STEP = 17  # Identique à Region.gd
 	
 	# Trier les IDs par ordre de première apparition (y puis x) pour consistance
 	var sorted_ids: Array = []
@@ -753,27 +725,10 @@ func _export_region_map(gpu: GPUContext, output_dir: String, _optimised_region_g
 		return pos_a < pos_b
 	)
 	
-	# Assigner les couleurs dans l'ordre
+	var ordered_ids: Array = []
 	for item in unique_sorted:
-		var eff_id = item[0]
-		if id_to_color.has(eff_id):
-			continue
-		
-		# Créer la couleur actuelle
-		var color = Color(color_counter[0] / 255.0, color_counter[1] / 255.0, 
-						  color_counter[2] / 255.0, color_counter[3] / 255.0)
-		id_to_color[eff_id] = color
-		
-		# Incrémenter le compteur (système Region.gd)
-		color_counter[0] += STEP
-		if color_counter[0] > 255:
-			color_counter[0] = color_counter[0] % 256
-			color_counter[1] += STEP
-		if color_counter[1] > 255:
-			color_counter[1] = color_counter[1] % 256
-			color_counter[2] += STEP
-		if color_counter[2] > 255:
-			color_counter[2] = color_counter[2] % 256
+		ordered_ids.append(item[0])
+	id_to_color = HierarchyBuilder.assign_colors(ordered_ids)
 	
 	print("    Assigned ", id_to_color.size(), " unique colors")
 	
@@ -930,8 +885,6 @@ func _export_ocean_region_map(gpu: GPUContext, output_dir: String, _optimised_re
 	print("  Phase 1: Collecting unique ocean region IDs...")
 	
 	var region_first_seen: Dictionary = {}
-	var left_edge_ids: Dictionary = {}
-	var right_edge_ids: Dictionary = {}
 	
 	for y in range(height):
 		for x in range(width):
@@ -944,40 +897,17 @@ func _export_ocean_region_map(gpu: GPUContext, output_dir: String, _optimised_re
 			
 			if not region_first_seen.has(region_id):
 				region_first_seen[region_id] = Vector2i(x, y)
-			
-			if x == 0:
-				left_edge_ids[y] = region_id
-			elif x == width - 1:
-				right_edge_ids[y] = region_id
-	
-	# Fusionner les régions via wrap horizontal
-	var merge_map: Dictionary = {}
-	for y in right_edge_ids.keys():
-		if left_edge_ids.has(y):
-			var right_id = right_edge_ids[y]
-			var left_id = left_edge_ids[y]
-			if right_id != left_id and right_id != 0xFFFFFFFF and left_id != 0xFFFFFFFF:
-				var keep_id = min(right_id, left_id)
-				var merge_id = max(right_id, left_id)
-				merge_map[merge_id] = keep_id
-	
-	# Transitivité
-	for merge_id in merge_map.keys():
-		var target = merge_map[merge_id]
-		while merge_map.has(target):
-			target = merge_map[target]
-		merge_map[merge_id] = target
-	
-	print("    Found ", region_first_seen.size(), " unique ocean regions, ", merge_map.size(), " to merge via wrap")
+
+	var merge_map := HierarchyBuilder.compute_merge_map(data, width, height)
+
+	print("    Found ", region_first_seen.size(), " unique ocean regions")
 	
 	# =========================================================================
 	# PHASE 2 : Assigner les couleurs séquentiellement (système Region.gd)
 	# =========================================================================
-	print("  Phase 2: Assigning colors (Region.gd step=17 system)...")
+	print("  Phase 2: Assigning deterministic high-contrast colors...")
 	
 	var id_to_color: Dictionary = {}
-	var color_counter: Array = [0, 0, 0, 255]
-	const STEP = 17
 	
 	var sorted_ids: Array = []
 	for region_id in region_first_seen.keys():
@@ -1000,24 +930,10 @@ func _export_ocean_region_map(gpu: GPUContext, output_dir: String, _optimised_re
 		return pos_a < pos_b
 	)
 	
+	var ordered_ids: Array = []
 	for item in unique_sorted:
-		var eff_id = item[0]
-		if id_to_color.has(eff_id):
-			continue
-		
-		var color = Color(color_counter[0] / 255.0, color_counter[1] / 255.0, 
-						  color_counter[2] / 255.0, color_counter[3] / 255.0)
-		id_to_color[eff_id] = color
-		
-		color_counter[0] += STEP
-		if color_counter[0] > 255:
-			color_counter[0] = color_counter[0] % 256
-			color_counter[1] += STEP
-		if color_counter[1] > 255:
-			color_counter[1] = color_counter[1] % 256
-			color_counter[2] += STEP
-		if color_counter[2] > 255:
-			color_counter[2] = color_counter[2] % 256
+		ordered_ids.append(item[0])
+	id_to_color = HierarchyBuilder.assign_colors(ordered_ids)
 	
 	print("    Assigned ", id_to_color.size(), " unique colors")
 	
@@ -1711,13 +1627,13 @@ func _export_hierarchy_maps(gpu: GPUContext, output_dir: String) -> Dictionary:
 	
 	# ─── Construction des hiérarchies (BFS) ──────────────────────────────────
 	print("  Hiérarchie terrestre :")
-	var land := HierarchyBuilder.build_land(land_data, width, height, merge_land)
+	var land := HierarchyBuilder.build_land(land_data, width, height, merge_land, params)
 	# land = [dept→région, dept→pays, dept→continent]
 	
 	var sea: Array = [{}, {}, {}]
 	if not sea_data.is_empty():
 		print("  Hiérarchie maritime :")
-		sea = HierarchyBuilder.build_sea(sea_data, width, height, merge_sea)
+		sea = HierarchyBuilder.build_sea(sea_data, width, height, merge_sea, params)
 	# sea = [dept→région-mer, dept→bassin, dept→océan]
 	
 	# ─── Peinture et export (threadé) ────────────────────────────────────────

@@ -158,13 +158,18 @@ Ces paramètres s'appliquent principalement aux planètes **Sans Atmosphère** (
 | Paramètre | Défaut | Plage | Rôle |
 |-----------|--------|-------|------|
 | **Couverture nuageuse** (`cloud_coverage`) | 50% | 0–100% | Fraction de la surface couverte par des nuages. `100%` = planète totalement voilée (type Vénus). |
-| **Densité nuageuse** (`cloud_density`) | 80% | 0–100% | Opacité des nuages sur la carte de prévisualisation finale. N'affecte pas la simulation climatique, uniquement le rendu visuel. |
+| **Densité nuageuse** (`cloud_density`) | 80% | 0–100% | Intensité du masque nuageux. Le PNG stocke cette densité dans ses trois canaux de couleur avec un canal alpha opaque. N'affecte pas la simulation climatique. |
 
 ---
 
 ### 3.6 Régions terrestres
 
-La carte des régions divise la surface terrestre en territoires distincts (analogue à des États ou provinces géologiques) en utilisant un algorithme de Voronoï pondéré.
+La carte des régions divise la surface terrestre en territoires distincts.
+Des cellules de base en Voronoï perturbé sont regroupées uniquement par
+adjacence selon la hiérarchie départements → régions → pays → continents.
+Le nombre demandé cible l'étage région ; le nombre de cellules de base est
+calculé automatiquement. Le nombre final de continents varie aussi avec le
+rayon de la planète.
 
 | Paramètre | Défaut | Rôle |
 |-----------|--------|------|
@@ -180,7 +185,10 @@ La carte des régions divise la surface terrestre en territoires distincts (anal
 
 ### 3.7 Régions océaniques
 
-Fonctionne de manière identique aux régions terrestres, mais pour les zones sous-marines.
+Fonctionne de manière analogue aux régions terrestres, mais pour les zones
+sous-marines. La hiérarchie départements marins → régions marines → bassins
+→ océans reste fondée sur l'adjacence et le nombre final d'océans varie avec
+le rayon planétaire.
 
 | Paramètre | Défaut | Rôle |
 |-----------|--------|------|
@@ -458,20 +466,20 @@ Le shader sélectionne le biome dont le centre de plage est le plus proche des v
 
 | Nom de fichier | Clé interne | Description |
 |----------------|-------------|-------------|
-| `topographie_map.png` | `MAP_TOPOGRAPHIE` | Carte d'élévation colorée selon `COULEURS_ELEVATIONS` |
-| `topographie_map_grey.png` | `MAP_TOPOGRAPHIE_GREY` | Carte d'élévation en niveaux de gris (plus sombre = plus bas) |
+| `topographie_map.png` | `MAP_TOPOGRAPHIE` | Visualisation d'élévation avec interpolation continue entre les couleurs de `COULEURS_ELEVATIONS` |
+| `topographie_map_grey.png` | `MAP_TOPOGRAPHIE_GREY` | Visualisation continue en niveaux de gris (plus sombre = plus bas) |
 | `eaux_map.png` | `MAP_EAUX` | Masque eau : blanc = océan, noir = terre |
 | `plaques_map.png` | `MAP_PLAQUES` | Coloration des plaques tectoniques |
 | `plaques_bordures_map.png` | `MAP_PLAQUES_BORDURES` | Frontières de plaques tectoniques |
 | `temperature_map.png` | `MAP_TEMPERATURE` *(via preview)* | Carte de température, palette violette-verte-rouge |
 | `precipitation_map.png` | `MAP_PRECIPITATION` | Carte de précipitations, palette magenta-bleue |
-| `clouds_map.png` | `MAP_CLOUDS` | Distribution des nuages |
+| `clouds_map.png` | `MAP_CLOUDS` | Densité nuageuse en niveaux de gris opaques : noir = ciel clair, blanc = couverture maximale |
 | `ice_caps_map.png` | `MAP_ICE` | Calottes glaciaires et zones de glace |
 | `water_map.png` | `MAP_WATER` | Eau de surface (lacs, mers, rivières) |
 | `river_map.png` | `MAP_RIVERS` | Réseau hydrographique (rivières et fleuves) |
 | `biome_map.png` | `MAP_BIOMES` | Classification biomatique colorée |
-| `region_map.png` | `MAP_REGIONS` | Régions terrestres (Voronoï pondéré) |
-| `ocean_region_map.png` | `MAP_OCEAN_REGIONS` | Régions sous-marines |
+| `region_map.png` | `MAP_REGIONS` | Régions terrestres issues de cellules perturbées regroupées par adjacence |
+| `ocean_region_map.png` | `MAP_OCEAN_REGIONS` | Régions sous-marines regroupées par adjacence |
 | `petrole_map.png` | `MAP_PETROLE` | Gisements pétroliers |
 | `ressource_map.png` | `MAP_RESOURCES` | Toutes les ressources minérales |
 | `final_map.png` | `MAP_FINAL` | Rendu final composite avec végétation réaliste |

@@ -6,7 +6,7 @@ extends RefCounted
 ## ============================================================================
 ## Porté depuis PlaneteTools.gd (L'Âge Spatial) pour PlanetGenerator.
 ## Regroupe les départements en régions → pays → continents (terre)
-## ou régions-mer → bassins → océans (mer), via BFS hop-distance.
+## ou régions-mer → bassins → océans (mer), via BFS d'adjacence.
 ##
 ## Algorithme :
 ##   Étape 1 — BFS hop-distance (≤ maxTaille, chaque saut ≤ distMaxBFS)
@@ -14,20 +14,6 @@ extends RefCounted
 ##   Étape 3 — Orphelins : fusion ou groupe autonome
 ##   Post    — _reassigner : réaffecter les unités isolées de leur groupe
 ## ============================================================================
-
-# ─── Constantes (identiques à PlaneteTools.gd) ────────────────────────────────
-
-const MAX_DEP_PAR_REGION    : int   = 12
-const MAX_REG_PAR_PAYS      : int   = 22
-const MAX_PAYS_PAR_CONT     : int   = 35
-
-const MAX_DEP_PAR_REGMER    : int   = 12
-const MAX_REGMER_PAR_BASSIN : int   = 22
-const MAX_BASSIN_PAR_OCEAN  : int   = 20
-
-const DIST_BFS_REGION       : float = 300.0
-const DIST_BFS_PAYS         : float = 600.0
-const DIST_PONT_CONTINENT   : float = 350.0
 
 const SEUIL_DOMINANCE       : float = 0.70
 
@@ -37,37 +23,16 @@ const _ID_SEA  : int = 50_000_000
 
 # ─── API Publique ─────────────────────────────────────────────────────────────
 
-## Calcule le merge-map pour le wrapping horizontal (projection équirectangulaire).
-## Retourne Dictionary { id_à_fusionner → id_canonique }.
-static func compute_merge_map(data: PackedByteArray, w: int, h: int) -> Dictionary:
-	var left: Dictionary = {}
-	var right: Dictionary = {}
-	for y in range(h):
-		var lid: int = data.decode_u32((y * w) * 4)
-		if lid != 0xFFFFFFFF:
-			left[y] = lid
-		var rid: int = data.decode_u32((y * w + w - 1) * 4)
-		if rid != 0xFFFFFFFF:
-			right[y] = rid
-	var merge: Dictionary = {}
-	for y in right.keys():
-		if not left.has(y): continue
-		var r: int = right[y]
-		var l: int = left[y]
-		if r != l and r != 0xFFFFFFFF and l != 0xFFFFFFFF:
-			merge[maxi(r, l)] = mini(r, l)
-	# Transitivité
-	for k in merge.keys():
-		var t: int = merge[k]
-		while merge.has(t):
-			t = merge[t]
-		merge[k] = t
-	return merge
+## Le générateur JFA est déjà seamless et propage le même ID de part et d'autre
+## de la couture. Deux IDs différents qui se touchent sur cette couture sont
+## simplement voisins : les fusionner créait un seul territoire déconnecté.
+static func compute_merge_map(_data: PackedByteArray, _w: int, _h: int) -> Dictionary:
+	return {}
 
 ## Construit la hiérarchie terrestre à 3 niveaux.
 ## Retourne [dept→région, dept→pays, dept→continent].
 static func build_land(data: PackedByteArray, w: int, h: int,
-		merge: Dictionary) -> Array:
+		merge: Dictionary, settings: Dictionary = {}) -> Array:
 	var info := _scan(data, w, h, merge)
 	var depts: Array = info[0]
 	var cref: Dictionary = info[1]
@@ -77,10 +42,16 @@ static func build_land(data: PackedByteArray, w: int, h: int,
 	print("    %d départements terrestres" % depts.size())
 
 	var gen := [_ID_LAND]
+	var target_regions := clampi(int(settings.get("nb_cases_regions", 50)), 1, depts.size())
+	var target_countries := clampi(int(round(sqrt(float(target_regions)) * 1.15)), 1, target_regions)
+	var radius_km := maxf(float(settings.get("planet_radius", 500.0)), 1.0)
+	var radius_scale := log(maxf(radius_km / 500.0, 1.0)) / log(2.0)
+	var target_continents := clampi(int(round(2.0 + radius_scale * 1.25)), 1, target_countries)
+	var depts_per_region := maxi(1, ceili(float(depts.size()) / float(target_regions)))
 
 	# 0→1  Département → Région
 	var r1 := _grouper(depts, adj0, cref,
-		MAX_DEP_PAR_REGION, true, DIST_BFS_REGION, gen)
+		depts_per_region, true, 0.0, gen)
 	_reassigner(depts, adj0, r1)
 	print("    → %d régions" % _unique_values(r1).size())
 
@@ -89,20 +60,21 @@ static func build_land(data: PackedByteArray, w: int, h: int,
 	var rch  := _invert(r1)
 	var adj1 := _adj_children(rids, rch, adj0)
 	var cr1  := _coord_children(rids, rch, cref)
+	var regions_per_country := maxi(1, ceili(float(rids.size()) / float(target_countries)))
 	var r2   := _grouper(rids, adj1, cr1,
-		MAX_REG_PAR_PAYS, true, DIST_BFS_PAYS, gen)
+		regions_per_country, true, 0.0, gen)
 	_reassigner(rids, adj1, r2)
 	print("    → %d pays" % _unique_values(r2).size())
 
-	# 2→3  Pays → Continent  (pont distance pour relier îles proches)
+	# 2→3  Pays → Continent. Aucun pont de distance artificiel ne relie des
+	# composantes sans contact topologique.
 	var pids  := _unique_values(r2)
 	var pch   := _invert(r2)
-	var adj2i := _adj_children(pids, pch, adj1)
+	var adj2 := _adj_children(pids, pch, adj1)
 	var cr2   := _coord_children(pids, pch, cr1)
-	var adj2d := _adj_distance(pids, cr2, DIST_PONT_CONTINENT)
-	var adj2  := _adj_union(adj2i, adj2d)
+	var countries_per_continent := maxi(1, ceili(float(pids.size()) / float(target_continents)))
 	var r3    := _grouper(pids, adj2, cr2,
-		MAX_PAYS_PAR_CONT, false, 0.0, gen)
+		countries_per_continent, false, 0.0, gen)
 	_reassigner(pids, adj2, r3)
 	print("    → %d continents" % _unique_values(r3).size())
 
@@ -120,7 +92,7 @@ static func build_land(data: PackedByteArray, w: int, h: int,
 ## Pas de pont distance (les océans sont naturellement connexes).
 ## Retourne [dept→région-mer, dept→bassin, dept→océan].
 static func build_sea(data: PackedByteArray, w: int, h: int,
-		merge: Dictionary) -> Array:
+		merge: Dictionary, settings: Dictionary = {}) -> Array:
 	var info := _scan(data, w, h, merge)
 	var depts: Array = info[0]
 	var cref: Dictionary = info[1]
@@ -130,10 +102,16 @@ static func build_sea(data: PackedByteArray, w: int, h: int,
 	print("    %d départements maritimes" % depts.size())
 
 	var gen := [_ID_SEA]
+	var target_regions := clampi(int(settings.get("nb_cases_ocean_regions", 100)), 1, depts.size())
+	var target_basins := clampi(int(round(sqrt(float(target_regions)) * 1.5)), 1, target_regions)
+	var radius_km := maxf(float(settings.get("planet_radius", 500.0)), 1.0)
+	var radius_scale := log(maxf(radius_km / 500.0, 1.0)) / log(2.0)
+	var target_oceans := clampi(int(round(2.0 + radius_scale)), 1, target_basins)
+	var depts_per_region := maxi(1, ceili(float(depts.size()) / float(target_regions)))
 
 	# 0→1  Dept-mer → Région-mer
 	var r1 := _grouper(depts, adj0, cref,
-		MAX_DEP_PAR_REGMER, true, DIST_BFS_REGION, gen)
+		depts_per_region, true, 0.0, gen)
 	_reassigner(depts, adj0, r1)
 	print("    → %d régions-mer" % _unique_values(r1).size())
 
@@ -142,8 +120,9 @@ static func build_sea(data: PackedByteArray, w: int, h: int,
 	var rch  := _invert(r1)
 	var adj1 := _adj_children(rids, rch, adj0)
 	var cr1  := _coord_children(rids, rch, cref)
+	var regions_per_basin := maxi(1, ceili(float(rids.size()) / float(target_basins)))
 	var r2   := _grouper(rids, adj1, cr1,
-		MAX_REGMER_PAR_BASSIN, true, DIST_BFS_PAYS, gen)
+		regions_per_basin, true, 0.0, gen)
 	_reassigner(rids, adj1, r2)
 	print("    → %d bassins" % _unique_values(r2).size())
 
@@ -152,8 +131,9 @@ static func build_sea(data: PackedByteArray, w: int, h: int,
 	var bch  := _invert(r2)
 	var adj2 := _adj_children(bids, bch, adj1)
 	var cr2  := _coord_children(bids, bch, cr1)
+	var basins_per_ocean := maxi(1, ceili(float(bids.size()) / float(target_oceans)))
 	var r3   := _grouper(bids, adj2, cr2,
-		MAX_BASSIN_PAR_OCEAN, false, 0.0, gen)
+		basins_per_ocean, false, 0.0, gen)
 	_reassigner(bids, adj2, r3)
 	print("    → %d océans" % _unique_values(r3).size())
 
@@ -167,25 +147,20 @@ static func build_sea(data: PackedByteArray, w: int, h: int,
 		d2o[d] = r3.get(bs, bs)
 	return [r1, d2b, d2o]
 
-## Assigne des couleurs step-17 (système Region.gd) à une liste de group IDs.
+## Assigne une palette déterministe à contraste contrôlé.
 ## Retourne Dictionary[int, Color].
 static func assign_colors(group_ids: Array) -> Dictionary:
 	var out: Dictionary = {}
-	var cc := [0, 0, 0]
-	const STEP := 17
+	var index := 0
 	for gid in group_ids:
 		if out.has(gid):
 			continue
-		out[gid] = Color(cc[0] / 255.0, cc[1] / 255.0, cc[2] / 255.0, 1.0)
-		cc[0] += STEP
-		if cc[0] > 255:
-			cc[0] = cc[0] % 256
-			cc[1] += STEP
-		if cc[1] > 255:
-			cc[1] = cc[1] % 256
-			cc[2] += STEP
-		if cc[2] > 255:
-			cc[2] = cc[2] % 256
+		var hue := fposmod(float(index) * 0.61803398875, 1.0)
+		var saturation := 0.58 + 0.12 * float(index % 3) / 2.0
+		var value_band := floori(float(index) / 3.0) % 3
+		var value := 0.72 + 0.16 * float(value_band) / 2.0
+		out[gid] = Color.from_hsv(hue, saturation, value, 1.0)
+		index += 1
 	return out
 
 # ─── Helpers internes ─────────────────────────────────────────────────────────

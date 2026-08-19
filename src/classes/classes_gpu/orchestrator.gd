@@ -3123,6 +3123,7 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	var seed_val = int(params.get("seed", 12345))
 	var sea_level = float(params.get("sea_level", 0.0))
 	var nb_cases_region = int(params.get("nb_cases_regions", 50))
+	var ocean_ratio = clampf(float(params.get("ocean_ratio", 55.0)), 0.0, 95.0)
 	var atmosphere_type = int(params.get("atmosphere_type", 0))
 	
 	# Si pas d'atmosphère, pas de régions (planète sans vie)
@@ -3144,7 +3145,15 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	var jfa_log_steps = ceili(log(float(max_dim)) / log(2.0))
 	var region_iterations = int(params.get("region_iterations", jfa_log_steps + 2))
 	
-	print("  Seed: ", seed_val, " | Cases/Région: ", nb_cases_region)
+	# nb_cases_regions représente le nombre de régions finales documenté dans
+	# l'interface. On génère plusieurs départements par région, puis le builder
+	# CPU regroupe ces unités en respectant la connectivité.
+	var target_departments = maxi(nb_cases_region * 12, 12)
+	var expected_land_pixels = maxf(float(w * h) * (1.0 - ocean_ratio / 100.0), 1.0)
+	var seed_probability = clampf(float(target_departments) / expected_land_pixels, 0.000001, 0.02)
+
+	print("  Seed: ", seed_val, " | Régions cibles: ", nb_cases_region,
+		" | Départements cibles: ", target_departments)
 	print("  Bruit frontières: ", noise_strength, " px")
 	print("  Itérations JFA: ", region_iterations, " (log2(", max_dim, ")=", jfa_log_steps, ")")
 	
@@ -3153,7 +3162,7 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# === PASSE 1 : PLACEMENT DES SEEDS ===
 	print("  • Placement des seeds de régions...")
-	_dispatch_region_seed_placement(w, h, groups_x, groups_y, seed_val, nb_cases_region, sea_level, budget_variation)
+	_dispatch_region_seed_placement(w, h, groups_x, groups_y, seed_val, seed_probability, sea_level, budget_variation)
 	
 	# === PASSE 2 : CROISSANCE JFA (Jump Flooding Algorithm) ===
 	print("  • Croissance des régions JFA (", region_iterations, " passes)...")
@@ -3186,7 +3195,7 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	print("[Orchestrator] ✅ Phase 4 : Régions terminées")
 
 ## Dispatch le shader de placement des seeds de région
-func _dispatch_region_seed_placement(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, nb_cases_region: int, sea_level: float, budget_variation: float) -> void:
+func _dispatch_region_seed_placement(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, seed_probability: float, sea_level: float, budget_variation: float) -> void:
 	if not gpu.shaders.has("region_seed_placement") or not gpu.shaders["region_seed_placement"].is_valid():
 		push_warning("[Orchestrator] ⚠️ region_seed_placement shader non disponible")
 		return
@@ -3220,7 +3229,7 @@ func _dispatch_region_seed_placement(w: int, h: int, groups_x: int, groups_y: in
 	buffer_bytes.encode_u32(0, w)
 	buffer_bytes.encode_u32(4, h)
 	buffer_bytes.encode_u32(8, seed_val)
-	buffer_bytes.encode_u32(12, nb_cases_region)
+	buffer_bytes.encode_float(12, seed_probability)
 	buffer_bytes.encode_float(16, sea_level)
 	buffer_bytes.encode_float(20, budget_variation)
 	buffer_bytes.encode_float(24, 0.0)  # padding
@@ -3490,6 +3499,7 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	var seed_val = int(params.get("seed", 12345))
 	var sea_level = float(params.get("sea_level", 0.0))
 	var nb_cases_ocean_region = int(params.get("nb_cases_ocean_regions", 100))
+	var ocean_ratio = clampf(float(params.get("ocean_ratio", 55.0)), 5.0, 100.0)
 	
 	# Paramètres de coûts pour océans
 	var cost_flat = float(params.get("ocean_cost_flat", 1.0))
@@ -3508,7 +3518,7 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# === PASSE 1 : PLACEMENT DES SEEDS ===
 	print("  • Placement des seeds de régions océaniques...")
-	_dispatch_ocean_region_seed_placement(w, h, groups_x, groups_y, seed_val, nb_cases_ocean_region, sea_level)
+	_dispatch_ocean_region_seed_placement(w, h, groups_x, groups_y, seed_val, nb_cases_ocean_region, sea_level, ocean_ratio)
 	
 	# === PASSE 2 : CROISSANCE ITÉRATIVE ===
 	print("  • Croissance des régions océaniques (", ocean_iterations, " passes)...")
@@ -3537,7 +3547,7 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	print("[Orchestrator] ✅ Phase 4.5 : Régions océaniques terminées")
 
 ## Dispatch le shader de placement des seeds de région océanique
-func _dispatch_ocean_region_seed_placement(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, nb_cases_region: int, sea_level: float) -> void:
+func _dispatch_ocean_region_seed_placement(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, nb_cases_region: int, sea_level: float, ocean_ratio: float) -> void:
 	if not gpu.shaders.has("ocean_region_seed_placement") or not gpu.shaders["ocean_region_seed_placement"].is_valid():
 		push_warning("[Orchestrator] ⚠️ ocean_region_seed_placement shader non disponible")
 		return
@@ -3562,8 +3572,9 @@ func _dispatch_ocean_region_seed_placement(w: int, h: int, groups_x: int, groups
 	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["ocean_region_seed_placement"], 0)
 	
 	var area_total = w * h
-	# Diviser par 10 pour des régions 10x plus grandes
-	var seed_probability = (float(nb_cases_region) / float(area_total)) / 10.0
+	var target_departments = maxi(nb_cases_region * 12, 12)
+	var expected_water_pixels = maxf(float(area_total) * ocean_ratio / 100.0, 1.0)
+	var seed_probability = clampf(float(target_departments) / expected_water_pixels, 0.000001, 0.02)
 	
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(32)

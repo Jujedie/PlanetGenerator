@@ -513,9 +513,10 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
         underwaterDamping = max(0.5, 1.0 + currentElevation / 5000.0);
     }
     
-    // Atténuation locale : si le pixel est continental, réduire fortement
-    // les effets négatifs (fosses/subduction) pour éviter d'enfoncer le terrain
-    float localTrenchAttenuation = localIsOceanic ? 1.0 : 0.15;
+    // Les fosses appartiennent à la croûte océanique. Les laisser déborder sur
+    // la croûte continentale créait des canyons linéaires qui traversaient les
+    // côtes et devenaient ensuite des bras de mer pendant l'érosion.
+    float localTrenchAttenuation = localIsOceanic ? 1.0 : 0.0;
     
     // Bruit local pour variation le long de la frontière
     float localNoise = fbm(coords * 0.02, 4, 0.6, 2.0, seed + 88888u);
@@ -776,17 +777,17 @@ void main() {
         }
         baseElevation = mix(coastalElev, targetElev, t);
     } else {
-        // Intérieur continental : plaines ou plateaux selon basinNoise
-        if (basinNoise > 0.3) {
-            // Hauts plateaux (zones élevées stables type Tibet, Altiplano)
-            baseElevation = mix(plainsElev, plateauElev, smoothstep(0.3, 0.5, basinNoise));
-        } else if (basinNoise < -0.1) {
-            // Bassins intracontinentaux (type Bassin parisien)
-            baseElevation = mix(50.0, plainsElev, (basinNoise + 0.3) / 0.2);
-        } else {
-            // Plaines standards
-            baseElevation = plainsElev;
-        }
+        // Intérieur continental continu. L'ancienne branche conservait une
+        // valeur exactement égale à 150 m sur basinNoise [-0.1, 0.3], ce qui
+        // produisait de vastes plateaux parfaitement stagnants. Une courbe
+        // lissée garde des bassins et quelques hauts plateaux sans marche.
+        float basin01 = basinNoise * 0.5 + 0.5;
+        float interiorShape = smoothstep(0.22, 0.82, basin01);
+        baseElevation = mix(45.0, plateauElev, interiorShape);
+
+        // Empêcher la transition côte/intérieur d'introduire une cassure.
+        float inlandBlend = smoothstep(plains_thresh, plains_thresh + 0.18, continentalNoise);
+        baseElevation = mix(plainsElev, baseElevation, inlandBlend);
     }
     
     // === BRUIT PRINCIPAL (Relief général) ===
@@ -830,18 +831,15 @@ void main() {
     // Réduit de [-8000, 6000] à [-5000, 4000] pour éviter extrêmes
     tectonicUplift = clamp(tectonicUplift, -5000.0, 4000.0);
     
-    // === STRUCTURES TECTONIQUES LEGACY (Chaînes de montagnes supplémentaires) ===
-    // Amplitude réduite à 800m, bande élargie [0.38, 0.62] pour chaînes plus larges mais plus basses
-    float tectonic_mountain = abs(fbmSimplex(coords * tectonic_freq, 10, 0.55, 2.0, params.seed + 20000u));
-    
-    float legacyMountains = 0.0;
-    if (tectonic_mountain > 0.38 && tectonic_mountain < 0.62) {
-        float band_strength = 1.0 - abs(tectonic_mountain - 0.5) * 8.33;  // Plus large et plus doux
-        legacyMountains = 800.0 * band_strength * 0.6;  // Amplitude réduite
-    }
+    // Rugosité intracontinentale diffuse. L'ancien isoband
+    // `0.38 < abs(noise) < 0.62` dessinait de longues courbes artificielles
+    // ressemblant à des canyons ou à des digues, sans rapport tectonique.
+    float interiorNoise = fbmSimplex(coords * tectonic_freq, 6, 0.55, 2.0, params.seed + 20000u);
+    float continentalInterior = isOceanic ? 0.0 : (1.0 - plateInfo.borderStrength);
+    float interiorRelief = interiorNoise * 140.0 * continentalInterior;
     
     // === ÉLÉVATION FINALE ===
-    float elevation = baseElevation + noiseElevation + tectonicUplift + legacyMountains;
+    float elevation = baseElevation + noiseElevation + tectonicUplift + interiorRelief;
     
     // === CORRECTION ARCHIPEL : Remonter zones continentales légèrement submergées ===
     // Appliqué uniquement aux zones continentales proches du niveau de la mer

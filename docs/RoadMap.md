@@ -92,7 +92,7 @@ deterministic before scaling it.
 
 Status: in progress.
 
-Current checkpoint (2026-08-18):
+Current checkpoint (2026-08-19):
 
 - Fixed benchmark seeds and an automated GPU smoke scene are present.
 - Preliminary climate now feeds erosion; erosion ping-pong ownership and
@@ -100,6 +100,19 @@ Current checkpoint (2026-08-18):
 - Crust-age seeding, deterministic propagation, ocean-only subsidence, and the
   configured subsidence coefficient are corrected.
 - Tectonic boundary relief is narrower and spatially modulated.
+- Continental trenches can no longer cut through land, artificial interior
+  lineaments have been removed, and continental-basin relief is continuous
+  instead of being clamped to a single 150 m shelf.
+- Hydraulic erosion is capped per pass and preserves a one-metre land margin
+  above sea level, preventing erosion-only underwater canyons.
+- Coloured and greyscale topographic PNGs now interpolate between elevation
+  stops instead of quantizing broad areas into flat-looking colour shelves.
+- Terrestrial and ocean administrative seed density now targets the requested
+  hierarchy size. Higher tiers are adjacency-only, no longer merge unrelated
+  IDs across the map seam, and their continent/ocean counts scale with radius.
+- Administrative colours use a deterministic collision-resistant palette.
+- Cloud output is an opaque greyscale density mask with seamless circulation
+  bands, fronts, dry belts, and storm-track modulation.
 - Repeated terrestrial and gas-giant smoke generations are deterministic;
   gas giants exercise only their atmospheric phase and export only `final_map`.
 - Duplicate state-texture allocations and final shared-device leaks found by

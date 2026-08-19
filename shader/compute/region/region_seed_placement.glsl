@@ -4,8 +4,7 @@
 // ===========================================================================
 // REGION SEED PLACEMENT SHADER
 // ===========================================================================
-// Place les seeds de régions aléatoirement sur la terre uniquement.
-// Chaque seed reçoit un budget de points basé sur nb_cases_region.
+// Place un nombre cible de seeds administratifs sur la terre uniquement.
 //
 // Entrées :
 //   - geo_texture (binding 0) : R=height pour déterminer terre/eau
@@ -30,7 +29,7 @@ layout(set = 1, binding = 0, std140) uniform SeedParams {
     uint width;
     uint height;
     uint seed;
-    uint nb_cases_region;      // Budget moyen par région
+    float seed_probability;    // Probabilité dérivée de la surface et de la cible
     float sea_level;
     float budget_variation;    // 0.5 = variation de ±50%
     float padding1;
@@ -96,21 +95,12 @@ void main() {
         return;
     }
     
-    // Décider si ce pixel est un seed de région
-    // Utiliser une probabilité par pixel pour avoir une distribution régulière
-    
-    // Probabilité qu'un pixel terre soit un seed
-    // On veut BEAUCOUP de seeds pour garantir la couverture
-    // Avec nb_cases_region = 50, on veut 1 seed tous les 50 pixels en moyenne
-    // Mais on ajoute un facteur de sécurité x2 pour éviter les trous
-    float seed_probability = 2.0 / float(params.nb_cases_region);
-    
     // Hash déterministe pour ce pixel
     uint pixel_hash = hash3(uint(pixel.x), uint(pixel.y), params.seed);
     float random_value = hashToFloat(pixel_hash);
     
     // Ce pixel est un seed si son hash est sous la probabilité
-    bool is_seed = (random_value < seed_probability);
+    bool is_seed = (random_value < params.seed_probability);
     
     if (is_seed) {
         // Ce pixel est un seed de région !

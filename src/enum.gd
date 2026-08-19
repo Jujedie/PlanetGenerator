@@ -794,17 +794,45 @@ func build_river_biomes_gpu_buffer(planet_type: int = 0, is_vegetation: bool = f
 func get_river_biome_gpu_count(planet_type: int = 0) -> int:
 	return get_river_biomes_for_gpu(planet_type).size()
 
+var _elevation_thresholds: Array = []
+var _elevation_grey_thresholds: Array = []
+
 func getElevationColor(elevation: int, grey_version : bool = false) -> Color:
-	if not grey_version:
-		for key in COULEURS_ELEVATIONS.keys():
-			if elevation <= key:
-				return COULEURS_ELEVATIONS[key]
-		return COULEURS_ELEVATIONS[ALTITUDE_MAX]
+	var palette: Dictionary = COULEURS_ELEVATIONS_GREY if grey_version else COULEURS_ELEVATIONS
+	var thresholds: Array
+	if grey_version:
+		if _elevation_grey_thresholds.is_empty():
+			_elevation_grey_thresholds = palette.keys()
+			_elevation_grey_thresholds.sort()
+		thresholds = _elevation_grey_thresholds
 	else:
-		for key in COULEURS_ELEVATIONS_GREY.keys():
-			if elevation <= key:
-				return COULEURS_ELEVATIONS_GREY[key]
-		return COULEURS_ELEVATIONS_GREY[ALTITUDE_MAX]
+		if _elevation_thresholds.is_empty():
+			_elevation_thresholds = palette.keys()
+			_elevation_thresholds.sort()
+		thresholds = _elevation_thresholds
+	if thresholds.is_empty():
+		return Color.BLACK
+	if elevation <= int(thresholds[0]):
+		return palette[thresholds[0]]
+	if elevation >= int(thresholds[-1]):
+		return palette[thresholds[-1]]
+
+	# Recherche binaire du premier seuil supérieur ou égal. Cette fonction
+	# est appelée deux fois par pixel lors de l'export, donc un parcours linéaire
+	# de toute la palette devient coûteux sur les grandes cartes.
+	var low := 1
+	var high := thresholds.size() - 1
+	while low < high:
+		var middle := (low + high) >> 1
+		if elevation <= int(thresholds[middle]):
+			high = middle
+		else:
+			low = middle + 1
+	var upper_height: int = int(thresholds[low])
+	var lower_height: int = int(thresholds[low - 1])
+	var span := maxi(upper_height - lower_height, 1)
+	var blend := clampf(float(elevation - lower_height) / float(span), 0.0, 1.0)
+	return (palette[lower_height] as Color).lerp(palette[upper_height], blend)
 
 
 # ============================================================================

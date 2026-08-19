@@ -55,6 +55,11 @@ const float PI = 3.14159265359;
 // Conversion entre un pas d'érosion (temps géologique abstrait) et une
 // épaisseur transportable. Cette constante est indépendante de la résolution.
 const float CAPACITY_LENGTH_SCALE_M = 500.0;
+// Un pas hydraulique représente une période géologique abstraite, mais ne doit
+// pas inciser des centaines de mètres d'un seul coup. Le plafond conserve une
+// érosion cumulative visible tout en empêchant les tranchées numériques.
+const float MAX_EROSION_PER_PASS_M = 12.0;
+const float LAND_EROSION_FLOOR_M = 1.0;
 
 // Offsets des 4 voisins cardinaux (pour calcul de pente)
 const ivec2 CARDINAL[4] = ivec2[4](
@@ -167,8 +172,13 @@ void main() {
         float hardness = mix(0.1, 1.0, bedrock * params.bedrock_hardness);
         erosion_amount /= hardness;
         
-        // Ne pas éroder plus que ce qui est disponible
-        erosion_amount = min(erosion_amount, height - params.sea_level + 100.0);
+        // Ne jamais transformer une cellule continentale en océan. L'ancienne
+        // marge de +100 m autorisait précisément cette conversion, puis la
+        // cellule submergée était exclue des passes suivantes et formait un
+        // canyon permanent sous le niveau marin.
+        float available_land = max(height - (params.sea_level + LAND_EROSION_FLOOR_M), 0.0);
+        erosion_amount = min(erosion_amount, available_land);
+        erosion_amount = min(erosion_amount, MAX_EROSION_PER_PASS_M);
         erosion_amount = max(erosion_amount, 0.0);
         
         delta_height = -erosion_amount;

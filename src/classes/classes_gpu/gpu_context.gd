@@ -35,7 +35,7 @@ static var TextureID_Erosion : Array[String] = ["geo_temp", "river_flux", "flux_
 # vapor_temp : VaporTempTexture (R32F) - buffer ping-pong pour advection
 # temperature_colored : (RGBA8) - couleur température pour export direct
 # precipitation_colored : (RGBA8) - couleur précipitation pour export direct
-# clouds : (RGBA8) - nuages blanc/transparent
+# clouds : (RGBA8) - masque de densité gris opaque (RGB=densité)
 # ice_caps : (RGBA8) - banquise blanc/transparent
 static var TextureID_Climat : Array[String] = ["vapor", "vapor_temp", "temperature_colored", "precipitation_colored", "clouds", "ice_caps"]
 

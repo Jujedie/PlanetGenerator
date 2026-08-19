@@ -4,8 +4,9 @@
 // ============================================================================
 // CLOUDS SHADER - Génération de Nuages Procéduraux
 // ============================================================================
-// Génère une carte de nuages réaliste basée sur du bruit fBm.
-// Sortie : Blanc (RGB=1) avec transparence variable (A=densité)
+// Génère une carte de densité nuageuse seamless basée sur du bruit fBm.
+// Sortie : masque gris opaque (RGB=densité, A=1), directement exploitable
+// comme donnée par le jeu et lisible dans un visualiseur d'images.
 // Pas de nuages si atmosphere_type == 3 (sans atmosphère)
 // ============================================================================
 
@@ -13,7 +14,7 @@ layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 // === BINDINGS ===
 
-// Texture de sortie : Nuages (RGBA8) - RGB=blanc, A=opacité
+// Texture de sortie : Nuages (RGBA8) - RGB=densité, A=1
 layout(set = 0, binding = 0, rgba8) uniform writeonly image2D clouds_texture;
 
 // Uniform Buffer
@@ -127,28 +128,48 @@ void main() {
     
     // Pas de nuages si pas d'atmosphère
     if (params.atmosphere_type == 3u) {
-        imageStore(clouds_texture, pixel, vec4(0.0));
+        imageStore(clouds_texture, pixel, vec4(0.0, 0.0, 0.0, 1.0));
         return;
     }
     
     // Coordonnées pour bruit seamless
     vec3 coords = getCylindricalCoords(pixel);
-    float noise_scale = 4.0 / params.cylinder_radius;
+    float noise_scale = 4.0 / max(params.cylinder_radius, 1.0);
     
     // Latitude pour variation des nuages
-    float lat = abs((float(pixel.y) / float(params.height)) - 0.5) * 2.0;
+    float latitude = (float(pixel.y) / float(params.height) - 0.5) * 2.0;
+    float lat = abs(latitude);
+
+    // Domain warp à grande échelle : casse les taches circulaires sans rompre
+    // la couture longitudinale, car toutes les coordonnées restent 3D/cylindriques.
+    vec3 p = coords * noise_scale;
+    vec3 warp = vec3(
+        fbm(p * 0.32, 3, 0.55, 2.0, params.seed + 41000u),
+        fbm(p * 0.32, 3, 0.55, 2.0, params.seed + 42000u),
+        fbm(p * 0.32, 3, 0.55, 2.0, params.seed + 43000u)
+    );
+    p += (warp - 0.5) * 1.8;
+
+    // Les systèmes frontaux sont étirés zonalement et cisaillés en sens
+    // opposés dans chaque hémisphère (circulation générale simplifiée).
+    vec3 front_p = p;
+    front_p.y *= 2.4;
+    front_p.xz *= 0.62;
+    front_p.x += latitude * 1.6;
     
     // === Couche 1 : Grandes structures nuageuses ===
-    float large_clouds = fbm(coords * noise_scale * 0.5, 5, 0.5, 2.0, params.seed);
+    float large_clouds = fbm(p * 0.46, 5, 0.52, 2.0, params.seed);
     
     // === Couche 2 : Détails moyens ===
-    float medium_details = fbm(coords * noise_scale * 1.5, 4, 0.55, 2.2, params.seed + 10000u);
+    float medium_details = fbm(front_p * 1.15, 4, 0.55, 2.15, params.seed + 10000u);
     
     // === Couche 3 : Petits détails (wisps) ===
-    float fine_details = fbm(coords * noise_scale * 4.0, 3, 0.6, 2.0, params.seed + 20000u);
+    float fine_details = fbm(p * 3.6, 3, 0.58, 2.0, params.seed + 20000u);
     
     // Combiner les couches
-    float cloud_noise = large_clouds * 0.6 + medium_details * 0.3 + fine_details * 0.1;
+    float frontal_filaments = 1.0 - abs(medium_details * 2.0 - 1.0);
+    float cloud_noise = large_clouds * 0.55 + medium_details * 0.25
+        + fine_details * 0.08 + frontal_filaments * 0.12;
     
     // === Modulation par latitude (plus de nuages aux latitudes moyennes) ===
     // Équateur : quelques nuages (ITCZ)
@@ -156,32 +177,33 @@ void main() {
     // Latitudes moyennes (0.5-0.7) : plus de nuages (fronts)
     // Pôles : moins de nuages (air froid sec)
     
-    float lat_factor = 1.0;
-    lat_factor -= smoothstep(0.15, 0.35, lat) * 0.3;  // Réduction subtropicale
-    lat_factor += smoothstep(0.35, 0.55, lat) * 0.2;  // Boost latitudes moyennes
-    lat_factor -= smoothstep(0.75, 0.95, lat) * 0.25; // Réduction polaire
-    
-    cloud_noise *= lat_factor;
+    float itcz = exp(-pow(lat / 0.11, 2.0));
+    float subtropical_dry = exp(-pow((lat - 0.28) / 0.11, 2.0));
+    float storm_tracks = exp(-pow((lat - 0.56) / 0.16, 2.0));
+    float polar_dry = smoothstep(0.78, 1.0, lat);
+    float circulation = 0.02 + itcz * 0.12 - subtropical_dry * 0.10
+        + storm_tracks * 0.11 - polar_dry * 0.08;
+    cloud_noise += circulation;
     
     // === Seuillage pour créer des nuages distincts ===
     // Le seuil dépend de la couverture nuageuse souhaitée
-    float threshold = 1.0 - params.cloud_coverage;
+    float threshold = mix(0.72, 0.30, clamp(params.cloud_coverage, 0.0, 1.0));
     
     // Appliquer le seuil avec transition douce
-    float cloud_alpha = smoothstep(threshold - 0.1, threshold + 0.2, cloud_noise);
+    float cloud_alpha = smoothstep(threshold - 0.07, threshold + 0.13, cloud_noise);
     
     // Moduler par la densité
     cloud_alpha *= params.cloud_density;
     
     // Ajouter variation de densité interne aux nuages
     if (cloud_alpha > 0.0) {
-        float density_variation = fbm(coords * noise_scale * 3.0, 3, 0.5, 2.0, params.seed + 30000u);
-        cloud_alpha *= 0.7 + density_variation * 0.3;
+        float density_variation = fbm(p * 2.8, 3, 0.5, 2.0, params.seed + 30000u);
+        cloud_alpha *= 0.62 + density_variation * 0.38;
     }
     
     // Clamp final
     cloud_alpha = clamp(cloud_alpha, 0.0, 1.0);
     
-    // Sortie : Blanc avec transparence variable
-    imageStore(clouds_texture, pixel, vec4(1.0, 1.0, 1.0, cloud_alpha));
+    // Masque de données opaque. Les consommateurs utilisent directement R.
+    imageStore(clouds_texture, pixel, vec4(vec3(cloud_alpha), 1.0));
 }
