@@ -1440,12 +1440,28 @@ func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: 
 		print("  ⚠️ river_biome_id texture empty")
 		return result
 
+	# river_biome_id contient aussi les plus petits affluents. Utiliser le flux
+	# et le seuil physique calculé par l'hydrologie empêche l'export d'une maille
+	# cyan extrêmement dense sur toute la planète.
+	var flux_data := PackedByteArray()
+	if gpu.textures.has("river_flux") and gpu.textures["river_flux"].is_valid():
+		flux_data = rd.texture_get_data(gpu.textures["river_flux"], 0)
+	var has_flux_data := flux_data.size() >= width * height * 4
+	var display_flux_threshold := maxf(float(params.get(
+		"river_map_min_flux",
+		params.get(
+			"river_riviere_threshold",
+			params.get("river_affluent_threshold", 0.0)
+		)
+	)), 0.0)
+
 	# Créer l'image de sortie
 	var river_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	river_img.fill(Color(0, 0, 0, 0))  # Transparent par défaut
 
 	var river_pixel_count = 0
 	var skipped_no_biome = 0
+	var skipped_low_flux = 0
 	var biome_counts: Dictionary = {}
 
 	for y in range(height):
@@ -1461,6 +1477,10 @@ func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: 
 
 			# 0xFFFFFFFF = pas de rivière (pas de biome adapté en température)
 			if biome_idx == 0xFFFFFFFF:
+				continue
+
+			if has_flux_data and flux_data.decode_float(byte_offset) < display_flux_threshold:
+				skipped_low_flux += 1
 				continue
 
 			# Vérifier que l'index est valide dans la liste des biomes
@@ -1484,6 +1504,8 @@ func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: 
 	print("  River pixels drawn: ", river_pixel_count)
 	if skipped_no_biome > 0:
 		print("  ⚠️ Skipped ", skipped_no_biome, " pixels with invalid biome index")
+	if skipped_low_flux > 0:
+		print("  Filtered ", skipped_low_flux, " minor tributary pixels below flux ", display_flux_threshold)
 	for biome_name in biome_counts.keys():
 		print("    - ", biome_name, ": ", biome_counts[biome_name])
 

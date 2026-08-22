@@ -111,14 +111,13 @@ layout(set = 3, binding = 0, std430) readonly buffer RiverBiomeLUT {
 // ============================================================================
 
 // Banquise color constants
-const vec3 BANQUISE_DEFAULT = vec3(0.96, 0.96, 0.96);  // 0xd4d3d2ff
+const vec3 BANQUISE_DEFAULT = vec3(0.78, 0.86, 0.89);  // Glace bleu-gris
 const vec3 BANQUISE_VOLCANIC = vec3(0.231, 0.192, 0.169);  // Cooled lava
 
 vec3 getBanquiseColor(uint atmo) {
-    // Couleur banquise: 0xd4d3d2ff = RGB(212, 211, 210) = vec3(0.831, 0.827, 0.824)
-    // Utilisé pour tous les types d'atmosphère sauf volcanic
+    // Bleu-gris naturel pour tous les types d'atmosphère sauf volcanic.
     if (atmo == 2u) return BANQUISE_VOLCANIC;  // Volcanic banquise is cooled lava
-    return BANQUISE_DEFAULT;  // 0xd4d3d2ff pour tous les autres
+    return BANQUISE_DEFAULT;
 }
 
 // ============================================================================
@@ -141,9 +140,10 @@ vec3 getRiverBlendedColor(vec3 terrain_color, vec3 river_color, uint atmo) {
     if (atmo == 4u) {
         return mix(terrain_color, river_color, 0.65);
     }
-    // TYPE_TERRAN (0) et autres : Mélange multiplicatif classique (eau réaliste)
-    vec3 result = terrain_color * river_color * 2.5;
-    return min(result, vec3(1.0));
+    // TYPE_TERRAN (0) et autres : eau naturelle, lisible mais non fluorescente.
+    // Le mélange multiplicatif précédent blanchissait/cyanisait les rivières.
+    vec3 natural_water = mix(vec3(0.18, 0.36, 0.43), river_color, 0.25);
+    return mix(terrain_color, natural_water, 0.68);
 }
 
 // ============================================================================
@@ -161,14 +161,18 @@ float calculateTopoShading(ivec2 pos, int w, int h) {
     float h_up = imageLoad(geo_texture, up).r;
     float h_down = imageLoad(geo_texture, down).r;
     
-    float dx = (h_right - h_left) * 0.5;
-    float dy = (h_down - h_up) * 0.5;
+    // Les hauteurs sont en mètres : normaliser le gradient évite que quelques
+    // centaines de mètres entre pixels produisent des murs noirs artificiels.
+    float dx = (h_right - h_left) / 2400.0;
+    float dy = (h_down - h_up) / 2400.0;
     
     vec3 light_dir = normalize(vec3(-1.0, -1.0, 1.0));
     vec3 normal = normalize(vec3(-dx, -dy, 1.0));
     float shade = dot(normal, light_dir);
     
-    return clamp((shade + 1.0) * 0.5, 0.0, 1.0);
+    // Une surface plane vaut exactement 0.5. Le relief pourra donc éclaircir
+    // autant qu'assombrir sans ternir uniformément toute la carte.
+    return clamp(0.5 + (shade - light_dir.z) * 0.65, 0.0, 1.0);
 }
 
 // ============================================================================
@@ -195,11 +199,21 @@ void main() {
     
     bool is_water = water.a > 0.0;  // L'eau a alpha > 0 dans water_colored
     bool is_banquise = ice.a > 0.0;
-    bool is_river = (river_bid != 0xFFFFFFFFu);
+    bool is_river = (river_bid != 0xFFFFFFFFu) &&
+        (flux >= params.river_threshold);
     
     // === STEP 1: Base color ===
-    // Utiliser le SSBO pour obtenir la couleur végétation directement via l'index du biome
-    vec3 color = biomes[biome_index].color.rgb;
+    // La couleur de végétation reste la base de la carte finale. Une part de la
+    // couleur catégorielle rend les forêts réellement vertes au lieu de leur
+    // donner l'aspect beige d'un désert.
+    vec3 color = biome.rgb;
+    if (biome_count > 0u && biome_index < biome_count) {
+        vec3 vegetation_color = biomes[biome_index].color.rgb;
+        color = vegetation_color;
+        if (params.atmosphere_type == 0u && !is_water) {
+            color = mix(vegetation_color, biome.rgb, 0.42);
+        }
+    }
     
     // === STEP 2: Apply hillshade (topographic shading) ===
     float shading = calculateTopoShading(pos, w, h);
@@ -210,7 +224,7 @@ void main() {
         effective_strength *= params.water_relief_factor;  // Relief très atténué sur l'eau
     }
     
-    float shade_factor = mix(1.0 - effective_strength, 1.0, shading);
+    float shade_factor = 1.0 + (shading - 0.5) * 2.0 * effective_strength;
     color *= shade_factor;
     
     // === STEP 3: Rivers overlay ===
@@ -226,7 +240,7 @@ void main() {
     // Banquise uniquement sur les pixels eau (double vérification)
     if (is_banquise && is_water) {
         vec3 banquise_color = getBanquiseColor(params.atmosphere_type);
-        color = banquise_color;
+        color = mix(color, banquise_color, clamp(ice.a * 0.86, 0.0, 0.86));
     }
     
     // === OUTPUT ===

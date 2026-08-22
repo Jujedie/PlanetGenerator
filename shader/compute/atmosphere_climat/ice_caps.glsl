@@ -144,7 +144,6 @@ void main() {
     }
     
     // Couleurs de sortie
-    vec4 ice_color = vec4(1.0, 1.0, 1.0, 1.0);   // Blanc opaque = glace
     vec4 no_ice_color = vec4(0.0, 0.0, 0.0, 0.0); // Transparent = pas de glace
     
     // Lire les données
@@ -182,16 +181,21 @@ void main() {
     // -1°C  → peu de glace (seuil strict)
     // -5°C  → glace dense
     // -10°C → glace garantie
-    float temp_factor = smoothstep(0.0, -5.0, temperature);
+    float temp_factor = 1.0 - smoothstep(-5.0, 0.0, temperature);
     
     // Seuil d'apparition de glace basé sur le bruit et la température
     // Plus il fait froid, plus le seuil est bas (plus de glace)
-    float ice_threshold = mix(0.3, -0.5, temp_factor);
+    float probability = clamp(params.ice_probability, 0.0, 1.0);
+    float ice_threshold = mix(0.55, -0.25, temp_factor)
+        + (1.0 - probability) * 0.8;
     
     bool has_ice = (ice_noise > ice_threshold);
     
     if (has_ice) {
-        // Glace !
+        // Bleu-gris légèrement translucide : directement composable par la
+        // carte finale, sans aplat blanc opaque sur les régions polaires.
+        float ice_alpha = mix(0.68, 0.92, temp_factor);
+        vec4 ice_color = vec4(0.80, 0.88, 0.91, ice_alpha);
         imageStore(ice_caps_texture, pixel, ice_color);
     } else {
         // Pas de glace

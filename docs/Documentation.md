@@ -292,7 +292,7 @@ Le paramètre **Humidité globale** (`global_humidity`) décale linéairement l'
 Les biomes sont déterminés par le **Diagramme de Whittaker** :  
 chaque pixel est classé selon sa **température (°C)**, son **humidité (0–1)** et son **élévation (m)**.
 
-Le shader sélectionne le biome dont le centre de plage est le plus proche des valeurs climatiques du pixel (score de proximité). Un bruit Simplex léger rend les frontières organiques.
+Le shader sélectionne le biome dont le centre de plage est le plus proche des valeurs climatiques du pixel (score de proximité). Les perturbations de température et d'humidité sont continues et exprimées en coordonnées angulaires, donc indépendantes de la résolution. La sélection est déterministe, couvre chaque pixel et respecte strictement terre, eau douce et eau salée. Deux passes conservatrices retirent seulement les pixels isolés sans homogénéiser les écorégions.
 
 ---
 
@@ -468,7 +468,7 @@ Le shader sélectionne le biome dont le centre de plage est le plus proche des v
 
 | Nom de fichier | Clé interne | Description |
 |----------------|-------------|-------------|
-| `topographie_map.png` | `MAP_TOPOGRAPHIE` | Visualisation d'élévation avec interpolation continue entre les couleurs de `COULEURS_ELEVATIONS` |
+| `topographie_map.png` | `MAP_TOPOGRAPHIE` | Visualisation hypsométrique continue, calculée directement depuis l'altitude relative brute sans lissage ni recalcul dans l'exporteur |
 | `topographie_map_grey.png` | `MAP_TOPOGRAPHIE_GREY` | Visualisation continue en niveaux de gris (plus sombre = plus bas) |
 | `topology_map.png` | `MAP_TOPOLOGY` | Courbes de niveau seules en RGBA8, sur fond entièrement transparent |
 | `eaux_map.png` | `MAP_EAUX` | Masque eau : blanc = océan, noir = terre |
@@ -485,7 +485,7 @@ Le shader sélectionne le biome dont le centre de plage est le plus proche des v
 | `ocean_region_map.png` | `MAP_OCEAN_REGIONS` | Régions sous-marines regroupées par adjacence |
 | `petrole_map.png` | `MAP_PETROLE` | Gisements pétroliers |
 | `ressource_map.png` | `MAP_RESOURCES` | Toutes les ressources minérales |
-| `final_map.png` | `MAP_FINAL` | Rendu final composite avec végétation réaliste |
+| `final_map.png` | `MAP_FINAL` | Rendu composite dominé par les biomes et la végétation, avec relief léger, cours d'eau majeurs discrets et banquise bleu-gris |
 | `preview.png` | `MAP_PREVIEW` | Aperçu rapide pour l'interface |
 
 ---

@@ -4658,10 +4658,15 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 	var atmosphere_type = int(params.get("planet_type", 0))
 	var sea_level = float(params.get("sea_level", 0.0))
 	
-	# Valeurs hardcodées pour river_threshold et relief_strength
-	var river_threshold = 5.0
-	var relief_strength = 0.3
-	var water_relief_factor = 0.2  # Relief très atténué sur l'eau (20% de la force normale)
+	# Ne dessiner sur la carte finale que les rivières établies, pas chaque
+	# micro-affluent. Les seuils ont déjà été adaptés à la surface de la planète
+	# par la phase hydrologique.
+	var river_threshold = float(params.get(
+		"river_riviere_threshold",
+		params.get("river_affluent_threshold", 5.0)
+	))
+	var relief_strength = 0.16
+	var water_relief_factor = 0.25
 	
 	# Calculer min/max élévation pour normalisation (approximatif)
 	var min_elevation = -10000.0

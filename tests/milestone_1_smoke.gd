@@ -415,7 +415,9 @@ func _validate_topology_export_contract() -> bool:
 	var palette_contract := (
 		ocean.b > ocean.r
 		and lowland.g > lowland.r and lowland.g > lowland.b
-		and upland.r > upland.b
+		# La palette topographique restaurée reste gris-vert jusque sur les
+		# hauts plateaux ; le test ne doit plus imposer l'ancienne dominante ocre.
+		and upland.g > upland.r
 		and minf(peak.r, minf(peak.g, peak.b)) > 0.80
 	)
 	var result := (
