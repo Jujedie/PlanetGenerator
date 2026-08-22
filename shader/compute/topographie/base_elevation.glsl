@@ -502,74 +502,62 @@ PlateInfo findClosestPlate(vec2 uv, uint seed) {
 float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, vec3 coords, uint seed, bool localIsOceanic) {
     float uplift = 0.0;
     float convergence = info.convergence;
-    // La frontière géométrique n'est qu'une contrainte tectonique. Le relief
-    // est décalé latéralement par un champ continu et irrégulier : la chaîne
-    // suit globalement la convergence sans dessiner le bord Voronoï exact.
+    // La frontière géométrique ne fournit qu'une zone d'influence. Les anciens
+    // profils en anneau (amplitude nulle au centre puis deux épaules hautes)
+    // dessinaient exactement les faux canyons visibles dans la heightmap.
+    // L'échelle du bruit est exprimée relativement au rayon du cylindre afin
+    // de ne pas changer avec la résolution de texture.
     float pairSign = info.plateId < info.secondPlateId ? 1.0 : -1.0;
     float borderDistanceKm = info.borderDist * max(params.planet_radius_km, 1.0);
     float chainWidthKm = max(params.chain_width_km, 1.0);
-    float boundaryWarp = fbm(coords * 0.011, 4, 0.58, 2.0, seed + 42731u);
+    vec3 physicalCoords = coords / max(params.cylinder_radius, 1.0);
+    float boundaryWarp =
+        fbm(physicalCoords * 6.5, 4, 0.58, 2.0, seed + 42731u) * 0.72 +
+        fbm(physicalCoords * 13.0, 3, 0.55, 2.0, seed + 52733u) * 0.28;
     float signedBorderDistanceKm = borderDistanceKm * pairSign;
     float naturalBorderDistanceKm = abs(
-        signedBorderDistanceKm + boundaryWarp * chainWidthKm * 0.72
+        signedBorderDistanceKm + boundaryWarp * chainWidthKm * 1.35
     );
-    // Crête étroite, mais assise large et progressive. L'ancien profil
-    // exponentiel concentrait toute l'amplitude au premier texel du bord et
-    // pouvait passer de plusieurs milliers de mètres à une plaine en quelques
-    // cellules. Le sommet reste haut, tandis que les piémonts absorbent le saut.
+    // Une assise unique, large et monotone remplace la crête étroite et les
+    // bandes en retrait. La structure montagneuse vient du bruit ridgé 3D,
+    // pas d'une courbe de distance uniforme qui pourrait devenir une muraille.
     float normalizedBorderDistance = naturalBorderDistanceKm / chainWidthKm;
-    float narrowCrest = exp(-pow(normalizedBorderDistance / 0.85, 2.0));
-    float broadFoothills = exp(-pow(normalizedBorderDistance / 3.2, 2.0));
-    float strength = 0.35 * narrowCrest + 0.65 * broadFoothills;
-    if (naturalBorderDistanceKm > chainWidthKm * 5.5 || strength < 0.006) {
+    float broadFoothills = exp(-pow(normalizedBorderDistance / 3.8, 2.0));
+    float ridgeTexture = clamp(ridgedMultifractal(
+        physicalCoords * (11.0 * params.feature_frequency_scale),
+        5, 0.52, 2.05, seed + 64123u
+    ), 0.0, 1.0);
+    float segmentNoise = fbm(
+        physicalCoords * 4.2, 4, 0.57, 2.0, seed + 918273u
+    );
+    float segmentation = mix(0.18, 1.0, smoothstep(-0.42, 0.38, segmentNoise));
+    float strength = broadFoothills * mix(0.12, 1.0, ridgeTexture) * segmentation;
+    if (naturalBorderDistanceKm > chainWidthKm * 6.0 || strength < 0.004) {
         return 0.0;
     }
     
-    // Bruit local pour variation le long de la frontière
-    float localNoise = fbm(coords * 0.02, 4, 0.6, 2.0, seed + 88888u);
-    float variation = clamp(0.72 + 0.38 * localNoise, 0.35, 1.10);
-
-    // Toutes les portions d'une limite de plaques ne produisent pas une forme
-    // topographique également marquée. Cette modulation à grande échelle évite
-    // les longues cicatrices uniformes tout en conservant la continuité de la
-    // limite tectonique sous-jacente.
-    float activityNoise = fbm(coords * 0.006, 3, 0.55, 2.0, seed + 918273u);
-    float boundaryActivity = mix(0.0, 1.12, smoothstep(-0.35, 0.45, activityNoise));
-    strength *= boundaryActivity;
+    float localNoise = fbm(
+        physicalCoords * 17.0, 4, 0.6, 2.0, seed + 88888u
+    );
+    float variation = clamp(0.72 + 0.34 * localNoise, 0.46, 1.08);
     
     if (convergence > 0.2) {
         // === CONVERGENCE ===
         float conv_strength = min(convergence, 1.0);
         
         if (!isOceanic1 && !isOceanic2) {
-            // Continent-Continent : hautes montagnes possibles.
-            uplift = strength * 2200.0 * conv_strength;
+            // Continent-Continent : chaîne haute, texturée et dotée de larges
+            // piémonts, sans altitude directement alignée sur le bord.
+            uplift = strength * 2800.0 * conv_strength;
         } else if (isOceanic1 && isOceanic2) {
-            // L'incision tectonique linéaire est désactivée avec les canyons.
-            // La profondeur océanique provient du modèle continu d'âge de
-            // croûte; un arc positif peut subsister en retrait de la limite.
-            float arcFactor = smoothstep(chainWidthKm * 0.45, chainWidthKm * 0.85, naturalBorderDistanceKm) *
-                              (1.0 - smoothstep(chainWidthKm * 1.35, chainWidthKm * 2.2, naturalBorderDistanceKm));
-            uplift = arcFactor * 750.0 * conv_strength;
+            // Aucune fosse ni couronne à deux épaules. La bathymétrie d'âge de
+            // croûte reste responsable du relief océanique à grande échelle.
+            uplift = strength * 520.0 * conv_strength;
         } else {
-            // Océan-Continent : Subduction asymétrique
-            if (isOceanic1) {
-                // Aucune fosse négative étroite : elle était visuellement
-                // indiscernable d'un canyon géant sur la heightmap.
-                uplift = 0.0;
-            } else {
-                // La cordillère naît en retrait de la côte. Son amplitude est
-                // nulle sur la frontière elle-même, puis augmente graduellement :
-                // les deux côtés ne peuvent plus former une marche d'altitude.
-                float continentalArc = smoothstep(
-                    chainWidthKm * 0.20, chainWidthKm * 2.0,
-                    naturalBorderDistanceKm
-                ) * (1.0 - smoothstep(
-                    chainWidthKm * 3.0, chainWidthKm * 5.2,
-                    naturalBorderDistanceKm
-                ));
-                uplift = continentalArc * 1800.0 * conv_strength;
-            }
+            // Sur une limite mixte, le masque local détermine le côté actuel.
+            // Le continent reçoit une cordillère large et positive dès la
+            // côte : il n'existe donc plus de chenal bas entre deux bourrelets.
+            uplift = strength * (localIsOceanic ? 180.0 : 2100.0) * conv_strength;
         }
     } else if (convergence < -0.2) {
         // === DIVERGENCE ===
@@ -591,21 +579,12 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
         uplift = strength * 80.0 * max(localNoise, 0.0);
     }
     
-    // Une compression même modérée construit une chaîne lisible et continue.
-    // Le bruit module la crête sans la découper en pics indépendants.
+    // Une compression même modérée renforce les massifs du même champ large.
+    // Aucun second profil décalé n'est ajouté : deux profils parallèles
+    // recréeraient précisément le chenal artificiel que l'on supprime.
     float compression = smoothstep(0.03, 0.45, convergence);
-    float chainProfile = strength;
-    float chainNoise = fbm(coords * (0.018 * params.feature_frequency_scale), 3, 0.55, 2.0, seed + 73191u);
-    float continentalRamp = 1.0;
-    if (isOceanic1 != isOceanic2) {
-        continentalRamp = smoothstep(
-            chainWidthKm * 0.20, chainWidthKm * 1.8,
-            naturalBorderDistanceKm
-        );
-    }
-    float coherentChain = chainProfile * compression * continentalRamp * mix(0.68, 1.18, chainNoise);
     if (!localIsOceanic && (!isOceanic1 || !isOceanic2)) {
-        uplift += coherentChain * 850.0;
+        uplift += strength * compression * 520.0;
     }
 
     // Garantie explicite : aucune contribution tectonique négative ne peut

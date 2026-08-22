@@ -12,12 +12,16 @@ const NEIGHBORS: Array[Vector2i] = [
 ]
 
 var test_resolution := TEST_RESOLUTION
+var test_seed := TEST_SEED
 var full_scale_mode := false
 
 func _ready() -> void:
 	if OS.get_environment("PLANETGEN_M2_FULL") == "1":
 		test_resolution = Vector2i(942, 471)
 		full_scale_mode = true
+	var seed_override := OS.get_environment("PLANETGEN_M2_SEED")
+	if not seed_override.is_empty() and seed_override.is_valid_int():
+		test_seed = int(seed_override)
 	call_deferred("_run")
 
 func _run() -> void:
@@ -51,6 +55,7 @@ func _run() -> void:
 	var administrative_continuity := bool(short_iteration_case.get("administrative_continuity", false))
 	var administrative_hierarchy := bool(short_iteration_case.get("administrative_hierarchy", false))
 	var department_distribution := bool(short_iteration_case.get("department_distribution", false))
+	var hierarchy_exports := bool(short_iteration_case.get("hierarchy_exports", false))
 	var administrative_scale_bounds := bool(short_iteration_case.get(
 		"administrative_scale_bounds", false
 	))
@@ -62,6 +67,7 @@ func _run() -> void:
 		and int(terrain_transition_stats.get("extreme_altitude_steps", 1)) == 0
 		and float(terrain_transition_stats.get("boundary_wall_fraction", 1.0)) < 0.20
 		and float(terrain_transition_stats.get("boundary_canyon_fraction", 1.0)) < 0.02
+		and float(terrain_transition_stats.get("near_boundary_linear_canyon_fraction", 1.0)) < 0.02
 	)
 
 	print("[Milestone2Hydrology] flow_hash=", short_iteration_case["flow_hash"])
@@ -69,6 +75,7 @@ func _run() -> void:
 	print("[Milestone2Hydrology] water_hash=", short_iteration_case["water_hash"])
 	print("[Milestone2Hydrology] river_type_hash=", short_iteration_case["river_type_hash"])
 	print("[Milestone2Hydrology] resolution=", test_resolution)
+	print("[Milestone2Hydrology] seed=", test_seed)
 	print("[Milestone2Hydrology] stable_without_iterations=", stable)
 	print("[Milestone2Hydrology] relative_mass_error=", stats.get("relative_mass_error"))
 	print("[Milestone2Hydrology] unresolved_land_cells=", stats.get("unresolved_land_cells"))
@@ -85,6 +92,7 @@ func _run() -> void:
 	print("[Milestone2Hydrology] administrative_hierarchy=", administrative_hierarchy)
 	print("[Milestone2Hydrology] land_department_stats=", short_iteration_case.get("land_department_stats", {}))
 	print("[Milestone2Hydrology] department_distribution=", department_distribution)
+	print("[Milestone2Hydrology] hierarchy_exports=", hierarchy_exports)
 	print("[Milestone2Hydrology] administrative_size_stats=", short_iteration_case.get(
 		"administrative_size_stats", {}
 	))
@@ -109,7 +117,9 @@ func _run() -> void:
 	if not administrative_hierarchy:
 		push_error("Administrative scales are not strictly department < region < country/basin < continent/ocean")
 	if not department_distribution:
-		push_error("Land department size distribution is too far from the 15-cell target")
+		push_error("Land department size distribution is too far from its physical target")
+	if not hierarchy_exports:
+		push_error("One or more administrative hierarchy PNG files were not exported")
 	if not administrative_scale_bounds:
 		push_error("A region/country is extreme or a continent is below its minimum size")
 	if not terrain_transitions:
@@ -118,11 +128,12 @@ func _run() -> void:
 	_quit(0 if stable and conserved and acyclic and drains and hierarchical
 		and administrative_masks and administrative_continuity
 		and administrative_hierarchy and department_distribution
-		and administrative_scale_bounds and terrain_transitions else 1)
+		and hierarchy_exports and administrative_scale_bounds
+		and terrain_transitions else 1)
 
 func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 	var params := {
-		"seed": TEST_SEED,
+		"seed": test_seed,
 		"resolution": test_resolution,
 		"planet_type": Enum.TYPE_TERRAN,
 		"planet_radius": 150.0,
@@ -258,10 +269,10 @@ func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 			maxi(int(department_stats.get("count", 1)), 1)
 		)
 		result["land_department_stats"] = department_stats
+		var department_target := maxf(float(department_stats.get("target_cells", 0.0)), 1.0)
 		result["department_distribution"] = (
-			float(department_stats.get("mean", 0.0)) >= 8.0
-			and float(department_stats.get("mean", 1000.0)) <= 24.0
-			and int(department_stats.get("p95", 1000)) <= 50
+			float(department_stats.get("mean", INF)) <= department_target * 2.0
+			and float(department_stats.get("p95", INF)) <= department_target * 3.5
 			and outlier_fraction <= 0.02
 		)
 		var land_info := HierarchyBuilder._scan(
@@ -288,12 +299,43 @@ func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 			"countries": country_stats,
 			"continents": continent_stats,
 		}
+		var land_targets := HierarchyBuilder.compute_physical_targets(
+			params, false, int(department_stats.get("cells", 1))
+		)
+		var land_cells := maxf(float(department_stats.get("cells", 1)), 1.0)
+		var physical_region_weight := land_cells / float(maxi(int(land_targets["regions"]), 1))
+		var physical_country_weight := land_cells / float(maxi(int(land_targets["middle"]), 1))
+		var physical_continent_weight := land_cells / float(maxi(int(land_targets["top"]), 1))
 		result["administrative_scale_bounds"] = (
-			float(region_stats.get("max_to_mean", 999.0)) <= 3.0
-			and float(country_stats.get("max_to_mean", 999.0)) <= 3.0
-			and float(continent_stats.get("min_to_mean", 0.0)) >= 0.20
+			float(region_stats.get("max", INF)) <= physical_region_weight * 3.0
+			and float(country_stats.get("max", INF)) <= physical_country_weight * 3.0
+			and float(continent_stats.get("min", 0.0)) >= physical_continent_weight * 0.20
 			and sea_counts[1] > 0 and sea_counts[2] > 0 and sea_counts[3] > 0
 		)
+
+		# Régression d'intégration : le constructeur seul pouvait réussir alors que
+		# l'export complet s'arrêtait avant la hiérarchie maritime. Exiger ici les
+		# six PNG, dont region_mer/bassin/ocean, couvre le chemin réellement utilisé
+		# par l'application.
+		var export_dir := ProjectSettings.globalize_path("user://milestone_2_hierarchy")
+		DirAccess.make_dir_recursive_absolute(export_dir)
+		var exporter := PlanetExporter.new()
+		exporter.params = params
+		exporter._nb_threads = 1
+		var hierarchy_files := exporter._export_hierarchy_maps(gpu, export_dir)
+		var expected_hierarchy_labels := [
+			"Régions terrestres", "Pays", "Continents",
+			"Régions maritimes", "Bassins", "Océans",
+		]
+		var all_hierarchy_files_exist := hierarchy_files.size() == expected_hierarchy_labels.size()
+		for label in expected_hierarchy_labels:
+			var filepath := str(hierarchy_files.get(label, ""))
+			if filepath.is_empty() or not FileAccess.file_exists(filepath):
+				all_hierarchy_files_exist = false
+		result["hierarchy_exports"] = all_hierarchy_files_exist
+		for filepath in hierarchy_files.values():
+			DirAccess.remove_absolute(str(filepath))
+		DirAccess.remove_absolute(export_dir)
 
 	orchestrator.cleanup()
 	return result
@@ -325,6 +367,12 @@ func _measure_terrain_transitions(geo_data: PackedByteArray,
 	var boundary_walls := 0
 	var boundary_land_samples := 0
 	var boundary_canyons := 0
+	var near_boundary_land_samples := 0
+	var near_boundary_linear_canyons := 0
+	# Rayon transversal d'environ 12 km, indépendant de la résolution.
+	var cross_radius := clampi(int(round(
+		12.0 / (TAU * 150.0 / float(test_resolution.x))
+	)), 1, 12)
 	for y in range(1, test_resolution.y - 1):
 		for x in range(test_resolution.x):
 			var index := y * test_resolution.x + x
@@ -344,7 +392,37 @@ func _measure_terrain_transitions(geo_data: PackedByteArray,
 					if step > 3000.0:
 						extreme_altitude_steps += 1
 
-			var boundary_signal := absf(plate_data.decode_float(index * 16 + 12))
+			var proximity_signal := absf(plate_data.decode_float(index * 16 + 12))
+			if height >= sea_level and proximity_signal >= 0.08:
+				near_boundary_land_samples += 1
+				var is_linear_canyon := false
+				var cross_directions := [
+					Vector2i(cross_radius, 0), Vector2i(0, cross_radius),
+					Vector2i(cross_radius, cross_radius),
+					Vector2i(cross_radius, -cross_radius),
+				]
+				for direction in cross_directions:
+					var side_a := Vector2i(posmod(x - direction.x, test_resolution.x), y - direction.y)
+					var side_b := Vector2i(posmod(x + direction.x, test_resolution.x), y + direction.y)
+					if side_a.y < 0 or side_a.y >= test_resolution.y:
+						continue
+					if side_b.y < 0 or side_b.y >= test_resolution.y:
+						continue
+					var side_a_height := geo_data.decode_float(
+						(side_a.y * test_resolution.x + side_a.x) * 16
+					)
+					var side_b_height := geo_data.decode_float(
+						(side_b.y * test_resolution.x + side_b.x) * 16
+					)
+					if side_a_height < sea_level or side_b_height < sea_level:
+						continue
+					if height + 900.0 < minf(side_a_height, side_b_height):
+						is_linear_canyon = true
+						break
+				if is_linear_canyon:
+					near_boundary_linear_canyons += 1
+
+			var boundary_signal := proximity_signal
 			if boundary_signal < 0.45:
 				continue
 			boundary_samples += 1
@@ -372,6 +450,10 @@ func _measure_terrain_transitions(geo_data: PackedByteArray,
 		"boundary_wall_fraction": float(boundary_walls) / float(maxi(boundary_samples, 1)),
 		"boundary_canyon_fraction": (
 			float(boundary_canyons) / float(maxi(boundary_land_samples, 1))
+		),
+		"near_boundary_linear_canyon_fraction": (
+			float(near_boundary_linear_canyons) /
+			float(maxi(near_boundary_land_samples, 1))
 		),
 	}
 

@@ -10,8 +10,8 @@ const REFERENCE_RADIUS_KM: float = 150.0
 const REFERENCE_LAND_RATIO: float = 0.45
 const DEPARTMENTS_PER_REGION: float = 9.0
 const LAND_DEPARTMENTS_PER_REGION_TARGET: float = 10.0
-const LAND_REGIONS_PER_COUNTRY: float = 7.5
-const LAND_COUNTRIES_PER_CONTINENT: float = 8.0
+const LAND_REGIONS_PER_COUNTRY: float = 22.0
+const LAND_COUNTRIES_PER_CONTINENT: float = 16.0
 const SEA_REGIONS_PER_BASIN: float = 10.0
 const SEA_BASINS_PER_OCEAN: float = 9.0
 
@@ -75,43 +75,38 @@ static func compute_physical_targets(settings: Dictionary, maritime: bool = fals
 	}
 
 
-## Dérive les niveaux terrestres du nombre de départements effectivement
-## générés. Les valeurs sont des tailles moyennes de niveau, jamais des nombres
-## d'entités imposés. Exemple : 2 909 départements donnent environ 291 régions,
-## 36 pays et 5 continents au lieu de 20 / 3 / 1.
+## Dérive les niveaux terrestres de la surface physique. Le nombre de
+## départements effectivement lu ne sert que de borne de capacité : augmenter
+## la résolution ne doit jamais multiplier régions, pays et continents.
 static func compute_land_hierarchy_targets(department_count: int,
 		settings: Dictionary = {}) -> Dictionary:
 	var departments := maxi(department_count, 1)
-	var radius_km := maxf(float(settings.get("planet_radius", REFERENCE_RADIUS_KM)), 1.0)
-	var land_fraction := 1.0 - clampf(
-		float(settings.get("ocean_ratio", 55.0)) / 100.0, 0.01, 0.99
-	)
-	var surface_km2 := 4.0 * PI * radius_km * radius_km * land_fraction
-	var departments_per_region := clampf(float(settings.get(
-		"admin_departments_per_region", LAND_DEPARTMENTS_PER_REGION_TARGET
-	)), 4.0, 24.0)
-	var regions_per_country := clampf(float(settings.get(
-		"admin_regions_per_country", 8.0
-	)), 3.0, 20.0)
-	var countries_per_continent := clampf(float(settings.get(
-		"admin_countries_per_continent", LAND_COUNTRIES_PER_CONTINENT
-	)), 3.0, 24.0)
-	var regions := clampi(
-		int(round(float(departments) / departments_per_region)), 1, departments
-	)
-	var countries := clampi(
-		int(round(float(regions) / regions_per_country)), 1, regions
-	)
-	var continents := clampi(
-		int(round(float(countries) / countries_per_continent)), 1, countries
-	)
+	# department_count * 20 reproduit uniquement la borne de capacité interne
+	# (au moins 20 texels par unité) sans faire dépendre la cible de ce nombre.
+	var physical := compute_physical_targets(settings, false, departments * 20)
+	var regions := clampi(int(physical["regions"]), 1, departments)
+	var regions_per_country := float(physical["middle_ratio"])
+	var countries_per_continent := float(physical["top_ratio"])
+	var countries := clampi(int(physical["middle"]), 1, regions)
+	var continents := clampi(int(physical["top"]), 1, countries)
+	# Si la capacité réelle contient moins d'unités que la cible physique, les
+	# deux niveaux supérieurs doivent eux aussi être recalculés depuis le nombre
+	# de régions encore disponible.
+	if regions < int(physical["regions"]):
+		countries = clampi(
+			int(round(float(regions) / maxf(regions_per_country, 2.0))), 1, regions
+		)
+		continents = clampi(
+			int(round(float(countries) / maxf(countries_per_continent, 2.0))),
+			1, countries
+		)
 	return {
-		"surface_km2": surface_km2,
+		"surface_km2": float(physical["surface_km2"]),
 		"departments": departments,
 		"regions": regions,
 		"middle": countries,
 		"top": continents,
-		"departments_per_region": departments_per_region,
+		"departments_per_region": float(departments) / float(maxi(regions, 1)),
 		"regions_per_country": regions_per_country,
 		"countries_per_continent": countries_per_continent,
 	}
@@ -141,7 +136,7 @@ static func build_land(data: PackedByteArray, w: int, h: int,
 		"admin_max_country_area_factor", 2.5
 	)), 1.5, 4.0)
 	var min_continent_fraction := clampf(float(settings.get(
-		"admin_min_continent_area_fraction", 0.35
+		"admin_min_continent_area_fraction", 0.55
 	)), 0.15, 0.75)
 
 	# Une île proche peut rejoindre une zone côtière. Une composante réellement
@@ -201,7 +196,8 @@ static func build_land(data: PackedByteArray, w: int, h: int,
 		continent_bridge_km, false, gen
 	)
 	# Un continent minuscule n'est pas un niveau administratif pertinent. Les
-	# continents sous 35 % de la taille physique cible rejoignent le continent
+	# continents sous la fraction minimale de la taille physique cible rejoignent
+	# le continent
 	# valide initialement le plus proche. Les centres ne bougent jamais pendant
 	# cette affectation, ce qui évite toute croissance opportuniste.
 	country_to_continent = _merge_undersized_groups(
@@ -228,7 +224,7 @@ static func build_land(data: PackedByteArray, w: int, h: int,
 
 
 ## Retourne [département-mer→région-mer, →bassin, →océan]. Seules les
-## composantes marines reliées à plusieurs zones terrestres valides montent
+## composantes marines reliées à une zone terrestre valide montent
 ## dans la hiérarchie. Les lacs/départements isolés restent uniquement au
 ## niveau départemental et ne peuvent jamais devenir un « océan ».
 static func build_sea(data: PackedByteArray, w: int, h: int,
@@ -264,7 +260,7 @@ static func build_sea(data: PackedByteArray, w: int, h: int,
 	# bassin et océan reste topologiquement continu et sans enclave.
 	var dept_to_region := _stable_nearest_groups(
 		eligible, adjacency, coords, weights, target_regions, w, h, radius_km,
-		-1.0, true, gen, 3
+		-1.0, true, gen, 1
 	)
 	print("    → %d régions-mer" % _unique_values(dept_to_region).size())
 
@@ -272,10 +268,20 @@ static func build_sea(data: PackedByteArray, w: int, h: int,
 	var region_children := _invert(dept_to_region)
 	var region_adjacency := _adj_children(region_ids, region_children, adjacency)
 	var region_info := _aggregate_geometry(region_ids, region_children, coords, weights, w)
+	# Une composante qui ne possède pas au moins trois régions maritimes reste
+	# au niveau régional. Elle ne peut donc pas fabriquer un bassin puis un océan
+	# uniquement parce qu'elle est séparée du réseau marin principal.
+	var basin_eligible_regions := _units_in_components_at_least(
+		region_ids, region_adjacency, 3
+	)
+	if basin_eligible_regions.is_empty():
+		print("    → 0 bassins (composantes trop petites)")
+		print("    → 0 océans")
+		return [dept_to_region, {}, {}]
 	var region_to_basin := _stable_nearest_groups(
-		region_ids, region_adjacency, region_info[0], region_info[1],
-		mini(target_basins, region_ids.size()), w, h, radius_km,
-		-1.0, true, gen, 2
+		basin_eligible_regions, region_adjacency, region_info[0], region_info[1],
+		mini(target_basins, basin_eligible_regions.size()), w, h, radius_km,
+		-1.0, true, gen, 1
 	)
 	print("    → %d bassins" % _unique_values(region_to_basin).size())
 
@@ -285,9 +291,23 @@ static func build_sea(data: PackedByteArray, w: int, h: int,
 	var basin_info := _aggregate_geometry(
 		basin_ids, basin_children, region_info[0], region_info[1], w
 	)
+	# Même règle au niveau supérieur : au moins deux bassins continus sont
+	# nécessaires pour constituer une entité d'échelle océanique.
+	var ocean_eligible_basins := _units_in_components_at_least(
+		basin_ids, basin_adjacency, 2
+	)
+	if ocean_eligible_basins.is_empty():
+		print("    → 0 océans (bassins trop petits)")
+		var only_dept_to_basin: Dictionary = {}
+		for dept in eligible:
+			var local_region: int = dept_to_region.get(dept, -1)
+			var local_basin: int = region_to_basin.get(local_region, -1)
+			if local_basin != -1:
+				only_dept_to_basin[dept] = local_basin
+		return [dept_to_region, only_dept_to_basin, {}]
 	var basin_to_ocean := _stable_nearest_groups(
-		basin_ids, basin_adjacency, basin_info[0], basin_info[1],
-		mini(target_oceans, basin_ids.size()), w, h, radius_km,
+		ocean_eligible_basins, basin_adjacency, basin_info[0], basin_info[1],
+		mini(target_oceans, ocean_eligible_basins.size()), w, h, radius_km,
 		-1.0, true, gen, 1
 	)
 	print("    → %d océans" % _unique_values(basin_to_ocean).size())
@@ -747,6 +767,18 @@ static func _connected_components(units: Array, adjacency: Dictionary) -> Array:
 	return components
 
 
+## Conserve intégralement les composantes qui ont assez d'unités pour porter
+## le niveau hiérarchique suivant. Une petite mer demeure visible à son niveau
+## courant au lieu d'être promue artificiellement jusqu'à l'échelle océanique.
+static func _units_in_components_at_least(units: Array, adjacency: Dictionary,
+		minimum_size: int) -> Array:
+	var result: Array = []
+	for component in _connected_components(units, adjacency):
+		if (component as Array).size() >= minimum_size:
+			result.append_array(component)
+	return result
+
+
 static func _representative(units: Array, coords: Dictionary,
 		weights: Dictionary, w: int) -> int:
 	if units.is_empty():
@@ -878,9 +910,9 @@ static func _aggregate_geometry(group_ids: Array, group_children: Dictionary,
 
 
 ## Une composante maritime salée monte dans la hiérarchie lorsqu'elle touche
-## plusieurs zones terrestres valides. Les seuils restent absolus : l'ancien
-## seuil global de 4 % des régions et 8 % des pays supprimait bassins et océans
-## à mesure que la planète et sa hiérarchie grandissaient.
+## au moins une zone terrestre déjà présente dans la hiérarchie. C'est la
+## relation côte→terre, et non sa surface ni le nombre total de pays, qui rend
+## la composante admissible. Les lacs restent exclus par le masque d'eau douce.
 static func _eligible_sea_units(sea_units: Array, sea_adjacency: Dictionary,
 		sea_data: PackedByteArray, land_data: PackedByteArray, w: int, h: int,
 		sea_merge: Dictionary, land_merge: Dictionary,
@@ -889,28 +921,36 @@ static func _eligible_sea_units(sea_units: Array, sea_adjacency: Dictionary,
 		return []
 	var contacts: Dictionary = {}
 	var saltwater_units: Dictionary = {}
+	var valid_water_mask := water_mask_data.size() == w * h
 	for y in range(h):
 		for x in range(w):
 			var sea_raw := sea_data.decode_u32((y * w + x) * 4)
 			if sea_raw == _INVALID_ID:
 				continue
 			var sea_unit: int = sea_merge.get(sea_raw, sea_raw)
-			if water_mask_data.size() == w * h and water_mask_data[y * w + x] == 1:
+			if valid_water_mask and water_mask_data[y * w + x] == 1:
 				saltwater_units[sea_unit] = true
 			if not contacts.has(sea_unit):
 				contacts[sea_unit] = {}
-			var neighbors := [
-				Vector2i(posmod(x - 1, w), y), Vector2i((x + 1) % w, y),
-				Vector2i(x, y - 1), Vector2i(x, y + 1),
-			]
-			for position in neighbors:
-				if position.y < 0 or position.y >= h:
+			# Les deux cartes de départements peuvent laisser une couture côtière
+			# d'un texel après leurs nettoyages de continuité respectifs. Une bande
+			# bornée à deux texels rétablit le contact réel sans franchir un lac ou
+			# une étendue marine. Le wrap horizontal reste celui de la planète.
+			for dy in range(-2, 3):
+				var neighbor_y := y + dy
+				if neighbor_y < 0 or neighbor_y >= h:
 					continue
-				var land_raw := land_data.decode_u32((position.y * w + position.x) * 4)
-				if land_raw == _INVALID_ID:
-					continue
-				var land_unit: int = land_merge.get(land_raw, land_raw)
-				(contacts[sea_unit] as Dictionary)[land_unit] = true
+				for dx in range(-2, 3):
+					if absi(dx) + absi(dy) > 2:
+						continue
+					var neighbor_x := posmod(x + dx, w)
+					var land_raw := land_data.decode_u32(
+						(neighbor_y * w + neighbor_x) * 4
+					)
+					if land_raw == _INVALID_ID:
+						continue
+					var land_unit: int = land_merge.get(land_raw, land_raw)
+					(contacts[sea_unit] as Dictionary)[land_unit] = true
 
 	var dept_to_region: Dictionary = land_hierarchy[0]
 	var dept_to_country: Dictionary = land_hierarchy[1]
@@ -919,7 +959,9 @@ static func _eligible_sea_units(sea_units: Array, sea_adjacency: Dictionary,
 		if saltwater_units.has(sea_unit):
 			saltwater_candidates.append(sea_unit)
 	var eligible: Array = []
-	for component in _connected_components(saltwater_candidates, sea_adjacency):
+	var saltwater_components := _connected_components(saltwater_candidates, sea_adjacency)
+	var anchored_components := 0
+	for component in saltwater_components:
 		# Une hiérarchie région→bassin→océan exige au moins trois unités
 		# maritimes continues. Une crique ou un département isolé reste visible
 		# au niveau local mais ne devient jamais un océan miniature.
@@ -935,13 +977,21 @@ static func _eligible_sea_units(sea_units: Array, sea_adjacency: Dictionary,
 					land_regions[region] = true
 				if country != -1:
 					land_countries[country] = true
-		# Une mer assez structurée pour remonter doit être reliée à
-		# plusieurs zones terrestres. Ces seuils absolus restent atteignables
-		# quelle que soit la taille de la planète, contrairement aux anciens
-		# pourcentages globaux qui finissaient par supprimer tous les océans.
-		var anchored := land_regions.size() >= 3 and land_countries.size() >= 2
+		# Une seule relation administrative valide suffit : exiger plusieurs
+		# pays supprimait notamment les mers bordant un grand pays. La taille
+		# minimale de composante ci-dessus empêche toujours qu'un département
+		# isolé devienne à lui seul région, bassin et océan.
+		var anchored := not land_regions.is_empty() and not land_countries.is_empty()
 		if anchored:
+			anchored_components += 1
 			eligible.append_array(component)
+	print(
+		"      ancrage maritime: masque=%s | salés=%d/%d | composantes=%d | valides=%d"
+		% [
+			str(valid_water_mask), saltwater_candidates.size(), sea_units.size(),
+			saltwater_components.size(), anchored_components,
+		]
+	)
 	return eligible
 
 

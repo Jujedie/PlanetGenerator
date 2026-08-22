@@ -319,7 +319,14 @@ func _validate_seam_merge_contract() -> bool:
 	return HierarchyBuilder.compute_merge_map(data, 2, 1).is_empty()
 
 func _validate_physical_scale_contract() -> bool:
-	var observed_land := HierarchyBuilder.compute_land_hierarchy_targets(2909)
+	var observed_land := HierarchyBuilder.compute_land_hierarchy_targets(2909, {
+		"planet_radius": 150.0,
+		"ocean_ratio": 55.0,
+	})
+	var reference_land := HierarchyBuilder.compute_land_hierarchy_targets(12367, {
+		"planet_radius": 150.0,
+		"ocean_ratio": 55.0,
+	})
 	var small := HierarchyBuilder.compute_physical_targets({
 		"planet_radius": 150.0,
 		"ocean_ratio": 55.0,
@@ -333,10 +340,14 @@ func _validate_physical_scale_contract() -> bool:
 	var small_country_area := float(small["surface_km2"]) / float(small["middle"])
 	var large_country_area := float(large["surface_km2"]) / float(large["middle"])
 	return (
-		int(observed_land["regions"]) >= 250
-		and int(observed_land["regions"]) <= 330
-		and int(observed_land["middle"]) >= 30
-		and int(observed_land["top"]) >= 4
+		# Deux résolutions produisant des nombres différents de départements
+		# locaux doivent conserver exactement la même échelle supérieure.
+		int(observed_land["regions"]) == int(reference_land["regions"])
+		and int(observed_land["middle"]) == int(reference_land["middle"])
+		and int(observed_land["top"]) == int(reference_land["top"])
+		and int(observed_land["regions"]) == int(small["regions"])
+		and int(observed_land["middle"]) == int(small["middle"])
+		and int(observed_land["top"]) == int(small["top"])
 		and int(small["departments"]) > int(small["regions"])
 		and int(small["regions"]) > int(small["middle"])
 		and int(small["middle"]) > int(small["top"])

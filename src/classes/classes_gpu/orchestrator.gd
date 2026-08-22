@@ -3173,23 +3173,30 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	var max_dim = max(w, h)
 	var water_mask_data := gpu.readback_texture_raw("water_mask")
 	var actual_land_cells := _count_mask_cells(water_mask_data, false)
-	var target_department_cells := clampf(float(params.get(
-		"land_department_target_cells", 15.0
-	)), 8.0, 40.0)
-	var target_departments := maxi(1, int(round(
-		float(actual_land_cells) / target_department_cells
-	)))
-	var hierarchy_targets := HierarchyBuilder.compute_land_hierarchy_targets(
-		target_departments, params
+	# Les quantites administratives viennent de la surface physique de la
+	# planete. L'ancienne cible fixe de 15 texels par departement faisait
+	# exploser leur nombre avec la resolution (226 727 IDs a 3455x1727), puis
+	# bloquait l'export avant les cartes maritimes. La capacite en texels ne sert
+	# plus que de garde-fou pour conserver des zones peignables.
+	var hierarchy_targets := HierarchyBuilder.compute_physical_targets(
+		params, false, actual_land_cells
 	)
-	var target_regions := int(hierarchy_targets["regions"])
+	var target_departments := clampi(
+		int(hierarchy_targets["departments"]), 1, maxi(actual_land_cells, 1)
+	)
+	var target_regions := clampi(
+		int(hierarchy_targets["regions"]), 1, target_departments
+	)
+	var target_department_cells := (
+		float(actual_land_cells) / float(maxi(target_departments, 1))
+	)
 	var desired_seed_density := clampf(
 		float(target_departments) / float(maxi(actual_land_cells, 1)),
 		0.000001,
 		0.105
 	)
 	# Le shader conserve le candidat au hash minimal dans son voisinage 3x3.
-	# Inversion de la densité Matérn discrète pour obtenir ~1 seed/15 cellules.
+	# La densite est celle de la cible physique, pas celle de la texture.
 	var seed_probability := 1.0 - pow(
 		maxf(1.0 - 9.0 * desired_seed_density, 0.000001), 1.0 / 9.0
 	)
@@ -3198,9 +3205,9 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	var region_iterations = clampi(requested_iterations, max_dim, max_dim * 2)
 
 	print("  Seed: ", seed_val, " | Cellules terrestres mesurées: ", actual_land_cells)
-	print("  Département cible: ", snappedf(target_department_cells, 1.0),
-		" cellules | départements attendus: ", target_departments,
-		" | régions attendues: ", target_regions)
+	print("  Surface terrestre: ", snappedf(float(hierarchy_targets["surface_km2"]), 1.0),
+		" km² | départements cibles: ", target_departments,
+		" | régions cibles: ", target_regions)
 	print("  Probabilité candidats blue-noise: ", snappedf(seed_probability, 0.0001),
 		" | espacement moyen: ", snappedf(mean_department_spacing_px, 0.1), " px")
 	print("  Irrégularité organique: ", noise_strength,
