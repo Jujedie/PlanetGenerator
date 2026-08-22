@@ -19,6 +19,7 @@ CREATING,Creating,Création en cours,Erstellung
 
 MAP_TOPOGRAPHIE,Topography,Topographie,Topographie
 MAP_TOPOGRAPHIE_GREY,Topography (Grey),Topographie (Gris),Topographie (Grau)
+MAP_TOPOLOGY,Contour lines,Courbes de niveau,Höhenlinien
 MAP_EAUX,Water map,Carte des eaux,Wasserkarte
 MAP_PLAQUES,Tectonic plates,Plaques tectoniques,Tektonische Platten
 MAP_PLAQUES_BORDURES,Plate boundaries,Bordures de plaques,Plattengrenzen
@@ -93,7 +94,7 @@ CLOUD_COVERAGE,Cloud coverage : {val},Couverture nuageuse : {val},Bedeckung : {v
 CLOUD_DENSITY,Cloud density : {val},Densité des nuages : {val},Wolkendichte : {val}
 
 REGION_CATEGORIE,Region category,Catégorie région,Regionkategorie
-NB_CASES_REGIONS,Number of region tiles : {val},Nombre de cases régions : {val},Anzahl der Regionenfelder : {val}
+NB_CASES_REGIONS,Department target size : {val} tiles,Taille cible d'un département : {val} cases,Zielgröße des Bezirks : {val} Felder
 REGION_COST_FLAT,Region cost (flat) : {val},Coût région (plat) : {val},Regionenkosten (flach) : {val}
 REGION_COST_HILL,Region cost (hill) : {val},Coût région (colline) : {val},Regionenkosten (Hügel) : {val}
 REGION_COST_RIVER,Region cost (river) : {val},Coût région (rivière) : {val},Regionenkosten (Fluss) : {val}

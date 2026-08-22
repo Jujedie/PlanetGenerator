@@ -28,6 +28,7 @@ const CATEGORIES_PATHS = {
 const MAP_NAME_TO_KEY = {
 	"topographie_map.png": "MAP_TOPOGRAPHIE",
 	"topographie_map_grey.png": "MAP_TOPOGRAPHIE_GREY",
+	"topology_map.png": "MAP_TOPOLOGY",
 	"eaux_map.png": "MAP_EAUX",
 	"plaques_map.png": "MAP_PLAQUES",
 	"plaques_bordures_map.png": "MAP_PLAQUES_BORDURES",

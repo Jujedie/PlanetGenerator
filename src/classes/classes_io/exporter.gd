@@ -217,9 +217,10 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 # INDIVIDUAL MAP EXPORTERS
 # ============================================================================
 
-## Exporte les cartes topographiques (élévation) en deux versions :
+## Exporte les cartes topographiques (élévation) en trois versions :
 ## - Version colorée : utilise COULEURS_ELEVATIONS d'Enum.gd
 ## - Version grisée : utilise COULEURS_ELEVATIONS_GREY d'Enum.gd
+## - Courbes de niveau : lignes seules sur fond RGBA transparent
 ##
 ## La GeoTexture contient :
 ## - R = height (élévation en mètres, float brut)
@@ -241,6 +242,8 @@ func _export_topographie_maps(geo_img: Image, output_dir: String, width: int, he
 	var elevation_colored = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	var elevation_grey = Image.create(width, height, false, Image.FORMAT_RGBA8)
 	var water_mask = Image.create(width, height, false, Image.FORMAT_RGBA8)
+	var relative_elevations := PackedFloat32Array()
+	relative_elevations.resize(width * height)
 	
 	# Vérifier si la planète a de l'eau (pas d'eau sur planètes sans atmosphère ou stériles)
 	var atmosphere_type = int(params.get("planet_type", 0))
@@ -259,6 +262,7 @@ func _export_topographie_maps(geo_img: Image, output_dir: String, width: int, he
 			var sea_level = params.get("sea_level", 0.0)
 			var relative_elevation = elevation_meters - sea_level
 			var elevation_int = int(round(relative_elevation))
+			relative_elevations[y * width + x] = relative_elevation
 			
 			# Obtenir les couleurs via Enum.gd (altitude relative)
 			var color_colored = Enum.getElevationColor(elevation_int, false)
@@ -277,10 +281,13 @@ func _export_topographie_maps(geo_img: Image, output_dir: String, width: int, he
 	# Sauvegarder les images avec noms standardisés
 	var path_colored = output_dir + "/topographie_map.png"
 	var path_grey = output_dir + "/topographie_map_grey.png"
+	var path_topology = output_dir + "/topology_map.png"
 	var path_water = output_dir + "/eaux_map.png"
+	var topology_overlay := _build_topology_overlay(relative_elevations, width, height)
 	
 	var err_colored = elevation_colored.save_png(path_colored)
 	var err_grey = elevation_grey.save_png(path_grey)
+	var err_topology = topology_overlay.save_png(path_topology)
 	var err_water = water_mask.save_png(path_water)
 	
 	if err_colored == OK:
@@ -294,6 +301,12 @@ func _export_topographie_maps(geo_img: Image, output_dir: String, width: int, he
 		print("  ✅ Saved: ", path_grey)
 	else:
 		push_error("[Exporter] ❌ Failed to save topographie_map_grey: ", err_grey)
+
+	if err_topology == OK:
+		result["topology_map"] = path_topology
+		print("  ✅ Saved: ", path_topology, " (RGBA transparent)")
+	else:
+		push_error("[Exporter] ❌ Failed to save topology_map: ", err_topology)
 	
 	if err_water == OK:
 		result["eaux_map"] = path_water
@@ -302,6 +315,115 @@ func _export_topographie_maps(geo_img: Image, output_dir: String, width: int, he
 		push_error("[Exporter] ❌ Failed to save eaux_map: ", err_water)
 	
 	return result
+
+
+## Produit des isolignes antialiasables par le moteur (alpha variable), sans
+## aplat de fond. Le lissage est exprimé en kilomètres afin que leur niveau de
+## détail ne change pas simplement parce que la résolution d'export augmente.
+func _build_topology_overlay(relative_elevations: PackedFloat32Array,
+		width: int, height: int) -> Image:
+	var planet_radius_km := maxf(float(params.get("planet_radius", 150.0)), 1.0)
+	var km_per_pixel := TAU * planet_radius_km / float(maxi(width, 1))
+	var smoothing_km := maxf(float(params.get("topology_smoothing_km", 12.0)), 0.0)
+	var smoothing_radius_px := clampi(
+		int(round(smoothing_km / maxf(km_per_pixel, 0.001))), 1, 64
+	)
+	var elevations := _smooth_topology_elevations(
+		relative_elevations, width, height, smoothing_radius_px
+	)
+	var minor_interval := maxf(
+		float(params.get("topology_contour_interval_m", 250.0)), 25.0
+	)
+	var major_interval := maxf(
+		float(params.get("topology_major_interval_m", 1000.0)), minor_interval
+	)
+	var pixels := PackedByteArray()
+	pixels.resize(width * height * 4)
+
+	for y in range(height):
+		var below_y := mini(y + 1, height - 1)
+		for x in range(width):
+			var index := y * width + x
+			var center := elevations[index]
+			var right := elevations[y * width + ((x + 1) % width)]
+			var below := elevations[below_y * width + x]
+			var line_kind := maxi(
+				_contour_crossing_kind(center, right, minor_interval, major_interval),
+				_contour_crossing_kind(center, below, minor_interval, major_interval)
+			)
+			if line_kind == 0:
+				continue
+
+			var offset := index * 4
+			if line_kind == 3: # côte : trait continu le plus lisible
+				pixels[offset] = 238
+				pixels[offset + 1] = 246
+				pixels[offset + 2] = 241
+				pixels[offset + 3] = 255
+			elif line_kind == 2: # courbe maîtresse
+				pixels[offset] = 250
+				pixels[offset + 1] = 247
+				pixels[offset + 2] = 235
+				pixels[offset + 3] = 224
+			else: # courbe intermédiaire
+				pixels[offset] = 250
+				pixels[offset + 1] = 247
+				pixels[offset + 2] = 235
+				pixels[offset + 3] = 148
+
+	return Image.create_from_data(
+		width, height, false, Image.FORMAT_RGBA8, pixels
+	)
+
+
+func _contour_crossing_kind(a: float, b: float, minor_interval: float,
+		major_interval: float) -> int:
+	var a_is_land := a >= 0.0
+	var b_is_land := b >= 0.0
+	if a_is_land != b_is_land:
+		return 3
+	if int(floor(a / major_interval)) != int(floor(b / major_interval)):
+		return 2
+	if int(floor(a / minor_interval)) != int(floor(b / minor_interval)):
+		return 1
+	return 0
+
+
+## Flou boîte séparable O(n), horizontalement raccordé et verticalement
+## borné. Il retire le bruit pixel par pixel sans effacer les grands reliefs.
+func _smooth_topology_elevations(source: PackedFloat32Array, width: int,
+		height: int, radius: int) -> PackedFloat32Array:
+	var horizontal := PackedFloat32Array()
+	var smoothed := PackedFloat32Array()
+	horizontal.resize(width * height)
+	smoothed.resize(width * height)
+	var window_size := radius * 2 + 1
+	var inverse_window := 1.0 / float(window_size)
+
+	for y in range(height):
+		var row_offset := y * width
+		var rolling_sum := 0.0
+		for dx in range(-radius, radius + 1):
+			rolling_sum += source[row_offset + posmod(dx, width)]
+		for x in range(width):
+			horizontal[row_offset + x] = rolling_sum * inverse_window
+			rolling_sum -= source[row_offset + posmod(x - radius, width)]
+			rolling_sum += source[row_offset + posmod(x + radius + 1, width)]
+
+	for x in range(width):
+		var rolling_sum := 0.0
+		for dy in range(-radius, radius + 1):
+			rolling_sum += horizontal[clampi(dy, 0, height - 1) * width + x]
+		for y in range(height):
+			smoothed[y * width + x] = rolling_sum * inverse_window
+			rolling_sum -= horizontal[
+				clampi(y - radius, 0, height - 1) * width + x
+			]
+			rolling_sum += horizontal[
+				clampi(y + radius + 1, 0, height - 1) * width + x
+			]
+
+	return smoothed
 
 ## Exporte la carte des plaques tectoniques avec couleurs distinctes par plaque
 ##

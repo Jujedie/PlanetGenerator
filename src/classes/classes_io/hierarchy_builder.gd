@@ -41,7 +41,10 @@ static func compute_physical_targets(settings: Dictionary, maritime: bool = fals
 	)
 	var surface_scale := maxf(surface_km2 / maxf(reference_surface_km2, 1.0), 0.0001)
 	var radius_scale := maxf(radius_km / REFERENCE_RADIUS_KM, 0.01)
-	var base_key := "nb_cases_ocean_regions" if maritime else "nb_cases_regions"
+	# La taille locale des départements terrestres (`nb_cases_regions`) ne doit
+	# pas modifier le nombre de régions/pays/continents. Les niveaux supérieurs
+	# conservent une référence physique indépendante, surchargeable au besoin.
+	var base_key := "nb_cases_ocean_regions" if maritime else "admin_reference_land_regions"
 	var base_default := 100.0 if maritime else 50.0
 	var base_regions := maxf(float(settings.get(base_key, base_default)), 1.0)
 

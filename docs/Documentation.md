@@ -174,7 +174,7 @@ indépendamment de la résolution de texture.
 
 | Paramètre | Défaut | Rôle |
 |-----------|--------|------|
-| **Nombre de régions** (`nb_cases_regions`) | 50 | Nombre de régions terrestres générées. Un grand nombre crée des territoires plus petits et plus variés. |
+| **Taille des départements** (`nb_cases_regions`) | 50 | Surface moyenne visée, en cases terrestres, pour chaque département. Une valeur de 15 vise donc environ 15 cases par département. |
 | **Coût terrain plat** (`region_cost_flat`) | 1.0 | Résistance à la traversée d'une zone plate. Un coût faible étend facilement les régions sur les plaines. |
 | **Coût terrain vallonné** (`region_cost_hill`) | 2.0 | Résistance à la traversée d'une zone montagneuse. Un coût élevé fait des montagnes des frontières naturelles. |
 | **Coût rivière** (`region_cost_river`) | 3.0 | Résistance à la traversée d'une rivière. Un coût très élevé fait des rivières des frontières quasi-infranchissables. |
@@ -470,6 +470,7 @@ Le shader sélectionne le biome dont le centre de plage est le plus proche des v
 |----------------|-------------|-------------|
 | `topographie_map.png` | `MAP_TOPOGRAPHIE` | Visualisation d'élévation avec interpolation continue entre les couleurs de `COULEURS_ELEVATIONS` |
 | `topographie_map_grey.png` | `MAP_TOPOGRAPHIE_GREY` | Visualisation continue en niveaux de gris (plus sombre = plus bas) |
+| `topology_map.png` | `MAP_TOPOLOGY` | Courbes de niveau seules en RGBA8, sur fond entièrement transparent |
 | `eaux_map.png` | `MAP_EAUX` | Masque eau : blanc = océan, noir = terre |
 | `plaques_map.png` | `MAP_PLAQUES` | Coloration des plaques tectoniques |
 | `plaques_bordures_map.png` | `MAP_PLAQUES_BORDURES` | Frontières de plaques tectoniques |

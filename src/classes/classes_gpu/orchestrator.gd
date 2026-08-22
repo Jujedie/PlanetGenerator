@@ -3173,22 +3173,25 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	var max_dim = max(w, h)
 	var water_mask_data := gpu.readback_texture_raw("water_mask")
 	var actual_land_cells := _count_mask_cells(water_mask_data, false)
-	# Les quantites administratives viennent de la surface physique de la
-	# planete. L'ancienne cible fixe de 15 texels par departement faisait
-	# exploser leur nombre avec la resolution (226 727 IDs a 3455x1727), puis
-	# bloquait l'export avant les cartes maritimes. La capacite en texels ne sert
-	# plus que de garde-fou pour conserver des zones peignables.
+	# "nb_cases_regions" contrôle la surface locale visible d'un département.
+	# Il ne doit pas être réinterprété comme un nombre global de graines : avec
+	# une valeur de 15, une zone doit couvrir environ 15 cases de terre, quelle
+	# que soit la surface totale de la texture. Les niveaux région/pays/continent
+	# restent, eux, construits plus tard selon l'échelle physique de la planète.
 	var hierarchy_targets := HierarchyBuilder.compute_physical_targets(
 		params, false, actual_land_cells
 	)
-	var target_departments := clampi(
-		int(hierarchy_targets["departments"]), 1, maxi(actual_land_cells, 1)
+	var target_department_cells := clampf(
+		float(params.get("land_department_target_cells",
+			params.get("nb_cases_regions", 50.0))),
+		1.0,
+		float(maxi(actual_land_cells, 1))
 	)
+	var target_departments := clampi(int(round(
+		float(actual_land_cells) / target_department_cells
+	)), 1, maxi(actual_land_cells, 1))
 	var target_regions := clampi(
 		int(hierarchy_targets["regions"]), 1, target_departments
-	)
-	var target_department_cells := (
-		float(actual_land_cells) / float(maxi(target_departments, 1))
 	)
 	var desired_seed_density := clampf(
 		float(target_departments) / float(maxi(actual_land_cells, 1)),
@@ -3196,7 +3199,7 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 		0.105
 	)
 	# Le shader conserve le candidat au hash minimal dans son voisinage 3x3.
-	# La densite est celle de la cible physique, pas celle de la texture.
+	# La densité correspond directement à la taille locale demandée.
 	var seed_probability := 1.0 - pow(
 		maxf(1.0 - 9.0 * desired_seed_density, 0.000001), 1.0 / 9.0
 	)
@@ -3206,7 +3209,8 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 
 	print("  Seed: ", seed_val, " | Cellules terrestres mesurées: ", actual_land_cells)
 	print("  Surface terrestre: ", snappedf(float(hierarchy_targets["surface_km2"]), 1.0),
-		" km² | départements cibles: ", target_departments,
+		" km² | taille département cible: ", snappedf(target_department_cells, 0.1),
+		" cases | départements cibles: ", target_departments,
 		" | régions cibles: ", target_regions)
 	print("  Probabilité candidats blue-noise: ", snappedf(seed_probability, 0.0001),
 		" | espacement moyen: ", snappedf(mean_department_spacing_px, 0.1), " px")

@@ -55,6 +55,7 @@ func _run() -> void:
 	)
 	var seam_merge_safe := _validate_seam_merge_contract()
 	var physical_scale_safe := _validate_physical_scale_contract()
+	var topology_export_safe := _validate_topology_export_contract()
 	var gas_deterministic: bool = first_gas["final_hash"] == second_gas["final_hash"]
 	var gas_export_contract: bool = (
 		first_gas["exported_keys"] == ["final_map"]
@@ -78,6 +79,7 @@ func _run() -> void:
 	print("[Milestone1Smoke] cloud_png_rgba=", first["cloud_png_contract"])
 	print("[Milestone1Smoke] seam_merge_safe=", seam_merge_safe)
 	print("[Milestone1Smoke] physical_scale_safe=", physical_scale_safe)
+	print("[Milestone1Smoke] topology_rgba_export=", topology_export_safe)
 	print("[Milestone1Smoke] deterministic=", deterministic)
 	print("[Milestone1Smoke] gas_final_hash=", first_gas["final_hash"])
 	print("[Milestone1Smoke] gas_exported_keys=", first_gas["exported_keys"])
@@ -102,6 +104,8 @@ func _run() -> void:
 		push_error("Distinct administrative regions were merged across the horizontal seam")
 	if not physical_scale_safe:
 		push_error("Administrative hierarchy does not scale from physical planet surface")
+	if not topology_export_safe:
+		push_error("Topology export is not a transparent RGBA contour overlay")
 	if not gas_deterministic:
 		push_error("Gas-giant output is not deterministic for the fixed seed")
 	if not gas_export_contract:
@@ -116,6 +120,7 @@ func _run() -> void:
 		and cloud_contract
 		and seam_merge_safe
 		and physical_scale_safe
+		and topology_export_safe
 		and gas_deterministic
 		and gas_export_contract
 	)
@@ -359,6 +364,73 @@ func _validate_physical_scale_contract() -> bool:
 		and int(large["top"]) > int(small["top"])
 		and large_country_area > small_country_area
 	)
+
+
+func _validate_topology_export_contract() -> bool:
+	const WIDTH := 96
+	const HEIGHT := 48
+	var geo := Image.create(WIDTH, HEIGHT, false, Image.FORMAT_RGBAF)
+	for y in range(HEIGHT):
+		for x in range(WIDTH):
+			var nx := (float(x) - float(WIDTH) * 0.5) / (float(WIDTH) * 0.32)
+			var ny := (float(y) - float(HEIGHT) * 0.5) / (float(HEIGHT) * 0.38)
+			var radial_height := 6200.0 * (1.0 - sqrt(nx * nx + ny * ny))
+			var relief := 420.0 * sin(float(x) * 0.31) * cos(float(y) * 0.27)
+			var elevation := radial_height + relief
+			geo.set_pixel(x, y, Color(elevation, 0.5, 0.0, 80.0 if elevation < 0.0 else 0.0))
+
+	var export_dir := ProjectSettings.globalize_path("user://milestone_1_topology")
+	DirAccess.make_dir_recursive_absolute(export_dir)
+	var exporter := PlanetExporter.new()
+	exporter.params = {
+		"planet_type": Enum.TYPE_TERRAN,
+		"planet_radius": 150.0,
+		"sea_level": 0.0,
+		"topology_smoothing_km": 8.0,
+		"topology_contour_interval_m": 250.0,
+		"topology_major_interval_m": 1000.0,
+	}
+	var exported := exporter._export_topographie_maps(geo, export_dir, WIDTH, HEIGHT)
+	var topology_path := str(exported.get("topology_map", ""))
+	var topology := Image.new()
+	var loaded := not topology_path.is_empty() and topology.load(topology_path) == OK
+	var transparent_pixels := 0
+	var visible_pixels := 0
+	var partial_alpha_pixels := 0
+	if loaded:
+		for y in range(topology.get_height()):
+			for x in range(topology.get_width()):
+				var alpha := topology.get_pixel(x, y).a
+				if alpha <= 0.001:
+					transparent_pixels += 1
+				else:
+					visible_pixels += 1
+					if alpha < 0.999:
+						partial_alpha_pixels += 1
+
+	var ocean := Enum.getElevationColor(-3000, false)
+	var lowland := Enum.getElevationColor(100, false)
+	var upland := Enum.getElevationColor(2500, false)
+	var peak := Enum.getElevationColor(7000, false)
+	var palette_contract := (
+		ocean.b > ocean.r
+		and lowland.g > lowland.r and lowland.g > lowland.b
+		and upland.r > upland.b
+		and minf(peak.r, minf(peak.g, peak.b)) > 0.80
+	)
+	var result := (
+		loaded
+		and topology.get_format() == Image.FORMAT_RGBA8
+		and topology.get_size() == Vector2i(WIDTH, HEIGHT)
+		and transparent_pixels > 0
+		and visible_pixels > 0
+		and partial_alpha_pixels > 0
+		and palette_contract
+	)
+	for filepath in exported.values():
+		DirAccess.remove_absolute(str(filepath))
+	DirAccess.remove_absolute(export_dir)
+	return result
 
 func _generate_gas_snapshot() -> Dictionary:
 	var params := {

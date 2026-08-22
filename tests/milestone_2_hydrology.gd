@@ -55,6 +55,9 @@ func _run() -> void:
 	var administrative_continuity := bool(short_iteration_case.get("administrative_continuity", false))
 	var administrative_hierarchy := bool(short_iteration_case.get("administrative_hierarchy", false))
 	var department_distribution := bool(short_iteration_case.get("department_distribution", false))
+	var department_size_parameter := bool(short_iteration_case.get(
+		"department_size_parameter", false
+	))
 	var hierarchy_exports := bool(short_iteration_case.get("hierarchy_exports", false))
 	var water_classification_preserved := bool(short_iteration_case.get(
 		"water_classification_preserved", false
@@ -95,6 +98,7 @@ func _run() -> void:
 	print("[Milestone2Hydrology] administrative_hierarchy=", administrative_hierarchy)
 	print("[Milestone2Hydrology] land_department_stats=", short_iteration_case.get("land_department_stats", {}))
 	print("[Milestone2Hydrology] department_distribution=", department_distribution)
+	print("[Milestone2Hydrology] department_size_parameter=", department_size_parameter)
 	print("[Milestone2Hydrology] hierarchy_exports=", hierarchy_exports)
 	print("[Milestone2Hydrology] water_classification_preserved=",
 		water_classification_preserved)
@@ -122,7 +126,9 @@ func _run() -> void:
 	if not administrative_hierarchy:
 		push_error("Administrative scales are not strictly department < region < country/basin < continent/ocean")
 	if not department_distribution:
-		push_error("Land department size distribution is too far from its physical target")
+		push_error("Land department size distribution is too far from its configured cell target")
+	if not department_size_parameter:
+		push_error("nb_cases_regions is not used as the land department cell target")
 	if not hierarchy_exports:
 		push_error("One or more administrative hierarchy PNG files were not exported")
 	if not water_classification_preserved:
@@ -135,6 +141,7 @@ func _run() -> void:
 	_quit(0 if stable and conserved and acyclic and drains and hierarchical
 		and administrative_masks and administrative_continuity
 		and administrative_hierarchy and department_distribution
+		and department_size_parameter
 		and hierarchy_exports and water_classification_preserved
 		and administrative_scale_bounds
 		and terrain_transitions else 1)
@@ -287,6 +294,9 @@ func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 		)
 		result["land_department_stats"] = department_stats
 		var department_target := maxf(float(department_stats.get("target_cells", 0.0)), 1.0)
+		result["department_size_parameter"] = is_equal_approx(
+			department_target, float(params["nb_cases_regions"])
+		)
 		result["department_distribution"] = (
 			float(department_stats.get("mean", INF)) <= department_target * 2.0
 			and float(department_stats.get("p95", INF)) <= department_target * 3.5
