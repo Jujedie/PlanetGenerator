@@ -798,7 +798,9 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	var radius_scale = maxf(planet_radius_km / 150.0, 0.01)
 	var active_plate_count = clampi(int(round(12.0 * pow(radius_scale, 0.55))), 8, 48)
 	var feature_frequency_scale = clampf(pow(radius_scale, 0.45), 0.65, 3.0)
-	var chain_width_km = clampf(6.0 * pow(radius_scale, 0.35), 4.0, 18.0)
+	# Une chaîne tectonique occupe une largeur physique, pas quelques texels.
+	# Ce profil large forme des piémonts progressifs au lieu de murs d'altitude.
+	var chain_width_km = clampf(18.0 * pow(radius_scale, 0.25), 10.0, 55.0)
 	
 	# Convertir pourcentage océan en seuil FBM
 	var ocean_ratio = float(params.get("ocean_ratio", 55.0))
@@ -1245,7 +1247,7 @@ func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
 		print("[Orchestrator] ⏭️ Phase 2 : Érosion ignorée (type=", atmosphere_type, ")")
 		return
 	
-	print("[Orchestrator] 💧 Phase 2 : Érosion Hydraulique")
+	print("[Orchestrator] 💧 Phase 2 : Hydrologie de surface (sans incision)")
 	
 	var groups_x = ceili(float(w) / 16.0)
 	var groups_y = ceili(float(h) / 16.0)
@@ -1257,10 +1259,11 @@ func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
 	var rain_rate = float(params.get("rain_rate", 0.012))
 	var evap_rate = float(params.get("evap_rate", 0.02))
 	var flow_rate = float(params.get("flow_rate", 0.25))
-	# Erosion rate: 0.05 → 0.15 pour effet plus marqué
-	var erosion_rate = float(params.get("erosion_rate", 0.15))
-	# Deposition rate: 0.05 → 0.12 pour dépôts visibles
-	var deposition_rate = float(params.get("deposition_rate", 0.12))
+	# L'incision de canyon est volontairement désactivée. La phase conserve la
+	# pluie, l'écoulement et l'accumulation nécessaires aux rivières, mais le
+	# transport sédimentaire sert uniquement au ping-pong des textures.
+	var erosion_rate := 0.0
+	var deposition_rate := 0.0
 	# Capacity multiplier: 1.0 → 2.5 pour transport plus efficace
 	var capacity_multiplier = float(params.get("capacity_multiplier", 2.5))
 	var sea_level = float(params.get("sea_level", 0.0))
@@ -1269,12 +1272,7 @@ func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
 	var pixel_size_x_m = (2.0 * PI * planet_radius_km * 1000.0) / float(max(w, 1))
 	var pixel_size_y_m = (PI * planet_radius_km * 1000.0) / float(max(h, 1))
 	var nominal_cell_size_m = sqrt(pixel_size_x_m * pixel_size_y_m)
-	var sampling_factor = clampf(sqrt(1000.0 / maxf(nominal_cell_size_m, 1.0)), 0.20, 1.35)
-	var radius_erosion_scale = clampf(pow(maxf(planet_radius_km / 150.0, 0.01), 0.12), 0.75, 1.30)
-	# Les contrôles UI restent des intensités géologiques; cette conversion
-	# empêche une cellule de plusieurs kilomètres de devenir un canyon géant.
-	erosion_rate *= 0.45 * sampling_factor * radius_erosion_scale
-	var max_erosion_per_pass_m = clampf(2.5 * sampling_factor, 0.35, 3.0)
+	var max_erosion_per_pass_m := 0.0
 	var channel_flux_threshold = clampf(
 		0.008 * pow(maxf(nominal_cell_size_m / 1000.0, 0.01), 0.25),
 		0.005,
@@ -1289,13 +1287,12 @@ func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  Iterations: ", erosion_iterations)
 	print("  Rain Rate: ", rain_rate, " | Evap Rate: ", evap_rate)
 	print("  Flow Rate: ", flow_rate)
-	print("  Erosion/Deposition: ", erosion_rate, "/", deposition_rate)
-	print("  Canyon control: max ", snappedf(max_erosion_per_pass_m, 0.01),
-		" m/pass | channel flux ", snappedf(channel_flux_threshold, 0.0001))
+	print("  Incision/deposition terrain: désactivée (aucun canyon)")
+	print("  Channel flux threshold: ", snappedf(channel_flux_threshold, 0.0001))
 	print("  Nominal cell size: ", snappedf(pixel_size_x_m, 0.01), "m × ", snappedf(pixel_size_y_m, 0.01), "m")
 	print("  Surface gravity: ", snappedf(gravity, 0.001), " m/s²")
 	
-	# === BOUCLE D'ÉROSION ===
+	# === BOUCLE HYDROLOGIQUE ===
 	for _iter in range(erosion_iterations):
 		# === PASSE 1 : PLUIE + ÉVAPORATION ===
 		# geo est toujours l'état autoritatif au début d'une itération.
@@ -1304,7 +1301,7 @@ func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
 		# === PASSE 2 : ÉCOULEMENT A->B ===
 		_dispatch_erosion_flow(w, h, groups_x, groups_y, flow_rate, sea_level, gravity, pixel_size_x_m, pixel_size_y_m, false)
 		
-		# === PASSE 3 : TRANSPORT SÉDIMENT B->A ===
+		# === PASSE 3 : CONSERVATION DE L'ÉTAT B->A (sans incision) ===
 		# Chaque itération se termine donc dans geo; aucune itération impaire ne
 		# peut relire ou restaurer un état temporaire obsolète.
 		_dispatch_erosion_sediment(w, h, groups_x, groups_y, erosion_rate,
@@ -1317,7 +1314,7 @@ func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
 		var use_swap = (pass_idx % 2 == 1)
 		_dispatch_erosion_flux_accumulation(w, h, groups_x, groups_y, pass_idx, sea_level, base_flux, propagation_rate, use_swap)
 	
-	print("[Orchestrator] ✅ Phase 2 : Érosion terminée")
+	print("[Orchestrator] ✅ Phase 2 : Hydrologie de surface terminée")
 
 ## Dispatch le shader de pluie/évaporation
 func _dispatch_erosion_rainfall(w: int, h: int, groups_x: int, groups_y: int, rain_rate: float, evap_rate: float, sea_level: float) -> void:

@@ -37,8 +37,9 @@ func _run() -> void:
 		and first["eroded_geo_hash"] == second["eroded_geo_hash"]
 		and first["cloud_hash"] == second["cloud_hash"]
 	)
-	var erosion_visible := float(first["max_erosion_delta_m"]) > 0.0001
+	var canyon_generation_disabled := float(first["max_erosion_delta_m"]) <= 0.0001
 	var erosion_preserves_land := int(first["eroded_land_below_sea"]) == 0
+	var altitude_transitions_safe := int(first["extreme_altitude_steps"]) == 0
 	var land_preserved := int(first["modified_land_pixels_by_subsidence"]) == 0
 	var cloud_contract := (
 		int(first["cloud_alpha_violations"]) == 0
@@ -59,6 +60,8 @@ func _run() -> void:
 	print("[Milestone1Smoke] crust_hash=", first["crust_hash"])
 	print("[Milestone1Smoke] eroded_geo_hash=", first["eroded_geo_hash"])
 	print("[Milestone1Smoke] max_erosion_delta_m=", first["max_erosion_delta_m"])
+	print("[Milestone1Smoke] max_land_neighbor_step_m=", first["max_land_neighbor_step_m"])
+	print("[Milestone1Smoke] extreme_altitude_steps=", first["extreme_altitude_steps"])
 	print("[Milestone1Smoke] eroded_land_below_sea=", first["eroded_land_below_sea"])
 	print("[Milestone1Smoke] modified_land_pixels_by_subsidence=", first["modified_land_pixels_by_subsidence"])
 	print("[Milestone1Smoke] cloud_alpha_range=", first["cloud_min_alpha"], "..", first["cloud_max_alpha"])
@@ -77,10 +80,12 @@ func _run() -> void:
 
 	if not deterministic:
 		push_error("Milestone 1 output is not deterministic for the fixed seed")
-	if not erosion_visible:
-		push_error("Hydraulic erosion did not produce a measurable height change")
+	if not canyon_generation_disabled:
+		push_error("Canyon generation still modifies terrain height")
 	if not erosion_preserves_land:
 		push_error("Hydraulic erosion converted continental cells into ocean")
+	if not altitude_transitions_safe:
+		push_error("Terrain contains an abrupt land altitude wall above 3000 m per cell")
 	if not land_preserved:
 		push_error("Oceanic subsidence modified cells that were land before crust-age finalization")
 	if not cloud_contract:
@@ -96,8 +101,9 @@ func _run() -> void:
 
 	var passed: bool = (
 		deterministic
-		and erosion_visible
+		and canyon_generation_disabled
 		and erosion_preserves_land
+		and altitude_transitions_safe
 		and land_preserved
 		and cloud_contract
 		and seam_merge_safe
@@ -181,6 +187,28 @@ func _generate_snapshot() -> Dictionary:
 			eroded_land_below_sea += 1
 		max_erosion_delta = max(max_erosion_delta, abs(eroded_height - crust_height))
 
+	var max_land_neighbor_step := 0.0
+	var extreme_altitude_steps := 0
+	for y in range(TEST_RESOLUTION.y):
+		for x in range(TEST_RESOLUTION.x):
+			var index := y * TEST_RESOLUTION.x + x
+			var height := eroded_geo.decode_float(index * 16)
+			if height < float(params["sea_level"]):
+				continue
+			for neighbor in [
+				Vector2i((x + 1) % TEST_RESOLUTION.x, y),
+				Vector2i(x, mini(y + 1, TEST_RESOLUTION.y - 1)),
+			]:
+				var neighbor_height := eroded_geo.decode_float(
+					(neighbor.y * TEST_RESOLUTION.x + neighbor.x) * 16
+				)
+				if neighbor_height < float(params["sea_level"]):
+					continue
+				var step := absf(height - neighbor_height)
+				max_land_neighbor_step = maxf(max_land_neighbor_step, step)
+				if step > 3000.0:
+					extreme_altitude_steps += 1
+
 	var cloud_min_alpha := 255
 	var cloud_max_alpha := 0
 	var cloud_alpha_violations := 0
@@ -220,6 +248,8 @@ func _generate_snapshot() -> Dictionary:
 		"modified_land_pixels_by_subsidence": modified_land_pixels,
 		"max_erosion_delta_m": max_erosion_delta,
 		"eroded_land_below_sea": eroded_land_below_sea,
+		"max_land_neighbor_step_m": max_land_neighbor_step,
+		"extreme_altitude_steps": extreme_altitude_steps,
 		"cloud_hash": hash(cloud_data),
 		"cloud_min_alpha": cloud_min_alpha,
 		"cloud_max_alpha": cloud_max_alpha,
@@ -252,8 +282,14 @@ func _validate_physical_scale_contract() -> bool:
 	var small_country_area := float(small["surface_km2"]) / float(small["middle"])
 	var large_country_area := float(large["surface_km2"]) / float(large["middle"])
 	return (
-		int(large["departments"]) > int(small["departments"])
+		int(small["departments"]) > int(small["regions"])
+		and int(small["regions"]) > int(small["middle"])
+		and int(small["middle"]) > int(small["top"])
+		and int(large["departments"]) > int(small["departments"])
 		and int(large["regions"]) > int(small["regions"])
+		and int(large["departments"]) > int(large["regions"])
+		and int(large["regions"]) > int(large["middle"])
+		and int(large["middle"]) > int(large["top"])
 		and int(large["top"]) > int(small["top"])
 		and large_country_area > small_country_area
 	)

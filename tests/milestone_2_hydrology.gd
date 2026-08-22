@@ -49,6 +49,7 @@ func _run() -> void:
 	)
 	var administrative_masks := bool(short_iteration_case.get("administrative_masks", false))
 	var administrative_continuity := bool(short_iteration_case.get("administrative_continuity", false))
+	var administrative_hierarchy := bool(short_iteration_case.get("administrative_hierarchy", false))
 
 	print("[Milestone2Hydrology] flow_hash=", short_iteration_case["flow_hash"])
 	print("[Milestone2Hydrology] flux_hash=", short_iteration_case["flux_hash"])
@@ -66,6 +67,8 @@ func _run() -> void:
 	print("[Milestone2Hydrology] downstream_type_violations=", short_iteration_case["downstream_type_violations"])
 	print("[Milestone2Hydrology] administrative_masks=", administrative_masks)
 	print("[Milestone2Hydrology] administrative_continuity=", administrative_continuity)
+	print("[Milestone2Hydrology] administrative_counts=", short_iteration_case.get("administrative_counts", {}))
+	print("[Milestone2Hydrology] administrative_hierarchy=", administrative_hierarchy)
 
 	if not stable:
 		push_error("Hydrology still depends on river_iterations")
@@ -81,9 +84,12 @@ func _run() -> void:
 		push_error("Administrative partitions do not strictly respect the land/water mask")
 	if not administrative_continuity:
 		push_error("An administrative department is disconnected")
+	if not administrative_hierarchy:
+		push_error("Administrative scales are not strictly department < region < country/basin < continent/ocean")
 
 	_quit(0 if stable and conserved and acyclic and drains and hierarchical
-		and administrative_masks and administrative_continuity else 1)
+		and administrative_masks and administrative_continuity
+		and administrative_hierarchy else 1)
 
 func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 	var params := {
@@ -174,8 +180,51 @@ func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 		result["administrative_masks"] = bool(land_check[0]) and bool(sea_check[0])
 		result["administrative_continuity"] = bool(land_check[1]) and bool(sea_check[1])
 
+		var land_merge := HierarchyBuilder.compute_merge_map(
+			land_regions, test_resolution.x, test_resolution.y
+		)
+		var sea_merge := HierarchyBuilder.compute_merge_map(
+			sea_regions, test_resolution.x, test_resolution.y
+		)
+		var land_hierarchy := HierarchyBuilder.build_land(
+			land_regions, test_resolution.x, test_resolution.y, land_merge, params
+		)
+		var sea_hierarchy := HierarchyBuilder.build_sea(
+			sea_regions, test_resolution.x, test_resolution.y, sea_merge, params,
+			land_regions, land_merge, land_hierarchy
+		)
+		var land_counts := [
+			_count_raw_ids(land_regions),
+			HierarchyBuilder._unique_values(land_hierarchy[0]).size(),
+			HierarchyBuilder._unique_values(land_hierarchy[1]).size(),
+			HierarchyBuilder._unique_values(land_hierarchy[2]).size(),
+		]
+		var sea_counts := [
+			_count_raw_ids(sea_regions),
+			HierarchyBuilder._unique_values(sea_hierarchy[0]).size(),
+			HierarchyBuilder._unique_values(sea_hierarchy[1]).size(),
+			HierarchyBuilder._unique_values(sea_hierarchy[2]).size(),
+		]
+		result["administrative_counts"] = {"land": land_counts, "sea": sea_counts}
+		result["administrative_hierarchy"] = (
+			land_counts[0] > land_counts[1]
+			and land_counts[1] > land_counts[2]
+			and land_counts[2] > land_counts[3]
+			and sea_counts[0] > sea_counts[1]
+			and sea_counts[1] > sea_counts[2]
+			and sea_counts[2] > sea_counts[3]
+		)
+
 	orchestrator.cleanup()
 	return result
+
+func _count_raw_ids(data: PackedByteArray) -> int:
+	var ids: Dictionary = {}
+	for offset in range(0, data.size(), 4):
+		var value := data.decode_u32(offset)
+		if value != 0xFFFFFFFF:
+			ids[value] = true
+	return ids.size()
 
 func _validate_partition(region_data: PackedByteArray, water_data: PackedByteArray,
 		maritime: bool) -> Array:

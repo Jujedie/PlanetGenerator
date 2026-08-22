@@ -1633,7 +1633,10 @@ func _export_hierarchy_maps(gpu: GPUContext, output_dir: String) -> Dictionary:
 	var sea: Array = [{}, {}, {}]
 	if not sea_data.is_empty():
 		print("  Hiérarchie maritime :")
-		sea = HierarchyBuilder.build_sea(sea_data, width, height, merge_sea, params)
+		sea = HierarchyBuilder.build_sea(
+			sea_data, width, height, merge_sea, params,
+			land_data, merge_land, land
+		)
 	# sea = [dept→région-mer, dept→bassin, dept→océan]
 	
 	# ─── Peinture et export (threadé) ────────────────────────────────────────
