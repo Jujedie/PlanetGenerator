@@ -9,6 +9,7 @@ extends RefCounted
 const REFERENCE_RADIUS_KM: float = 150.0
 const REFERENCE_LAND_RATIO: float = 0.45
 const DEPARTMENTS_PER_REGION: float = 9.0
+const LAND_DEPARTMENTS_PER_REGION_TARGET: float = 10.0
 const LAND_REGIONS_PER_COUNTRY: float = 7.5
 const LAND_COUNTRIES_PER_CONTINENT: float = 8.0
 const SEA_REGIONS_PER_BASIN: float = 10.0
@@ -74,6 +75,48 @@ static func compute_physical_targets(settings: Dictionary, maritime: bool = fals
 	}
 
 
+## Dérive les niveaux terrestres du nombre de départements effectivement
+## générés. Les valeurs sont des tailles moyennes de niveau, jamais des nombres
+## d'entités imposés. Exemple : 2 909 départements donnent environ 291 régions,
+## 36 pays et 5 continents au lieu de 20 / 3 / 1.
+static func compute_land_hierarchy_targets(department_count: int,
+		settings: Dictionary = {}) -> Dictionary:
+	var departments := maxi(department_count, 1)
+	var radius_km := maxf(float(settings.get("planet_radius", REFERENCE_RADIUS_KM)), 1.0)
+	var land_fraction := 1.0 - clampf(
+		float(settings.get("ocean_ratio", 55.0)) / 100.0, 0.01, 0.99
+	)
+	var surface_km2 := 4.0 * PI * radius_km * radius_km * land_fraction
+	var departments_per_region := clampf(float(settings.get(
+		"admin_departments_per_region", LAND_DEPARTMENTS_PER_REGION_TARGET
+	)), 4.0, 24.0)
+	var regions_per_country := clampf(float(settings.get(
+		"admin_regions_per_country", 8.0
+	)), 3.0, 20.0)
+	var countries_per_continent := clampf(float(settings.get(
+		"admin_countries_per_continent", LAND_COUNTRIES_PER_CONTINENT
+	)), 3.0, 24.0)
+	var regions := clampi(
+		int(round(float(departments) / departments_per_region)), 1, departments
+	)
+	var countries := clampi(
+		int(round(float(regions) / regions_per_country)), 1, regions
+	)
+	var continents := clampi(
+		int(round(float(countries) / countries_per_continent)), 1, countries
+	)
+	return {
+		"surface_km2": surface_km2,
+		"departments": departments,
+		"regions": regions,
+		"middle": countries,
+		"top": continents,
+		"departments_per_region": departments_per_region,
+		"regions_per_country": regions_per_country,
+		"countries_per_continent": countries_per_continent,
+	}
+
+
 ## Retourne [département→région, département→pays, département→continent].
 static func build_land(data: PackedByteArray, w: int, h: int,
 		merge: Dictionary, settings: Dictionary = {}) -> Array:
@@ -87,7 +130,7 @@ static func build_land(data: PackedByteArray, w: int, h: int,
 
 	var gen := [_ID_LAND]
 	var radius_km := maxf(float(settings.get("planet_radius", REFERENCE_RADIUS_KM)), 1.0)
-	var targets := compute_physical_targets(settings, false, depts.size() * 20)
+	var targets := compute_land_hierarchy_targets(depts.size(), settings)
 	var target_regions := clampi(int(targets["regions"]), 1, depts.size())
 	var target_countries := clampi(int(targets["middle"]), 1, target_regions)
 	var target_continents := clampi(int(targets["top"]), 1, target_countries)
@@ -153,14 +196,16 @@ static func build_land(data: PackedByteArray, w: int, h: int,
 static func build_sea(data: PackedByteArray, w: int, h: int,
 		merge: Dictionary, settings: Dictionary = {},
 		land_data: PackedByteArray = PackedByteArray(),
-		land_merge: Dictionary = {}, land_hierarchy: Array = []) -> Array:
+		land_merge: Dictionary = {}, land_hierarchy: Array = [],
+		water_mask_data: PackedByteArray = PackedByteArray()) -> Array:
 	var info := _scan(data, w, h, merge)
 	var all_depts: Array = info[0]
 	if all_depts.is_empty():
 		return [{}, {}, {}]
 
 	var eligible := _eligible_sea_units(
-		all_depts, info[2], data, land_data, w, h, merge, land_merge, land_hierarchy
+		all_depts, info[2], data, land_data, w, h, merge, land_merge,
+		land_hierarchy, water_mask_data
 	)
 	if eligible.is_empty():
 		print("    %d départements maritimes, aucun ancrage terrestre multi-région" % all_depts.size())
@@ -410,19 +455,27 @@ static func _select_fixed_seeds(units: Array, components: Array,
 		seeds.append(seed)
 		selected[seed] = true
 
+	# Cache incrémental : recalculer la distance à toutes les graines à chaque
+	# ajout serait O(N×K²) et devient prohibitif avec ~18 000 départements.
+	# La graine la plus proche ne peut que s'améliorer, donc une comparaison
+	# avec la nouvelle graine suffit à chaque itération (O(N×K)).
+	var nearest_distance: Dictionary = {}
+	for unit in units:
+		var nearest := INF
+		for seed in seeds:
+			nearest = minf(nearest, _map_distance_squared(
+				coords.get(unit, Vector2.ZERO), coords.get(seed, Vector2.ZERO), w, h
+			))
+		nearest_distance[unit] = nearest
+
 	while seeds.size() < target_count:
 		var best_unit: int = -1
 		var best_score := -1.0
 		for unit in units:
 			if selected.has(unit):
 				continue
-			var nearest := INF
-			for seed in seeds:
-				nearest = minf(nearest, _map_distance_squared(
-					coords.get(unit, Vector2.ZERO), coords.get(seed, Vector2.ZERO), w, h
-				))
 			var weight_factor := pow(maxf(float(weights.get(unit, 1)), 1.0), 0.08)
-			var score := nearest * weight_factor
+			var score := float(nearest_distance[unit]) * weight_factor
 			if score > best_score:
 				best_score = score
 				best_unit = unit
@@ -430,6 +483,15 @@ static func _select_fixed_seeds(units: Array, components: Array,
 			break
 		seeds.append(best_unit)
 		selected[best_unit] = true
+		var best_position: Vector2 = coords.get(best_unit, Vector2.ZERO)
+		for unit in units:
+			if selected.has(unit):
+				continue
+			var candidate_distance := _map_distance_squared(
+				coords.get(unit, Vector2.ZERO), best_position, w, h
+			)
+			if candidate_distance < float(nearest_distance[unit]):
+				nearest_distance[unit] = candidate_distance
 	return seeds
 
 
@@ -594,16 +656,19 @@ static func _aggregate_geometry(group_ids: Array, group_children: Dictionary,
 static func _eligible_sea_units(sea_units: Array, sea_adjacency: Dictionary,
 		sea_data: PackedByteArray, land_data: PackedByteArray, w: int, h: int,
 		sea_merge: Dictionary, land_merge: Dictionary,
-		land_hierarchy: Array) -> Array:
+		land_hierarchy: Array, water_mask_data: PackedByteArray) -> Array:
 	if land_data.is_empty() or land_data.size() != sea_data.size() or land_hierarchy.size() < 2:
 		return []
 	var contacts: Dictionary = {}
+	var saltwater_units: Dictionary = {}
 	for y in range(h):
 		for x in range(w):
 			var sea_raw := sea_data.decode_u32((y * w + x) * 4)
 			if sea_raw == _INVALID_ID:
 				continue
 			var sea_unit: int = sea_merge.get(sea_raw, sea_raw)
+			if water_mask_data.size() == w * h and water_mask_data[y * w + x] == 1:
+				saltwater_units[sea_unit] = true
 			if not contacts.has(sea_unit):
 				contacts[sea_unit] = {}
 			var neighbors := [
@@ -621,11 +686,22 @@ static func _eligible_sea_units(sea_units: Array, sea_adjacency: Dictionary,
 
 	var dept_to_region: Dictionary = land_hierarchy[0]
 	var dept_to_country: Dictionary = land_hierarchy[1]
+	var total_land_regions := _unique_values(dept_to_region).size()
+	var total_land_countries := _unique_values(dept_to_country).size()
+	var minimum_region_links := clampi(
+		int(ceil(float(total_land_regions) * 0.04)), 6, 80
+	)
+	var minimum_country_links := clampi(
+		int(ceil(float(total_land_countries) * 0.08)), 3, 20
+	)
 	var eligible: Array = []
 	for component in _connected_components(sea_units, sea_adjacency):
 		var land_regions: Dictionary = {}
 		var land_countries: Dictionary = {}
+		var contains_saltwater := false
 		for sea_unit in component:
+			if saltwater_units.has(sea_unit):
+				contains_saltwater = true
 			for land_unit in (contacts.get(sea_unit, {}) as Dictionary).keys():
 				var region: int = dept_to_region.get(land_unit, -1)
 				var country: int = dept_to_country.get(land_unit, -1)
@@ -633,7 +709,11 @@ static func _eligible_sea_units(sea_units: Array, sea_adjacency: Dictionary,
 					land_regions[region] = true
 				if country != -1:
 					land_countries[country] = true
-		var anchored := land_regions.size() >= 6 and land_countries.size() >= 3
+		var anchored := (
+			contains_saltwater
+			and land_regions.size() >= minimum_region_links
+			and land_countries.size() >= minimum_country_links
+		)
 		if anchored:
 			eligible.append_array(component)
 	return eligible

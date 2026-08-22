@@ -50,6 +50,7 @@ func _run() -> void:
 	var administrative_masks := bool(short_iteration_case.get("administrative_masks", false))
 	var administrative_continuity := bool(short_iteration_case.get("administrative_continuity", false))
 	var administrative_hierarchy := bool(short_iteration_case.get("administrative_hierarchy", false))
+	var department_distribution := bool(short_iteration_case.get("department_distribution", false))
 
 	print("[Milestone2Hydrology] flow_hash=", short_iteration_case["flow_hash"])
 	print("[Milestone2Hydrology] flux_hash=", short_iteration_case["flux_hash"])
@@ -67,8 +68,11 @@ func _run() -> void:
 	print("[Milestone2Hydrology] downstream_type_violations=", short_iteration_case["downstream_type_violations"])
 	print("[Milestone2Hydrology] administrative_masks=", administrative_masks)
 	print("[Milestone2Hydrology] administrative_continuity=", administrative_continuity)
+	print("[Milestone2Hydrology] administrative_disconnected_ids=", short_iteration_case.get("administrative_disconnected_ids", {}))
 	print("[Milestone2Hydrology] administrative_counts=", short_iteration_case.get("administrative_counts", {}))
 	print("[Milestone2Hydrology] administrative_hierarchy=", administrative_hierarchy)
+	print("[Milestone2Hydrology] land_department_stats=", short_iteration_case.get("land_department_stats", {}))
+	print("[Milestone2Hydrology] department_distribution=", department_distribution)
 
 	if not stable:
 		push_error("Hydrology still depends on river_iterations")
@@ -86,10 +90,12 @@ func _run() -> void:
 		push_error("An administrative department is disconnected")
 	if not administrative_hierarchy:
 		push_error("Administrative scales are not strictly department < region < country/basin < continent/ocean")
+	if not department_distribution:
+		push_error("Land department size distribution is too far from the 15-cell target")
 
 	_quit(0 if stable and conserved and acyclic and drains and hierarchical
 		and administrative_masks and administrative_continuity
-		and administrative_hierarchy else 1)
+		and administrative_hierarchy and department_distribution else 1)
 
 func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 	var params := {
@@ -172,6 +178,9 @@ func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 		params["region_iterations"] = maxi(test_resolution.x, test_resolution.y)
 		params["ocean_iterations"] = maxi(test_resolution.x, test_resolution.y)
 		orchestrator.run_region_phase(params, test_resolution.x, test_resolution.y)
+		var department_stats: Dictionary = orchestrator.last_administrative_stats.get(
+			"land_departments", {}
+		)
 		orchestrator.run_ocean_region_phase(params, test_resolution.x, test_resolution.y)
 		var land_regions := gpu.readback_texture_raw("region_map")
 		var sea_regions := gpu.readback_texture_raw("ocean_region_map")
@@ -179,6 +188,9 @@ func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 		var sea_check := _validate_partition(sea_regions, water_data, true)
 		result["administrative_masks"] = bool(land_check[0]) and bool(sea_check[0])
 		result["administrative_continuity"] = bool(land_check[1]) and bool(sea_check[1])
+		result["administrative_disconnected_ids"] = {
+			"land": int(land_check[2]), "sea": int(sea_check[2]),
+		}
 
 		var land_merge := HierarchyBuilder.compute_merge_map(
 			land_regions, test_resolution.x, test_resolution.y
@@ -191,7 +203,7 @@ func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 		)
 		var sea_hierarchy := HierarchyBuilder.build_sea(
 			sea_regions, test_resolution.x, test_resolution.y, sea_merge, params,
-			land_regions, land_merge, land_hierarchy
+			land_regions, land_merge, land_hierarchy, water_data
 		)
 		var land_counts := [
 			_count_raw_ids(land_regions),
@@ -214,6 +226,16 @@ func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 			and sea_counts[1] > sea_counts[2]
 			and sea_counts[2] > sea_counts[3]
 		)
+		var outlier_fraction := float(department_stats.get("extreme_outliers", 1)) / float(
+			maxi(int(department_stats.get("count", 1)), 1)
+		)
+		result["land_department_stats"] = department_stats
+		result["department_distribution"] = (
+			float(department_stats.get("mean", 0.0)) >= 8.0
+			and float(department_stats.get("mean", 1000.0)) <= 24.0
+			and int(department_stats.get("p95", 1000)) <= 50
+			and outlier_fraction <= 0.02
+		)
 
 	orchestrator.cleanup()
 	return result
@@ -230,10 +252,11 @@ func _validate_partition(region_data: PackedByteArray, water_data: PackedByteArr
 		maritime: bool) -> Array:
 	var pixel_count := test_resolution.x * test_resolution.y
 	if region_data.size() != pixel_count * 4 or water_data.size() != pixel_count:
-		return [false, false]
+		return [false, false, 0]
 
 	var mask_valid := true
 	var continuous := true
+	var disconnected_ids: Dictionary = {}
 	var visited := PackedByteArray()
 	visited.resize(pixel_count)
 	visited.fill(0)
@@ -249,6 +272,7 @@ func _validate_partition(region_data: PackedByteArray, water_data: PackedByteArr
 			continue
 		if completed_ids.has(region_id):
 			continuous = false
+			disconnected_ids[region_id] = true
 			continue
 
 		var frontier: Array[int] = [start]
@@ -268,7 +292,7 @@ func _validate_partition(region_data: PackedByteArray, water_data: PackedByteArr
 					frontier.append(neighbor)
 		completed_ids[region_id] = true
 
-	return [mask_valid, continuous]
+	return [mask_valid, continuous, disconnected_ids.size()]
 
 func _count_downstream_flux_violations(
 	flow_data: PackedByteArray,

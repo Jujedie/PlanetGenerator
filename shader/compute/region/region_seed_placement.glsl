@@ -71,6 +71,31 @@ bool isLand(ivec2 p) {
     return waterType == 0u && elevation >= params.sea_level;
 }
 
+// Distribution Matérn/blue-noise discrète : un pixel doit être candidat puis
+// posséder le plus petit hash candidat de son voisinage 3x3. Cette répulsion
+// locale évite à la fois les amas de seeds et les grands déserts continentaux
+// produits par un simple tirage Bernoulli plafonné à 2 %.
+bool isBlueNoiseSeed(ivec2 pixel, int w, int h, uint pixelHash) {
+    if (hashToFloat(pixelHash) >= params.seed_probability) return false;
+
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            if (dx == 0 && dy == 0) continue;
+            int nx = wrapX(pixel.x + dx, w);
+            int ny = clamp(pixel.y + dy, 0, h - 1);
+            ivec2 candidate = ivec2(nx, ny);
+            if (!isLand(candidate)) continue;
+            uint candidateHash = hash3(uint(nx), uint(ny), params.seed);
+            if (hashToFloat(candidateHash) >= params.seed_probability) continue;
+            if (candidateHash < pixelHash ||
+                    (candidateHash == pixelHash && (ny * w + nx) < (pixel.y * w + pixel.x))) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 // Garantit un seed aux îles/enclaves entièrement contenues dans une fenêtre
 // de 9x9. Une petite zone isolée reste ainsi autonome au lieu d'être rattachée
 // par un saut à travers la mer.
@@ -126,10 +151,9 @@ void main() {
     
     // Hash déterministe pour ce pixel
     uint pixel_hash = hash3(uint(pixel.x), uint(pixel.y), params.seed);
-    float random_value = hashToFloat(pixel_hash);
-    
-    // Ce pixel est un seed si son hash est sous la probabilité
-    bool is_seed = (random_value < params.seed_probability) ||
+    // Répartition régulière mais non quadrillée, plus une garantie dédiée aux
+    // très petites îles entièrement contenues dans la fenêtre de contrôle.
+    bool is_seed = isBlueNoiseSeed(pixel, w, h, pixel_hash) ||
         isSmallComponentSeed(pixel, w, h, pixel_hash);
     
     if (is_seed) {

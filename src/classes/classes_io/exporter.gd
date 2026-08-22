@@ -1603,6 +1603,7 @@ func _export_hierarchy_maps(gpu: GPUContext, output_dir: String) -> Dictionary:
 	# ─── Lecture des données R32UI ────────────────────────────────────────────
 	var land_data := PackedByteArray()
 	var sea_data := PackedByteArray()
+	var water_mask_data := PackedByteArray()
 	var width: int = 0
 	var height: int = 0
 	
@@ -1618,6 +1619,8 @@ func _export_hierarchy_maps(gpu: GPUContext, output_dir: String) -> Dictionary:
 	
 	if gpu.textures.has("ocean_region_map") and gpu.textures["ocean_region_map"].is_valid():
 		sea_data = rd.texture_get_data(gpu.textures["ocean_region_map"], 0)
+	if gpu.textures.has("water_mask") and gpu.textures["water_mask"].is_valid():
+		water_mask_data = rd.texture_get_data(gpu.textures["water_mask"], 0)
 	
 	# ─── Merge maps (wrap horizontal) ────────────────────────────────────────
 	var merge_land := HierarchyBuilder.compute_merge_map(land_data, width, height)
@@ -1635,7 +1638,7 @@ func _export_hierarchy_maps(gpu: GPUContext, output_dir: String) -> Dictionary:
 		print("  Hiérarchie maritime :")
 		sea = HierarchyBuilder.build_sea(
 			sea_data, width, height, merge_sea, params,
-			land_data, merge_land, land
+			land_data, merge_land, land, water_mask_data
 		)
 	# sea = [dept→région-mer, dept→bassin, dept→océan]
 	

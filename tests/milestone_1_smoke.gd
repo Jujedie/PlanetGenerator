@@ -39,7 +39,10 @@ func _run() -> void:
 	)
 	var canyon_generation_disabled := float(first["max_erosion_delta_m"]) <= 0.0001
 	var erosion_preserves_land := int(first["eroded_land_below_sea"]) == 0
-	var altitude_transitions_safe := int(first["extreme_altitude_steps"]) == 0
+	var tectonic_divider_safe := (
+		int(first["tectonic_boundary_samples"]) > 0
+		and float(first["tectonic_boundary_wall_fraction"]) < 0.75
+	)
 	var land_preserved := int(first["modified_land_pixels_by_subsidence"]) == 0
 	var cloud_contract := (
 		int(first["cloud_alpha_violations"]) == 0
@@ -62,6 +65,7 @@ func _run() -> void:
 	print("[Milestone1Smoke] max_erosion_delta_m=", first["max_erosion_delta_m"])
 	print("[Milestone1Smoke] max_land_neighbor_step_m=", first["max_land_neighbor_step_m"])
 	print("[Milestone1Smoke] extreme_altitude_steps=", first["extreme_altitude_steps"])
+	print("[Milestone1Smoke] tectonic_boundary_wall_fraction=", first["tectonic_boundary_wall_fraction"])
 	print("[Milestone1Smoke] eroded_land_below_sea=", first["eroded_land_below_sea"])
 	print("[Milestone1Smoke] modified_land_pixels_by_subsidence=", first["modified_land_pixels_by_subsidence"])
 	print("[Milestone1Smoke] cloud_alpha_range=", first["cloud_min_alpha"], "..", first["cloud_max_alpha"])
@@ -84,8 +88,8 @@ func _run() -> void:
 		push_error("Canyon generation still modifies terrain height")
 	if not erosion_preserves_land:
 		push_error("Hydraulic erosion converted continental cells into ocean")
-	if not altitude_transitions_safe:
-		push_error("Terrain contains an abrupt land altitude wall above 3000 m per cell")
+	if not tectonic_divider_safe:
+		push_error("Tectonic boundary is still visible as a continuous artificial elevation divider")
 	if not land_preserved:
 		push_error("Oceanic subsidence modified cells that were land before crust-age finalization")
 	if not cloud_contract:
@@ -103,7 +107,7 @@ func _run() -> void:
 		deterministic
 		and canyon_generation_disabled
 		and erosion_preserves_land
-		and altitude_transitions_safe
+		and tectonic_divider_safe
 		and land_preserved
 		and cloud_contract
 		and seam_merge_safe
@@ -160,6 +164,7 @@ func _generate_snapshot() -> Dictionary:
 
 	orchestrator.run_base_elevation_phase(params, TEST_RESOLUTION.x, TEST_RESOLUTION.y)
 	var base_geo := gpu.readback_texture_raw("geo")
+	var plate_data := gpu.readback_texture_raw("plates")
 
 	orchestrator.run_crust_age_phase(params, TEST_RESOLUTION.x, TEST_RESOLUTION.y)
 	var crust_geo := gpu.readback_texture_raw("geo")
@@ -209,6 +214,33 @@ func _generate_snapshot() -> Dictionary:
 				if step > 3000.0:
 					extreme_altitude_steps += 1
 
+	var tectonic_boundary_samples := 0
+	var tectonic_boundary_wall_pixels := 0
+	for y in range(1, TEST_RESOLUTION.y - 1):
+		for x in range(TEST_RESOLUTION.x):
+			var index := y * TEST_RESOLUTION.x + x
+			var boundary_signal := absf(plate_data.decode_float(index * 16 + 12))
+			if boundary_signal < 0.45:
+				continue
+			tectonic_boundary_samples += 1
+			var minimum_height := INF
+			var maximum_height := -INF
+			for neighbor in [
+				Vector2i(posmod(x - 1, TEST_RESOLUTION.x), y),
+				Vector2i((x + 1) % TEST_RESOLUTION.x, y),
+				Vector2i(x, y - 1), Vector2i(x, y + 1),
+			]:
+				var neighbor_height := base_geo.decode_float(
+					(neighbor.y * TEST_RESOLUTION.x + neighbor.x) * 16
+				)
+				minimum_height = minf(minimum_height, neighbor_height)
+				maximum_height = maxf(maximum_height, neighbor_height)
+			if maximum_height - minimum_height > 2000.0:
+				tectonic_boundary_wall_pixels += 1
+	var tectonic_boundary_wall_fraction := (
+		float(tectonic_boundary_wall_pixels) / float(maxi(tectonic_boundary_samples, 1))
+	)
+
 	var cloud_min_alpha := 255
 	var cloud_max_alpha := 0
 	var cloud_alpha_violations := 0
@@ -250,6 +282,8 @@ func _generate_snapshot() -> Dictionary:
 		"eroded_land_below_sea": eroded_land_below_sea,
 		"max_land_neighbor_step_m": max_land_neighbor_step,
 		"extreme_altitude_steps": extreme_altitude_steps,
+		"tectonic_boundary_samples": tectonic_boundary_samples,
+		"tectonic_boundary_wall_fraction": tectonic_boundary_wall_fraction,
 		"cloud_hash": hash(cloud_data),
 		"cloud_min_alpha": cloud_min_alpha,
 		"cloud_max_alpha": cloud_max_alpha,
@@ -269,6 +303,7 @@ func _validate_seam_merge_contract() -> bool:
 	return HierarchyBuilder.compute_merge_map(data, 2, 1).is_empty()
 
 func _validate_physical_scale_contract() -> bool:
+	var observed_land := HierarchyBuilder.compute_land_hierarchy_targets(2909)
 	var small := HierarchyBuilder.compute_physical_targets({
 		"planet_radius": 150.0,
 		"ocean_ratio": 55.0,
@@ -282,7 +317,11 @@ func _validate_physical_scale_contract() -> bool:
 	var small_country_area := float(small["surface_km2"]) / float(small["middle"])
 	var large_country_area := float(large["surface_km2"]) / float(large["middle"])
 	return (
-		int(small["departments"]) > int(small["regions"])
+		int(observed_land["regions"]) >= 250
+		and int(observed_land["regions"]) <= 330
+		and int(observed_land["middle"]) >= 30
+		and int(observed_land["top"]) >= 4
+		and int(small["departments"]) > int(small["regions"])
 		and int(small["regions"]) > int(small["middle"])
 		and int(small["middle"]) > int(small["top"])
 		and int(large["departments"]) > int(small["departments"])

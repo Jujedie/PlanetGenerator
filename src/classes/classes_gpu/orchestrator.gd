@@ -18,6 +18,7 @@ var generation_params: Dictionary
 var _cleaned_up: bool = false
 var last_phase_timings_ms: Dictionary = {}
 var last_hydrology_stats: Dictionary = {}
+var last_administrative_stats: Dictionary = {}
 
 # SSBO pour comptage de pixels par composante (water classification)
 var water_counter_buffer: RID = RID()
@@ -798,9 +799,7 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	var radius_scale = maxf(planet_radius_km / 150.0, 0.01)
 	var active_plate_count = clampi(int(round(12.0 * pow(radius_scale, 0.55))), 8, 48)
 	var feature_frequency_scale = clampf(pow(radius_scale, 0.45), 0.65, 3.0)
-	# Une chaîne tectonique occupe une largeur physique, pas quelques texels.
-	# Ce profil large forme des piémonts progressifs au lieu de murs d'altitude.
-	var chain_width_km = clampf(18.0 * pow(radius_scale, 0.25), 10.0, 55.0)
+	var chain_width_km = clampf(6.0 * pow(radius_scale, 0.35), 4.0, 18.0)
 	
 	# Convertir pourcentage océan en seuil FBM
 	var ocean_ratio = float(params.get("ocean_ratio", 55.0))
@@ -3153,7 +3152,6 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	var seed_val = int(params.get("seed", 12345))
 	var sea_level = float(params.get("sea_level", 0.0))
-	var ocean_ratio = clampf(float(params.get("ocean_ratio", 55.0)), 0.0, 95.0)
 	var atmosphere_type = int(params.get("planet_type", 0))
 	
 	# Si pas d'atmosphère, pas de régions (planète sans vie)
@@ -3173,21 +3171,38 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	# passes ne définit pas la taille politique : il ne fait qu'assurer la
 	# couverture topologique de la projection.
 	var max_dim = max(w, h)
-	var expected_land_pixels = maxf(float(w * h) * (1.0 - ocean_ratio / 100.0), 1.0)
-	var physical_targets := HierarchyBuilder.compute_physical_targets(
-		params, false, int(round(expected_land_pixels))
+	var water_mask_data := gpu.readback_texture_raw("water_mask")
+	var actual_land_cells := _count_mask_cells(water_mask_data, false)
+	var target_department_cells := clampf(float(params.get(
+		"land_department_target_cells", 15.0
+	)), 8.0, 40.0)
+	var target_departments := maxi(1, int(round(
+		float(actual_land_cells) / target_department_cells
+	)))
+	var hierarchy_targets := HierarchyBuilder.compute_land_hierarchy_targets(
+		target_departments, params
 	)
-	var target_regions = int(physical_targets["regions"])
-	var target_departments = int(physical_targets["departments"])
-	var seed_probability = clampf(float(target_departments) / expected_land_pixels, 0.000001, 0.02)
-	var mean_department_spacing_px = sqrt(expected_land_pixels / float(maxi(target_departments, 1)))
+	var target_regions := int(hierarchy_targets["regions"])
+	var desired_seed_density := clampf(
+		float(target_departments) / float(maxi(actual_land_cells, 1)),
+		0.000001,
+		0.105
+	)
+	# Le shader conserve le candidat au hash minimal dans son voisinage 3x3.
+	# Inversion de la densité Matérn discrète pour obtenir ~1 seed/15 cellules.
+	var seed_probability := 1.0 - pow(
+		maxf(1.0 - 9.0 * desired_seed_density, 0.000001), 1.0 / 9.0
+	)
+	var mean_department_spacing_px := sqrt(target_department_cells)
 	var requested_iterations = int(params.get("region_iterations", max_dim * 2))
 	var region_iterations = clampi(requested_iterations, max_dim, max_dim * 2)
 
-	print("  Seed: ", seed_val, " | Régions cibles: ", target_regions,
-		" | Départements cibles: ", target_departments)
-	print("  Surface terrestre: ", snappedf(float(physical_targets["surface_km2"]), 1.0),
-		" km² | espacement moyen: ", snappedf(mean_department_spacing_px, 0.1), " px")
+	print("  Seed: ", seed_val, " | Cellules terrestres mesurées: ", actual_land_cells)
+	print("  Département cible: ", snappedf(target_department_cells, 1.0),
+		" cellules | départements attendus: ", target_departments,
+		" | régions attendues: ", target_regions)
+	print("  Probabilité candidats blue-noise: ", snappedf(seed_probability, 0.0001),
+		" | espacement moyen: ", snappedf(mean_department_spacing_px, 0.1), " px")
 	print("  Irrégularité organique: ", noise_strength,
 		" | passes topologiques: ", region_iterations)
 	
@@ -3221,12 +3236,142 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	# Si nombre impair de passes totales, copier le résultat
 	if (region_iterations + cleanup_passes) % 2 == 1:
 		_copy_region_textures(w, h)
+	_repair_disconnected_partition("region_map", w, h)
 	
 	# === PASSE 3 : FINALISATION ET COLORATION ===
 	print("  • Finalisation et coloration...")
 	_dispatch_region_finalize(w, h, groups_x, groups_y, seed_val)
+	last_administrative_stats["land_departments"] = _measure_partition_sizes(
+		"region_map", target_department_cells
+	)
+	_print_partition_stats("Départements terrestres", last_administrative_stats["land_departments"])
 	
 	print("[Orchestrator] ✅ Phase 4 : Régions terminées")
+
+func _count_mask_cells(mask_data: PackedByteArray, water: bool) -> int:
+	var count := 0
+	for value in mask_data:
+		if (value != 0) == water:
+			count += 1
+	return count
+
+func _measure_partition_sizes(texture_name: String, target_cells: float) -> Dictionary:
+	var raw := gpu.readback_texture_raw(texture_name)
+	var counts: Dictionary = {}
+	for offset in range(0, raw.size(), 4):
+		var region_id := raw.decode_u32(offset)
+		if region_id == 0xFFFFFFFF:
+			continue
+		counts[region_id] = int(counts.get(region_id, 0)) + 1
+	var sizes: Array[int] = []
+	var total_cells := 0
+	for size in counts.values():
+		var cell_count := int(size)
+		sizes.append(cell_count)
+		total_cells += cell_count
+	sizes.sort()
+	if sizes.is_empty():
+		return {}
+	var outlier_threshold := maxi(int(ceil(target_cells * 4.0)), 1)
+	var outlier_count := 0
+	for size in sizes:
+		if size > outlier_threshold:
+			outlier_count += 1
+	return {
+		"count": sizes.size(),
+		"cells": total_cells,
+		"target_cells": target_cells,
+		"mean": float(total_cells) / float(sizes.size()),
+		"minimum": sizes[0],
+		"median": _partition_percentile(sizes, 0.50),
+		"p75": _partition_percentile(sizes, 0.75),
+		"p90": _partition_percentile(sizes, 0.90),
+		"p95": _partition_percentile(sizes, 0.95),
+		"p99": _partition_percentile(sizes, 0.99),
+		"maximum": sizes[sizes.size() - 1],
+		"extreme_outlier_threshold": outlier_threshold,
+		"extreme_outliers": outlier_count,
+	}
+
+func _partition_percentile(sorted_sizes: Array[int], percentile: float) -> int:
+	var index := clampi(
+		int(floor(float(sorted_sizes.size() - 1) * percentile)),
+		0,
+		sorted_sizes.size() - 1
+	)
+	return sorted_sizes[index]
+
+func _print_partition_stats(label: String, stats: Dictionary) -> void:
+	if stats.is_empty():
+		print("  ⚠️ ", label, " : aucune zone mesurable")
+		return
+	print(
+		"  ", label, " : n=", stats["count"],
+		" | moyenne=", snappedf(float(stats["mean"]), 0.01),
+		" | médiane=", stats["median"],
+		" | min/max=", stats["minimum"], "/", stats["maximum"],
+		" | p90/p95/p99=", stats["p90"], "/", stats["p95"], "/", stats["p99"],
+		" | extrêmes >", stats["extreme_outlier_threshold"],
+		": ", stats["extreme_outliers"]
+	)
+
+## Scinde les fragments rares partageant un même ID en départements autonomes.
+## Aucun pixel ne change de masque et aucune fusion n'est effectuée.
+func _repair_disconnected_partition(texture_name: String, w: int, h: int) -> int:
+	var raw := gpu.readback_texture_raw(texture_name)
+	var pixel_count := w * h
+	if raw.size() != pixel_count * 4:
+		return 0
+	var visited := PackedByteArray()
+	visited.resize(pixel_count)
+	visited.fill(0)
+	var completed_ids: Dictionary = {}
+	var used_ids: Dictionary = {}
+	for offset in range(0, raw.size(), 4):
+		var value := raw.decode_u32(offset)
+		if value != 0xFFFFFFFF:
+			used_ids[value] = true
+	var next_id := pixel_count
+	var split_count := 0
+
+	for start in range(pixel_count):
+		if visited[start] != 0:
+			continue
+		var region_id := raw.decode_u32(start * 4)
+		if region_id == 0xFFFFFFFF:
+			visited[start] = 1
+			continue
+		var component: Array[int] = [start]
+		visited[start] = 1
+		var head := 0
+		while head < component.size():
+			var current := component[head]
+			head += 1
+			var x := current % w
+			var y := int(current / w)
+			for offset in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]:
+				var nx := posmod(x + offset.x, w)
+				var ny := clampi(y + offset.y, 0, h - 1)
+				var neighbor := ny * w + nx
+				if visited[neighbor] == 0 and raw.decode_u32(neighbor * 4) == region_id:
+					visited[neighbor] = 1
+					component.append(neighbor)
+		if completed_ids.has(region_id):
+			while used_ids.has(next_id):
+				next_id += 1
+			for pixel in component:
+				raw.encode_u32(pixel * 4, next_id)
+			used_ids[next_id] = true
+			next_id += 1
+			split_count += 1
+		else:
+			completed_ids[region_id] = true
+
+	if split_count > 0:
+		rd.texture_update(gpu.textures[texture_name], 0, raw)
+		print("  • Continuité ", texture_name, " : ", split_count,
+			" fragment(s) conservé(s) sous un ID autonome")
+	return split_count
 
 ## Dispatch le shader de placement des seeds de région
 func _dispatch_region_seed_placement(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, seed_probability: float, sea_level: float, budget_variation: float) -> void:
@@ -3591,6 +3736,7 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	if (ocean_iterations + cleanup_passes) % 2 == 1:
 		_copy_ocean_region_textures(w, h)
+	_repair_disconnected_partition("ocean_region_map", w, h)
 	
 	# === PASSE 3 : FINALISATION ET COLORATION ===
 	print("  • Finalisation et coloration...")
