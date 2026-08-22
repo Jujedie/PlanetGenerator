@@ -499,12 +499,7 @@ PlateInfo findClosestPlate(vec2 uv, uint seed) {
 }
 
 // Calcule l'uplift tectonique basé sur le type de frontière
-// CORRECTION: Ajout paramètre currentElevation pour atténuer effets sous l'eau
-float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, vec3 coords, uint seed, float currentElevation, bool localIsOceanic) {
-    if (info.borderStrength < 0.05) {
-        return 0.0;  // Trop loin de la bordure
-    }
-    
+float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, vec3 coords, uint seed, bool localIsOceanic) {
     float uplift = 0.0;
     float convergence = info.convergence;
     // La frontière géométrique n'est qu'une contrainte tectonique. Le relief
@@ -518,21 +513,17 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
     float naturalBorderDistanceKm = abs(
         signedBorderDistanceKm + boundaryWarp * chainWidthKm * 0.72
     );
-    float strength = exp(-naturalBorderDistanceKm / chainWidthKm);
-    
-    // CORRECTION: Atténuer les effets tectoniques négatifs sous l'eau profonde
-    // Pour éviter les bordures de plaques trop visibles sur la heightmap
-    float underwaterDamping = 1.0;
-    if (currentElevation < -500.0) {
-        // Plus on est profond, moins les fosses sont marquées
-        // Damping minimum 0.5 pour garder un peu de relief océanique
-        underwaterDamping = max(0.5, 1.0 + currentElevation / 5000.0);
+    // Crête étroite, mais assise large et progressive. L'ancien profil
+    // exponentiel concentrait toute l'amplitude au premier texel du bord et
+    // pouvait passer de plusieurs milliers de mètres à une plaine en quelques
+    // cellules. Le sommet reste haut, tandis que les piémonts absorbent le saut.
+    float normalizedBorderDistance = naturalBorderDistanceKm / chainWidthKm;
+    float narrowCrest = exp(-pow(normalizedBorderDistance / 0.85, 2.0));
+    float broadFoothills = exp(-pow(normalizedBorderDistance / 3.2, 2.0));
+    float strength = 0.35 * narrowCrest + 0.65 * broadFoothills;
+    if (naturalBorderDistanceKm > chainWidthKm * 5.5 || strength < 0.006) {
+        return 0.0;
     }
-    
-    // Les fosses appartiennent à la croûte océanique. Les laisser déborder sur
-    // la croûte continentale créait des canyons linéaires qui traversaient les
-    // côtes et devenaient ensuite des bras de mer pendant l'érosion.
-    float localTrenchAttenuation = localIsOceanic ? 1.0 : 0.0;
     
     // Bruit local pour variation le long de la frontière
     float localNoise = fbm(coords * 0.02, 4, 0.6, 2.0, seed + 88888u);
@@ -543,7 +534,7 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
     // les longues cicatrices uniformes tout en conservant la continuité de la
     // limite tectonique sous-jacente.
     float activityNoise = fbm(coords * 0.006, 3, 0.55, 2.0, seed + 918273u);
-    float boundaryActivity = mix(0.08, 1.12, smoothstep(-0.42, 0.42, activityNoise));
+    float boundaryActivity = mix(0.0, 1.12, smoothstep(-0.35, 0.45, activityNoise));
     strength *= boundaryActivity;
     
     if (convergence > 0.2) {
@@ -554,28 +545,30 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
             // Continent-Continent : hautes montagnes possibles.
             uplift = strength * 2200.0 * conv_strength;
         } else if (isOceanic1 && isOceanic2) {
-            // Océan-Océan : Fosse + Arc insulaire
-            // Position relative pour asymétrie
-            float side = sign(dot(info.velocity1, vec2(1.0, 0.0)));
-            if (naturalBorderDistanceKm < chainWidthKm * 0.35) {
-                // Fosse profonde (atténuée sous l'eau et sur les continents)
-                // Réduit à -1200m pour bordures tectoniques moins marquées
-                uplift = -strength * 1000.0 * conv_strength * underwaterDamping * localTrenchAttenuation;
-            } else if (naturalBorderDistanceKm < chainWidthKm * 1.35) {
-                // Arc insulaire (50-100km en arrière de la fosse)
-                float arcFactor = smoothstep(chainWidthKm * 0.35, chainWidthKm * 0.60, naturalBorderDistanceKm) *
-                                  (1.0 - smoothstep(chainWidthKm, chainWidthKm * 1.35, naturalBorderDistanceKm));
-                uplift = arcFactor * 1000.0 * conv_strength;
-            }
+            // L'incision tectonique linéaire est désactivée avec les canyons.
+            // La profondeur océanique provient du modèle continu d'âge de
+            // croûte; un arc positif peut subsister en retrait de la limite.
+            float arcFactor = smoothstep(chainWidthKm * 0.45, chainWidthKm * 0.85, naturalBorderDistanceKm) *
+                              (1.0 - smoothstep(chainWidthKm * 1.35, chainWidthKm * 2.2, naturalBorderDistanceKm));
+            uplift = arcFactor * 750.0 * conv_strength;
         } else {
             // Océan-Continent : Subduction asymétrique
             if (isOceanic1) {
-                // Ce côté est océanique - FOSSE (atténuée sous l'eau et sur les continents)
-                // Réduit à -1000m pour bordures moins excessives
-                uplift = -strength * 850.0 * conv_strength * underwaterDamping * localTrenchAttenuation;
+                // Aucune fosse négative étroite : elle était visuellement
+                // indiscernable d'un canyon géant sur la heightmap.
+                uplift = 0.0;
             } else {
-                // Ce côté est continental - CORDILLÈRE
-                uplift = strength * 1800.0 * conv_strength;
+                // La cordillère naît en retrait de la côte. Son amplitude est
+                // nulle sur la frontière elle-même, puis augmente graduellement :
+                // les deux côtés ne peuvent plus former une marche d'altitude.
+                float continentalArc = smoothstep(
+                    chainWidthKm * 0.20, chainWidthKm * 2.0,
+                    naturalBorderDistanceKm
+                ) * (1.0 - smoothstep(
+                    chainWidthKm * 3.0, chainWidthKm * 5.2,
+                    naturalBorderDistanceKm
+                ));
+                uplift = continentalArc * 1800.0 * conv_strength;
             }
         }
     } else if (convergence < -0.2) {
@@ -586,33 +579,39 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
             // Dorsale médio-océanique
             uplift = strength * 1700.0 * div_strength;
         } else if (!isOceanic1 && !isOceanic2) {
-            // Rift continental (Vallée du Rift)
-            // Vallée centrale + épaules surélevées
-            if (naturalBorderDistanceKm < chainWidthKm * 0.30) {
-                uplift = -strength * 300.0 * div_strength * localTrenchAttenuation;  // Vallée (réduit 500→300m)
-            } else if (naturalBorderDistanceKm < chainWidthKm) {
-                float shoulderFactor = smoothstep(chainWidthKm * 0.30, chainWidthKm * 0.48, naturalBorderDistanceKm) *
-                                       (1.0 - smoothstep(chainWidthKm * 0.72, chainWidthKm, naturalBorderDistanceKm));
-                uplift = shoulderFactor * 500.0 * div_strength;  // Épaules
-            }
+            // Les rifts continentaux n'incisent plus le relief tant que la
+            // génération de canyons est désactivée.
+            uplift = 0.0;
         } else {
-            // Rift mixte
-            uplift = -strength * 250.0 * div_strength * localTrenchAttenuation;
+            uplift = 0.0;
         }
     } else {
         // === TRANSFORMANTE ===
         // Effet minimal, légère déformation
-        uplift = strength * 100.0 * (localNoise - 0.5) * 2.0;
+        uplift = strength * 80.0 * max(localNoise, 0.0);
     }
     
     // Une compression même modérée construit une chaîne lisible et continue.
     // Le bruit module la crête sans la découper en pics indépendants.
     float compression = smoothstep(0.03, 0.45, convergence);
-    float chainProfile = exp(-pow(naturalBorderDistanceKm / chainWidthKm, 1.35));
+    float chainProfile = strength;
     float chainNoise = fbm(coords * (0.018 * params.feature_frequency_scale), 3, 0.55, 2.0, seed + 73191u);
-    float coherentChain = chainProfile * compression * mix(0.68, 1.18, chainNoise);
+    float continentalRamp = 1.0;
+    if (isOceanic1 != isOceanic2) {
+        continentalRamp = smoothstep(
+            chainWidthKm * 0.20, chainWidthKm * 1.8,
+            naturalBorderDistanceKm
+        );
+    }
+    float coherentChain = chainProfile * compression * continentalRamp * mix(0.68, 1.18, chainNoise);
     if (!localIsOceanic && (!isOceanic1 || !isOceanic2)) {
         uplift += coherentChain * 850.0;
+    }
+
+    // Garantie explicite : aucune contribution tectonique négative ne peut
+    // creuser une cellule continentale et recréer un canyon linéaire.
+    if (!localIsOceanic) {
+        uplift = max(uplift, 0.0);
     }
 
     return uplift * variation;
@@ -715,8 +714,6 @@ float calculateTripleJunctionUplift(vec2 uv, vec3 coords, uint seed, float conti
                 // Divergence
                 if (ocean_i && ocean_j) {
                     totalUplift += 1000.0 * min(-conv, 1.0);  // Dorsale
-                } else {
-                    totalUplift -= 150.0 * min(-conv, 1.0);   // Rift (réduit 300→150m)
                 }
             }
         }
@@ -846,9 +843,9 @@ void main() {
     bool isOceanic2 = fbm(coords2 * continental_freq, 6, 0.6, 2.0, params.seed + 77777u) < params.ocean_threshold;
     
     // === UPLIFT TECTONIQUE AUX FRONTIÈRES ===
-    // CORRECTION: Passer l'élévation de base pour atténuer sous l'eau
-    // + localIsOceanic pour protéger le terrain continental des fosses
-    float tectonicUplift = calculateTectonicUplift(plateInfo, isOceanic1, isOceanic2, coords, params.seed, baseElevation + noiseElevation, isOceanic);
+    // Le masque local protège explicitement le terrain continental de toute
+    // incision négative assimilable à un canyon.
+    float tectonicUplift = calculateTectonicUplift(plateInfo, isOceanic1, isOceanic2, coords, params.seed, isOceanic);
     
     // === TRIPLE JUNCTIONS (là où 3+ plaques se rencontrent) ===
     float tripleJunctionUplift = calculateTripleJunctionUplift(uv, coords, params.seed, continental_freq);

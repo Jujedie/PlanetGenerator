@@ -132,24 +132,41 @@ static func build_land(data: PackedByteArray, w: int, h: int,
 	var radius_km := maxf(float(settings.get("planet_radius", REFERENCE_RADIUS_KM)), 1.0)
 	var targets := compute_land_hierarchy_targets(depts.size(), settings)
 	var target_regions := clampi(int(targets["regions"]), 1, depts.size())
-	var target_countries := clampi(int(targets["middle"]), 1, target_regions)
-	var target_continents := clampi(int(targets["top"]), 1, target_countries)
 	var surface_km2 := float(targets["surface_km2"])
+	var total_land_weight := float(_sum_weights(depts, weights))
+	var max_region_factor := clampf(float(settings.get(
+		"admin_max_region_area_factor", 2.5
+	)), 1.5, 4.0)
+	var max_country_factor := clampf(float(settings.get(
+		"admin_max_country_area_factor", 2.5
+	)), 1.5, 4.0)
+	var min_continent_fraction := clampf(float(settings.get(
+		"admin_min_continent_area_fraction", 0.35
+	)), 0.15, 0.75)
 
 	# Une île proche peut rejoindre une zone côtière. Une composante réellement
 	# éloignée reste indépendante, conformément à la règle des petites enclaves.
 	var region_bridge_km := 1.8 * sqrt(surface_km2 / float(target_regions))
-	var country_bridge_km := 2.6 * sqrt(surface_km2 / float(target_countries))
-	var continent_bridge_km := 4.0 * sqrt(surface_km2 / float(target_continents))
-
 	print("    %d départements terrestres" % depts.size())
 	var dept_to_region := _stable_nearest_groups(
 		depts, adjacency, coords, weights, target_regions, w, h, radius_km,
 		region_bridge_km, false, gen
 	)
+	dept_to_region = _split_oversized_groups(
+		dept_to_region, adjacency, coords, weights,
+		total_land_weight / float(target_regions), max_region_factor,
+		w, h, radius_km, gen
+	)
 	print("    → %d régions" % _unique_values(dept_to_region).size())
+	print("      tailles régions: ", measure_group_weights(dept_to_region, weights))
 
 	var region_ids := _unique_values(dept_to_region)
+	# Les niveaux supérieurs sont recalculés depuis le nombre effectivement
+	# obtenu après la borne de taille, pas depuis le nombre théorique initial.
+	var target_countries := clampi(int(round(
+		float(region_ids.size()) / float(targets["regions_per_country"])
+	)), 1, region_ids.size())
+	var country_bridge_km := 2.6 * sqrt(surface_km2 / float(target_countries))
 	var region_children := _invert(dept_to_region)
 	var region_adjacency := _adj_children(region_ids, region_children, adjacency)
 	var region_info := _aggregate_geometry(region_ids, region_children, coords, weights, w)
@@ -160,9 +177,19 @@ static func build_land(data: PackedByteArray, w: int, h: int,
 		mini(target_countries, region_ids.size()), w, h, radius_km,
 		country_bridge_km, false, gen
 	)
+	region_to_country = _split_oversized_groups(
+		region_to_country, region_adjacency, region_coords, region_weights,
+		total_land_weight / float(target_countries), max_country_factor,
+		w, h, radius_km, gen
+	)
 	print("    → %d pays" % _unique_values(region_to_country).size())
+	print("      tailles pays: ", measure_group_weights(region_to_country, region_weights))
 
 	var country_ids := _unique_values(region_to_country)
+	var target_continents := clampi(int(round(
+		float(country_ids.size()) / float(targets["countries_per_continent"])
+	)), 1, country_ids.size())
+	var continent_bridge_km := 4.0 * sqrt(surface_km2 / float(target_continents))
 	var country_children := _invert(region_to_country)
 	var country_adjacency := _adj_children(country_ids, country_children, region_adjacency)
 	var country_info := _aggregate_geometry(
@@ -173,7 +200,18 @@ static func build_land(data: PackedByteArray, w: int, h: int,
 		mini(target_continents, country_ids.size()), w, h, radius_km,
 		continent_bridge_km, false, gen
 	)
+	# Un continent minuscule n'est pas un niveau administratif pertinent. Les
+	# continents sous 35 % de la taille physique cible rejoignent le continent
+	# valide initialement le plus proche. Les centres ne bougent jamais pendant
+	# cette affectation, ce qui évite toute croissance opportuniste.
+	country_to_continent = _merge_undersized_groups(
+		country_to_continent, country_info[0], country_info[1], w, h,
+		(total_land_weight / float(target_continents)) * min_continent_fraction
+	)
 	print("    → %d continents" % _unique_values(country_to_continent).size())
+	print("      tailles continents: ", measure_group_weights(
+		country_to_continent, country_info[1]
+	))
 
 	var dept_to_country: Dictionary = {}
 	var dept_to_continent: Dictionary = {}
@@ -208,7 +246,7 @@ static func build_sea(data: PackedByteArray, w: int, h: int,
 		land_hierarchy, water_mask_data
 	)
 	if eligible.is_empty():
-		print("    %d départements maritimes, aucun ancrage terrestre multi-région" % all_depts.size())
+		print("    %d départements maritimes, aucun ancrage terrestre valide" % all_depts.size())
 		return [{}, {}, {}]
 
 	var coords: Dictionary = info[1]
@@ -226,7 +264,7 @@ static func build_sea(data: PackedByteArray, w: int, h: int,
 	# bassin et océan reste topologiquement continu et sans enclave.
 	var dept_to_region := _stable_nearest_groups(
 		eligible, adjacency, coords, weights, target_regions, w, h, radius_km,
-		-1.0, true, gen
+		-1.0, true, gen, 3
 	)
 	print("    → %d régions-mer" % _unique_values(dept_to_region).size())
 
@@ -237,7 +275,7 @@ static func build_sea(data: PackedByteArray, w: int, h: int,
 	var region_to_basin := _stable_nearest_groups(
 		region_ids, region_adjacency, region_info[0], region_info[1],
 		mini(target_basins, region_ids.size()), w, h, radius_km,
-		-1.0, true, gen
+		-1.0, true, gen, 2
 	)
 	print("    → %d bassins" % _unique_values(region_to_basin).size())
 
@@ -250,7 +288,7 @@ static func build_sea(data: PackedByteArray, w: int, h: int,
 	var basin_to_ocean := _stable_nearest_groups(
 		basin_ids, basin_adjacency, basin_info[0], basin_info[1],
 		mini(target_oceans, basin_ids.size()), w, h, radius_km,
-		-1.0, true, gen
+		-1.0, true, gen, 1
 	)
 	print("    → %d océans" % _unique_values(basin_to_ocean).size())
 
@@ -281,6 +319,37 @@ static func assign_colors(group_ids: Array) -> Dictionary:
 		out[gid] = Color.from_hsv(hue, saturation, value, 1.0)
 		index += 1
 	return out
+
+
+## Statistiques exprimées dans le poids physique des enfants (nombre de
+## cellules au niveau départemental). Utilisées par les régressions pour
+## détecter les régions/pays extrêmes et les continents trop petits.
+static func measure_group_weights(mapping: Dictionary,
+		child_weights: Dictionary = {}) -> Dictionary:
+	if mapping.is_empty():
+		return {"count": 0, "mean": 0.0, "min": 0, "median": 0, "p95": 0, "max": 0}
+	var totals: Dictionary = {}
+	for child in mapping.keys():
+		var group = mapping[child]
+		totals[group] = int(totals.get(group, 0)) + maxi(
+			int(child_weights.get(child, 1)), 1
+		)
+	var sizes: Array = totals.values()
+	sizes.sort()
+	var total := 0
+	for size in sizes:
+		total += int(size)
+	var mean := float(total) / float(maxi(sizes.size(), 1))
+	return {
+		"count": sizes.size(),
+		"mean": mean,
+		"min": int(sizes[0]),
+		"median": int(sizes[int(floor(float(sizes.size() - 1) * 0.50))]),
+		"p95": int(sizes[int(floor(float(sizes.size() - 1) * 0.95))]),
+		"max": int(sizes[-1]),
+		"min_to_mean": float(sizes[0]) / maxf(mean, 1.0),
+		"max_to_mean": float(sizes[-1]) / maxf(mean, 1.0),
+	}
 
 
 ## Extrait les IDs, centres pondérés, poids surfaciques et adjacences. La
@@ -352,16 +421,22 @@ static func _add_pixel_adjacency(data: PackedByteArray, pixel_index: int,
 static func _stable_nearest_groups(units: Array, adjacency: Dictionary,
 		coords: Dictionary, weights: Dictionary, target_count: int,
 		w: int, h: int, radius_km: float, bridge_limit_km: float,
-		keep_components_separate: bool, gen: Array) -> Dictionary:
+		keep_components_separate: bool, gen: Array,
+		component_seed_floor: int = 1) -> Dictionary:
 	if units.is_empty():
 		return {}
 	var components := _connected_components(units, adjacency)
 	var seed_target := clampi(target_count, 1, units.size())
 	if keep_components_separate:
-		seed_target = mini(units.size(), maxi(seed_target, components.size()))
+		var required_component_seeds := 0
+		for component in components:
+			required_component_seeds += mini(
+				maxi(component_seed_floor, 1), (component as Array).size()
+			)
+		seed_target = mini(units.size(), maxi(seed_target, required_component_seeds))
 	var seeds := _select_fixed_seeds(
 		units, components, coords, weights, seed_target, w, h,
-		keep_components_separate
+		keep_components_separate, component_seed_floor
 	)
 
 	var owner: Dictionary = {}
@@ -442,36 +517,100 @@ static func _stable_nearest_groups(units: Array, adjacency: Dictionary,
 
 static func _select_fixed_seeds(units: Array, components: Array,
 		coords: Dictionary, weights: Dictionary, target_count: int,
-		w: int, h: int, keep_components_separate: bool) -> Array:
-	var seeds: Array = []
-	var selected: Dictionary = {}
+		w: int, h: int, keep_components_separate: bool,
+		component_seed_floor: int = 1) -> Array:
+	if units.is_empty() or components.is_empty():
+		return []
+
+	# Le quota de graines est calculé séparément pour chaque masse terrestre.
+	# Auparavant, une graine choisie sur le continent principal pouvait priver un
+	# autre grand continent de toute graine : celui-ci devenait alors une seule
+	# région ou un seul pays gigantesque. La répartition proportionnelle à la
+	# surface réelle des enfants borne ce phénomène sans déplacer les références.
+	var effective_target := clampi(target_count, 1, units.size())
+	var component_reservations: Array = []
+	var reserved := 0
+	for component in components:
+		var reservation := 0
+		if keep_components_separate:
+			reservation = mini(
+				maxi(component_seed_floor, 1), (component as Array).size()
+			)
+		component_reservations.append(reservation)
+		reserved += reservation
 	if keep_components_separate:
-		for component in components:
-			var seed := _representative(component, coords, weights, w)
-			seeds.append(seed)
-			selected[seed] = true
-	else:
-		var seed := _representative(units, coords, weights, w)
-		seeds.append(seed)
-		selected[seed] = true
+		effective_target = mini(units.size(), maxi(effective_target, reserved))
+	var component_weights: Array = []
+	var total_weight := 0.0
+	for component in components:
+		var component_weight := float(_sum_weights(component, weights))
+		component_weights.append(component_weight)
+		total_weight += component_weight
+	total_weight = maxf(total_weight, 1.0)
 
-	# Cache incrémental : recalculer la distance à toutes les graines à chaque
-	# ajout serait O(N×K²) et devient prohibitif avec ~18 000 départements.
-	# La graine la plus proche ne peut que s'améliorer, donc une comparaison
-	# avec la nouvelle graine suffit à chaque itération (O(N×K)).
+	var quotas: Array = []
+	var remainders: Array = []
+	var allocated := 0
+	var distributable := maxi(effective_target - reserved, 0)
+	for index in range(components.size()):
+		var exact := float(distributable) * float(component_weights[index]) / total_weight
+		var quota := int(floor(exact)) + int(component_reservations[index])
+		quota = mini(quota, (components[index] as Array).size())
+		quotas.append(quota)
+		remainders.append(exact - floor(exact))
+		allocated += quota
+
+	# Méthode des plus forts restes. Le score de poids départage les fractions
+	# identiques et garantit que les grandes composantes sont servies d'abord.
+	while allocated < effective_target:
+		var best_index := -1
+		var best_remainder := -INF
+		var best_weight := -1.0
+		for index in range(components.size()):
+			if int(quotas[index]) >= (components[index] as Array).size():
+				continue
+			var remainder := float(remainders[index])
+			var component_weight := float(component_weights[index])
+			if remainder > best_remainder or (
+					is_equal_approx(remainder, best_remainder)
+					and component_weight > best_weight):
+				best_index = index
+				best_remainder = remainder
+				best_weight = component_weight
+		if best_index == -1:
+			break
+		quotas[best_index] = int(quotas[best_index]) + 1
+		# Un plus fort reste ne reçoit qu'une unité. Si des places demeurent à
+		# cause de composantes saturées, un nouveau tour pondé les distribue.
+		remainders[best_index] = -1.0
+		allocated += 1
+
+	var seeds: Array = []
+	for index in range(components.size()):
+		seeds.append_array(_select_component_seeds(
+			components[index], int(quotas[index]), coords, weights, w, h
+		))
+	return seeds
+
+
+static func _select_component_seeds(component: Array, quota: int,
+		coords: Dictionary, weights: Dictionary, w: int, h: int) -> Array:
+	if component.is_empty() or quota <= 0:
+		return []
+	var first := _representative(component, coords, weights, w)
+	var seeds: Array = [first]
+	var selected := {first: true}
 	var nearest_distance: Dictionary = {}
-	for unit in units:
-		var nearest := INF
-		for seed in seeds:
-			nearest = minf(nearest, _map_distance_squared(
-				coords.get(unit, Vector2.ZERO), coords.get(seed, Vector2.ZERO), w, h
-			))
-		nearest_distance[unit] = nearest
+	var first_position: Vector2 = coords.get(first, Vector2.ZERO)
+	for unit in component:
+		nearest_distance[unit] = _map_distance_squared(
+			coords.get(unit, Vector2.ZERO), first_position, w, h
+		)
 
-	while seeds.size() < target_count:
+	while seeds.size() < mini(quota, component.size()):
 		var best_unit: int = -1
 		var best_score := -1.0
-		for unit in units:
+		for unit in component:
 			if selected.has(unit):
 				continue
 			var weight_factor := pow(maxf(float(weights.get(unit, 1)), 1.0), 0.08)
@@ -484,7 +623,7 @@ static func _select_fixed_seeds(units: Array, components: Array,
 		seeds.append(best_unit)
 		selected[best_unit] = true
 		var best_position: Vector2 = coords.get(best_unit, Vector2.ZERO)
-		for unit in units:
+		for unit in component:
 			if selected.has(unit):
 				continue
 			var candidate_distance := _map_distance_squared(
@@ -493,6 +632,94 @@ static func _select_fixed_seeds(units: Array, components: Array,
 			if candidate_distance < float(nearest_distance[unit]):
 				nearest_distance[unit] = candidate_distance
 	return seeds
+
+
+## Scinde les groupes qui dépassent une borne physique relative à la taille
+## moyenne cible. Chaque scission refait une affectation à des graines fixes
+## uniquement parmi les enfants du groupe : aucun voisin ne peut être avalé et
+## les masques/continuités d'origine restent inchangés.
+static func _split_oversized_groups(mapping: Dictionary, adjacency: Dictionary,
+		coords: Dictionary, weights: Dictionary, target_weight: float,
+		max_factor: float, w: int, h: int, radius_km: float, gen: Array) -> Dictionary:
+	if mapping.is_empty() or target_weight <= 0.0:
+		return mapping
+	var current := mapping.duplicate()
+	var maximum_weight := target_weight * max_factor
+	for _pass in range(3):
+		var children_by_group := _invert(current)
+		var changed := false
+		var next := current.duplicate()
+		for group in children_by_group.keys():
+			var children: Array = children_by_group[group]
+			var group_weight := float(_sum_weights(children, weights))
+			if group_weight <= maximum_weight or children.size() <= 1:
+				continue
+			var split_count := clampi(
+				int(ceil(group_weight / target_weight)), 2, children.size()
+			)
+			var local := _stable_nearest_groups(
+				children, adjacency, coords, weights, split_count,
+				w, h, radius_km, -1.0, true, gen
+			)
+			for child in children:
+				next[child] = local.get(child, group)
+			changed = true
+		current = next
+		if not changed:
+			break
+	return current
+
+
+## Fusionne les continents trop petits vers le continent valide initialement le
+## plus proche. Les centres de référence sont calculés avant toute fusion et ne
+## sont jamais recalculés pendant l'opération.
+static func _merge_undersized_groups(mapping: Dictionary, unit_coords: Dictionary,
+		unit_weights: Dictionary, w: int, h: int,
+		minimum_weight: float) -> Dictionary:
+	var group_ids := _unique_values(mapping)
+	if group_ids.size() <= 1 or minimum_weight <= 0.0:
+		return mapping
+	var children_by_group := _invert(mapping)
+	var group_info := _aggregate_geometry(
+		group_ids, children_by_group, unit_coords, unit_weights, w
+	)
+	var group_coords: Dictionary = group_info[0]
+	var group_weights: Dictionary = group_info[1]
+	var valid: Array = []
+	for group in group_ids:
+		if float(group_weights.get(group, 0)) >= minimum_weight:
+			valid.append(group)
+	if valid.is_empty():
+		var largest = group_ids[0]
+		for group in group_ids:
+			if int(group_weights.get(group, 0)) > int(group_weights.get(largest, 0)):
+				largest = group
+		valid.append(largest)
+
+	var result := mapping.duplicate()
+	for group in group_ids:
+		if valid.has(group):
+			continue
+		var nearest = valid[0]
+		var nearest_distance := INF
+		for candidate in valid:
+			var distance := _map_distance_squared(
+				group_coords.get(group, Vector2.ZERO),
+				group_coords.get(candidate, Vector2.ZERO), w, h
+			)
+			if distance < nearest_distance:
+				nearest_distance = distance
+				nearest = candidate
+		for child in (children_by_group.get(group, []) as Array):
+			result[child] = nearest
+	return result
+
+
+static func _sum_weights(units: Array, weights: Dictionary) -> int:
+	var total := 0
+	for unit in units:
+		total += maxi(int(weights.get(unit, 1)), 1)
+	return total
 
 
 static func _connected_components(units: Array, adjacency: Dictionary) -> Array:
@@ -650,9 +877,10 @@ static func _aggregate_geometry(group_ids: Array, group_children: Dictionary,
 	return [coords, weights]
 
 
-## Une composante maritime ne monte dans la hiérarchie que si son littoral
-## touche un réseau d'au moins six régions appartenant à trois pays distincts.
-## Le critère est relationnel, jamais fondé sur son aire.
+## Une composante maritime salée monte dans la hiérarchie lorsqu'elle touche
+## plusieurs zones terrestres valides. Les seuils restent absolus : l'ancien
+## seuil global de 4 % des régions et 8 % des pays supprimait bassins et océans
+## à mesure que la planète et sa hiérarchie grandissaient.
 static func _eligible_sea_units(sea_units: Array, sea_adjacency: Dictionary,
 		sea_data: PackedByteArray, land_data: PackedByteArray, w: int, h: int,
 		sea_merge: Dictionary, land_merge: Dictionary,
@@ -686,22 +914,20 @@ static func _eligible_sea_units(sea_units: Array, sea_adjacency: Dictionary,
 
 	var dept_to_region: Dictionary = land_hierarchy[0]
 	var dept_to_country: Dictionary = land_hierarchy[1]
-	var total_land_regions := _unique_values(dept_to_region).size()
-	var total_land_countries := _unique_values(dept_to_country).size()
-	var minimum_region_links := clampi(
-		int(ceil(float(total_land_regions) * 0.04)), 6, 80
-	)
-	var minimum_country_links := clampi(
-		int(ceil(float(total_land_countries) * 0.08)), 3, 20
-	)
+	var saltwater_candidates: Array = []
+	for sea_unit in sea_units:
+		if saltwater_units.has(sea_unit):
+			saltwater_candidates.append(sea_unit)
 	var eligible: Array = []
-	for component in _connected_components(sea_units, sea_adjacency):
+	for component in _connected_components(saltwater_candidates, sea_adjacency):
+		# Une hiérarchie région→bassin→océan exige au moins trois unités
+		# maritimes continues. Une crique ou un département isolé reste visible
+		# au niveau local mais ne devient jamais un océan miniature.
+		if component.size() < 3:
+			continue
 		var land_regions: Dictionary = {}
 		var land_countries: Dictionary = {}
-		var contains_saltwater := false
 		for sea_unit in component:
-			if saltwater_units.has(sea_unit):
-				contains_saltwater = true
 			for land_unit in (contacts.get(sea_unit, {}) as Dictionary).keys():
 				var region: int = dept_to_region.get(land_unit, -1)
 				var country: int = dept_to_country.get(land_unit, -1)
@@ -709,11 +935,11 @@ static func _eligible_sea_units(sea_units: Array, sea_adjacency: Dictionary,
 					land_regions[region] = true
 				if country != -1:
 					land_countries[country] = true
-		var anchored := (
-			contains_saltwater
-			and land_regions.size() >= minimum_region_links
-			and land_countries.size() >= minimum_country_links
-		)
+		# Une mer assez structurée pour remonter doit être reliée à
+		# plusieurs zones terrestres. Ces seuils absolus restent atteignables
+		# quelle que soit la taille de la planète, contrairement aux anciens
+		# pourcentages globaux qui finissaient par supprimer tous les océans.
+		var anchored := land_regions.size() >= 3 and land_countries.size() >= 2
 		if anchored:
 			eligible.append_array(component)
 	return eligible

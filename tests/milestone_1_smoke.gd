@@ -41,7 +41,10 @@ func _run() -> void:
 	var erosion_preserves_land := int(first["eroded_land_below_sea"]) == 0
 	var tectonic_divider_safe := (
 		int(first["tectonic_boundary_samples"]) > 0
-		and float(first["tectonic_boundary_wall_fraction"]) < 0.75
+		and float(first["tectonic_boundary_wall_fraction"]) < 0.20
+		and float(first["tectonic_boundary_canyon_fraction"]) < 0.02
+		and float(first["max_land_neighbor_step_m"]) < 2000.0
+		and int(first["extreme_altitude_steps"]) == 0
 	)
 	var land_preserved := int(first["modified_land_pixels_by_subsidence"]) == 0
 	var cloud_contract := (
@@ -66,6 +69,7 @@ func _run() -> void:
 	print("[Milestone1Smoke] max_land_neighbor_step_m=", first["max_land_neighbor_step_m"])
 	print("[Milestone1Smoke] extreme_altitude_steps=", first["extreme_altitude_steps"])
 	print("[Milestone1Smoke] tectonic_boundary_wall_fraction=", first["tectonic_boundary_wall_fraction"])
+	print("[Milestone1Smoke] tectonic_boundary_canyon_fraction=", first["tectonic_boundary_canyon_fraction"])
 	print("[Milestone1Smoke] eroded_land_below_sea=", first["eroded_land_below_sea"])
 	print("[Milestone1Smoke] modified_land_pixels_by_subsidence=", first["modified_land_pixels_by_subsidence"])
 	print("[Milestone1Smoke] cloud_alpha_range=", first["cloud_min_alpha"], "..", first["cloud_max_alpha"])
@@ -216,6 +220,8 @@ func _generate_snapshot() -> Dictionary:
 
 	var tectonic_boundary_samples := 0
 	var tectonic_boundary_wall_pixels := 0
+	var tectonic_boundary_land_samples := 0
+	var tectonic_boundary_canyon_pixels := 0
 	for y in range(1, TEST_RESOLUTION.y - 1):
 		for x in range(TEST_RESOLUTION.x):
 			var index := y * TEST_RESOLUTION.x + x
@@ -223,6 +229,7 @@ func _generate_snapshot() -> Dictionary:
 			if boundary_signal < 0.45:
 				continue
 			tectonic_boundary_samples += 1
+			var center_height := base_geo.decode_float(index * 16)
 			var minimum_height := INF
 			var maximum_height := -INF
 			for neighbor in [
@@ -237,8 +244,16 @@ func _generate_snapshot() -> Dictionary:
 				maximum_height = maxf(maximum_height, neighbor_height)
 			if maximum_height - minimum_height > 2000.0:
 				tectonic_boundary_wall_pixels += 1
+			if center_height >= float(params["sea_level"]):
+				tectonic_boundary_land_samples += 1
+				if center_height + 800.0 < minimum_height:
+					tectonic_boundary_canyon_pixels += 1
 	var tectonic_boundary_wall_fraction := (
 		float(tectonic_boundary_wall_pixels) / float(maxi(tectonic_boundary_samples, 1))
+	)
+	var tectonic_boundary_canyon_fraction := (
+		float(tectonic_boundary_canyon_pixels) /
+		float(maxi(tectonic_boundary_land_samples, 1))
 	)
 
 	var cloud_min_alpha := 255
@@ -284,6 +299,7 @@ func _generate_snapshot() -> Dictionary:
 		"extreme_altitude_steps": extreme_altitude_steps,
 		"tectonic_boundary_samples": tectonic_boundary_samples,
 		"tectonic_boundary_wall_fraction": tectonic_boundary_wall_fraction,
+		"tectonic_boundary_canyon_fraction": tectonic_boundary_canyon_fraction,
 		"cloud_hash": hash(cloud_data),
 		"cloud_min_alpha": cloud_min_alpha,
 		"cloud_max_alpha": cloud_max_alpha,

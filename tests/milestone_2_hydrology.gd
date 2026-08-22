@@ -51,6 +51,18 @@ func _run() -> void:
 	var administrative_continuity := bool(short_iteration_case.get("administrative_continuity", false))
 	var administrative_hierarchy := bool(short_iteration_case.get("administrative_hierarchy", false))
 	var department_distribution := bool(short_iteration_case.get("department_distribution", false))
+	var administrative_scale_bounds := bool(short_iteration_case.get(
+		"administrative_scale_bounds", false
+	))
+	var terrain_transition_stats: Dictionary = short_iteration_case.get(
+		"terrain_transition_stats", {}
+	)
+	var terrain_transitions := (
+		float(terrain_transition_stats.get("max_land_neighbor_step_m", INF)) < 2200.0
+		and int(terrain_transition_stats.get("extreme_altitude_steps", 1)) == 0
+		and float(terrain_transition_stats.get("boundary_wall_fraction", 1.0)) < 0.20
+		and float(terrain_transition_stats.get("boundary_canyon_fraction", 1.0)) < 0.02
+	)
 
 	print("[Milestone2Hydrology] flow_hash=", short_iteration_case["flow_hash"])
 	print("[Milestone2Hydrology] flux_hash=", short_iteration_case["flux_hash"])
@@ -73,6 +85,12 @@ func _run() -> void:
 	print("[Milestone2Hydrology] administrative_hierarchy=", administrative_hierarchy)
 	print("[Milestone2Hydrology] land_department_stats=", short_iteration_case.get("land_department_stats", {}))
 	print("[Milestone2Hydrology] department_distribution=", department_distribution)
+	print("[Milestone2Hydrology] administrative_size_stats=", short_iteration_case.get(
+		"administrative_size_stats", {}
+	))
+	print("[Milestone2Hydrology] administrative_scale_bounds=", administrative_scale_bounds)
+	print("[Milestone2Hydrology] terrain_transition_stats=", terrain_transition_stats)
+	print("[Milestone2Hydrology] terrain_transitions=", terrain_transitions)
 
 	if not stable:
 		push_error("Hydrology still depends on river_iterations")
@@ -92,10 +110,15 @@ func _run() -> void:
 		push_error("Administrative scales are not strictly department < region < country/basin < continent/ocean")
 	if not department_distribution:
 		push_error("Land department size distribution is too far from the 15-cell target")
+	if not administrative_scale_bounds:
+		push_error("A region/country is extreme or a continent is below its minimum size")
+	if not terrain_transitions:
+		push_error("Full terrain still contains an abrupt plate wall or linear canyon")
 
 	_quit(0 if stable and conserved and acyclic and drains and hierarchical
 		and administrative_masks and administrative_continuity
-		and administrative_hierarchy and department_distribution else 1)
+		and administrative_hierarchy and department_distribution
+		and administrative_scale_bounds and terrain_transitions else 1)
 
 func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 	var params := {
@@ -149,12 +172,17 @@ func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 	var flux_data := gpu.readback_texture_raw("river_flux")
 	var water_data := gpu.readback_texture_raw("water_mask")
 	var river_type_data := gpu.readback_texture_raw("ocean_reachable")
+	var geo_data := gpu.readback_texture_raw("geo")
+	var plate_data := gpu.readback_texture_raw("plates")
 	var result := {
 		"flow_hash": hash(flow_data),
 		"flux_hash": hash(flux_data),
 		"water_hash": hash(water_data),
 		"river_type_hash": hash(river_type_data),
 		"stats": orchestrator.last_hydrology_stats.duplicate(),
+		"terrain_transition_stats": _measure_terrain_transitions(
+			geo_data, plate_data, float(params["sea_level"])
+		),
 		"downstream_flux_violations": _count_downstream_flux_violations(
 			flow_data,
 			flux_data,
@@ -236,9 +264,116 @@ func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 			and int(department_stats.get("p95", 1000)) <= 50
 			and outlier_fraction <= 0.02
 		)
+		var land_info := HierarchyBuilder._scan(
+			land_regions, test_resolution.x, test_resolution.y, land_merge
+		)
+		var department_weights: Dictionary = land_info[3]
+		var region_stats := HierarchyBuilder.measure_group_weights(
+			land_hierarchy[0], department_weights
+		)
+		var region_weights := _aggregate_mapping_weights(
+			land_hierarchy[0], department_weights
+		)
+		var country_stats := HierarchyBuilder.measure_group_weights(
+			_group_mapping(land_hierarchy[0], land_hierarchy[1]), region_weights
+		)
+		var country_weights := _aggregate_mapping_weights(
+			_group_mapping(land_hierarchy[0], land_hierarchy[1]), region_weights
+		)
+		var continent_stats := HierarchyBuilder.measure_group_weights(
+			_group_mapping(land_hierarchy[1], land_hierarchy[2]), country_weights
+		)
+		result["administrative_size_stats"] = {
+			"regions": region_stats,
+			"countries": country_stats,
+			"continents": continent_stats,
+		}
+		result["administrative_scale_bounds"] = (
+			float(region_stats.get("max_to_mean", 999.0)) <= 3.0
+			and float(country_stats.get("max_to_mean", 999.0)) <= 3.0
+			and float(continent_stats.get("min_to_mean", 0.0)) >= 0.20
+			and sea_counts[1] > 0 and sea_counts[2] > 0 and sea_counts[3] > 0
+		)
 
 	orchestrator.cleanup()
 	return result
+
+
+func _aggregate_mapping_weights(mapping: Dictionary, child_weights: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for child in mapping.keys():
+		var group = mapping[child]
+		result[group] = int(result.get(group, 0)) + maxi(
+			int(child_weights.get(child, 1)), 1
+		)
+	return result
+
+
+func _group_mapping(lower_mapping: Dictionary, upper_mapping: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for child in lower_mapping.keys():
+		if upper_mapping.has(child):
+			result[lower_mapping[child]] = upper_mapping[child]
+	return result
+
+
+func _measure_terrain_transitions(geo_data: PackedByteArray,
+		plate_data: PackedByteArray, sea_level: float) -> Dictionary:
+	var max_land_neighbor_step := 0.0
+	var extreme_altitude_steps := 0
+	var boundary_samples := 0
+	var boundary_walls := 0
+	var boundary_land_samples := 0
+	var boundary_canyons := 0
+	for y in range(1, test_resolution.y - 1):
+		for x in range(test_resolution.x):
+			var index := y * test_resolution.x + x
+			var height := geo_data.decode_float(index * 16)
+			if height >= sea_level:
+				for neighbor in [
+					Vector2i((x + 1) % test_resolution.x, y),
+					Vector2i(x, y + 1),
+				]:
+					var neighbor_height := geo_data.decode_float(
+						(neighbor.y * test_resolution.x + neighbor.x) * 16
+					)
+					if neighbor_height < sea_level:
+						continue
+					var step := absf(height - neighbor_height)
+					max_land_neighbor_step = maxf(max_land_neighbor_step, step)
+					if step > 3000.0:
+						extreme_altitude_steps += 1
+
+			var boundary_signal := absf(plate_data.decode_float(index * 16 + 12))
+			if boundary_signal < 0.45:
+				continue
+			boundary_samples += 1
+			var minimum_height := INF
+			var maximum_height := -INF
+			for neighbor in [
+				Vector2i(posmod(x - 1, test_resolution.x), y),
+				Vector2i((x + 1) % test_resolution.x, y),
+				Vector2i(x, y - 1), Vector2i(x, y + 1),
+			]:
+				var neighbor_height := geo_data.decode_float(
+					(neighbor.y * test_resolution.x + neighbor.x) * 16
+				)
+				minimum_height = minf(minimum_height, neighbor_height)
+				maximum_height = maxf(maximum_height, neighbor_height)
+			if maximum_height - minimum_height > 2000.0:
+				boundary_walls += 1
+			if height >= sea_level:
+				boundary_land_samples += 1
+				if height + 800.0 < minimum_height:
+					boundary_canyons += 1
+	return {
+		"max_land_neighbor_step_m": max_land_neighbor_step,
+		"extreme_altitude_steps": extreme_altitude_steps,
+		"boundary_wall_fraction": float(boundary_walls) / float(maxi(boundary_samples, 1)),
+		"boundary_canyon_fraction": (
+			float(boundary_canyons) / float(maxi(boundary_land_samples, 1))
+		),
+	}
 
 func _count_raw_ids(data: PackedByteArray) -> int:
 	var ids: Dictionary = {}
