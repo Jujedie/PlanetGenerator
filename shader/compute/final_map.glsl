@@ -5,25 +5,24 @@
 // FINAL MAP SHADER - Combinaison des couches visuelles
 // ============================================================================
 // Ce shader génère la carte finale en combinant plusieurs couches :
-// 1. biome_id : Index du biome → lookup SSBO pour couleur végétation
-// 2. river_flux : Rivières (détection via flux)
-// 3. geo_texture : Ombrage topographique (relief)
-// 4. ice_caps : Banquise en overlay prioritaire
+// 1. geo_texture : palette hypsométrique et ombrage topographique
+// 2. biome_id : modulation écologique de la palette cartographique
+// 3. river_flux : cours d'eau principaux
+// 4. ice_caps : banquise en overlay prioritaire
 //
-// Formule finale :
-// color = biomes[biome_id].color * (hillshade)
-// if banquise: color = banquise_color
+// Le résultat n'est volontairement ni une copie de biome_colored, ni une
+// simple texture de végétation : c'est une carte physique stylisée.
 //
 // Entrées :
 // - biome_id (R32UI) : Index du biome pour lookup SSBO
-// - biome_colored (RGBA8) : Couleur distinctive des biomes (non utilisée ici)
+// - biome_colored (RGBA8) : Couleur distinctive des biomes (modulation)
 // - river_flux (R32F) : Intensité du flux des rivières
 // - geo_texture (RGBA32F) : R=height pour calcul ombrage
 // - ice_caps (RGBA8) : Banquise (blanc/transparent)
 // - BiomeLUT (SSBO) : Couleurs végétation des biomes
 //
 // Sorties :
-// - final_map (RGBA8) : Carte finale avec couleurs végétation réalistes
+// - final_map (RGBA8) : Carte physique stylisée, directement utilisable
 // ============================================================================
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
@@ -150,16 +149,31 @@ vec3 getRiverBlendedColor(vec3 terrain_color, vec3 river_color, uint atmo) {
 // HILLSHADE CALCULATION
 // ============================================================================
 
+ivec2 wrappedPosition(ivec2 pos, int w, int h) {
+    return ivec2((pos.x % w + w) % w, clamp(pos.y, 0, h - 1));
+}
+
+float elevationAt(ivec2 pos, int w, int h) {
+    return imageLoad(geo_texture, wrappedPosition(pos, w, h)).r;
+}
+
+// Filtre en croix très léger réservé au rendu. Il ne modifie jamais la donnée
+// physique et évite que le bruit pixel par pixel transforme les isolignes en
+// un maillage illisible.
+float displayElevation(ivec2 pos, int w, int h) {
+    float center = elevationAt(pos, w, h) * 4.0;
+    center += elevationAt(pos + ivec2(-1, 0), w, h);
+    center += elevationAt(pos + ivec2(1, 0), w, h);
+    center += elevationAt(pos + ivec2(0, -1), w, h);
+    center += elevationAt(pos + ivec2(0, 1), w, h);
+    return center * 0.125;
+}
+
 float calculateTopoShading(ivec2 pos, int w, int h) {
-    ivec2 left = ivec2((pos.x - 1 + w) % w, pos.y);
-    ivec2 right = ivec2((pos.x + 1) % w, pos.y);
-    ivec2 up = ivec2(pos.x, max(pos.y - 1, 0));
-    ivec2 down = ivec2(pos.x, min(pos.y + 1, h - 1));
-    
-    float h_left = imageLoad(geo_texture, left).r;
-    float h_right = imageLoad(geo_texture, right).r;
-    float h_up = imageLoad(geo_texture, up).r;
-    float h_down = imageLoad(geo_texture, down).r;
+    float h_left = displayElevation(pos + ivec2(-1, 0), w, h);
+    float h_right = displayElevation(pos + ivec2(1, 0), w, h);
+    float h_up = displayElevation(pos + ivec2(0, -1), w, h);
+    float h_down = displayElevation(pos + ivec2(0, 1), w, h);
     
     // Les hauteurs sont en mètres : normaliser le gradient évite que quelques
     // centaines de mètres entre pixels produisent des murs noirs artificiels.
@@ -173,6 +187,60 @@ float calculateTopoShading(ivec2 pos, int w, int h) {
     // Une surface plane vaut exactement 0.5. Le relief pourra donc éclaircir
     // autant qu'assombrir sans ternir uniformément toute la carte.
     return clamp(0.5 + (shade - light_dir.z) * 0.65, 0.0, 1.0);
+}
+
+// Palette inspirée des cartes physiques de référence : plaines olive, reliefs
+// sable/saumon et sommets crème. Les transitions restent continues.
+vec3 terranLandHypsometry(float relative_height) {
+    const vec3 COAST = vec3(0.66, 0.67, 0.47);
+    const vec3 LOWLAND = vec3(0.62, 0.61, 0.37);
+    const vec3 UPLAND = vec3(0.76, 0.63, 0.43);
+    const vec3 HIGHLAND = vec3(0.91, 0.70, 0.55);
+    const vec3 MOUNTAIN = vec3(0.96, 0.80, 0.66);
+    const vec3 SUMMIT = vec3(0.96, 0.88, 0.75);
+
+    vec3 color = mix(COAST, LOWLAND, smoothstep(0.0, 220.0, relative_height));
+    color = mix(color, UPLAND, smoothstep(220.0, 900.0, relative_height));
+    color = mix(color, HIGHLAND, smoothstep(900.0, 2200.0, relative_height));
+    color = mix(color, MOUNTAIN, smoothstep(2200.0, 3800.0, relative_height));
+    return mix(color, SUMMIT, smoothstep(3800.0, 6200.0, relative_height));
+}
+
+vec3 terranWaterHypsometry(float depth, vec3 source_water) {
+    const vec3 SHALLOW = vec3(0.40, 0.58, 0.56);
+    const vec3 MID = vec3(0.31, 0.49, 0.49);
+    const vec3 DEEP = vec3(0.23, 0.38, 0.41);
+    vec3 color = mix(SHALLOW, MID, smoothstep(80.0, 1200.0, depth));
+    color = mix(color, DEEP, smoothstep(1200.0, 5200.0, depth));
+    return mix(color, source_water, 0.10);
+}
+
+bool waterAt(ivec2 pos, int w, int h) {
+    return imageLoad(water_colored, wrappedPosition(pos, w, h)).a > 0.0;
+}
+
+// Retourne 0 hors ligne, 1 pour une courbe secondaire et 2 pour une maîtresse.
+int contourKind(ivec2 pos, int w, int h, float center_height, bool is_water) {
+    if (is_water || center_height < 20.0) {
+        return 0;
+    }
+    float right_height = displayElevation(pos + ivec2(1, 0), w, h) - params.sea_level;
+    float down_height = displayElevation(pos + ivec2(0, 1), w, h) - params.sea_level;
+    bool right_land = !waterAt(pos + ivec2(1, 0), w, h);
+    bool down_land = !waterAt(pos + ivec2(0, 1), w, h);
+
+    const float MINOR_INTERVAL = 400.0;
+    const float MAJOR_INTERVAL = 1600.0;
+    bool major =
+        (right_land && floor(center_height / MAJOR_INTERVAL) != floor(right_height / MAJOR_INTERVAL)) ||
+        (down_land && floor(center_height / MAJOR_INTERVAL) != floor(down_height / MAJOR_INTERVAL));
+    if (major) {
+        return 2;
+    }
+    bool minor =
+        (right_land && floor(center_height / MINOR_INTERVAL) != floor(right_height / MINOR_INTERVAL)) ||
+        (down_land && floor(center_height / MINOR_INTERVAL) != floor(down_height / MINOR_INTERVAL));
+    return minor ? 1 : 0;
 }
 
 // ============================================================================
@@ -196,23 +264,34 @@ void main() {
     vec4 ice = imageLoad(ice_caps, pos);
     uint biome_index = imageLoad(biome_id, pos).r;
     uint river_bid = imageLoad(river_biome_id, pos).r;
+    float elevation = imageLoad(geo_texture, pos).r;
+    float relative_height = elevation - params.sea_level;
     
     bool is_water = water.a > 0.0;  // L'eau a alpha > 0 dans water_colored
     bool is_banquise = ice.a > 0.0;
     bool is_river = (river_bid != 0xFFFFFFFFu) &&
         (flux >= params.river_threshold);
     
-    // === STEP 1: Base color ===
-    // La couleur de végétation reste la base de la carte finale. Une part de la
-    // couleur catégorielle rend les forêts réellement vertes au lieu de leur
-    // donner l'aspect beige d'un désert.
+    // === STEP 1: Base physique + modulation écologique ===
     vec3 color = biome.rgb;
+    vec3 vegetation_color = biome.rgb;
     if (biome_count > 0u && biome_index < biome_count) {
-        vec3 vegetation_color = biomes[biome_index].color.rgb;
-        color = vegetation_color;
-        if (params.atmosphere_type == 0u && !is_water) {
-            color = mix(vegetation_color, biome.rgb, 0.42);
+        vegetation_color = biomes[biome_index].color.rgb;
+    }
+
+    if (params.atmosphere_type == 0u) {
+        if (is_water) {
+            color = terranWaterHypsometry(max(-relative_height, 0.0), water.rgb);
+        } else {
+            vec3 physical_color = terranLandHypsometry(max(relative_height, 0.0));
+            // Le biome teinte la carte sans en devenir l'unique couche. Une
+            // forêt reste verte, un désert chaud reste ocre, mais le relief
+            // demeure immédiatement lisible.
+            vec3 ecology = mix(vegetation_color, biome.rgb, 0.18);
+            color = mix(physical_color, ecology, 0.43);
         }
+    } else {
+        color = vegetation_color;
     }
     
     // === STEP 2: Apply hillshade (topographic shading) ===
@@ -226,6 +305,26 @@ void main() {
     
     float shade_factor = 1.0 + (shading - 0.5) * 2.0 * effective_strength;
     color *= shade_factor;
+
+    // === STEP 2.5: côtes et courbes de niveau cartographiques ===
+    if (params.atmosphere_type == 0u) {
+        bool coast =
+            waterAt(pos + ivec2(-1, 0), w, h) != is_water ||
+            waterAt(pos + ivec2(1, 0), w, h) != is_water ||
+            waterAt(pos + ivec2(0, -1), w, h) != is_water ||
+            waterAt(pos + ivec2(0, 1), w, h) != is_water;
+        if (coast) {
+            vec3 coast_color = is_water ? vec3(0.55, 0.68, 0.63) : vec3(0.91, 0.73, 0.60);
+            color = mix(color, coast_color, 0.50);
+        }
+
+        int contour = contourKind(pos, w, h, relative_height, is_water);
+        if (contour == 2) {
+            color = mix(color, vec3(0.64, 0.43, 0.34), 0.34);
+        } else if (contour == 1) {
+            color = mix(color, vec3(0.73, 0.50, 0.39), 0.20);
+        }
+    }
     
     // === STEP 3: Rivers overlay ===
     // Si un biome rivière est assigné, appliquer la colorisation dynamique

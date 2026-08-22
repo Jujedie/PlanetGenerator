@@ -485,7 +485,7 @@ Le shader sélectionne le biome dont le centre de plage est le plus proche des v
 | `ocean_region_map.png` | `MAP_OCEAN_REGIONS` | Régions sous-marines regroupées par adjacence |
 | `petrole_map.png` | `MAP_PETROLE` | Gisements pétroliers |
 | `ressource_map.png` | `MAP_RESOURCES` | Toutes les ressources minérales |
-| `final_map.png` | `MAP_FINAL` | Rendu composite dominé par les biomes et la végétation, avec relief léger, cours d'eau majeurs discrets et banquise bleu-gris |
+| `final_map.png` | `MAP_FINAL` | Carte physique stylisée : hypsométrie olive/sable/saumon, modulation écologique des biomes, eaux bleu-vert, côtes, courbes de niveau, cours d'eau majeurs et banquise bleu-gris |
 | `preview.png` | `MAP_PREVIEW` | Aperçu rapide pour l'interface |
 
 ---

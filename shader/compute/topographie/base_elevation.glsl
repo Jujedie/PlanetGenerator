@@ -597,116 +597,6 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
 }
 
 // ============================================================================
-// TRIPLE JUNCTIONS - Détection et cumul d'effets
-// ============================================================================
-
-// Compte les plaques distinctes dans un voisinage et retourne l'uplift cumulé
-float calculateTripleJunctionUplift(vec2 uv, vec3 coords, uint seed, float continental_freq) {
-    // Échantillonner les plaques dans un voisinage 3x3
-    int plates[9];
-    int numUnique = 0;
-    
-    float chainPixels = clamp(
-        params.chain_width_km * float(params.width) /
-            max(TAU * params.planet_radius_km, 1.0),
-        2.0,
-        12.0
-    );
-    float pixelSizeU = chainPixels / float(params.width);
-    float pixelSizeV = chainPixels / float(params.height);
-    
-    for (int dy = -1; dy <= 1; dy++) {
-        for (int dx = -1; dx <= 1; dx++) {
-            vec2 sampleUV = uv + vec2(float(dx) * pixelSizeU, float(dy) * pixelSizeV);
-            sampleUV.x = fract(sampleUV.x);  // Wrap X
-            sampleUV.y = clamp(sampleUV.y, 0.0, 1.0);
-            
-            PlateInfo sampleInfo = findClosestPlate(sampleUV, seed);
-            plates[dy * 3 + dx + 4] = sampleInfo.plateId;
-        }
-    }
-    
-    // Compter les plaques uniques
-    int uniquePlates[4];  // Max 4 plaques différentes dans un 3x3
-    numUnique = 0;
-    
-    for (int i = 0; i < 9; i++) {
-        bool found = false;
-        for (int j = 0; j < numUnique; j++) {
-            if (uniquePlates[j] == plates[i]) {
-                found = true;
-                break;
-            }
-        }
-        if (!found && numUnique < 4) {
-            uniquePlates[numUnique] = plates[i];
-            numUnique++;
-        }
-    }
-    
-    // Si moins de 3 plaques, pas de triple junction
-    if (numUnique < 3) {
-        return 0.0;
-    }
-    
-    // === TRIPLE JUNCTION DÉTECTÉ ===
-    // Cumuler les effets des paires de plaques
-    float totalUplift = 0.0;
-    
-    for (int i = 0; i < numUnique; i++) {
-        for (int j = i + 1; j < numUnique; j++) {
-            // Calculer l'interaction entre plaques i et j
-            vec2 vel_i = getPlateVelocity(uniquePlates[i], seed);
-            vec2 vel_j = getPlateVelocity(uniquePlates[j], seed);
-            
-            vec2 center_i = getPlateCenter(uniquePlates[i], seed);
-            vec2 center_j = getPlateCenter(uniquePlates[j], seed);
-            
-            // Direction entre centres
-            vec2 toJ = center_j - center_i;
-            if (toJ.x > 0.5) toJ.x -= 1.0;
-            if (toJ.x < -0.5) toJ.x += 1.0;
-            vec2 normal = normalize(toJ);
-            
-            // Convergence
-            float conv = -dot(vel_i - vel_j, normal);
-            
-            // Déterminer type océan/continent pour chaque plaque
-            vec3 c_i = getCylindricalCoords(ivec2(center_i * vec2(params.width, params.height)),
-                                            params.width, params.height, params.cylinder_radius);
-            vec3 c_j = getCylindricalCoords(ivec2(center_j * vec2(params.width, params.height)),
-                                            params.width, params.height, params.cylinder_radius);
-            bool ocean_i = fbm(c_i * continental_freq, 6, 0.6, 2.0, seed + 77777u) < params.ocean_threshold;
-            bool ocean_j = fbm(c_j * continental_freq, 6, 0.6, 2.0, seed + 77777u) < params.ocean_threshold;
-            
-            // Calculer contribution (version simplifiée)
-            if (conv > 0.2) {
-                // Convergence
-                if (!ocean_i && !ocean_j) {
-                    totalUplift += 1500.0 * min(conv, 1.0);  // Continent-continent
-                } else if (ocean_i && ocean_j) {
-                    totalUplift += 800.0 * min(conv, 1.0);   // Océan-océan
-                } else {
-                    totalUplift += 1200.0 * min(conv, 1.0);  // Mixte
-                }
-            } else if (conv < -0.2) {
-                // Divergence
-                if (ocean_i && ocean_j) {
-                    totalUplift += 1000.0 * min(-conv, 1.0);  // Dorsale
-                }
-            }
-        }
-    }
-    
-    // Bruit local pour instabilité géologique
-    float instability = fbm(coords * 0.03, 3, 0.7, 2.0, seed + 99999u);
-    totalUplift *= (0.8 + 0.4 * instability);
-    
-    // PLAFONNER l'effet cumulé - réduit de ±6000 à ±2000 pour éviter pics excessifs
-    return clamp(totalUplift, -2000.0, 2000.0);
-}
-
-// ============================================================================
 // MAIN SHADER
 // ============================================================================
 
@@ -826,11 +716,10 @@ void main() {
     // incision négative assimilable à un canyon.
     float tectonicUplift = calculateTectonicUplift(plateInfo, isOceanic1, isOceanic2, coords, params.seed, isOceanic);
     
-    // === TRIPLE JUNCTIONS (là où 3+ plaques se rencontrent) ===
-    float tripleJunctionUplift = calculateTripleJunctionUplift(uv, coords, params.seed, continental_freq);
-    
-    // Combiner uplift de frontière et triple junction
-    tectonicUplift += tripleJunctionUplift * 0.25;
+    // Les jonctions triples sont déjà incluses dans la superposition des
+    // assises tectoniques continues. L'ancien masque binaire 3+ plaques
+    // ajoutait ici un plateau uniforme aux contours Voronoï anguleux : ce sont
+    // les petites taches claires isolées visibles dans la heightmap.
     
     // Plafonner l'uplift total (réalisme géologique)
     tectonicUplift = clamp(tectonicUplift, -5000.0, 4000.0);
