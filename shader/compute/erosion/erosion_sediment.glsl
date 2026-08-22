@@ -40,8 +40,8 @@ layout(set = 1, binding = 0, std140) uniform SedimentParams {
     float bedrock_hardness;      // Résistance du bedrock (0-1)
     float pixel_size_x_m;        // Taille nominale E-O à l'équateur
     float pixel_size_y_m;        // Taille N-S
-    float padding1;
-    float padding2;
+    float max_erosion_per_pass_m;
+    float channel_flux_threshold;
 } params;
 
 // ============================================================================
@@ -55,10 +55,6 @@ const float PI = 3.14159265359;
 // Conversion entre un pas d'érosion (temps géologique abstrait) et une
 // épaisseur transportable. Cette constante est indépendante de la résolution.
 const float CAPACITY_LENGTH_SCALE_M = 500.0;
-// Un pas hydraulique représente une période géologique abstraite, mais ne doit
-// pas inciser des centaines de mètres d'un seul coup. Le plafond conserve une
-// érosion cumulative visible tout en empêchant les tranchées numériques.
-const float MAX_EROSION_PER_PASS_M = 12.0;
 const float LAND_EROSION_FLOOR_M = 1.0;
 
 // Offsets des 4 voisins cardinaux (pour calcul de pente)
@@ -166,6 +162,16 @@ void main() {
         // -> Éroder le terrain
         
         float erosion_amount = (capacity - sediment) * params.erosion_rate;
+
+        // Concentrer l'incision sur les écoulements réellement organisés. Le
+        // faible résidu conserve l'érosion diffuse des plateaux sans transformer
+        // chaque pente humide en canyon parallèle.
+        float channel_factor = smoothstep(
+            params.channel_flux_threshold,
+            params.channel_flux_threshold * 3.5,
+            flux
+        );
+        erosion_amount *= mix(0.03, 1.0, channel_factor);
         
         // Le bedrock résiste à l'érosion
         // bedrock = 1.0 = roche dure, bedrock = 0.0 = sédiment meuble
@@ -178,7 +184,7 @@ void main() {
         // canyon permanent sous le niveau marin.
         float available_land = max(height - (params.sea_level + LAND_EROSION_FLOOR_M), 0.0);
         erosion_amount = min(erosion_amount, available_land);
-        erosion_amount = min(erosion_amount, MAX_EROSION_PER_PASS_M);
+        erosion_amount = min(erosion_amount, params.max_erosion_per_pass_m);
         erosion_amount = max(erosion_amount, 0.0);
         
         delta_height = -erosion_amount;
@@ -191,6 +197,7 @@ void main() {
         
         float deposition_amount = (sediment - capacity) * params.deposition_rate;
         deposition_amount = min(deposition_amount, sediment);  // Ne pas déposer plus qu'on a
+        deposition_amount = min(deposition_amount, params.max_erosion_per_pass_m * 1.5);
         
         delta_height = deposition_amount;
         delta_sediment = -deposition_amount;

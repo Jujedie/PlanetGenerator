@@ -111,8 +111,8 @@ Current checkpoint (2026-08-19):
   hierarchy size. Higher tiers are adjacency-only, no longer merge unrelated
   IDs across the map seam, and their continent/ocean counts scale with radius.
 - Administrative colours use a deterministic collision-resistant palette.
-- Cloud output is an opaque greyscale density mask with seamless circulation
-  bands, fronts, dry belts, and storm-track modulation.
+- Cloud output is a seamless straight-alpha RGBA8 texture with transparent
+  clear sky and stylized clusters shaped by bands, dry belts, and storm tracks.
 - Repeated terrestrial and gas-giant smoke generations are deterministic;
   gas giants exercise only their atmospheric phase and export only `final_map`.
 - Duplicate state-texture allocations and final shared-device leaks found by

@@ -50,6 +50,10 @@ layout(set = 1, binding = 0, std140) uniform GenerationParams {
     float cylinder_radius;  // Rayon cylindre = width / (2*PI)
     float ocean_threshold;  // Seuil océan/continent (configurable UI)
     float padding3;
+    float planet_radius_km; // Échelle physique, indépendante de la texture
+    uint active_plate_count;// Nombre de plaques adapté à la surface
+    float feature_frequency_scale;
+    float chain_width_km;   // Largeur physique des chaînes tectoniques
 } params;
 
 // ============================================================================
@@ -58,7 +62,7 @@ layout(set = 1, binding = 0, std140) uniform GenerationParams {
 
 const float PI = 3.14159265359;
 const float TAU = 6.28318530718;
-const int NUM_PLATES = 12;  // Nombre de plaques tectoniques
+const int MAX_PLATES = 48;
 
 // ============================================================================
 // FONCTIONS UTILITAIRES - Bruit (Simplex/Value Noise)
@@ -330,7 +334,7 @@ vec2 getPlateVelocity(int plateId, uint seed) {
 bool isLocallyOceanic(vec3 coords, float cylinder_radius, uint seed) {
     // Bruit continental à TRÈS grande échelle
     // Fréquence réduite = zones plus grandes et cohérentes
-    float continental_freq = 0.5 / cylinder_radius;
+    float continental_freq = 0.8 * params.feature_frequency_scale / cylinder_radius;
     float continentalNoise = fbm(coords * continental_freq, 6, 0.6, 2.0, seed + 77777u);
     // Seuil configurable depuis l'UI (params.ocean_threshold)
     // FBM produit [-1, 1], threshold dans [-0.25, 0.80] selon ratio océan
@@ -436,7 +440,8 @@ PlateInfo findClosestPlate(vec2 uv, uint seed) {
     vec2 closestCenter = vec2(0.0);
     vec2 secondCenter = vec2(0.0);
     
-    for (int i = 0; i < NUM_PLATES; i++) {
+    for (int i = 0; i < MAX_PLATES; i++) {
+        if (i >= int(params.active_plate_count)) break;
         vec2 centerUV = getPlateCenter(i, seed);
         vec3 centerOnSphere = uvToSphere(centerUV);
         
@@ -460,10 +465,10 @@ PlateInfo findClosestPlate(vec2 uv, uint seed) {
     // Distance au bord (en radians, typiquement 0 à ~0.5)
     float borderDist = secondDist - minDist;
     
-    // Décroissance exponentielle localisée aux bordures. L'ancien facteur 35
-    // rendait chaque frontière visible sur une bande très large et produisait
-    // des lineaments continus à l'échelle du globe.
-    float borderStrength = exp(-borderDist * 52.0);
+    // Le profil est exprimé en kilomètres : changer la résolution de sortie ne
+    // change donc plus la largeur des cordillères et dorsales.
+    float chainWidthAngle = params.chain_width_km / max(params.planet_radius_km, 1.0);
+    float borderStrength = exp(-borderDist / max(chainWidthAngle, 0.0001));
     borderStrength = clamp(borderStrength, 0.0, 1.0);
     
     // Vélocités des deux plaques
@@ -503,6 +508,8 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
     float uplift = 0.0;
     float convergence = info.convergence;
     float strength = info.borderStrength;
+    float borderDistanceKm = info.borderDist * max(params.planet_radius_km, 1.0);
+    float chainWidthKm = max(params.chain_width_km, 1.0);
     
     // CORRECTION: Atténuer les effets tectoniques négatifs sous l'eau profonde
     // Pour éviter les bordures de plaques trop visibles sur la heightmap
@@ -542,14 +549,14 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
             // Océan-Océan : Fosse + Arc insulaire
             // Position relative pour asymétrie
             float side = sign(dot(info.velocity1, vec2(1.0, 0.0)));
-            if (info.borderDist < 0.01) {
+            if (borderDistanceKm < chainWidthKm * 0.35) {
                 // Fosse profonde (atténuée sous l'eau et sur les continents)
                 // Réduit à -1200m pour bordures tectoniques moins marquées
                 uplift = -strength * 1000.0 * conv_strength * underwaterDamping * localTrenchAttenuation;
-            } else if (info.borderDist < 0.03) {
+            } else if (borderDistanceKm < chainWidthKm * 1.35) {
                 // Arc insulaire (50-100km en arrière de la fosse)
-                float arcFactor = smoothstep(0.01, 0.015, info.borderDist) * 
-                                  smoothstep(0.03, 0.025, info.borderDist);
+                float arcFactor = smoothstep(chainWidthKm * 0.35, chainWidthKm * 0.60, borderDistanceKm) *
+                                  (1.0 - smoothstep(chainWidthKm, chainWidthKm * 1.35, borderDistanceKm));
                 uplift = arcFactor * 1000.0 * conv_strength;
             }
         } else {
@@ -574,11 +581,11 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
         } else if (!isOceanic1 && !isOceanic2) {
             // Rift continental (Vallée du Rift)
             // Vallée centrale + épaules surélevées
-            if (info.borderDist < 0.008) {
+            if (borderDistanceKm < chainWidthKm * 0.30) {
                 uplift = -strength * 300.0 * div_strength * localTrenchAttenuation;  // Vallée (réduit 500→300m)
-            } else if (info.borderDist < 0.02) {
-                float shoulderFactor = smoothstep(0.008, 0.012, info.borderDist) *
-                                       smoothstep(0.02, 0.016, info.borderDist);
+            } else if (borderDistanceKm < chainWidthKm) {
+                float shoulderFactor = smoothstep(chainWidthKm * 0.30, chainWidthKm * 0.48, borderDistanceKm) *
+                                       (1.0 - smoothstep(chainWidthKm * 0.72, chainWidthKm, borderDistanceKm));
                 uplift = shoulderFactor * 500.0 * div_strength;  // Épaules
             }
         } else {
@@ -591,6 +598,16 @@ float calculateTectonicUplift(PlateInfo info, bool isOceanic1, bool isOceanic2, 
         uplift = strength * 100.0 * (localNoise - 0.5) * 2.0;
     }
     
+    // Une compression même modérée construit une chaîne lisible et continue.
+    // Le bruit module la crête sans la découper en pics indépendants.
+    float compression = smoothstep(0.03, 0.45, convergence);
+    float chainProfile = exp(-pow(borderDistanceKm / chainWidthKm, 1.35));
+    float chainNoise = fbm(coords * (0.018 * params.feature_frequency_scale), 3, 0.55, 2.0, seed + 73191u);
+    float coherentChain = chainProfile * compression * mix(0.68, 1.18, chainNoise);
+    if (!localIsOceanic && (!isOceanic1 || !isOceanic2)) {
+        uplift += coherentChain * 850.0;
+    }
+
     return uplift * variation;
 }
 
@@ -604,12 +621,18 @@ float calculateTripleJunctionUplift(vec2 uv, vec3 coords, uint seed, float conti
     int plates[9];
     int numUnique = 0;
     
-    float pixelSizeU = 1.0 / float(params.width);
-    float pixelSizeV = 1.0 / float(params.height);
+    float chainPixels = clamp(
+        params.chain_width_km * float(params.width) /
+            max(TAU * params.planet_radius_km, 1.0),
+        2.0,
+        12.0
+    );
+    float pixelSizeU = chainPixels / float(params.width);
+    float pixelSizeV = chainPixels / float(params.height);
     
     for (int dy = -1; dy <= 1; dy++) {
         for (int dx = -1; dx <= 1; dx++) {
-            vec2 sampleUV = uv + vec2(float(dx) * pixelSizeU * 2.0, float(dy) * pixelSizeV * 2.0);
+            vec2 sampleUV = uv + vec2(float(dx) * pixelSizeU, float(dy) * pixelSizeV);
             sampleUV.x = fract(sampleUV.x);  // Wrap X
             sampleUV.y = clamp(sampleUV.y, 0.0, 1.0);
             
@@ -720,10 +743,10 @@ void main() {
     vec3 coords = getCylindricalCoords(pixel, params.width, params.height, params.cylinder_radius);
     
     // === FRÉQUENCES BASÉES SUR CYLINDER_RADIUS (cohérence avec legacy) ===
-    float base_freq = 2.0 / params.cylinder_radius;
-    float detail_freq = 1.504 / params.cylinder_radius;
-    float tectonic_freq = 0.4 / params.cylinder_radius;
-    float continental_freq = 0.8 / params.cylinder_radius;
+    float base_freq = 2.0 * params.feature_frequency_scale / params.cylinder_radius;
+    float detail_freq = 1.504 * pow(params.feature_frequency_scale, 1.15) / params.cylinder_radius;
+    float tectonic_freq = 0.4 * params.feature_frequency_scale / params.cylinder_radius;
+    float continental_freq = 0.8 * params.feature_frequency_scale / params.cylinder_radius;
     
     // === MASQUE CONTINENTAL (indépendant des plaques) ===
     // Crée la dichotomie océan/continent de façon naturelle

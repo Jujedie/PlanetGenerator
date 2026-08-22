@@ -786,12 +786,19 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	# - float cylinder_radius (4 bytes)
 	# - float ocean_threshold (4 bytes) - seuil océan/continent
 	# - float padding3 (4 bytes)
-	# Total : 32 bytes (aligné sur 16 bytes pour std140)
+	# - float planet_radius_km, uint active_plate_count (8 bytes)
+	# - float feature_frequency_scale, chain_width_km (8 bytes)
+	# Total : 48 bytes (aligné sur 16 bytes pour std140)
 	
 	var seed_val = int(params.get("seed", 12345))
 	var elevation_modifier = float(params.get("terrain_scale", 0.0))
 	var sea_level = float(params.get("sea_level", 0.0))
 	var cylinder_radius = float(w) / (2.0 * PI)  # Rayon du cylindre pour le bruit seamless
+	var planet_radius_km = maxf(float(params.get("planet_radius", 150.0)), 1.0)
+	var radius_scale = maxf(planet_radius_km / 150.0, 0.01)
+	var active_plate_count = clampi(int(round(12.0 * pow(radius_scale, 0.55))), 8, 48)
+	var feature_frequency_scale = clampf(pow(radius_scale, 0.45), 0.65, 3.0)
+	var chain_width_km = clampf(6.0 * pow(radius_scale, 0.35), 4.0, 18.0)
 	
 	# Convertir pourcentage océan en seuil FBM
 	var ocean_ratio = float(params.get("ocean_ratio", 55.0))
@@ -799,7 +806,7 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# Créer le buffer de données (PackedByteArray)
 	var buffer_bytes = PackedByteArray()
-	buffer_bytes.resize(32)
+	buffer_bytes.resize(48)
 	
 	# Écrire les données (little-endian)
 	buffer_bytes.encode_u32(0, seed_val)           # seed
@@ -810,6 +817,10 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	buffer_bytes.encode_float(20, cylinder_radius)  # cylinder_radius
 	buffer_bytes.encode_float(24, ocean_threshold)  # ocean_threshold
 	buffer_bytes.encode_float(28, 0.0)              # padding3
+	buffer_bytes.encode_float(32, planet_radius_km)
+	buffer_bytes.encode_u32(36, active_plate_count)
+	buffer_bytes.encode_float(40, feature_frequency_scale)
+	buffer_bytes.encode_float(44, chain_width_km)
 	
 	# 2. Création du Buffer Uniforme
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
@@ -839,6 +850,9 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  Sea Level: ", sea_level)
 	print("  Cylinder Radius: ", cylinder_radius)
 	print("  Ocean Ratio: ", ocean_ratio, "% -> threshold: ", ocean_threshold)
+	print("  Physical tectonics: ", active_plate_count, " plates | feature scale: ",
+		snappedf(feature_frequency_scale, 0.01), " | chain width: ",
+		snappedf(chain_width_km, 0.1), " km")
 	print("  Dispatch: ", groups_x, "x", groups_y, " groupes (", w, "x", h, " pixels)")
 	
 	# 6. Dispatch du compute shader
@@ -1254,6 +1268,18 @@ func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
 	var gravity = compute_gravity(planet_radius_km, float(params.get("planet_density", 5.51)))
 	var pixel_size_x_m = (2.0 * PI * planet_radius_km * 1000.0) / float(max(w, 1))
 	var pixel_size_y_m = (PI * planet_radius_km * 1000.0) / float(max(h, 1))
+	var nominal_cell_size_m = sqrt(pixel_size_x_m * pixel_size_y_m)
+	var sampling_factor = clampf(sqrt(1000.0 / maxf(nominal_cell_size_m, 1.0)), 0.20, 1.35)
+	var radius_erosion_scale = clampf(pow(maxf(planet_radius_km / 150.0, 0.01), 0.12), 0.75, 1.30)
+	# Les contrôles UI restent des intensités géologiques; cette conversion
+	# empêche une cellule de plusieurs kilomètres de devenir un canyon géant.
+	erosion_rate *= 0.45 * sampling_factor * radius_erosion_scale
+	var max_erosion_per_pass_m = clampf(2.5 * sampling_factor, 0.35, 3.0)
+	var channel_flux_threshold = clampf(
+		0.008 * pow(maxf(nominal_cell_size_m / 1000.0, 0.01), 0.25),
+		0.005,
+		0.04
+	)
 	
 	# Paramètres pour l'accumulation de flux
 	var flux_iterations = int(params.get("flux_iterations", 10))
@@ -1264,6 +1290,8 @@ func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  Rain Rate: ", rain_rate, " | Evap Rate: ", evap_rate)
 	print("  Flow Rate: ", flow_rate)
 	print("  Erosion/Deposition: ", erosion_rate, "/", deposition_rate)
+	print("  Canyon control: max ", snappedf(max_erosion_per_pass_m, 0.01),
+		" m/pass | channel flux ", snappedf(channel_flux_threshold, 0.0001))
 	print("  Nominal cell size: ", snappedf(pixel_size_x_m, 0.01), "m × ", snappedf(pixel_size_y_m, 0.01), "m")
 	print("  Surface gravity: ", snappedf(gravity, 0.001), " m/s²")
 	
@@ -1279,7 +1307,9 @@ func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
 		# === PASSE 3 : TRANSPORT SÉDIMENT B->A ===
 		# Chaque itération se termine donc dans geo; aucune itération impaire ne
 		# peut relire ou restaurer un état temporaire obsolète.
-		_dispatch_erosion_sediment(w, h, groups_x, groups_y, erosion_rate, deposition_rate, capacity_multiplier, sea_level, pixel_size_x_m, pixel_size_y_m, true)
+		_dispatch_erosion_sediment(w, h, groups_x, groups_y, erosion_rate,
+			deposition_rate, capacity_multiplier, sea_level, pixel_size_x_m,
+			pixel_size_y_m, max_erosion_per_pass_m, channel_flux_threshold, true)
 	
 	# === PASSE 4 : ACCUMULATION DE FLUX (pour rivières) ===
 	print("  • Accumulation de flux (", flux_iterations, " passes)")
@@ -1391,7 +1421,11 @@ func _dispatch_erosion_flow(w: int, h: int, groups_x: int, groups_y: int, flow_r
 	rd.free_rid(param_buffer)
 
 ## Dispatch le shader de transport de sédiments
-func _dispatch_erosion_sediment(w: int, h: int, groups_x: int, groups_y: int, erosion_rate: float, deposition_rate: float, capacity_multiplier: float, sea_level: float, pixel_size_x_m: float, pixel_size_y_m: float, use_swap: bool) -> void:
+func _dispatch_erosion_sediment(w: int, h: int, groups_x: int, groups_y: int,
+		erosion_rate: float, deposition_rate: float, capacity_multiplier: float,
+		sea_level: float, pixel_size_x_m: float, pixel_size_y_m: float,
+		max_erosion_per_pass_m: float, channel_flux_threshold: float,
+		use_swap: bool) -> void:
 	var uniform_set_name = "erosion_sediment_textures_swap" if use_swap else "erosion_sediment_textures"
 	if not gpu.uniform_sets.has(uniform_set_name) or not gpu.uniform_sets[uniform_set_name].is_valid():
 		return
@@ -1417,8 +1451,8 @@ func _dispatch_erosion_sediment(w: int, h: int, groups_x: int, groups_y: int, er
 	buffer_bytes.encode_float(28, bedrock_hardness)
 	buffer_bytes.encode_float(32, pixel_size_x_m)
 	buffer_bytes.encode_float(36, pixel_size_y_m)
-	buffer_bytes.encode_float(40, 0.0)
-	buffer_bytes.encode_float(44, 0.0)
+	buffer_bytes.encode_float(40, max_erosion_per_pass_m)
+	buffer_bytes.encode_float(44, channel_flux_threshold)
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
 	if not param_buffer.is_valid():
@@ -3122,9 +3156,8 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	var seed_val = int(params.get("seed", 12345))
 	var sea_level = float(params.get("sea_level", 0.0))
-	var nb_cases_region = int(params.get("nb_cases_regions", 50))
 	var ocean_ratio = clampf(float(params.get("ocean_ratio", 55.0)), 0.0, 95.0)
-	var atmosphere_type = int(params.get("atmosphere_type", 0))
+	var atmosphere_type = int(params.get("planet_type", 0))
 	
 	# Si pas d'atmosphère, pas de régions (planète sans vie)
 	if atmosphere_type == 3:
@@ -3133,29 +3166,33 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# Paramètres de coûts
 	var cost_flat = float(params.get("region_cost_flat", 1.0))
-	var cost_uphill = float(params.get("region_cost_uphill", 2.0))
+	var cost_uphill = float(params.get("region_cost_hill", params.get("region_cost_uphill", 2.0)))
 	var cost_river = float(params.get("region_cost_river", 3.0))
 	var river_threshold = float(params.get("region_river_threshold", 1.0))
 	var budget_variation = float(params.get("region_budget_variation", 0.5))
-	var noise_strength = float(params.get("region_noise_strength", 3.0))  # Perturbation en pixels pour frontières organiques (JFA)
+	var noise_strength = clampf(float(params.get("region_noise_strength", 0.5)), 0.0, 2.0)
 	
-	# JFA : ceil(log2(max_dim)) + 2 passes supplémentaires à step=1 pour robustesse
-	# Pour une carte 2048 : log2(2048)=11, donc 13 passes au lieu de 4096+
+	# La croissance locale ne saute jamais par-dessus la mer. Le nombre de
+	# passes ne définit pas la taille politique : il ne fait qu'assurer la
+	# couverture topologique de la projection.
 	var max_dim = max(w, h)
-	var jfa_log_steps = ceili(log(float(max_dim)) / log(2.0))
-	var region_iterations = int(params.get("region_iterations", jfa_log_steps + 2))
-	
-	# nb_cases_regions représente le nombre de régions finales documenté dans
-	# l'interface. On génère plusieurs départements par région, puis le builder
-	# CPU regroupe ces unités en respectant la connectivité.
-	var target_departments = maxi(nb_cases_region * 12, 12)
 	var expected_land_pixels = maxf(float(w * h) * (1.0 - ocean_ratio / 100.0), 1.0)
+	var physical_targets := HierarchyBuilder.compute_physical_targets(
+		params, false, int(round(expected_land_pixels))
+	)
+	var target_regions = int(physical_targets["regions"])
+	var target_departments = int(physical_targets["departments"])
 	var seed_probability = clampf(float(target_departments) / expected_land_pixels, 0.000001, 0.02)
+	var mean_department_spacing_px = sqrt(expected_land_pixels / float(maxi(target_departments, 1)))
+	var requested_iterations = int(params.get("region_iterations", max_dim * 2))
+	var region_iterations = clampi(requested_iterations, max_dim, max_dim * 2)
 
-	print("  Seed: ", seed_val, " | Régions cibles: ", nb_cases_region,
+	print("  Seed: ", seed_val, " | Régions cibles: ", target_regions,
 		" | Départements cibles: ", target_departments)
-	print("  Bruit frontières: ", noise_strength, " px")
-	print("  Itérations JFA: ", region_iterations, " (log2(", max_dim, ")=", jfa_log_steps, ")")
+	print("  Surface terrestre: ", snappedf(float(physical_targets["surface_km2"]), 1.0),
+		" km² | espacement moyen: ", snappedf(mean_department_spacing_px, 0.1), " px")
+	print("  Irrégularité organique: ", noise_strength,
+		" | passes topologiques: ", region_iterations)
 	
 	# Initialiser les textures de région
 	gpu.initialize_region_textures()
@@ -3164,13 +3201,13 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  • Placement des seeds de régions...")
 	_dispatch_region_seed_placement(w, h, groups_x, groups_y, seed_val, seed_probability, sea_level, budget_variation)
 	
-	# === PASSE 2 : CROISSANCE JFA (Jump Flooding Algorithm) ===
-	print("  • Croissance des régions JFA (", region_iterations, " passes)...")
+	# === PASSE 2 : CROISSANCE LOCALE MASQUÉE ===
+	print("  • Croissance organique connexe (", region_iterations, " passes)...")
 	for pass_idx in range(region_iterations):
-		# JFA : step diminue par puissances de 2 (1024, 512, ..., 2, 1, 1)
-		var step_size = maxi(1, int(pow(2, jfa_log_steps - 1 - pass_idx)))
 		var use_swap = (pass_idx % 2 == 1)
-		_dispatch_region_growth(w, h, groups_x, groups_y, step_size, seed_val, sea_level, river_threshold, cost_flat, cost_uphill, cost_river, noise_strength, use_swap)
+		_dispatch_region_growth(w, h, groups_x, groups_y, 1, seed_val,
+			sea_level, river_threshold, cost_flat, cost_uphill, cost_river,
+			noise_strength, mean_department_spacing_px, use_swap)
 	
 	# Si nombre impair de passes, copier le résultat vers la texture principale
 	if region_iterations % 2 == 1:
@@ -3178,8 +3215,8 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# === PASSE 2.5 : NETTOYAGE FINAL (sécurité pour îles isolées) ===
 	print("  • Nettoyage final (sécurité)...")
-	# JFA couvre >99% des pixels terrestres, quelques passes suffisent
-	var cleanup_passes = 3
+	# Propagation strictement 4-connexe : aucun saut au-dessus du masque.
+	var cleanup_passes = maxi(4, ceili(mean_department_spacing_px))
 	for cleanup_pass in range(cleanup_passes):
 		var use_swap = ((region_iterations + cleanup_pass) % 2 == 1)
 		_dispatch_region_cleanup(w, h, groups_x, groups_y, seed_val, use_swap)
@@ -3257,7 +3294,10 @@ func _dispatch_region_seed_placement(w: int, h: int, groups_x: int, groups_y: in
 	rd.free_rid(tex_set)
 
 ## Dispatch le shader de croissance des régions (Dijkstra-like)
-func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int, pass_idx: int, seed_val: int, sea_level: float, river_threshold: float, cost_flat: float, cost_uphill: float, cost_river: float, noise_strength: float, use_swap: bool) -> void:
+func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int,
+		pass_idx: int, seed_val: int, sea_level: float, river_threshold: float,
+		cost_flat: float, cost_uphill: float, cost_river: float,
+		noise_strength: float, mean_spacing_px: float, use_swap: bool) -> void:
 	if not gpu.shaders.has("region_growth") or not gpu.shaders["region_growth"].is_valid():
 		push_warning("[Orchestrator] ⚠️ region_growth shader non disponible")
 		return
@@ -3319,7 +3359,7 @@ func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int, pass_
 	buffer_bytes.encode_float(28, cost_uphill)
 	buffer_bytes.encode_float(32, cost_river)
 	buffer_bytes.encode_float(36, noise_strength)  # Force du bruit
-	buffer_bytes.encode_float(40, 0.0)  # padding
+	buffer_bytes.encode_float(40, mean_spacing_px)
 	buffer_bytes.encode_float(44, 0.0)  # padding
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
@@ -3498,7 +3538,6 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	var seed_val = int(params.get("seed", 12345))
 	var sea_level = float(params.get("sea_level", 0.0))
-	var nb_cases_ocean_region = int(params.get("nb_cases_ocean_regions", 100))
 	var ocean_ratio = clampf(float(params.get("ocean_ratio", 55.0)), 5.0, 100.0)
 	
 	# Paramètres de coûts pour océans
@@ -3506,9 +3545,22 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	var cost_deeper = float(params.get("ocean_cost_deeper", 2.0))
 	var noise_strength = float(params.get("ocean_noise_strength", 0.5))  # Réduit pour ne pas dominer les coûts
 	
-	var ocean_iterations = int(params.get("ocean_iterations", max(w, h) * 2))
+	var expected_water_pixels = maxf(float(w * h) * ocean_ratio / 100.0, 1.0)
+	var physical_targets := HierarchyBuilder.compute_physical_targets(
+		params, true, int(round(expected_water_pixels))
+	)
+	var target_ocean_regions = int(physical_targets["regions"])
+	var target_departments = int(physical_targets["departments"])
+	var seed_probability = clampf(float(target_departments) / expected_water_pixels, 0.000001, 0.02)
+	var mean_department_spacing_px = sqrt(expected_water_pixels / float(maxi(target_departments, 1)))
+	var max_dim = max(w, h)
+	var requested_iterations = int(params.get("ocean_iterations", max_dim * 2))
+	var ocean_iterations = clampi(requested_iterations, max_dim, max_dim * 2)
 	
-	print("  Seed: ", seed_val, " | Cases/Région: ", nb_cases_ocean_region)
+	print("  Seed: ", seed_val, " | Régions maritimes cibles: ", target_ocean_regions,
+		" | Départements cibles: ", target_departments)
+	print("  Surface maritime: ", snappedf(float(physical_targets["surface_km2"]), 1.0),
+		" km² | espacement moyen: ", snappedf(mean_department_spacing_px, 0.1), " px")
 	print("  Coûts - Plat: ", cost_flat, " | Profondeur: ", cost_deeper)
 	print("  Bruit frontières: ", noise_strength)
 	print("  Itérations de croissance: ", ocean_iterations)
@@ -3518,21 +3570,24 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# === PASSE 1 : PLACEMENT DES SEEDS ===
 	print("  • Placement des seeds de régions océaniques...")
-	_dispatch_ocean_region_seed_placement(w, h, groups_x, groups_y, seed_val, nb_cases_ocean_region, sea_level, ocean_ratio)
+	_dispatch_ocean_region_seed_placement(w, h, groups_x, groups_y, seed_val,
+		target_ocean_regions, sea_level, seed_probability)
 	
 	# === PASSE 2 : CROISSANCE ITÉRATIVE ===
 	print("  • Croissance des régions océaniques (", ocean_iterations, " passes)...")
 	for pass_idx in range(ocean_iterations):
 		var use_swap = (pass_idx % 2 == 1)
-		_dispatch_ocean_region_growth(w, h, groups_x, groups_y, pass_idx, seed_val, sea_level, cost_flat, cost_deeper, noise_strength, use_swap)
+		_dispatch_ocean_region_growth(w, h, groups_x, groups_y, pass_idx,
+			seed_val, sea_level, cost_flat, cost_deeper, noise_strength,
+			mean_department_spacing_px, use_swap)
 	
 	if ocean_iterations % 2 == 1:
 		_copy_ocean_region_textures(w, h)
 	
 	# === PASSE 2.5 : NETTOYAGE FINAL ===
 	print("  • Nettoyage final (couverture complète)...")
-	# Chaque passe cherche jusqu'à 16 pixels de rayon, donc max(w,h)/16 passes suffisent
-	var cleanup_passes = max(w, h) / 16 + 1
+	# Le nettoyage reste local afin de préserver les composantes maritimes.
+	var cleanup_passes = maxi(4, ceili(mean_department_spacing_px))
 	for cleanup_pass in range(cleanup_passes):
 		var use_swap = ((ocean_iterations + cleanup_pass) % 2 == 1)
 		_dispatch_ocean_region_cleanup(w, h, groups_x, groups_y, seed_val, use_swap)
@@ -3547,7 +3602,9 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	print("[Orchestrator] ✅ Phase 4.5 : Régions océaniques terminées")
 
 ## Dispatch le shader de placement des seeds de région océanique
-func _dispatch_ocean_region_seed_placement(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, nb_cases_region: int, sea_level: float, ocean_ratio: float) -> void:
+func _dispatch_ocean_region_seed_placement(w: int, h: int, groups_x: int,
+		groups_y: int, seed_val: int, nb_cases_region: int, sea_level: float,
+		seed_probability: float) -> void:
 	if not gpu.shaders.has("ocean_region_seed_placement") or not gpu.shaders["ocean_region_seed_placement"].is_valid():
 		push_warning("[Orchestrator] ⚠️ ocean_region_seed_placement shader non disponible")
 		return
@@ -3570,11 +3627,6 @@ func _dispatch_ocean_region_seed_placement(w: int, h: int, groups_x: int, groups
 	tex_uniforms.append(gpu.create_texture_uniform(3, gpu.textures["ocean_region_cost"]))
 	
 	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["ocean_region_seed_placement"], 0)
-	
-	var area_total = w * h
-	var target_departments = maxi(nb_cases_region * 12, 12)
-	var expected_water_pixels = maxf(float(area_total) * ocean_ratio / 100.0, 1.0)
-	var seed_probability = clampf(float(target_departments) / expected_water_pixels, 0.000001, 0.02)
 	
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(32)
@@ -3609,7 +3661,10 @@ func _dispatch_ocean_region_seed_placement(w: int, h: int, groups_x: int, groups
 	rd.free_rid(tex_set)
 
 ## Dispatch le shader de croissance des régions océaniques
-func _dispatch_ocean_region_growth(w: int, h: int, groups_x: int, groups_y: int, pass_idx: int, seed_val: int, sea_level: float, cost_flat: float, cost_deeper: float, noise_strength: float, use_swap: bool) -> void:
+func _dispatch_ocean_region_growth(w: int, h: int, groups_x: int,
+		groups_y: int, pass_idx: int, seed_val: int, sea_level: float,
+		cost_flat: float, cost_deeper: float, noise_strength: float,
+		mean_spacing_px: float, use_swap: bool) -> void:
 	if not gpu.shaders.has("ocean_region_growth") or not gpu.shaders["ocean_region_growth"].is_valid():
 		push_warning("[Orchestrator] ⚠️ ocean_region_growth shader non disponible")
 		return
@@ -3656,7 +3711,7 @@ func _dispatch_ocean_region_growth(w: int, h: int, groups_x: int, groups_y: int,
 	buffer_bytes.encode_float(20, cost_flat)
 	buffer_bytes.encode_float(24, cost_deeper)
 	buffer_bytes.encode_float(28, noise_strength)
-	buffer_bytes.encode_float(32, 0.0)
+	buffer_bytes.encode_float(32, mean_spacing_px)
 	buffer_bytes.encode_float(36, 0.0)
 	buffer_bytes.encode_float(40, 0.0)
 	buffer_bytes.encode_float(44, 0.0)
@@ -3684,6 +3739,7 @@ func _dispatch_ocean_region_growth(w: int, h: int, groups_x: int, groups_y: int,
 
 ## Copie les textures océaniques du buffer temp vers le buffer principal
 func _copy_ocean_region_textures(w: int, h: int) -> void:
+	_copy_texture(gpu.textures["ocean_region_map_temp"], gpu.textures["ocean_region_map"], w, h)
 	_copy_texture(gpu.textures["ocean_region_cost_temp"], gpu.textures["ocean_region_cost"], w, h)
 
 ## Dispatch le shader de nettoyage des régions océaniques

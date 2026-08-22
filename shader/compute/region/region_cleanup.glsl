@@ -4,9 +4,8 @@
 // ===========================================================================
 // REGION CLEANUP SHADER
 // ===========================================================================
-// Phase de nettoyage agressif : assigne TOUTE terre non couverte à la région
-// la plus proche, sans considération de coût. Garantit qu'aucun pixel terrestre
-// ne reste sans région après la phase de croissance.
+// Phase de nettoyage connexe : propage uniquement depuis les quatre voisins
+// terrestres directs. Aucun ID ne peut sauter par-dessus une mer.
 //
 // Entrées :
 //   - water_mask (binding 0) : masque eau (reste infranchissable)
@@ -45,16 +44,20 @@ int clampY(int y, int h) {
     return clamp(y, 0, h - 1);
 }
 
-// Voisinage étendu 8-connecté pour nettoyage agressif
-const ivec2 NEIGHBORS[8] = ivec2[8](
+uint hash(uint x) {
+    x ^= x >> 16u;
+    x *= 0x85ebca6bu;
+    x ^= x >> 13u;
+    x *= 0xc2b2ae35u;
+    x ^= x >> 16u;
+    return x;
+}
+
+const ivec2 NEIGHBORS[4] = ivec2[4](
     ivec2(-1, 0),   // Gauche
     ivec2(1, 0),    // Droite
     ivec2(0, -1),   // Haut
-    ivec2(0, 1),    // Bas
-    ivec2(-1, -1),  // Haut-gauche
-    ivec2(1, -1),   // Haut-droite
-    ivec2(-1, 1),   // Bas-gauche
-    ivec2(1, 1)     // Bas-droite
+    ivec2(0, 1)     // Bas
 );
 
 // === MAIN ===
@@ -87,33 +90,40 @@ void main() {
         return;
     }
     
-    // Pas encore assigné : chercher dans un rayon croissant (jusqu'à 16 pixels)
+    // Pas encore assigné : adopter seulement une région terrestre adjacente.
     uint assigned_region = 0xFFFFFFFFu;
-    
-    // Chercher en spirale croissante jusqu'à trouver une région
-    for (int radius = 1; radius <= 16 && assigned_region == 0xFFFFFFFFu; radius++) {
-        for (int dy = -radius; dy <= radius; dy++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                // Seulement le bord du carré à ce rayon
-                if (abs(dx) != radius && abs(dy) != radius) continue;
-                
-                int nx = wrapX(pixel.x + dx, w);
-                int ny = clampY(pixel.y + dy, h);
-                
-                ivec2 neighbor_pos = ivec2(nx, ny);
-                
-                uint neighbor_water = imageLoad(water_mask, neighbor_pos).r;
-                if (neighbor_water > 0u) continue;
-                
-                uint neighbor_region = imageLoad(region_map_in, neighbor_pos).r;
-                
-                if (neighbor_region != 0xFFFFFFFFu) {
-                    assigned_region = neighbor_region;
-                    break;
-                }
-            }
-            if (assigned_region != 0xFFFFFFFFu) break;
+    for (int i = 0; i < 4; i++) {
+        int nx = wrapX(pixel.x + NEIGHBORS[i].x, w);
+        int ny = clampY(pixel.y + NEIGHBORS[i].y, h);
+        ivec2 neighbor_pos = ivec2(nx, ny);
+        if (imageLoad(water_mask, neighbor_pos).r > 0u) continue;
+        uint neighbor_region = imageLoad(region_map_in, neighbor_pos).r;
+        if (neighbor_region != 0xFFFFFFFFu &&
+                (assigned_region == 0xFFFFFFFFu || neighbor_region < assigned_region)) {
+            assigned_region = neighbor_region;
         }
+    }
+
+    // Si toute la composante était dépourvue de seed, ses minima locaux
+    // déterministes démarrent des départements indépendants. Les passes
+    // suivantes couvrent la composante sans jamais franchir la mer.
+    if (assigned_region == 0xFFFFFFFFu) {
+        uint linear = uint(pixel.y * w + pixel.x);
+        uint my_hash = hash(linear ^ params.seed);
+        bool local_minimum = true;
+        for (int i = 0; i < 4; i++) {
+            int nx = wrapX(pixel.x + NEIGHBORS[i].x, w);
+            int ny = clampY(pixel.y + NEIGHBORS[i].y, h);
+            ivec2 neighbor_pos = ivec2(nx, ny);
+            if (imageLoad(water_mask, neighbor_pos).r > 0u) continue;
+            uint neighbor_linear = uint(ny * w + nx);
+            uint neighbor_hash = hash(neighbor_linear ^ params.seed);
+            if (neighbor_hash < my_hash ||
+                    (neighbor_hash == my_hash && neighbor_linear < linear)) {
+                local_minimum = false;
+            }
+        }
+        if (local_minimum) assigned_region = linear;
     }
     
     // Écrire le résultat

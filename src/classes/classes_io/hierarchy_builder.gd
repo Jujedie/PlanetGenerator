@@ -16,6 +16,9 @@ extends RefCounted
 ## ============================================================================
 
 const SEUIL_DOMINANCE       : float = 0.70
+const REFERENCE_RADIUS_KM   : float = 150.0
+const REFERENCE_LAND_RATIO  : float = 0.45
+const DEPARTMENTS_PER_REGION: float = 8.0
 
 ## Offset pour les IDs de groupes (évite collision avec les IDs département)
 const _ID_LAND : int = 10_000_000
@@ -28,6 +31,49 @@ const _ID_SEA  : int = 50_000_000
 ## simplement voisins : les fusionner créait un seul territoire déconnecté.
 static func compute_merge_map(_data: PackedByteArray, _w: int, _h: int) -> Dictionary:
 	return {}
+
+## Calcule les densités administratives depuis la surface physique et non
+## depuis le nombre de texels. Les valeurs de l'interface sont interprétées
+## comme une densité de référence pour une planète de 150 km de rayon.
+## L'exposant sous-linéaire agrandit progressivement les territoires sur les
+## grands mondes au lieu d'y produire une poussière de micro-pays.
+static func compute_physical_targets(settings: Dictionary, maritime: bool = false,
+		sample_capacity: int = 0x7FFFFFFF) -> Dictionary:
+	var radius_km := maxf(float(settings.get("planet_radius", REFERENCE_RADIUS_KM)), 1.0)
+	var ocean_fraction := clampf(float(settings.get("ocean_ratio", 55.0)) / 100.0, 0.01, 0.99)
+	var coverage := ocean_fraction if maritime else 1.0 - ocean_fraction
+	var reference_coverage := 1.0 - REFERENCE_LAND_RATIO if maritime else REFERENCE_LAND_RATIO
+	var surface_km2 := 4.0 * PI * radius_km * radius_km * coverage
+	var reference_surface_km2 := (
+		4.0 * PI * REFERENCE_RADIUS_KM * REFERENCE_RADIUS_KM * reference_coverage
+	)
+	var surface_scale := maxf(surface_km2 / maxf(reference_surface_km2, 1.0), 0.0001)
+	var radius_scale := maxf(radius_km / REFERENCE_RADIUS_KM, 0.01)
+	var base_regions_key := "nb_cases_ocean_regions" if maritime else "nb_cases_regions"
+	var base_regions_default := 100 if maritime else 50
+	var base_regions := maxf(float(settings.get(base_regions_key, base_regions_default)), 1.0)
+	var regions := maxi(1, int(round(base_regions * pow(surface_scale, 0.72))))
+	var departments := maxi(regions, int(round(float(regions) * DEPARTMENTS_PER_REGION)))
+
+	# Une cellule administrative doit garder plusieurs texels dans la sortie,
+	# même lorsqu'un aperçu basse résolution représente une grande planète.
+	var capacity := maxi(sample_capacity, 1)
+	departments = mini(departments, maxi(1, capacity / 20))
+	regions = mini(regions, departments)
+
+	var middle_divisor := (6.0 if maritime else 4.0) * pow(radius_scale, 0.20)
+	var middle := clampi(int(round(float(regions) / maxf(middle_divisor, 1.0))), 1, regions)
+	var top_base := 3.0 if maritime else 4.0
+	var top_exponent := 0.35 if maritime else 0.42
+	var top := clampi(int(round(top_base * pow(radius_scale, top_exponent))), 1, middle)
+
+	return {
+		"surface_km2": surface_km2,
+		"regions": regions,
+		"departments": departments,
+		"middle": middle,
+		"top": top,
+	}
 
 ## Construit la hiérarchie terrestre à 3 niveaux.
 ## Retourne [dept→région, dept→pays, dept→continent].
@@ -42,17 +88,15 @@ static func build_land(data: PackedByteArray, w: int, h: int,
 	print("    %d départements terrestres" % depts.size())
 
 	var gen := [_ID_LAND]
-	var target_regions := clampi(int(settings.get("nb_cases_regions", 50)), 1, depts.size())
-	var target_countries := clampi(int(round(sqrt(float(target_regions)) * 1.15)), 1, target_regions)
-	var radius_km := maxf(float(settings.get("planet_radius", 500.0)), 1.0)
-	var radius_scale := log(maxf(radius_km / 500.0, 1.0)) / log(2.0)
-	var target_continents := clampi(int(round(2.0 + radius_scale * 1.25)), 1, target_countries)
+	var targets := compute_physical_targets(settings, false, depts.size() * 20)
+	var target_regions := clampi(int(targets["regions"]), 1, depts.size())
+	var target_countries := clampi(int(targets["middle"]), 1, target_regions)
+	var target_continents := clampi(int(targets["top"]), 1, target_countries)
 	var depts_per_region := maxi(1, ceili(float(depts.size()) / float(target_regions)))
 
 	# 0→1  Département → Région
 	var r1 := _grouper(depts, adj0, cref,
 		depts_per_region, true, 0.0, gen)
-	_reassigner(depts, adj0, r1)
 	print("    → %d régions" % _unique_values(r1).size())
 
 	# 1→2  Région → Pays
@@ -63,7 +107,6 @@ static func build_land(data: PackedByteArray, w: int, h: int,
 	var regions_per_country := maxi(1, ceili(float(rids.size()) / float(target_countries)))
 	var r2   := _grouper(rids, adj1, cr1,
 		regions_per_country, true, 0.0, gen)
-	_reassigner(rids, adj1, r2)
 	print("    → %d pays" % _unique_values(r2).size())
 
 	# 2→3  Pays → Continent. Aucun pont de distance artificiel ne relie des
@@ -75,7 +118,8 @@ static func build_land(data: PackedByteArray, w: int, h: int,
 	var countries_per_continent := maxi(1, ceili(float(pids.size()) / float(target_continents)))
 	var r3    := _grouper(pids, adj2, cr2,
 		countries_per_continent, false, 0.0, gen)
-	_reassigner(pids, adj2, r3)
+	# Ne pas forcer une enclave continentale à rejoindre le continent qui
+	# l'entoure : les enclaves terrestres sont autorisées et restent stables.
 	print("    → %d continents" % _unique_values(r3).size())
 
 	# Composition : dept → pays, dept → continent
@@ -102,11 +146,10 @@ static func build_sea(data: PackedByteArray, w: int, h: int,
 	print("    %d départements maritimes" % depts.size())
 
 	var gen := [_ID_SEA]
-	var target_regions := clampi(int(settings.get("nb_cases_ocean_regions", 100)), 1, depts.size())
-	var target_basins := clampi(int(round(sqrt(float(target_regions)) * 1.5)), 1, target_regions)
-	var radius_km := maxf(float(settings.get("planet_radius", 500.0)), 1.0)
-	var radius_scale := log(maxf(radius_km / 500.0, 1.0)) / log(2.0)
-	var target_oceans := clampi(int(round(2.0 + radius_scale)), 1, target_basins)
+	var targets := compute_physical_targets(settings, true, depts.size() * 20)
+	var target_regions := clampi(int(targets["regions"]), 1, depts.size())
+	var target_basins := clampi(int(targets["middle"]), 1, target_regions)
+	var target_oceans := clampi(int(targets["top"]), 1, target_basins)
 	var depts_per_region := maxi(1, ceili(float(depts.size()) / float(target_regions)))
 
 	# 0→1  Dept-mer → Région-mer

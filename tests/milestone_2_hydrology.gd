@@ -47,6 +47,8 @@ func _run() -> void:
 		int(short_iteration_case["downstream_flux_violations"]) == 0
 		and int(short_iteration_case["downstream_type_violations"]) == 0
 	)
+	var administrative_masks := bool(short_iteration_case.get("administrative_masks", false))
+	var administrative_continuity := bool(short_iteration_case.get("administrative_continuity", false))
 
 	print("[Milestone2Hydrology] flow_hash=", short_iteration_case["flow_hash"])
 	print("[Milestone2Hydrology] flux_hash=", short_iteration_case["flux_hash"])
@@ -62,6 +64,8 @@ func _run() -> void:
 	print("[Milestone2Hydrology] lake_cells_removed=", stats.get("lake_cells_removed"))
 	print("[Milestone2Hydrology] downstream_flux_violations=", short_iteration_case["downstream_flux_violations"])
 	print("[Milestone2Hydrology] downstream_type_violations=", short_iteration_case["downstream_type_violations"])
+	print("[Milestone2Hydrology] administrative_masks=", administrative_masks)
+	print("[Milestone2Hydrology] administrative_continuity=", administrative_continuity)
 
 	if not stable:
 		push_error("Hydrology still depends on river_iterations")
@@ -73,8 +77,13 @@ func _run() -> void:
 		push_error("Hydrology contains invalid non-polar land sinks")
 	if not hierarchical:
 		push_error("Accumulated river flux decreases along a downstream land edge")
+	if not administrative_masks:
+		push_error("Administrative partitions do not strictly respect the land/water mask")
+	if not administrative_continuity:
+		push_error("An administrative department is disconnected")
 
-	_quit(0 if stable and conserved and acyclic and drains and hierarchical else 1)
+	_quit(0 if stable and conserved and acyclic and drains and hierarchical
+		and administrative_masks and administrative_continuity else 1)
 
 func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 	var params := {
@@ -145,8 +154,72 @@ func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 			river_type_data,
 		),
 	}
+
+	# Exécuter une fois les deux partitions administratives sur le masque d'eau
+	# réel afin de vérifier leurs contrats topologiques, sans doubler le coût du
+	# scénario de déterminisme hydrologique.
+	if obsolete_river_iterations == 1:
+		params["nb_cases_regions"] = 50
+		params["nb_cases_ocean_regions"] = 100
+		params["region_noise_strength"] = 0.5
+		params["ocean_noise_strength"] = 0.5
+		params["region_iterations"] = maxi(test_resolution.x, test_resolution.y)
+		params["ocean_iterations"] = maxi(test_resolution.x, test_resolution.y)
+		orchestrator.run_region_phase(params, test_resolution.x, test_resolution.y)
+		orchestrator.run_ocean_region_phase(params, test_resolution.x, test_resolution.y)
+		var land_regions := gpu.readback_texture_raw("region_map")
+		var sea_regions := gpu.readback_texture_raw("ocean_region_map")
+		var land_check := _validate_partition(land_regions, water_data, false)
+		var sea_check := _validate_partition(sea_regions, water_data, true)
+		result["administrative_masks"] = bool(land_check[0]) and bool(sea_check[0])
+		result["administrative_continuity"] = bool(land_check[1]) and bool(sea_check[1])
+
 	orchestrator.cleanup()
 	return result
+
+func _validate_partition(region_data: PackedByteArray, water_data: PackedByteArray,
+		maritime: bool) -> Array:
+	var pixel_count := test_resolution.x * test_resolution.y
+	if region_data.size() != pixel_count * 4 or water_data.size() != pixel_count:
+		return [false, false]
+
+	var mask_valid := true
+	var continuous := true
+	var visited := PackedByteArray()
+	visited.resize(pixel_count)
+	visited.fill(0)
+	var completed_ids: Dictionary = {}
+
+	for start in range(pixel_count):
+		var is_water := water_data[start] != 0
+		var eligible := is_water if maritime else not is_water
+		var region_id := int(region_data.decode_u32(start * 4))
+		if eligible != (region_id != 0xFFFFFFFF):
+			mask_valid = false
+		if not eligible or region_id == 0xFFFFFFFF or visited[start] != 0:
+			continue
+		if completed_ids.has(region_id):
+			continuous = false
+			continue
+
+		var frontier: Array[int] = [start]
+		visited[start] = 1
+		while not frontier.is_empty():
+			var current: int = frontier.pop_back()
+			var x: int = current % test_resolution.x
+			var y: int = current / test_resolution.x
+			for offset in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]:
+				var nx := posmod(x + offset.x, test_resolution.x)
+				var ny := clampi(y + offset.y, 0, test_resolution.y - 1)
+				var neighbor := ny * test_resolution.x + nx
+				if visited[neighbor] != 0:
+					continue
+				if int(region_data.decode_u32(neighbor * 4)) == region_id:
+					visited[neighbor] = 1
+					frontier.append(neighbor)
+		completed_ids[region_id] = true
+
+	return [mask_valid, continuous]
 
 func _count_downstream_flux_violations(
 	flow_data: PackedByteArray,

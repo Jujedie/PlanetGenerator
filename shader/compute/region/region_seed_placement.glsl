@@ -61,6 +61,44 @@ float hashToFloat(uint h) {
     return float(h) / float(0xFFFFFFFFu);
 }
 
+int wrapX(int x, int w) {
+    return (x % w + w) % w;
+}
+
+bool isLand(ivec2 p) {
+    uint waterType = imageLoad(water_mask, p).r;
+    float elevation = imageLoad(geo_texture, p).r;
+    return waterType == 0u && elevation >= params.sea_level;
+}
+
+// Garantit un seed aux îles/enclaves entièrement contenues dans une fenêtre
+// de 9x9. Une petite zone isolée reste ainsi autonome au lieu d'être rattachée
+// par un saut à travers la mer.
+bool isSmallComponentSeed(ivec2 pixel, int w, int h, uint pixelHash) {
+    const int RADIUS = 4;
+    bool touchesWindow = false;
+    uint bestHash = pixelHash;
+    ivec2 bestPixel = pixel;
+
+    for (int dy = -RADIUS; dy <= RADIUS; dy++) {
+        for (int dx = -RADIUS; dx <= RADIUS; dx++) {
+            int nx = wrapX(pixel.x + dx, w);
+            int ny = clamp(pixel.y + dy, 0, h - 1);
+            ivec2 candidate = ivec2(nx, ny);
+            if (!isLand(candidate)) continue;
+            if (abs(dx) == RADIUS || abs(dy) == RADIUS) touchesWindow = true;
+
+            uint candidateHash = hash3(uint(nx), uint(ny), params.seed);
+            if (candidateHash < bestHash ||
+                    (candidateHash == bestHash && (ny * w + nx) < (bestPixel.y * w + bestPixel.x))) {
+                bestHash = candidateHash;
+                bestPixel = candidate;
+            }
+        }
+    }
+    return !touchesWindow && all(equal(bestPixel, pixel));
+}
+
 // === MAIN ===
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
@@ -73,16 +111,7 @@ void main() {
     }
     
     // Vérifier si on est sur terre
-    uint water_type = imageLoad(water_mask, pixel).r;
-    bool is_water = (water_type > 0u);
-    
-    // Lire l'élévation
-    vec4 geo = imageLoad(geo_texture, pixel);
-    float height_val = geo.r;
-    bool is_above_sea = (height_val >= params.sea_level);
-    
-    // Un pixel est sur terre s'il n'est pas marqué eau ET au-dessus du niveau de la mer
-    bool is_land = !is_water && is_above_sea;
+    bool is_land = isLand(pixel);
     
     // Initialiser avec valeurs par défaut
     // region_map = 0xFFFFFFFF (invalide)
@@ -100,7 +129,8 @@ void main() {
     float random_value = hashToFloat(pixel_hash);
     
     // Ce pixel est un seed si son hash est sous la probabilité
-    bool is_seed = (random_value < params.seed_probability);
+    bool is_seed = (random_value < params.seed_probability) ||
+        isSmallComponentSeed(pixel, w, h, pixel_hash);
     
     if (is_seed) {
         // Ce pixel est un seed de région !
@@ -110,9 +140,8 @@ void main() {
         
         // Écrire le seed
         imageStore(region_map, pixel, uvec4(region_id, 0u, 0u, 0u));
-        // JFA : stocker la position du seed encodée (y * width + x + 1.0)
-        float packed_pos = float(uint(pixel.y) * params.width + uint(pixel.x)) + 1.0;
-        imageStore(region_cost, pixel, vec4(packed_pos, 0.0, 0.0, 0.0));
+        // Coût de chemin nul au seed. Sa position est déjà encodée par l'ID.
+        imageStore(region_cost, pixel, vec4(0.0));
     } else {
         // Pixel terre normal : en attente d'assignation
         imageStore(region_map, pixel, uvec4(0xFFFFFFFFu, 0u, 0u, 0u));

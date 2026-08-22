@@ -158,18 +158,19 @@ Ces paramètres s'appliquent principalement aux planètes **Sans Atmosphère** (
 | Paramètre | Défaut | Plage | Rôle |
 |-----------|--------|-------|------|
 | **Couverture nuageuse** (`cloud_coverage`) | 50% | 0–100% | Fraction de la surface couverte par des nuages. `100%` = planète totalement voilée (type Vénus). |
-| **Densité nuageuse** (`cloud_density`) | 80% | 0–100% | Intensité du masque nuageux. Le PNG stocke cette densité dans ses trois canaux de couleur avec un canal alpha opaque. N'affecte pas la simulation climatique. |
+| **Densité nuageuse** (`cloud_density`) | 80% | 0–100% | Opacité maximale des amas nuageux. Le PNG est exporté en RGBA8 avec un alpha nul dans le ciel clair et peut être utilisé directement comme texture transparente. N'affecte pas la simulation climatique. |
 
 ---
 
 ### 3.6 Régions terrestres
 
 La carte des régions divise la surface terrestre en territoires distincts.
-Des cellules de base en Voronoï perturbé sont regroupées uniquement par
+Des cellules organiques à croissance locale sont regroupées uniquement par
 adjacence selon la hiérarchie départements → régions → pays → continents.
-Le nombre demandé cible l'étage région ; le nombre de cellules de base est
-calculé automatiquement. Le nombre final de continents varie aussi avec le
-rayon de la planète.
+Elles ne traversent jamais le masque maritime. Le nombre demandé définit une
+densité de référence à 150 km de rayon ; les nombres et surfaces des quatre
+niveaux sont ensuite recalculés depuis la surface physique de la planète,
+indépendamment de la résolution de texture.
 
 | Paramètre | Défaut | Rôle |
 |-----------|--------|------|
@@ -187,8 +188,9 @@ rayon de la planète.
 
 Fonctionne de manière analogue aux régions terrestres, mais pour les zones
 sous-marines. La hiérarchie départements marins → régions marines → bassins
-→ océans reste fondée sur l'adjacence et le nombre final d'océans varie avec
-le rayon planétaire.
+→ océans reste strictement connexe, sans saut à travers une côte ni enclave
+maritime déconnectée. Ses densités sont également dérivées de la surface
+physique du monde.
 
 | Paramètre | Défaut | Rôle |
 |-----------|--------|------|
@@ -473,7 +475,7 @@ Le shader sélectionne le biome dont le centre de plage est le plus proche des v
 | `plaques_bordures_map.png` | `MAP_PLAQUES_BORDURES` | Frontières de plaques tectoniques |
 | `temperature_map.png` | `MAP_TEMPERATURE` *(via preview)* | Carte de température, palette violette-verte-rouge |
 | `precipitation_map.png` | `MAP_PRECIPITATION` | Carte de précipitations, palette magenta-bleue |
-| `clouds_map.png` | `MAP_CLOUDS` | Densité nuageuse en niveaux de gris opaques : noir = ciel clair, blanc = couverture maximale |
+| `clouds_map.png` | `MAP_CLOUDS` | Amas nuageux RGBA8 : ciel clair transparent, nuages blancs avec opacité variable |
 | `ice_caps_map.png` | `MAP_ICE` | Calottes glaciaires et zones de glace |
 | `water_map.png` | `MAP_WATER` | Eau de surface (lacs, mers, rivières) |
 | `river_map.png` | `MAP_RIVERS` | Réseau hydrographique (rivières et fleuves) |

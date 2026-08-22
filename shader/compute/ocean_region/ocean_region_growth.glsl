@@ -44,8 +44,10 @@ layout(set = 1, binding = 0, std140) uniform GrowthParams {
     float cost_flat;           // Coût profondeur plate/montante (1.0)
     float cost_deeper;         // Coût descente profondeur (2.0)
     float noise_strength;      // Force du bruit pour frontières irrégulières (10.0)
-    float padding1;
+    float mean_spacing_px;
     float padding2;
+    float padding3;
+    float padding4;
 } params;
 
 // === FONCTIONS UTILITAIRES ===
@@ -69,6 +71,45 @@ uint hash3(uint x, uint y, uint z) {
 
 float hashToFloat(uint h) {
     return float(h) / float(0xFFFFFFFFu);
+}
+
+float fade(float t) {
+    return t * t * (3.0 - 2.0 * t);
+}
+
+float valueNoise3D(vec3 p, uint seedOffset) {
+    vec3 base = floor(p);
+    vec3 f = fract(p);
+    vec3 u = vec3(fade(f.x), fade(f.y), fade(f.z));
+    ivec3 i = ivec3(base + vec3(10000.0));
+    float values[8];
+    int index = 0;
+    for (int dz = 0; dz <= 1; dz++) {
+        for (int dy = 0; dy <= 1; dy++) {
+            for (int dx = 0; dx <= 1; dx++) {
+                uint hx = uint(i.x + dx);
+                uint hy = uint(i.y + dy);
+                uint hz = uint(i.z + dz);
+                values[index++] = hashToFloat(hash(hx ^ hash(hy ^ hash(hz + seedOffset))));
+            }
+        }
+    }
+    float x00 = mix(values[0], values[1], u.x);
+    float x10 = mix(values[2], values[3], u.x);
+    float x01 = mix(values[4], values[5], u.x);
+    float x11 = mix(values[6], values[7], u.x);
+    return mix(mix(x00, x10, u.y), mix(x01, x11, u.y), u.z);
+}
+
+float organicBoundaryNoise(ivec2 pixel, int w, int h) {
+    const float TAU = 6.28318530718;
+    float angle = (float(pixel.x) + 0.5) / float(w) * TAU;
+    float latitude = ((float(pixel.y) + 0.5) / float(h) - 0.5) * 3.14159265359;
+    float featureCount = max(float(w) / max(params.mean_spacing_px, 2.0) * 0.50, 1.0);
+    vec3 p = vec3(cos(angle), latitude, sin(angle)) * featureCount;
+    float broad = valueNoise3D(p, params.seed + 17011u);
+    float detail = valueNoise3D(p * 2.1, params.seed + 29009u);
+    return broad * 0.72 + detail * 0.28;
 }
 
 int wrapX(int x, int w) {
@@ -155,13 +196,15 @@ void main() {
             edge_cost = params.cost_deeper;
         }
         
-        // Ajouter du bruit pour frontières irrégulières
-        // NOTE: Le bruit doit être CONSTANT par pixel (pas dépendre de pass_index)
-        // sinon les frontières "bougent" et les régions ne peuvent pas s'étendre de manière stable
-        uint noise_hash = hash3(uint(pixel.x), uint(pixel.y), params.seed);
-        float noise = hashToFloat(noise_hash) * params.noise_strength;
-        
-        float total_cost = neighbor_cost + edge_cost + noise;
+        // Bruit lisse et cylindrique : les frontières restent organiques et
+        // seamless sans le damier produit par un hash indépendant par pixel.
+        float noise = organicBoundaryNoise(pixel, w, h);
+        float organicFactor = mix(
+            1.0 - clamp(params.noise_strength, 0.0, 1.0) * 0.32,
+            1.0 + clamp(params.noise_strength, 0.0, 1.0) * 0.32,
+            noise
+        );
+        float total_cost = neighbor_cost + edge_cost * organicFactor;
         
         if (total_cost < best_cost) {
             best_cost = total_cost;

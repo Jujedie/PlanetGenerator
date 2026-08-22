@@ -2,14 +2,10 @@
 #version 450
 
 // ===========================================================================
-// REGION GROWTH SHADER (Jump Flooding Algorithm)
+// REGION GROWTH SHADER (coût de chemin connexe)
 // ===========================================================================
-// Propage les régions via JFA : chaque pixel vérifie 9 voisins à ±step_size.
-// Converge en O(log2(max_dim)) passes au lieu de O(max_dim) pour Dijkstra.
-//
-// La position du seed est encodée dans region_cost :
-//   packed = float(seed_y * width + seed_x) + 1.0
-// Fonctionne tant que width * height < 2^24 (~4096×4096).
+// Chaque pixel adopte seulement l'ID d'un voisin cardinal avec un coût de
+// chemin strictement croissant. Une région reste donc toujours connexe.
 //
 // Utilise un ping-pong sur region_map / region_map_temp.
 //
@@ -18,11 +14,11 @@
 //   - water_mask (binding 1) : masque eau (infranchissable)
 //   - river_flux (binding 2) : flux des rivières (réservé)
 //   - region_map_in (binding 3) : état actuel des régions
-//   - region_cost_in (binding 4) : position du seed encodée
+//   - region_cost_in (binding 4) : coût cumulé depuis le seed
 //
 // Sorties :
 //   - region_map_out (binding 5) : nouveaux IDs de région
-//   - region_cost_out (binding 6) : nouvelles positions de seed encodées
+//   - region_cost_out (binding 6) : nouveaux coûts cumulés
 // ===========================================================================
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
@@ -48,7 +44,7 @@ layout(set = 1, binding = 0, std140) uniform GrowthParams {
     float cost_uphill;         // Réservé (compatibilité)
     float cost_river;          // Réservé (compatibilité)
     float noise_strength;      // Perturbation en pixels pour frontières organiques
-    float padding1;
+    float mean_spacing_px;      // Échelle moyenne d'un département
     float padding2;
 } params;
 
@@ -72,6 +68,36 @@ float hashToFloat(uint h) {
     return float(h) / float(0xFFFFFFFFu);
 }
 
+float fade(float t) {
+    return t * t * (3.0 - 2.0 * t);
+}
+
+float valueNoise3D(vec3 p, uint seedOffset) {
+    vec3 base = floor(p);
+    vec3 f = fract(p);
+    vec3 u = vec3(fade(f.x), fade(f.y), fade(f.z));
+    ivec3 i = ivec3(base + vec3(10000.0));
+
+    float values[8];
+    int index = 0;
+    for (int dz = 0; dz <= 1; dz++) {
+        for (int dy = 0; dy <= 1; dy++) {
+            for (int dx = 0; dx <= 1; dx++) {
+                uint hx = uint(i.x + dx);
+                uint hy = uint(i.y + dy);
+                uint hz = uint(i.z + dz);
+                values[index++] = hashToFloat(hash(hx ^ hash(hy ^ hash(hz + seedOffset))));
+            }
+        }
+    }
+
+    float x00 = mix(values[0], values[1], u.x);
+    float x10 = mix(values[2], values[3], u.x);
+    float x01 = mix(values[4], values[5], u.x);
+    float x11 = mix(values[6], values[7], u.x);
+    return mix(mix(x00, x10, u.y), mix(x01, x11, u.y), u.z);
+}
+
 // Wrap X pour projection équirectangulaire (seamless horizontalement)
 int wrapX(int x, int w) {
     return (x % w + w) % w;
@@ -82,25 +108,39 @@ int clampY(int y, int h) {
     return clamp(y, 0, h - 1);
 }
 
-// === ENCODAGE/DÉCODAGE POSITION SEED ===
-// Pack (x, y) en un float : float(y * width + x) + 1.0
-// Le +1.0 évite la valeur 0.0 (réservée)
-// Précision garantie tant que y * width + x < 2^24 (max ~4096×4096)
-
-ivec2 unpackCoords(float packed, uint w) {
-    uint total = uint(packed - 1.0);
-    return ivec2(int(total % w), int(total / w));
+vec3 organicNoisePoint(ivec2 pixel, int w, int h) {
+    const float TAU = 6.28318530718;
+    float angle = (float(pixel.x) + 0.5) / float(w) * TAU;
+    float latitude = ((float(pixel.y) + 0.5) / float(h) - 0.5) * 3.14159265359;
+    float featureCount = max(float(w) / max(params.mean_spacing_px, 2.0) * 0.42, 1.0);
+    return vec3(cos(angle), latitude, sin(angle)) * featureCount;
 }
 
-// === DISTANCE EUCLIDIENNE AVEC WRAP ===
-// Calcule la distance² entre un point (éventuellement perturbé) et un seed
-// Gère le wrap horizontal (projection équirectangulaire)
-float wrappedDistSq(vec2 pt, ivec2 seed_pos, int w) {
-    float dx = abs(pt.x - float(seed_pos.x));
-    if (dx > float(w) * 0.5) dx = float(w) - dx;
-    float dy = pt.y - float(seed_pos.y);
-    return dx * dx + dy * dy;
+float traversalCost(ivec2 pixel, ivec2 neighbor, int w, int h) {
+    float cost = max(params.cost_flat, 0.05);
+
+    // Champ lisse de résistance du terrain : les fronts de croissance ondulent
+    // sans bruit blanc, triangle de Voronoï ou segment rectiligne prolongé.
+    vec3 grainPoint = organicNoisePoint(pixel, w, h) * 1.75;
+    float grain = valueNoise3D(grainPoint, params.seed + 911u);
+    float grainStrength = clamp(params.noise_strength, 0.0, 1.0) * 0.38;
+    cost *= mix(1.0 - grainStrength, 1.0 + grainStrength, grain);
+
+    float hereHeight = imageLoad(geo_texture, pixel).r;
+    float neighborHeight = imageLoad(geo_texture, neighbor).r;
+    float reliefBarrier = min(abs(hereHeight - neighborHeight) / 450.0, 3.0);
+    cost += reliefBarrier * max(params.cost_uphill - params.cost_flat, 0.0);
+
+    float riverFlux = max(imageLoad(river_flux, pixel).r, imageLoad(river_flux, neighbor).r);
+    if (riverFlux > params.river_threshold) {
+        cost += max(params.cost_river, 0.0);
+    }
+    return max(cost, 0.01);
 }
+
+const ivec2 CARDINAL[4] = ivec2[4](
+    ivec2(-1, 0), ivec2(1, 0), ivec2(0, -1), ivec2(0, 1)
+);
 
 // === MAIN ===
 void main() {
@@ -115,7 +155,8 @@ void main() {
     
     // Eau : infranchissable, ne participe pas aux régions
     uint water_type = imageLoad(water_mask, pixel).r;
-    if (water_type > 0u) {
+    float heightValue = imageLoad(geo_texture, pixel).r;
+    if (water_type > 0u || heightValue < params.sea_level) {
         imageStore(region_map_out, pixel, uvec4(0xFFFFFFFFu, 0u, 0u, 0u));
         imageStore(region_cost_out, pixel, vec4(1e30, 0.0, 0.0, 0.0));
         return;
@@ -123,57 +164,36 @@ void main() {
     
     // Lire l'état actuel de ce pixel
     uint current_region = imageLoad(region_map_in, pixel).r;
-    float current_packed = imageLoad(region_cost_in, pixel).r;
-    
-    // Perturbation par pixel pour frontières organiques
-    // Le hash est constant entre passes (ne dépend pas de step_size)
-    // Cela crée des frontières irrégulières entre régions
-    uint ph = hash2(uint(pixel.x) + params.seed, uint(pixel.y) + params.seed * 7u);
-    float perturb_x = (hashToFloat(ph) - 0.5) * params.noise_strength * 2.0;
-    float perturb_y = (hashToFloat(hash(ph)) - 0.5) * params.noise_strength * 2.0;
-    vec2 perturbed = vec2(float(pixel.x) + perturb_x, float(pixel.y) + perturb_y);
+    float current_cost = imageLoad(region_cost_in, pixel).r;
     
     // Meilleur candidat trouvé
     uint best_region = current_region;
-    float best_packed = current_packed;
-    float best_dist = 1e30;
+    float best_cost = current_cost;
     
-    // Si déjà assigné, calculer la distance au seed actuel
-    if (current_region != 0xFFFFFFFFu) {
-        ivec2 seed_pos = unpackCoords(current_packed, params.width);
-        best_dist = wrappedDistSq(perturbed, seed_pos, w);
-    }
-    
-    int step = int(params.step_size);
-    
-    // JFA : vérifier les 9 voisins à ±step (incluant le centre)
-    for (int dy = -1; dy <= 1; dy++) {
-        for (int dx = -1; dx <= 1; dx++) {
-            int nx = wrapX(pixel.x + dx * step, w);
-            int ny = clampY(pixel.y + dy * step, h);
-            ivec2 neighbor = ivec2(nx, ny);
-            
-            // Lire la région du voisin
-            uint n_region = imageLoad(region_map_in, neighbor).r;
-            if (n_region == 0xFFFFFFFFu) continue;
-            
-            // Décoder la position du seed de ce voisin
-            float n_packed = imageLoad(region_cost_in, neighbor).r;
-            ivec2 n_seed = unpackCoords(n_packed, params.width);
-            
-            // Calculer la distance depuis notre position perturbée vers ce seed
-            float dist = wrappedDistSq(perturbed, n_seed, w);
-            
-            // Si c'est plus proche, adopter ce seed
-            if (dist < best_dist) {
-                best_dist = dist;
-                best_region = n_region;
-                best_packed = n_packed;
-            }
+    // Une propagation cardinale locale garantit que l'ID reste connexe et ne
+    // peut jamais traverser une mer ou couper diagonalement un masque côtier.
+    for (int i = 0; i < 4; i++) {
+        int nx = wrapX(pixel.x + CARDINAL[i].x, w);
+        int ny = clampY(pixel.y + CARDINAL[i].y, h);
+        ivec2 neighbor = ivec2(nx, ny);
+        uint neighborWater = imageLoad(water_mask, neighbor).r;
+        float neighborHeight = imageLoad(geo_texture, neighbor).r;
+        if (neighborWater > 0u || neighborHeight < params.sea_level) continue;
+
+        uint n_region = imageLoad(region_map_in, neighbor).r;
+        if (n_region == 0xFFFFFFFFu) continue;
+
+        float neighbor_cost = imageLoad(region_cost_in, neighbor).r;
+        float candidate_cost = neighbor_cost + traversalCost(pixel, neighbor, w, h);
+
+        if (candidate_cost < best_cost ||
+                (candidate_cost == best_cost && n_region < best_region)) {
+            best_cost = candidate_cost;
+            best_region = n_region;
         }
     }
     
-    // Écrire le résultat (région et position du seed encodée)
+    // Écrire le résultat et son coût de chemin monotone.
     imageStore(region_map_out, pixel, uvec4(best_region, 0u, 0u, 0u));
-    imageStore(region_cost_out, pixel, vec4(best_packed, 0.0, 0.0, 0.0));
+    imageStore(region_cost_out, pixel, vec4(best_cost, 0.0, 0.0, 0.0));
 }

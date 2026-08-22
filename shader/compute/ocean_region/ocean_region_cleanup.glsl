@@ -4,9 +4,9 @@
 // ===========================================================================
 // OCEAN REGION CLEANUP SHADER
 // ===========================================================================
-// Phase de nettoyage agressif : assigne TOUTE eau non couverte à la région
-// océanique la plus proche. Garantit qu'aucun pixel aquatique ne reste sans
-// région après la phase de croissance.
+// Phase de nettoyage connexe : propage seulement depuis les quatre voisins
+// aquatiques directs. Une région maritime ne peut donc jamais sauter une côte
+// ni créer une enclave déconnectée.
 //
 // Entrées :
 //   - water_mask (binding 0) : masque eau (seulement water_type > 0)
@@ -43,15 +43,20 @@ int clampY(int y, int h) {
     return clamp(y, 0, h - 1);
 }
 
-const ivec2 NEIGHBORS[8] = ivec2[8](
+uint hash(uint x) {
+    x ^= x >> 16u;
+    x *= 0x85ebca6bu;
+    x ^= x >> 13u;
+    x *= 0xc2b2ae35u;
+    x ^= x >> 16u;
+    return x;
+}
+
+const ivec2 NEIGHBORS[4] = ivec2[4](
     ivec2(-1, 0),
     ivec2(1, 0),
     ivec2(0, -1),
-    ivec2(0, 1),
-    ivec2(-1, -1),
-    ivec2(1, -1),
-    ivec2(-1, 1),
-    ivec2(1, 1)
+    ivec2(0, 1)
 );
 
 // === MAIN ===
@@ -83,33 +88,37 @@ void main() {
         return;
     }
     
-    // Pas encore assigné : chercher dans un rayon croissant (jusqu'à 16 pixels)
+    // Pas encore assigné : adopter uniquement une région maritime adjacente.
     uint assigned_region = 0xFFFFFFFFu;
-    
-    // Chercher en spirale croissante jusqu'à trouver une région
-    for (int radius = 1; radius <= 16 && assigned_region == 0xFFFFFFFFu; radius++) {
-        for (int dy = -radius; dy <= radius; dy++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                // Seulement le bord du carré à ce rayon
-                if (abs(dx) != radius && abs(dy) != radius) continue;
-                
-                int nx = wrapX(pixel.x + dx, w);
-                int ny = clampY(pixel.y + dy, h);
-                
-                ivec2 neighbor_pos = ivec2(nx, ny);
-                
-                uint neighbor_water = imageLoad(water_mask, neighbor_pos).r;
-                if (neighbor_water == 0u) continue;  // Terre, pas d'océan
-                
-                uint neighbor_region = imageLoad(ocean_region_map_in, neighbor_pos).r;
-                
-                if (neighbor_region != 0xFFFFFFFFu) {
-                    assigned_region = neighbor_region;
-                    break;
-                }
-            }
-            if (assigned_region != 0xFFFFFFFFu) break;
+    for (int i = 0; i < 4; i++) {
+        int nx = wrapX(pixel.x + NEIGHBORS[i].x, w);
+        int ny = clampY(pixel.y + NEIGHBORS[i].y, h);
+        ivec2 neighbor_pos = ivec2(nx, ny);
+        if (imageLoad(water_mask, neighbor_pos).r == 0u) continue;
+        uint neighbor_region = imageLoad(ocean_region_map_in, neighbor_pos).r;
+        if (neighbor_region != 0xFFFFFFFFu &&
+                (assigned_region == 0xFFFFFFFFu || neighbor_region < assigned_region)) {
+            assigned_region = neighbor_region;
         }
+    }
+
+    if (assigned_region == 0xFFFFFFFFu) {
+        uint linear = uint(pixel.y * w + pixel.x);
+        uint my_hash = hash(linear ^ params.seed);
+        bool local_minimum = true;
+        for (int i = 0; i < 4; i++) {
+            int nx = wrapX(pixel.x + NEIGHBORS[i].x, w);
+            int ny = clampY(pixel.y + NEIGHBORS[i].y, h);
+            ivec2 neighbor_pos = ivec2(nx, ny);
+            if (imageLoad(water_mask, neighbor_pos).r == 0u) continue;
+            uint neighbor_linear = uint(ny * w + nx);
+            uint neighbor_hash = hash(neighbor_linear ^ params.seed);
+            if (neighbor_hash < my_hash ||
+                    (neighbor_hash == my_hash && neighbor_linear < linear)) {
+                local_minimum = false;
+            }
+        }
+        if (local_minimum) assigned_region = linear;
     }
     
     imageStore(ocean_region_map_out, pixel, uvec4(assigned_region, 0u, 0u, 0u));

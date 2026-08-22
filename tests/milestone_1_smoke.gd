@@ -42,9 +42,12 @@ func _run() -> void:
 	var land_preserved := int(first["modified_land_pixels_by_subsidence"]) == 0
 	var cloud_contract := (
 		int(first["cloud_alpha_violations"]) == 0
-		and int(first["cloud_max_density"]) > int(first["cloud_min_density"])
+		and int(first["cloud_clear_pixels"]) > 0
+		and int(first["cloud_visible_pixels"]) > 0
+		and bool(first["cloud_png_contract"])
 	)
 	var seam_merge_safe := _validate_seam_merge_contract()
+	var physical_scale_safe := _validate_physical_scale_contract()
 	var gas_deterministic: bool = first_gas["final_hash"] == second_gas["final_hash"]
 	var gas_export_contract: bool = (
 		first_gas["exported_keys"] == ["final_map"]
@@ -58,9 +61,12 @@ func _run() -> void:
 	print("[Milestone1Smoke] max_erosion_delta_m=", first["max_erosion_delta_m"])
 	print("[Milestone1Smoke] eroded_land_below_sea=", first["eroded_land_below_sea"])
 	print("[Milestone1Smoke] modified_land_pixels_by_subsidence=", first["modified_land_pixels_by_subsidence"])
-	print("[Milestone1Smoke] cloud_density_range=", first["cloud_min_density"], "..", first["cloud_max_density"])
+	print("[Milestone1Smoke] cloud_alpha_range=", first["cloud_min_alpha"], "..", first["cloud_max_alpha"])
+	print("[Milestone1Smoke] cloud_clear_visible=", first["cloud_clear_pixels"], "/", first["cloud_visible_pixels"])
 	print("[Milestone1Smoke] cloud_alpha_violations=", first["cloud_alpha_violations"])
+	print("[Milestone1Smoke] cloud_png_rgba=", first["cloud_png_contract"])
 	print("[Milestone1Smoke] seam_merge_safe=", seam_merge_safe)
+	print("[Milestone1Smoke] physical_scale_safe=", physical_scale_safe)
 	print("[Milestone1Smoke] deterministic=", deterministic)
 	print("[Milestone1Smoke] gas_final_hash=", first_gas["final_hash"])
 	print("[Milestone1Smoke] gas_exported_keys=", first_gas["exported_keys"])
@@ -78,9 +84,11 @@ func _run() -> void:
 	if not land_preserved:
 		push_error("Oceanic subsidence modified cells that were land before crust-age finalization")
 	if not cloud_contract:
-		push_error("Cloud export is uniform or does not use the opaque density-mask contract")
+		push_error("Cloud export is not a non-uniform RGBA texture with transparent clear sky")
 	if not seam_merge_safe:
 		push_error("Distinct administrative regions were merged across the horizontal seam")
+	if not physical_scale_safe:
+		push_error("Administrative hierarchy does not scale from physical planet surface")
 	if not gas_deterministic:
 		push_error("Gas-giant output is not deterministic for the fixed seed")
 	if not gas_export_contract:
@@ -93,6 +101,7 @@ func _run() -> void:
 		and land_preserved
 		and cloud_contract
 		and seam_merge_safe
+		and physical_scale_safe
 		and gas_deterministic
 		and gas_export_contract
 	)
@@ -172,14 +181,38 @@ func _generate_snapshot() -> Dictionary:
 			eroded_land_below_sea += 1
 		max_erosion_delta = max(max_erosion_delta, abs(eroded_height - crust_height))
 
-	var cloud_min_density := 255
-	var cloud_max_density := 0
+	var cloud_min_alpha := 255
+	var cloud_max_alpha := 0
 	var cloud_alpha_violations := 0
+	var cloud_clear_pixels := 0
+	var cloud_visible_pixels := 0
 	for offset in range(0, cloud_data.size(), 4):
-		cloud_min_density = mini(cloud_min_density, int(cloud_data[offset]))
-		cloud_max_density = maxi(cloud_max_density, int(cloud_data[offset]))
-		if int(cloud_data[offset + 3]) != 255:
-			cloud_alpha_violations += 1
+		var alpha := int(cloud_data[offset + 3])
+		cloud_min_alpha = mini(cloud_min_alpha, alpha)
+		cloud_max_alpha = maxi(cloud_max_alpha, alpha)
+		if alpha == 0:
+			cloud_clear_pixels += 1
+			if cloud_data[offset] != 0 or cloud_data[offset + 1] != 0 or cloud_data[offset + 2] != 0:
+				cloud_alpha_violations += 1
+		else:
+			cloud_visible_pixels += 1
+
+	var cloud_image := Image.create_from_data(
+		TEST_RESOLUTION.x, TEST_RESOLUTION.y, false, Image.FORMAT_RGBA8, cloud_data
+	)
+	var cloud_path := "user://milestone_1_cloud_contract.png"
+	var cloud_png_contract := cloud_image != null and cloud_image.save_png(cloud_path) == OK
+	if cloud_png_contract:
+		var loaded_cloud := Image.new()
+		cloud_png_contract = (
+			loaded_cloud.load(cloud_path) == OK
+			and loaded_cloud.get_format() == Image.FORMAT_RGBA8
+			and loaded_cloud.get_width() == TEST_RESOLUTION.x
+			and loaded_cloud.get_height() == TEST_RESOLUTION.y
+		)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(cloud_path))
+	if cloud_max_alpha <= cloud_min_alpha:
+		cloud_alpha_violations += 1
 
 	var result := {
 		"crust_hash": hash(crust_data),
@@ -188,9 +221,12 @@ func _generate_snapshot() -> Dictionary:
 		"max_erosion_delta_m": max_erosion_delta,
 		"eroded_land_below_sea": eroded_land_below_sea,
 		"cloud_hash": hash(cloud_data),
-		"cloud_min_density": cloud_min_density,
-		"cloud_max_density": cloud_max_density,
+		"cloud_min_alpha": cloud_min_alpha,
+		"cloud_max_alpha": cloud_max_alpha,
 		"cloud_alpha_violations": cloud_alpha_violations,
+		"cloud_clear_pixels": cloud_clear_pixels,
+		"cloud_visible_pixels": cloud_visible_pixels,
+		"cloud_png_contract": cloud_png_contract,
 	}
 	orchestrator.cleanup()
 	return result
@@ -201,6 +237,26 @@ func _validate_seam_merge_contract() -> bool:
 	data.encode_u32(0, 11)
 	data.encode_u32(4, 22)
 	return HierarchyBuilder.compute_merge_map(data, 2, 1).is_empty()
+
+func _validate_physical_scale_contract() -> bool:
+	var small := HierarchyBuilder.compute_physical_targets({
+		"planet_radius": 150.0,
+		"ocean_ratio": 55.0,
+		"nb_cases_regions": 50,
+	}, false)
+	var large := HierarchyBuilder.compute_physical_targets({
+		"planet_radius": 1500.0,
+		"ocean_ratio": 55.0,
+		"nb_cases_regions": 50,
+	}, false)
+	var small_country_area := float(small["surface_km2"]) / float(small["middle"])
+	var large_country_area := float(large["surface_km2"]) / float(large["middle"])
+	return (
+		int(large["departments"]) > int(small["departments"])
+		and int(large["regions"]) > int(small["regions"])
+		and int(large["top"]) > int(small["top"])
+		and large_country_area > small_country_area
+	)
 
 func _generate_gas_snapshot() -> Dictionary:
 	var params := {
