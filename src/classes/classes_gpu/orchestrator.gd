@@ -4597,6 +4597,14 @@ func run_final_map_phase(params: Dictionary, w: int, h: int) -> void:
 
 ## Exécute le shader de coloration des eaux
 func _run_water_to_color_phase(params: Dictionary, w: int, h: int) -> void:
+	# HydrologySolver a deja produit water_mask et water_colored avec la
+	# classification exacte des composantes (0=terre, 1=mer, 2=eau douce).
+	# Rejouer ici l'ancien shader de classification utilisait des labels JFA
+	# obsoletes et pouvait convertir toute la mer en eau douce juste avant
+	# l'export. La carte finale doit seulement reutiliser ce resultat.
+	if not last_hydrology_stats.is_empty():
+		print("  [Orchestrator] 💧 Classification des eaux conservée (hydrologie exacte)")
+		return
 	if not rd or not gpu.pipelines.has("water_to_color") or not gpu.pipelines["water_to_color"].is_valid():
 		push_warning("[Orchestrator] ⚠️ water_to_color pipeline not ready, skipping")
 		return

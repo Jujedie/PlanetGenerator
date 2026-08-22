@@ -56,6 +56,9 @@ func _run() -> void:
 	var administrative_hierarchy := bool(short_iteration_case.get("administrative_hierarchy", false))
 	var department_distribution := bool(short_iteration_case.get("department_distribution", false))
 	var hierarchy_exports := bool(short_iteration_case.get("hierarchy_exports", false))
+	var water_classification_preserved := bool(short_iteration_case.get(
+		"water_classification_preserved", false
+	))
 	var administrative_scale_bounds := bool(short_iteration_case.get(
 		"administrative_scale_bounds", false
 	))
@@ -93,6 +96,8 @@ func _run() -> void:
 	print("[Milestone2Hydrology] land_department_stats=", short_iteration_case.get("land_department_stats", {}))
 	print("[Milestone2Hydrology] department_distribution=", department_distribution)
 	print("[Milestone2Hydrology] hierarchy_exports=", hierarchy_exports)
+	print("[Milestone2Hydrology] water_classification_preserved=",
+		water_classification_preserved)
 	print("[Milestone2Hydrology] administrative_size_stats=", short_iteration_case.get(
 		"administrative_size_stats", {}
 	))
@@ -120,6 +125,8 @@ func _run() -> void:
 		push_error("Land department size distribution is too far from its physical target")
 	if not hierarchy_exports:
 		push_error("One or more administrative hierarchy PNG files were not exported")
+	if not water_classification_preserved:
+		push_error("Final water coloring destroyed the salt/fresh water classification")
 	if not administrative_scale_bounds:
 		push_error("A region/country is extreme or a continent is below its minimum size")
 	if not terrain_transitions:
@@ -128,7 +135,8 @@ func _run() -> void:
 	_quit(0 if stable and conserved and acyclic and drains and hierarchical
 		and administrative_masks and administrative_continuity
 		and administrative_hierarchy and department_distribution
-		and hierarchy_exports and administrative_scale_bounds
+		and hierarchy_exports and water_classification_preserved
+		and administrative_scale_bounds
 		and terrain_transitions else 1)
 
 func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
@@ -221,6 +229,15 @@ func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 			"land_departments", {}
 		)
 		orchestrator.run_ocean_region_phase(params, test_resolution.x, test_resolution.y)
+		var water_hash_before_final_coloring := hash(water_data)
+		orchestrator._run_water_to_color_phase(
+			params, test_resolution.x, test_resolution.y
+		)
+		water_data = gpu.readback_texture_raw("water_mask")
+		result["water_classification_preserved"] = (
+			hash(water_data) == water_hash_before_final_coloring
+			and water_data.has(1)
+		)
 		var land_regions := gpu.readback_texture_raw("region_map")
 		var sea_regions := gpu.readback_texture_raw("ocean_region_map")
 		var land_check := _validate_partition(land_regions, water_data, false)
@@ -322,7 +339,16 @@ func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 		var exporter := PlanetExporter.new()
 		exporter.params = params
 		exporter._nb_threads = 1
+		# Reproduire aussi l'état des anciennes générations déjà en mémoire : le
+		# masque avait perdu toutes ses valeurs salées avant que l'utilisateur ne
+		# relance l'export. L'exporteur doit pouvoir les restaurer depuis geo.
+		var legacy_water_mask := water_data.duplicate()
+		for index in range(legacy_water_mask.size()):
+			if legacy_water_mask[index] == 1:
+				legacy_water_mask[index] = 2
+		gpu.rd.texture_update(gpu.textures["water_mask"], 0, legacy_water_mask)
 		var hierarchy_files := exporter._export_hierarchy_maps(gpu, export_dir)
+		gpu.rd.texture_update(gpu.textures["water_mask"], 0, water_data)
 		var expected_hierarchy_labels := [
 			"Régions terrestres", "Pays", "Continents",
 			"Régions maritimes", "Bassins", "Océans",

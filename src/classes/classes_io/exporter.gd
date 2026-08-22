@@ -1621,6 +1621,13 @@ func _export_hierarchy_maps(gpu: GPUContext, output_dir: String) -> Dictionary:
 		sea_data = rd.texture_get_data(gpu.textures["ocean_region_map"], 0)
 	if gpu.textures.has("water_mask") and gpu.textures["water_mask"].is_valid():
 		water_mask_data = rd.texture_get_data(gpu.textures["water_mask"], 0)
+	# Compatibilite avec une generation deja terminee par l'ancienne phase
+	# finale : celle-ci pouvait remplacer toutes les valeurs mer (1) par eau
+	# douce (2). Restaurer uniquement les pixels aquatiques sous le niveau marin
+	# depuis l'altitude brute permet de reexporter sans regenerer la planete.
+	water_mask_data = _recover_missing_saltwater_mask(
+		gpu, water_mask_data, width, height
+	)
 	
 	# ─── Merge maps (wrap horizontal) ────────────────────────────────────────
 	var merge_land := HierarchyBuilder.compute_merge_map(land_data, width, height)
@@ -1700,6 +1707,72 @@ func _export_hierarchy_maps(gpu: GPUContext, output_dir: String) -> Dictionary:
 	
 	print("[Exporter] ✅ Hiérarchie exportée (", result.size(), " cartes)")
 	return result
+
+
+func _recover_missing_saltwater_mask(gpu: GPUContext,
+		water_mask_data: PackedByteArray, width: int, height: int) -> PackedByteArray:
+	if water_mask_data.size() != width * height or water_mask_data.is_empty():
+		return water_mask_data
+	var water_pixels := 0
+	var saltwater_pixels := 0
+	for value in water_mask_data:
+		if value > 0:
+			water_pixels += 1
+		if value == 1:
+			saltwater_pixels += 1
+	if water_pixels == 0 or saltwater_pixels > 0:
+		return water_mask_data
+	if not gpu.textures.has("geo") or not gpu.textures["geo"].is_valid():
+		return water_mask_data
+	var geo_data: PackedByteArray = gpu.rd.texture_get_data(gpu.textures["geo"], 0)
+	if geo_data.size() != width * height * 16:
+		return water_mask_data
+	var sea_level := float(params.get("sea_level", 0.0))
+	var saltwater_min_size := maxi(int(params.get("saltwater_min_size", 1000)), 1)
+	var recovered := water_mask_data.duplicate()
+	var visited := PackedByteArray()
+	visited.resize(width * height)
+	visited.fill(0)
+	var recovered_saltwater := 0
+	for start in range(width * height):
+		if recovered[start] == 0 or visited[start] != 0:
+			continue
+		var component := PackedInt32Array([start])
+		visited[start] = 1
+		var touches_subsea := geo_data.decode_float(start * 16) < sea_level
+		var head := 0
+		while head < component.size():
+			var current := int(component[head])
+			head += 1
+			var x := current % width
+			var y := current / width
+			for dy in range(-1, 2):
+				for dx in range(-1, 2):
+					if dx == 0 and dy == 0:
+						continue
+					var nx := posmod(x + dx, width)
+					var ny := clampi(y + dy, 0, height - 1)
+					var neighbor := ny * width + nx
+					if recovered[neighbor] == 0 or visited[neighbor] != 0:
+						continue
+					visited[neighbor] = 1
+					component.append(neighbor)
+					touches_subsea = touches_subsea or (
+						geo_data.decode_float(neighbor * 16) < sea_level
+					)
+		var component_is_saltwater := (
+			touches_subsea and component.size() >= saltwater_min_size
+		)
+		var recovered_type := 1 if component_is_saltwater else 2
+		for index in component:
+			recovered[index] = recovered_type
+		if component_is_saltwater:
+			recovered_saltwater += component.size()
+	if recovered_saltwater > 0:
+		print("  ⚠️ Masque marin restauré pour l'export : ", recovered_saltwater,
+			" pixels salés récupérés")
+		return recovered
+	return water_mask_data
 
 ## Thread worker : peint les lignes d'une carte hiérarchique depuis les données R32UI.
 func _paint_hierarchy_rows(data: PackedByteArray, output: PackedByteArray,
