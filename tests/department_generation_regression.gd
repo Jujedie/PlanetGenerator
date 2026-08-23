@@ -9,18 +9,18 @@ func _ready() -> void:
 
 
 func _run() -> void:
-	var land_contract := _test_actual_land_contract()
+	var land_contract := _test_water_mask_land_contract()
 	var seam_merge := _test_wrapped_seam_merge()
 	var vertical_boundary := _test_no_vertical_wrap()
 	var tiny_merge := _test_tiny_leftover_merge()
 	var island_exception := _test_isolated_island_exception()
-	print("[DepartmentRegression] actual_land_contract=", land_contract)
+	print("[DepartmentRegression] water_mask_land_contract=", land_contract)
 	print("[DepartmentRegression] wrapped_seam_merge=", seam_merge)
 	print("[DepartmentRegression] no_vertical_wrap=", vertical_boundary)
 	print("[DepartmentRegression] tiny_leftover_merge=", tiny_merge)
 	print("[DepartmentRegression] isolated_island_exception=", island_exception)
 	if not land_contract:
-		push_error("Below-sea pixels were accepted as administrative land")
+		push_error("Dry below-sea pixels were incorrectly rejected as administrative land")
 	if not seam_merge:
 		push_error("A tiny seam department did not merge through wrapped X adjacency")
 	if not vertical_boundary:
@@ -35,12 +35,12 @@ func _run() -> void:
 	) else 1)
 
 
-func _test_actual_land_contract() -> bool:
+func _test_water_mask_land_contract() -> bool:
 	var w := 8
 	var h := 4
 	var water := PackedByteArray()
 	water.resize(w * h)
-	water.fill(0) # Reproduces the incomplete classification from the reported map.
+	water.fill(0) # Entire test surface is dry, including the below-sea half.
 	var geo := PackedByteArray()
 	geo.resize(w * h * 16)
 	for y in range(h):
@@ -57,9 +57,9 @@ func _test_actual_land_contract() -> bool:
 	for y in range(h):
 		for x in range(w):
 			var assigned := int(normalized.decode_u32((y * w + x) * 4)) != INVALID_ID
-			if assigned != (y < 2):
+			if not assigned:
 				return false
-	return int(result["removed_non_land"]) == w * 2
+	return int(result["removed_non_land"]) == 0
 
 
 func _test_wrapped_seam_merge() -> bool:

@@ -7,7 +7,6 @@
 // Place un nombre cible de seeds administratifs sur la terre uniquement.
 //
 // Entrées :
-//   - geo_texture (binding 0) : R=height pour déterminer terre/eau
 //   - water_mask (binding 1) : masque eau (0=terre, 1/2=eau)
 //
 // Sorties :
@@ -19,7 +18,6 @@
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 // === SET 0 : TEXTURES ===
-layout(set = 0, binding = 0, rgba32f) uniform readonly image2D geo_texture;
 layout(set = 0, binding = 1, r8ui) uniform readonly uimage2D water_mask;
 layout(set = 0, binding = 2, r32ui) uniform writeonly uimage2D region_map;
 layout(set = 0, binding = 3, r32f) uniform writeonly image2D region_cost;
@@ -66,9 +64,9 @@ int wrapX(int x, int w) {
 }
 
 bool isLand(ivec2 p) {
-    uint waterType = imageLoad(water_mask, p).r;
-    float elevation = imageLoad(geo_texture, p).r;
-    return waterType == 0u && elevation >= params.sea_level;
+    // water_mask is authoritative: dry terrain remains land even below
+    // sea_level (closed basins, dry craters, sterile/airless depressions).
+    return imageLoad(water_mask, p).r == 0u;
 }
 
 // Distribution blue-noise déterministe : chaque seed est le minimum de hash

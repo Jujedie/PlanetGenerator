@@ -16,18 +16,18 @@ const CARDINAL: Array[Vector2i] = [
 
 
 static func build_land_mask(water_data: PackedByteArray,
-		geo_data: PackedByteArray, w: int, h: int,
-		sea_level: float) -> PackedByteArray:
+		_geo_data: PackedByteArray, w: int, h: int,
+		_sea_level: float) -> PackedByteArray:
+	# The hydrology result is the authoritative surface mask. A dry depression
+	# below sea_level is still solid land and must receive an administrative ID.
+	# Altitude can shape borders/costs, but it must never override water_mask.
 	var pixel_count := w * h
 	var result := PackedByteArray()
-	if water_data.size() != pixel_count or geo_data.size() != pixel_count * 16:
+	if water_data.size() != pixel_count:
 		return result
 	result.resize(pixel_count)
 	for index in range(pixel_count):
-		result[index] = 1 if (
-			water_data[index] == 0
-			and geo_data.decode_float(index * 16) >= sea_level
-		) else 0
+		result[index] = 1 if water_data[index] == 0 else 0
 	return result
 
 

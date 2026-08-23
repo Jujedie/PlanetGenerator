@@ -3150,13 +3150,10 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	var seed_val = int(params.get("seed", 12345))
 	var sea_level = float(params.get("sea_level", 0.0))
-	var atmosphere_type = int(params.get("planet_type", 0))
 	
-	# Si pas d'atmosphère, pas de régions (planète sans vie)
-	if atmosphere_type == 3:
-		print("  ⏭️ Planète sans atmosphère - pas de régions")
-		return
-	
+	# Administrative partitions describe solid surface ownership/geometry, not
+	# habitability. Airless worlds therefore use the same land partitioning as
+	# every other solid planet type.
 	# Paramètres de coûts
 	var cost_flat = float(params.get("region_cost_flat", 1.0))
 	var cost_uphill = float(params.get("region_cost_hill", params.get("region_cost_uphill", 2.0)))
@@ -3172,8 +3169,8 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	var water_mask_data := gpu.readback_texture_raw("water_mask")
 	var geo_data := gpu.readback_texture_raw("geo")
 	# Un même prédicat de terre pilote le comptage, les shaders et la
-	# normalisation. Un pixel sous le niveau marin ne devient jamais un
-	# département si la classification hydrologique est incomplète.
+	# normalisation : le masque hydrologique final fait foi. Une dépression sèche
+	# reste administrative même si son altitude est sous sea_level.
 	var land_mask := DepartmentNormalizer.build_land_mask(
 		water_mask_data, geo_data, w, h, sea_level
 	)
@@ -3449,9 +3446,8 @@ func _dispatch_region_seed_placement(w: int, h: int, groups_x: int,
 	
 	# Créer les uniforms de texture (set 0)
 	var tex_uniforms: Array[RDUniform] = []
-	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
 	
-	# water_mask (R8UI)
+	# water_mask (R8UI) — seul arbitre terre/eau pour l'administration
 	var mask_uniform = RDUniform.new()
 	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
 	mask_uniform.binding = 1
@@ -3637,9 +3633,6 @@ func _dispatch_region_cleanup(w: int, h: int, groups_x: int,
 	
 	# region_cost_out (R32F)
 	tex_uniforms.append(gpu.create_texture_uniform(3, dst_cost))
-
-	# geo_texture (RGBA32F) : même prédicat de terre que seed/growth
-	tex_uniforms.append(gpu.create_texture_uniform(4, gpu.textures["geo"]))
 	
 	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["region_cleanup"], 0)
 	
@@ -3698,10 +3691,6 @@ func _dispatch_region_finalize(w: int, h: int, groups_x: int,
 	
 	# region_colored (binding 2)
 	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["region_colored"]))
-
-	# geo_texture (binding 3) : protège aussi l'aperçu GPU contre un masque
-	# hydrologique incomplet.
-	tex_uniforms.append(gpu.create_texture_uniform(3, gpu.textures["geo"]))
 	
 	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["region_finalize"], 0)
 	

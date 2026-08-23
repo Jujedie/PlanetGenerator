@@ -514,13 +514,13 @@ func _count_raw_ids(data: PackedByteArray) -> int:
 
 func _validate_partition(region_data: PackedByteArray,
 		water_data: PackedByteArray, maritime: bool,
-		geo_data: PackedByteArray = PackedByteArray(),
-		sea_level: float = 0.0) -> Array:
+		_geo_data: PackedByteArray = PackedByteArray(),
+		_sea_level: float = 0.0) -> Array:
 	var pixel_count := test_resolution.x * test_resolution.y
 	if region_data.size() != pixel_count * 4 or water_data.size() != pixel_count:
 		return [false, false, 0]
-	var valid_geo := geo_data.size() == pixel_count * 16
-
+	# Administrative eligibility follows the hydrology mask only. geo_data and
+	# sea_level are retained in the helper signature for existing callers.
 	var mask_valid := true
 	var continuous := true
 	var disconnected_ids: Dictionary = {}
@@ -531,10 +531,7 @@ func _validate_partition(region_data: PackedByteArray,
 
 	for start in range(pixel_count):
 		var is_water := water_data[start] != 0
-		var eligible := is_water if maritime else (
-			not is_water
-			and (not valid_geo or geo_data.decode_float(start * 16) >= sea_level)
-		)
+		var eligible := is_water if maritime else not is_water
 		var region_id := int(region_data.decode_u32(start * 4))
 		if eligible != (region_id != 0xFFFFFFFF):
 			mask_valid = false

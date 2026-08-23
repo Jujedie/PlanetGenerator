@@ -173,8 +173,7 @@ void main() {
     
     // Eau : infranchissable, ne participe pas aux régions
     uint water_type = imageLoad(water_mask, pixel).r;
-    float heightValue = imageLoad(geo_texture, pixel).r;
-    if (water_type > 0u || heightValue < params.sea_level) {
+    if (water_type > 0u) {
         imageStore(region_map_out, pixel, uvec4(0xFFFFFFFFu, 0u, 0u, 0u));
         imageStore(region_cost_out, pixel, vec4(1e30, 0.0, 0.0, 0.0));
         return;
@@ -195,8 +194,7 @@ void main() {
         int ny = clampY(pixel.y + CARDINAL[i].y, h);
         ivec2 neighbor = ivec2(nx, ny);
         uint neighborWater = imageLoad(water_mask, neighbor).r;
-        float neighborHeight = imageLoad(geo_texture, neighbor).r;
-        if (neighborWater > 0u || neighborHeight < params.sea_level) continue;
+        if (neighborWater > 0u) continue;
 
         uint n_region = imageLoad(region_map_in, neighbor).r;
         if (n_region == 0xFFFFFFFFu) continue;
