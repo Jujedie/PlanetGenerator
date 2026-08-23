@@ -210,12 +210,14 @@ vec3 terranLandHypsometry(float relative_height) {
 }
 
 vec3 terranWaterHypsometry(float depth, vec3 source_water) {
-    const vec3 SHALLOW = vec3(0.40, 0.58, 0.56);
-    const vec3 MID = vec3(0.31, 0.49, 0.49);
-    const vec3 DEEP = vec3(0.23, 0.38, 0.41);
+    // Vue satellite stylisée : lacs, mers et océans partagent la même famille
+    // bleu-vert. La profondeur ne crée plus un écart cyan/bleu artificiel.
+    const vec3 SHALLOW = vec3(0.30, 0.46, 0.47);
+    const vec3 MID = vec3(0.27, 0.43, 0.45);
+    const vec3 DEEP = vec3(0.24, 0.39, 0.42);
     vec3 color = mix(SHALLOW, MID, smoothstep(80.0, 1200.0, depth));
     color = mix(color, DEEP, smoothstep(1200.0, 5200.0, depth));
-    return mix(color, source_water, 0.10);
+    return mix(color, source_water, 0.03);
 }
 
 bool waterAt(ivec2 pos, int w, int h) {

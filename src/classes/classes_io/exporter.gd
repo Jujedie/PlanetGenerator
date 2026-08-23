@@ -1678,13 +1678,18 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 		push_error("[Exporter] ❌ Failed to create final_map image")
 		return result
 	
-	# === POST-TRAITEMENT CPU : Assombrir les pixels eau ===
-	# Lire la texture geo pour identifier les pixels eau (élévation < 0)
+	# === POST-TRAITEMENT CPU : Assombrir uniformément tous les pixels eau ===
+	# water_colored est la source de vérité pour les mers comme pour les eaux
+	# douces. La texture geo ne sert que de repli si le masque est indisponible.
 	# La texture geo n'a aucune signification pour une géante gazeuse et n'est
 	# volontairement jamais utilisée pour modifier son rendu final.
 	var planet_type = int(params.get("planet_type", 0))
 	if planet_type != Enum.TYPE_GAZEUZE and gpu.textures.has("geo") and gpu.textures["geo"].is_valid():
 		var geo_data = rd.texture_get_data(gpu.textures["geo"], 0)
+		var water_data := PackedByteArray()
+		if gpu.textures.has("water_colored") and gpu.textures["water_colored"].is_valid():
+			water_data = rd.texture_get_data(gpu.textures["water_colored"], 0)
+		var has_water_data: bool = water_data.size() == expected_size
 		var ice_data := PackedByteArray()
 		if gpu.textures.has("ice_caps") and gpu.textures["ice_caps"].is_valid():
 			ice_data = rd.texture_get_data(gpu.textures["ice_caps"], 0)
@@ -1700,11 +1705,14 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 					var pixel_idx = y * width + x
 					var geo_idx = pixel_idx * 16  # RGBA32F = 16 bytes par pixel
 					var elevation = geo_data.decode_float(geo_idx)  # R = élévation
+					var is_water: bool = (
+						has_water_data and water_data[pixel_idx * 4 + 3] > 0
+					) or (not has_water_data and elevation < 0.0)
 					var is_ice: bool = has_ice_data and ice_data[pixel_idx * 4 + 3] > 0
 					
 					# Ne jamais assombrir la banquise déjà composée par le GPU :
 					# cela détruisait sa teinte ivoire dans final_map.png.
-					if elevation < 0.0 and not is_ice:
+					if is_water and not is_ice:
 						var current_color = img.get_pixel(x, y)
 						# Assombrir RGB tout en gardant l'alpha
 						var darkened_color = Color(
@@ -1715,7 +1723,7 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 						)
 						img.set_pixel(x, y, darkened_color)
 						water_pixels_darkened += 1
-					elif elevation < 0.0 and is_ice:
+					elif is_water and is_ice:
 						ice_pixels_preserved += 1
 			
 			print("  Water pixels darkened: ", water_pixels_darkened)
