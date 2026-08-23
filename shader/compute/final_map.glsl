@@ -143,7 +143,9 @@ vec3 getRiverBlendedColor(vec3 terrain_color, vec3 river_color, uint atmo) {
     // carte physique. Le biome rivière ne sert plus que de variation légère,
     // afin d'éviter les filaments cyan clair sur les plaines olive.
     vec3 natural_water = mix(vec3(0.23, 0.40, 0.42), river_color, 0.10);
-    return mix(terrain_color, natural_water, 0.82);
+    // Équivalent d'un alpha faible sur la carte finale opaque : le terrain
+    // reste dominant et le réseau hydrographique n'apparaît qu'en filigrane.
+    return mix(terrain_color, natural_water, 0.26);
 }
 
 // ============================================================================
@@ -307,18 +309,8 @@ void main() {
     float shade_factor = 1.0 + (shading - 0.5) * 2.0 * effective_strength;
     color *= shade_factor;
 
-    // === STEP 2.5: côtes et courbes de niveau cartographiques ===
+    // === STEP 2.5: courbes de niveau cartographiques ===
     if (params.atmosphere_type == 0u) {
-        bool coast =
-            waterAt(pos + ivec2(-1, 0), w, h) != is_water ||
-            waterAt(pos + ivec2(1, 0), w, h) != is_water ||
-            waterAt(pos + ivec2(0, -1), w, h) != is_water ||
-            waterAt(pos + ivec2(0, 1), w, h) != is_water;
-        if (coast) {
-            vec3 coast_color = is_water ? vec3(0.55, 0.68, 0.63) : vec3(0.91, 0.73, 0.60);
-            color = mix(color, coast_color, 0.50);
-        }
-
         int contour = contourKind(pos, w, h, relative_height, is_water);
         if (contour == 2) {
             color = mix(color, vec3(0.64, 0.43, 0.34), 0.34);
