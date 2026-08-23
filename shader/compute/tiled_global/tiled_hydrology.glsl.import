@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://31goi0cae1ko"
+path="res://.godot/imported/tiled_hydrology.glsl-44ba2e94899ff0cb4003acf6df6a0e74.res"
+
+[deps]
+
+source_file="res://shader/compute/tiled_global/tiled_hydrology.glsl"
+dest_files=["res://.godot/imported/tiled_hydrology.glsl-44ba2e94899ff0cb4003acf6df6a0e74.res"]
+
+[params]
+

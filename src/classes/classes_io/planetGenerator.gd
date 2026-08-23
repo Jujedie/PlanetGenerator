@@ -17,6 +17,10 @@ var cheminSauvegarde: String
 # GPU acceleration components
 var gpu_orchestrator    : GPUOrchestrator = null
 var use_gpu_acceleration: bool            = true
+var use_tiled_global_generation: bool     = false
+var tiled_pipeline: TiledGlobalSimulationPipeline = null
+var _tiled_thread: Thread = null
+var _tiled_output_root: String = ""
 
 # Generation parameters (compiled from UI)
 var generation_params: Dictionary = {}
@@ -67,16 +71,28 @@ func _init(nom_param: String, generation_param : Dictionary, cheminSauvegarde_pa
 ##
 ## @return bool: `true` si l'initialisation Vulkan/RenderingDevice a réussi, `false` sinon.
 func _init_gpu_system() -> void:
-	"""Initialize GPU acceleration if available"""
-	
+	"""Initialize the monolithic preview path or the maximum-scale tiled path."""
+	var global_dimensions: Vector2i = generation_params.get(
+		"global_dimensions", generation_params.get("resolution", Vector2i(1024, 512))
+	)
+	use_tiled_global_generation = bool(generation_params.get("tiled_global_generation", false))
+	use_tiled_global_generation = use_tiled_global_generation or TiledGlobalGenerator.should_use_tiled(global_dimensions)
+	# Gas giants keep their dedicated atmospheric path; Milestone 5's maximum
+	# tiled contract applies to solid-surface planets.
+	if int(generation_params.get("planet_type", 0)) == 6:
+		use_tiled_global_generation = false
+	if use_tiled_global_generation:
+		use_gpu_acceleration = true
+		_tiled_output_root = cheminSauvegarde.path_join("tiled_dataset")
+		print("[PlanetGenerator] Maximum-scale tiled generation enabled: ", global_dimensions)
+		return
+
 	var gpu_context = GPUContext.new(generation_params["resolution"])
 	if not gpu_context or not gpu_context.rd:
 		push_warning("[PlanetGenerator] GPUContext or RD not available")
 		use_gpu_acceleration = false
 		return
-	
 	gpu_orchestrator = GPUOrchestrator.new(gpu_context, generation_params["resolution"], generation_params)
-	
 	print("[PlanetGenerator] GPU acceleration enabled: ", generation_params["resolution"])
 
 ## Met à jour le label de statut dans l'interface utilisateur.
@@ -105,21 +121,53 @@ func update_map_status(map_key: String) -> void:
 ## Démarre le processus de génération. Selon la configuration interne, 
 ## cette méthode initie la séquence GPU ([method generate_planet_gpu]).
 func generate_planet() -> bool:
-	"""
-	Entry point - routes to GPU or CPU
-	GPU path now uses call_deferred for render thread safety
-	"""
-	
-	if not _cleaned_up and use_gpu_acceleration and gpu_orchestrator:
-		print("[PlanetGenerator] Starting GPU generation (render thread)...")
-		# Cleanup or a newer request invalidates this deferred callback before it
-		# can touch the orchestrator.
-		_generation_request_id += 1
-		call_deferred("_generate_planet_gpu_deferred", _generation_request_id)
-		return true
-	else:
+	"""Entry point - routes to the bounded tiled path or legacy GPU path."""
+	if _cleaned_up or not use_gpu_acceleration:
 		print("[PlanetGenerator] Cancelling generation: GPU acceleration not available")
 		return false
+	_generation_request_id += 1
+	if use_tiled_global_generation:
+		if _tiled_thread != null and _tiled_thread.is_started():
+			push_warning("[PlanetGenerator] Tiled generation is already running")
+			return false
+		print("[PlanetGenerator] Starting tiled global generation...")
+		tiled_pipeline = TiledGlobalSimulationPipeline.new(generation_params, _tiled_output_root)
+		_tiled_thread = Thread.new()
+		var err := _tiled_thread.start(_run_tiled_generation_worker.bind(_generation_request_id))
+		if err != OK:
+			push_error("[PlanetGenerator] Unable to start tiled generation worker: %s" % err)
+			_tiled_thread = null
+			return false
+		return true
+	if gpu_orchestrator:
+		print("[PlanetGenerator] Starting GPU generation (render thread)...")
+		call_deferred("_generate_planet_gpu_deferred", _generation_request_id)
+		return true
+	return false
+
+func _run_tiled_generation_worker(request_id: int) -> void:
+	var report: Dictionary = {}
+	if tiled_pipeline != null:
+		report = tiled_pipeline.generate()
+	call_deferred("_complete_tiled_generation", request_id, report)
+
+func _complete_tiled_generation(request_id: int, report: Dictionary) -> void:
+	if _tiled_thread != null and _tiled_thread.is_started():
+		_tiled_thread.wait_to_finish()
+	_tiled_thread = null
+	if request_id != _generation_request_id or _cleaned_up:
+		return
+	if bool(report.get("ok", false)):
+		print("[PlanetGenerator] Tiled global generation complete: ", report.get("manifest", ""))
+		emit_signal("finished")
+	else:
+		push_error("[PlanetGenerator] Tiled generation failed: %s" % report.get("reason", "unknown"))
+
+func cancel_generation(reason: String = "user") -> void:
+	if tiled_pipeline != null:
+		tiled_pipeline.cancel(reason)
+	elif gpu_orchestrator != null and gpu_orchestrator.has_method("request_cancel"):
+		gpu_orchestrator.request_cancel(reason)
 
 ## Wrapper pour l'exécution différée de la génération GPU.
 ##
@@ -293,21 +341,16 @@ func get_gpu_texture_rids() -> Dictionary:
 ## @param directory_path: Le chemin absolu ou relatif (user://) du dossier de destination.
 ## @return bool: `true` si toutes les sauvegardes ont réussi.
 func export_to_directory(output_dir: String) -> void:
-	"""
-	Export all maps to specified directory
-	Called from master.gd when Export button is pressed
-	"""
-	
+	"""Export monolithic PNGs or copy the completed raw tiled dataset."""
 	print("[PlanetGenerator] Exporting to: ", output_dir)
-	
-	if use_gpu_acceleration and gpu_orchestrator:
-		# GPU path - use PlanetExporter
-		
+	if use_tiled_global_generation and tiled_pipeline != null:
+		if not tiled_pipeline.export_dataset(output_dir):
+			push_warning("[PlanetGenerator] Tiled export skipped: dataset is incomplete")
+	elif use_gpu_acceleration and gpu_orchestrator:
 		var exporter = PlanetExporter.new()
 		exporter.export_maps(gpu_orchestrator.gpu, output_dir, generation_params)
 	else:
 		push_warning("[PlanetGenerator] Export skipped: generation resources are unavailable")
-	
 	print("[PlanetGenerator] Export complete")
 
 ## Sauvegarde les cartes générées dans le dossier temporaire par défaut.
@@ -322,15 +365,19 @@ func save_maps():
 func cleanup() -> void:
 	if _cleaned_up:
 		return
-
-	# Invalidate any generate_planet() call still waiting in the deferred queue.
 	_generation_request_id += 1
 	_cleaned_up = true
-
+	if tiled_pipeline != null:
+		tiled_pipeline.cancel("cleanup")
+	if _tiled_thread != null and _tiled_thread.is_started():
+		_tiled_thread.wait_to_finish()
+	_tiled_thread = null
+	if tiled_pipeline != null:
+		tiled_pipeline.cleanup()
+		tiled_pipeline = null
 	if gpu_orchestrator:
 		gpu_orchestrator.cleanup()
 		gpu_orchestrator = null
-
 	use_gpu_acceleration = false
 
 ## Retourne la liste des chemins de fichiers des cartes générées.
@@ -340,23 +387,22 @@ func cleanup() -> void:
 ##
 ## @return Array[String]: Liste des chemins complets vers les fichiers PNG générés.
 func getMaps() -> Array[String]:
-	"""Get temporary map file paths for UI preview"""
-	if _cleaned_up or not is_instance_valid(gpu_orchestrator):
+	"""Get temporary display maps. Raw tiled datasets are rendered by Milestone 6."""
+	if _cleaned_up:
+		return []
+	if use_tiled_global_generation:
+		# M5 deliberately stores raw physical tiles only; returning the manifest
+		# as an image path would make the legacy UI attempt to decode JSON as PNG.
+		return []
+	if not is_instance_valid(gpu_orchestrator):
 		push_warning("[PlanetGenerator] Cannot retrieve maps after cleanup")
 		return []
-
 	deleteImagesTemps()
-	
 	var temp_dir = "user://temp/"
-	
-	# Exporter les cartes GPU vers des fichiers PNG
 	var exported_files = gpu_orchestrator.export_all_maps(temp_dir)
-	
-	# Convertir le dictionnaire en tableau de chemins
 	var lstChemin: Array[String] = []
 	for file_path in exported_files.values():
 		lstChemin.append(file_path)
-	
 	return lstChemin
 
 ## Sauvegarde une image unique dans le dossier temporaire.

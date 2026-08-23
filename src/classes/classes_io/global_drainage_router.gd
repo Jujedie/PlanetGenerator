@@ -21,7 +21,7 @@ static func route(outlets_by_tile: Dictionary, tile_grid: Vector2i) -> Dictionar
 			continue
 		var candidates: Array = []
 		for offset in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
-			var ny := tile.y + offset.y
+			var ny = tile.y + offset.y
 			if ny < 0 or ny >= tile_grid.y:
 				continue
 			var neighbor := Vector2i(posmod(tile.x + offset.x, tile_grid.x), ny)

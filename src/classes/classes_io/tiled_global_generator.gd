@@ -112,6 +112,14 @@ func run_phase(phase_name: String, output_dir: String, halo: int,
 			if not bool(write_result.get("ok", false)):
 				return {"ok": false, "reason": "tile_write", "detail": write_result, "tile": tile}
 			layer_checksums["%s:%d:%d" % [str(layer_name), tile.x, tile.y]] = write_result["sha256"]
+		# A generator returning an empty/partial dictionary must never advance the
+		# resume checkpoint as though the tile were complete.
+		for expected_layer in expected_layers:
+			if not store.has_complete_tile(str(expected_layer), lod, tile):
+				return {
+					"ok": false, "reason": "missing_expected_layer",
+					"phase": phase_name, "layer": str(expected_layer), "tile": tile,
+				}
 		completed += 1
 		emit_signal("tile_completed", phase_name, tile, completed, plan.size())
 
@@ -126,6 +134,18 @@ func run_phase(phase_name: String, output_dir: String, halo: int,
 		"checksums": layer_checksums,
 	}
 	return last_report
+
+static func should_use_tiled(global_dimensions: Vector2i,
+		working_bytes_per_cell: int = DEFAULT_WORKING_BYTES_PER_CELL,
+		preferred_budget: int = PREFERRED_VRAM_BUDGET_BYTES) -> bool:
+	if global_dimensions.x <= 0 or global_dimensions.y <= 0:
+		return false
+	# A monolithic path is forbidden once either the device-safe texture edge or
+	# the preferred aggregate working-set estimate is exceeded.
+	if global_dimensions.x > MAX_TILE_SAMPLE_EDGE or global_dimensions.y > MAX_TILE_SAMPLE_EDGE:
+		return true
+	var estimated := global_dimensions.x * global_dimensions.y * maxi(working_bytes_per_cell, 1)
+	return estimated > preferred_budget
 
 func cancel(reason: String = "user") -> void:
 	cancel_token.cancel(reason)

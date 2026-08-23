@@ -39,10 +39,10 @@ func _run() -> void:
 		Vector2i(2, 0): [{"spill_height": 4.0}],
 	}
 	var routes := GlobalDrainageRouter.route(outlets, Vector2i(3, 1))
-	var drainage_ok := routes.get(Vector2i(0, 0), Vector2i(-1, -1)) == Vector2i(2, 0) or routes.get(Vector2i(0, 0), Vector2i(-1, -1)) == Vector2i(1, 0)
+	var drainage_ok = routes.get(Vector2i(0, 0), Vector2i(-1, -1)) == Vector2i(2, 0) or routes.get(Vector2i(0, 0), Vector2i(-1, -1)) == Vector2i(1, 0)
 	drainage_ok = drainage_ok and not routes.has(Vector2i(2, 0))
 
-	var passed := plan_ok and budget_ok and seam_ok and drainage_ok
+	var passed = plan_ok and budget_ok and seam_ok and drainage_ok
 	print("[Milestone5] tiles=", plan.size(), " budget=", budget,
 		" absolute_halo_seam=", seam_ok, " drainage=", routes)
 	get_tree().quit(0 if passed else 1)

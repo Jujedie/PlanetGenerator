@@ -107,3 +107,65 @@ func _remove_temp_recursive(path: String) -> int:
 		entry = directory.get_next()
 	directory.list_dir_end()
 	return removed
+
+static func remove_layer(root: String, layer: String) -> int:
+	var removed := 0
+	var root_access := DirAccess.open(root)
+	if root_access == null:
+		return 0
+	root_access.list_dir_begin()
+	var entry := root_access.get_next()
+	while not entry.is_empty():
+		if root_access.current_is_dir() and entry.begins_with("lod_"):
+			var layer_dir := root.path_join(entry).path_join(layer)
+			if DirAccess.dir_exists_absolute(layer_dir):
+				removed += _remove_tree(layer_dir)
+		entry = root_access.get_next()
+	root_access.list_dir_end()
+	return removed
+
+static func copy_tree(source: String, destination: String) -> bool:
+	if not DirAccess.dir_exists_absolute(source):
+		return false
+	DirAccess.make_dir_recursive_absolute(destination)
+	var directory := DirAccess.open(source)
+	if directory == null:
+		return false
+	directory.list_dir_begin()
+	var entry := directory.get_next()
+	while not entry.is_empty():
+		if entry != "." and entry != "..":
+			var src := source.path_join(entry)
+			var dst := destination.path_join(entry)
+			if directory.current_is_dir():
+				if not copy_tree(src, dst):
+					directory.list_dir_end()
+					return false
+			else:
+				DirAccess.make_dir_recursive_absolute(dst.get_base_dir())
+				if DirAccess.copy_absolute(src, dst) != OK:
+					directory.list_dir_end()
+					return false
+		entry = directory.get_next()
+	directory.list_dir_end()
+	return true
+
+static func _remove_tree(path: String) -> int:
+	var directory := DirAccess.open(path)
+	if directory == null:
+		return 0
+	var removed := 0
+	directory.list_dir_begin()
+	var entry := directory.get_next()
+	while not entry.is_empty():
+		if entry != "." and entry != "..":
+			var child := path.path_join(entry)
+			if directory.current_is_dir():
+				removed += _remove_tree(child)
+			else:
+				if DirAccess.remove_absolute(child) == OK:
+					removed += 1
+		entry = directory.get_next()
+	directory.list_dir_end()
+	DirAccess.remove_absolute(path)
+	return removed
