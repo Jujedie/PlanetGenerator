@@ -225,8 +225,10 @@ func _compile_generation_params() -> Dictionary:
 		"tiled_global_generation": false,
 		"vram_budget_bytes" : TiledGlobalGenerator.HARD_VRAM_BUDGET_BYTES,
 		"export_cartographic_map": true,
+		"export_grid_overlay": true,
 		"cartography_palette_path": CartographicPalette.DEFAULT_PATH,
 		"cartography_view": CartographicRenderer.VIEW_PLANET,
+		"cartography_grid_alpha": 166,
 		"avg_temperature"   : get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Temperature_Param/LineEdit").value,
 		
 		# Erosion and tectonics

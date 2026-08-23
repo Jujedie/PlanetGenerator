@@ -63,8 +63,6 @@ static func render_full_map(geo_data: PackedByteArray, water_data: PackedByteArr
 				color = color.lerp(palette.minor_contour, 0.48)
 			if _is_coast(water_data, x, y, dimensions):
 				color = color.lerp(palette.coastline, 0.82)
-			if _is_coordinate_grid(x, y, dimensions, view):
-				color = color.lerp(palette.grid, 0.35)
 			_write_color(output, index * 4, color)
 
 	for marker_value in options.get("markers", []):
@@ -91,6 +89,27 @@ static func render_full_map(geo_data: PackedByteArray, water_data: PackedByteArr
 		"minor_contour_m": intervals.x,
 		"major_contour_m": intervals.y,
 	}
+
+static func render_grid_overlay(dimensions: Vector2i, palette: CartographicPalette,
+		options: Dictionary = {}) -> Dictionary:
+	var pixel_count := dimensions.x * dimensions.y
+	var output := PackedByteArray()
+	output.resize(pixel_count * 4)
+	var view := str(options.get("view", VIEW_PLANET))
+	var alpha := clampi(int(options.get("alpha", 166)), 0, 255)
+	if view != VIEW_LOCAL:
+		for y in range(dimensions.y):
+			for x in range(dimensions.x):
+				if _is_coordinate_grid(x, y, dimensions, view):
+					_write_color(output, (y * dimensions.x + x) * 4, palette.grid, alpha)
+	return {
+		"image": Image.create_from_data(dimensions.x, dimensions.y, false, Image.FORMAT_RGBA8, output),
+		"view": view,
+		"palette": palette.name,
+		"palette_version": palette.version,
+		"alpha": alpha,
+	}
+
 
 static func _base_color(height_m: float, water_type: int,
 		palette: CartographicPalette, sea_level: float) -> Color:
@@ -187,8 +206,8 @@ static func _draw_marker(output: PackedByteArray, dimensions: Vector2i,
 			var y := clampi(cell.y + offset.y, 0, dimensions.y - 1)
 			_write_color(output, (y * dimensions.x + x) * 4, color)
 
-static func _write_color(output: PackedByteArray, offset: int, color: Color) -> void:
+static func _write_color(output: PackedByteArray, offset: int, color: Color, alpha: int = 255) -> void:
 	output[offset] = clampi(roundi(color.r * 255.0), 0, 255)
 	output[offset + 1] = clampi(roundi(color.g * 255.0), 0, 255)
 	output[offset + 2] = clampi(roundi(color.b * 255.0), 0, 255)
-	output[offset + 3] = 255
+	output[offset + 3] = clampi(alpha, 0, 255)

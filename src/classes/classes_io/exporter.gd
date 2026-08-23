@@ -213,6 +213,10 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		var cartography_result := _export_cartographic_map(gpu, output_dir)
 		for key in cartography_result.keys():
 			exported_files[key] = cartography_result[key]
+	if bool(params.get("export_grid_overlay", true)):
+		var grid_overlay_result := _export_grid_overlay(gpu, output_dir)
+		for key in grid_overlay_result.keys():
+			exported_files[key] = grid_overlay_result[key]
 	
 	# === EXPORT FINAL MAP (Step 6) ===
 	var final_result = _export_final_map(gpu, output_dir)
@@ -1776,6 +1780,31 @@ func _export_cartographic_map(gpu: GPUContext, output_dir: String) -> Dictionary
 		return {}
 	print("  ✅ Saved: ", path, " (", dimensions.x, "x", dimensions.y, ", palette=", palette.name, ")")
 	return {"cartographic": path}
+
+
+func _export_grid_overlay(gpu: GPUContext, output_dir: String) -> Dictionary:
+	print("[Exporter] # Exporting cartographic grid overlay...")
+	if not gpu.textures.has("geo") or not gpu.textures["geo"].is_valid():
+		push_warning("[Exporter] ⚠️ grid_overlay.png skipped: missing texture 'geo'")
+		return {}
+	var format = gpu.rd.texture_get_format(gpu.textures["geo"])
+	var dimensions := Vector2i(format.width, format.height)
+	var palette_path := str(params.get("cartography_palette_path", CartographicPalette.DEFAULT_PATH))
+	var palette := CartographicPalette.load_palette(palette_path)
+	var rendered := CartographicRenderer.render_grid_overlay(dimensions, palette, {
+		"view": str(params.get("cartography_view", CartographicRenderer.VIEW_PLANET)),
+		"alpha": int(params.get("cartography_grid_alpha", 166)),
+	})
+	if rendered.is_empty():
+		return {}
+	var image: Image = rendered["image"]
+	var path := output_dir.path_join("grid_overlay.png")
+	var save_error := _save_png(image, path)
+	if save_error != OK:
+		push_error("[Exporter] ❌ Failed to save grid_overlay.png: %s" % save_error)
+		return {}
+	print("  ✅ Saved: ", path, " (", dimensions.x, "x", dimensions.y, ", alpha=", rendered.get("alpha", 166), ")")
+	return {"grid_overlay": path}
 
 
 func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
