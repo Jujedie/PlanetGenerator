@@ -3851,56 +3851,53 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	if not normalization.is_empty():
 		normalized_data = normalization["data"]
 
-	# Une petite étendue d'eau entièrement isolée ne possède aucun voisin
-	# aquatique avec lequel fusionner. Pour respecter simultanément la couverture
-	# à 100 % ET la taille minimale, plusieurs petites composantes proches sont
-	# regroupées sous un même ID administratif jusqu'à approcher la taille cible.
-	# Aucun pixel de terre n'est ajouté au département. Le type d'eau est conservé
-	# comme classe de regroupement autant que possible.
-	var absorption := DepartmentNormalizer.consolidate_disconnected_undersized(
-		normalized_data, water_department_mask, water_mask_data, w, h,
-		target_department_cells, minimum_department_ratio, maximum_department_ratio
-	)
-	if not absorption.is_empty():
-		normalized_data = absorption["data"]
-
+	# IMPORTANT : ne jamais regrouper à distance plusieurs composantes d'eau
+	# isolées sous un même ID. Le précédent correctif de couverture faisait cela
+	# pour atteindre artificiellement la taille cible, ce qui produisait une même
+	# couleur sur des dizaines de petits points sans continuité géographique.
+	#
+	# Une composante aquatique physiquement plus petite que la taille minimale ne
+	# peut pas être agrandie sans traverser la terre. Elle reste donc un département
+	# maritime autonome : couverture complète + un ID/une couleur par composante.
+	# Sa petite taille est une exception topologique mesurée, pas une fusion fictive.
 	rd.texture_update(gpu.textures["ocean_region_map"], 0, normalized_data)
+
+	var missing_water := 0
+	for index in range(w * h):
+		if water_department_mask[index] == 0:
+			continue
+		if int(normalized_data.decode_u32(index * 4)) == DepartmentNormalizer.INVALID_ID:
+			missing_water += 1
 	print(
 		"  • Normalisation maritime : ", int(normalization.get("merged_components", 0)),
-		" fusion(s) connexes, ", int(absorption.get("grouped_departments", 0)),
-		" micro-département(s) isolé(s) regroupé(s) (",
-		int(absorption.get("grouped_cells", 0)), " pixels), départements composés=",
-		int(absorption.get("compound_departments", 0)), ", couverture manquante=",
-		int(absorption.get("unassigned_mask_cells", 0))
+		" fusion(s) connexes, ", int(normalization.get("split_fragments", 0)),
+		" ID(s) disjoint(s) séparé(s), exceptions isolées sous le minimum=",
+		int(normalization.get("isolated_undersized", 0)),
+		", couverture manquante=", missing_water
 	)
 
-	# Vérification quantitative : la génération doit maintenant satisfaire les
-	# deux invariants simultanément : aucun pixel d'eau non assigné et aucun ID
-	# indépendant sous le minimum, sauf si la surface d'eau totale elle-même est
-	# plus petite que ce minimum (cas mathématiquement impossible à corriger).
+	# Vérification quantitative : toute l'eau doit être couverte et un même ID
+	# ne doit jamais représenter plusieurs composantes disjointes. Les seules zones
+	# autorisées sous le minimum sont les composantes aquatiques isolées qui sont
+	# elles-mêmes physiquement plus petites que ce minimum.
 	var department_stats := _measure_partition_sizes(
 		"ocean_region_map", target_department_cells
 	)
 	for key in normalization.keys():
 		if key != "data":
 			department_stats["normalization_" + str(key)] = normalization[key]
-	for key in absorption.keys():
-		if key != "data":
-			department_stats["absorption_" + str(key)] = absorption[key]
+	department_stats["unassigned_water_cells"] = missing_water
 	last_administrative_stats["ocean_departments"] = department_stats
 	_print_partition_stats("Départements maritimes", department_stats)
 	if not department_stats.is_empty():
-		var min_allowed := int(absorption.get(
-			"minimum_cells", normalization.get("minimum_cells", 1)
-		))
-		var missing_water := int(absorption.get("unassigned_mask_cells", 0))
+		var min_allowed := int(normalization.get("minimum_cells", 1))
 		if missing_water > 0:
 			push_error("[Orchestrator] Couverture maritime incomplète après normalisation: "
 				+ str(missing_water) + " pixel(s) d'eau sans département")
 		if int(department_stats["minimum"]) < min_allowed and int(
-			absorption.get("unavoidable_undersized", 0)
+			normalization.get("isolated_undersized", 0)
 		) == 0:
-			push_warning("[Orchestrator] Département maritime sous la taille minimale après normalisation: "
+			push_warning("[Orchestrator] Département maritime sous la taille minimale sans exception topologique: "
 				+ str(department_stats["minimum"]) + " < " + str(min_allowed))
 	
 	# === PASSE 3 : FINALISATION ET COLORATION ===
