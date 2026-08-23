@@ -16,6 +16,7 @@ var params: Dictionary = {}
 # this setting never controls the single GPU generation queue.
 var _nb_threads: int = 1
 var last_metrics: Dictionary = {}
+var _admin_color_cursor: int = 0
 
 # Water colors by atmosphere type
 static var WATER_COLORS = {
@@ -67,6 +68,7 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	var export_started_usec := Time.get_ticks_usec()
 	params = generation_params
 	_nb_threads = _resolve_export_worker_count(params)
+	_admin_color_cursor = 0
 	last_metrics = {
 		"worker_count": _nb_threads,
 		"worker_policy": "automatic" if int(params.get("export_worker_count", 0)) <= 0 else "explicit_export_only",
@@ -222,6 +224,22 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	print("[Exporter] Export complete: ", exported_files.size(), " maps")
 	print("[Exporter] Metrics: ", last_metrics)
 	return exported_files
+
+
+func _assign_administrative_colors(group_ids: Array) -> Dictionary:
+	var unique_ids: Dictionary = {}
+	for group_id in group_ids:
+		unique_ids[group_id] = true
+	var count := unique_ids.size()
+	if _admin_color_cursor + count > HierarchyBuilder.ADMIN_COLOR_CAPACITY:
+		push_error(
+			"Administrative export needs %d unique colors, but RGBA8 can represent only %d reserved-safe colors"
+			% [_admin_color_cursor + count, HierarchyBuilder.ADMIN_COLOR_CAPACITY]
+		)
+		return {}
+	var colors := HierarchyBuilder.assign_colors(group_ids, _admin_color_cursor)
+	_admin_color_cursor += count
+	return colors
 
 func _resolve_export_worker_count(generation_parameters: Dictionary) -> int:
 	var processor_count := maxi(OS.get_processor_count(), 1)
@@ -913,7 +931,7 @@ func _export_region_map(gpu: GPUContext, output_dir: String, _optimised_region_g
 	var ordered_ids: Array = []
 	for item in unique_sorted:
 		ordered_ids.append(item[0])
-	id_to_color = HierarchyBuilder.assign_colors(ordered_ids)
+	id_to_color = _assign_administrative_colors(ordered_ids)
 	
 	print("    Assigned ", id_to_color.size(), " unique colors")
 	
@@ -995,10 +1013,10 @@ func _color_region_rows_fast(data: PackedByteArray, output_data: PackedByteArray
 				
 				if id_to_color.has(eff_id):
 					var color: Color = id_to_color[eff_id]
-					r = int(color.r * 255.0)
-					g = int(color.g * 255.0)
-					b = int(color.b * 255.0)
-					a = int(color.a * 255.0)
+					r = roundi(color.r * 255.0)
+					g = roundi(color.g * 255.0)
+					b = roundi(color.b * 255.0)
+					a = roundi(color.a * 255.0)
 				else:
 					r = no_region_rgba[0]
 					g = no_region_rgba[1]
@@ -1117,7 +1135,7 @@ func _export_ocean_region_map(gpu: GPUContext, output_dir: String, _optimised_re
 	var ordered_ids: Array = []
 	for item in unique_sorted:
 		ordered_ids.append(item[0])
-	id_to_color = HierarchyBuilder.assign_colors(ordered_ids)
+	id_to_color = _assign_administrative_colors(ordered_ids)
 	
 	print("    Assigned ", id_to_color.size(), " unique colors")
 	
@@ -1900,7 +1918,7 @@ func _export_hierarchy_maps(gpu: GPUContext, output_dir: String) -> Dictionary:
 		
 		# Assigner les couleurs step-17 aux groupes
 		var group_ids := HierarchyBuilder._unique_values(d2g)
-		var colors := HierarchyBuilder.assign_colors(group_ids)
+		var colors := _assign_administrative_colors(group_ids)
 		
 		# Peindre l'image en parallèle
 		var output := PackedByteArray()
@@ -2024,10 +2042,10 @@ func _paint_hierarchy_rows(data: PackedByteArray, output: PackedByteArray,
 				output[off + 3] = 0
 				continue
 			var c: Color = colors.get(gid, Color.TRANSPARENT)
-			output[off]     = int(c.r * 255.0)
-			output[off + 1] = int(c.g * 255.0)
-			output[off + 2] = int(c.b * 255.0)
-			output[off + 3] = int(c.a * 255.0)
+			output[off]     = roundi(c.r * 255.0)
+			output[off + 1] = roundi(c.g * 255.0)
+			output[off + 2] = roundi(c.b * 255.0)
+			output[off + 3] = roundi(c.a * 255.0)
 
 
 ## Compare deux couleurs avec tolérance pour erreurs de compression

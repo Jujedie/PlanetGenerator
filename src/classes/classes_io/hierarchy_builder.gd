@@ -329,18 +329,47 @@ static func build_sea(data: PackedByteArray, w: int, h: int,
 	return [dept_to_region, dept_to_basin, dept_to_ocean]
 
 
-static func assign_colors(group_ids: Array) -> Dictionary:
+const ADMIN_COLOR_CAPACITY: int = 0xFFFFFF  # all non-zero RGB triplets
+const _ADMIN_COLOR_MULTIPLIER: int = 0x9E3779
+const _ADMIN_COLOR_OFFSET: int = 0x34567B
+
+
+## Returns an injective RGBA8 administrative colour for a palette ordinal.
+##
+## The previous HSV palette produced distinct floating-point colours, but PNG
+## export quantizes them to 8 bits per channel. At sufficiently high entity
+## counts two HSV values could therefore collapse to the same RGB triplet. The
+## mapping below is an affine permutation of the 16,777,215 non-zero RGB codes:
+## gcd(0x9E3779, 0xFFFFFF) == 1, so every ordinal in the supported range maps
+## to exactly one byte-exact colour. RGB(0,0,0) is reserved for no-data.
+static func administrative_color_for_ordinal(ordinal: int) -> Color:
+	if ordinal < 0 or ordinal >= ADMIN_COLOR_CAPACITY:
+		push_error(
+			"Administrative palette exhausted: %d entities exceeds the RGBA8 unique-colour capacity"
+			% (ordinal + 1)
+		)
+		return Color8(255, 0, 255, 255)
+	var code := int((ordinal * _ADMIN_COLOR_MULTIPLIER + _ADMIN_COLOR_OFFSET) % ADMIN_COLOR_CAPACITY) + 1
+	var r := (code >> 16) & 0xFF
+	var g := (code >> 8) & 0xFF
+	var b := code & 0xFF
+	return Color8(r, g, b, 255)
+
+
+## Assigns deterministic, byte-exact unique colours to every supplied entity.
+## first_ordinal lets the exporter reserve disjoint palette ranges for departments
+## and every subsequent hierarchy level, guaranteeing uniqueness across all
+## administrative PNGs produced by one export.
+static func assign_colors(group_ids: Array, first_ordinal: int = 0) -> Dictionary:
 	var out: Dictionary = {}
-	var index := 0
-	for gid in group_ids:
+	var ordered := group_ids.duplicate()
+	ordered.sort()
+	var ordinal := first_ordinal
+	for gid in ordered:
 		if out.has(gid):
 			continue
-		var hue := fposmod(float(index) * 0.61803398875, 1.0)
-		var saturation := 0.58 + 0.12 * float(index % 3) / 2.0
-		var value_band := floori(float(index) / 3.0) % 3
-		var value := 0.72 + 0.16 * float(value_band) / 2.0
-		out[gid] = Color.from_hsv(hue, saturation, value, 1.0)
-		index += 1
+		out[gid] = administrative_color_for_ordinal(ordinal)
+		ordinal += 1
 	return out
 
 
