@@ -113,6 +113,9 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		for key in final_result.keys():
 			exported_files[key] = final_result[key]
 		
+		var manifest_path := PlanetManifest.save(output_dir, params, exported_files)
+		if not manifest_path.is_empty():
+			exported_files["manifest"] = manifest_path
 		_finalize_metrics(export_started_usec)
 		print("[Exporter] Export gazeuse complete: ", exported_files.size(), " maps")
 		return exported_files
@@ -220,6 +223,10 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	for key in resources_result.keys():
 		exported_files[key] = resources_result[key]
 	
+	var manifest_path := PlanetManifest.save(output_dir, params, exported_files)
+	if not manifest_path.is_empty():
+		exported_files["manifest"] = manifest_path
+
 	_finalize_metrics(export_started_usec)
 	print("[Exporter] Export complete: ", exported_files.size(), " maps")
 	print("[Exporter] Metrics: ", last_metrics)

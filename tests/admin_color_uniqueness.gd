@@ -65,7 +65,7 @@ func _test_isolated_ocean_components_keep_unique_ids() -> bool:
 	for index in range(w * h):
 		regions.encode_u32(index * 4, DepartmentNormalizer.INVALID_ID)
 	for point in [Vector2i(1, 1), Vector2i(5, 1), Vector2i(9, 1)]:
-		var index := point.y * w + point.x
+		var index = point.y * w + point.x
 		water[index] = 1
 		regions.encode_u32(index * 4, 7)
 

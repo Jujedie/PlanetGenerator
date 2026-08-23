@@ -197,7 +197,8 @@ func _compile_generation_params() -> Dictionary:
 		randomize()
 		_seed = randi()
 	
-	var circonference = int(get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Radius_Param/LineEdit").value) * 2 * PI
+	var planet_radius_km := float(get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Radius_Param/LineEdit").value)
+	var canonical_resolution := PlanetGridContract.logical_dimensions(planet_radius_km)
 	var typePlanete   = get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Type_Param/LineEdit").get_selected_id()
 	if typePlanete == -1:
 		typePlanete = 0  # Default to Earth-like if none selected
@@ -209,10 +210,17 @@ func _compile_generation_params() -> Dictionary:
 		"export_worker_count": get_node(CATEGORIES_PATHS["GENERAL"]+"Thread_Number_Param/LineEdit").value,
 
 		# Planet properties
-		"planet_radius"     : circonference / (2.0 * PI),
+		"planet_radius"     : planet_radius_km,
 		"planet_density"    : get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Density_Param/LineEdit").value,
 		"planet_type"       : typePlanete, # 0: Earth-like, 1: Thin, 2: Thick
-		"resolution"        : Vector2i(circonference, circonference / 2),
+		# Canonical equal-area grid. Physical radius and sampling are separate
+		# inputs; external callers may still provide an explicit low-resolution
+		# override for previews/tests without changing planet_radius.
+		"resolution"        : canonical_resolution,
+		"global_dimensions" : canonical_resolution,
+		"global_cell_area_km2": PlanetGridContract.effective_cell_area_km2(planet_radius_km, canonical_resolution),
+		"tile_size"         : PlanetGridContract.DEFAULT_TILE_SIZE,
+		"projection"        : PlanetGridContract.PROJECTION_ID,
 		"avg_temperature"   : get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Temperature_Param/LineEdit").value,
 		
 		# Erosion and tectonics
@@ -233,8 +241,8 @@ func _compile_generation_params() -> Dictionary:
 
 		# Craters
 		"crater_density"     : get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Density_Param/LineEdit").value, # 0.5
-		"crater_max_radius"  : min(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 0.08,
-		"crater_min_radius"  : min(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Min_Radius_Param/LineEdit").value, min(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 0.08),
+		"crater_max_radius"  : min(canonical_resolution.x, canonical_resolution.y) * 0.08,
+		"crater_min_radius"  : min(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Min_Radius_Param/LineEdit").value, min(canonical_resolution.x, canonical_resolution.y) * 0.08),
 		"crater_depth_ratio" : get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Depth_Ratio_Param/LineEdit").value, # 0.25
 		"crater_ejecta_extent": get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Ejecta_Extent_Param/LineEdit").value, # 2.5
 		"crater_ejecta_decay" : get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Ejecta_Decay_Param/LineEdit").value, # 3.0
@@ -268,14 +276,14 @@ func _compile_generation_params() -> Dictionary:
 		"region_river_threshold" : get_node(CATEGORIES_PATHS["REGION"]+"Region_River_Threshold_Param/LineEdit").value, # 1.0
 		"region_budget_variation": get_node(CATEGORIES_PATHS["REGION"]+"Region_Budget_Variation_Param/LineEdit").value, # 0.5
 		"region_noise_strength"  : get_node(CATEGORIES_PATHS["REGION"]+"Region_Noise_Strength_Param/LineEdit").value, # 0.5
-		"region_iterations"	     : max(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 2,
+		"region_iterations"	     : max(canonical_resolution.x, canonical_resolution.y) * 2,
 
 		# Regions Ocean 
 		"nb_cases_ocean_regions": get_node(CATEGORIES_PATHS["OCEAN"]+"Nb_Cases_Ocean_Regions_Param/LineEdit").value, # 100
 		"ocean_cost_flat"   : get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Cost_Flat_Param/LineEdit").value, # 1.0
 		"ocean_cost_deeper" : get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Cost_Deeper_Param/LineEdit").value, # 2.0
 		"ocean_noise_strength" : get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Noise_Strength_Param/LineEdit").value, # 0.5
-		"ocean_iterations"	   : max(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 2,
+		"ocean_iterations"	   : max(canonical_resolution.x, canonical_resolution.y) * 2,
 
 		# Resources
 		"petrole_probability"  : get_node(CATEGORIES_PATHS["RESSOURCES"]+"Petrole_Probability_Param/LineEdit").value, # 0.025
