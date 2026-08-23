@@ -10,6 +10,7 @@
 // Entrées :
 //   - water_mask (binding 0) : masque eau (reste infranchissable)
 //   - region_map_in (binding 1) : état actuel des régions
+//   - geo_texture (binding 4) : altitude réelle (sous le niveau marin = eau)
 //
 // Sorties :
 //   - region_map_out (binding 2) : régions après nettoyage
@@ -23,13 +24,14 @@ layout(set = 0, binding = 0, r8ui) uniform readonly uimage2D water_mask;
 layout(set = 0, binding = 1, r32ui) uniform readonly uimage2D region_map_in;
 layout(set = 0, binding = 2, r32ui) uniform writeonly uimage2D region_map_out;
 layout(set = 0, binding = 3, r32f) uniform writeonly image2D region_cost_out;
+layout(set = 0, binding = 4, rgba32f) uniform readonly image2D geo_texture;
 
 // === SET 1 : PARAMÈTRES ===
 layout(set = 1, binding = 0, std140) uniform CleanupParams {
     uint width;
     uint height;
     uint seed;
-    uint padding;
+    float sea_level;
 } params;
 
 // === FONCTIONS UTILITAIRES ===
@@ -73,7 +75,8 @@ void main() {
     
     // Vérifier si c'est de l'eau
     uint water_type = imageLoad(water_mask, pixel).r;
-    if (water_type > 0u) {
+    float elevation = imageLoad(geo_texture, pixel).r;
+    if (water_type > 0u || elevation < params.sea_level) {
         // Eau : copier tel quel
         imageStore(region_map_out, pixel, uvec4(0xFFFFFFFFu, 0u, 0u, 0u));
         imageStore(region_cost_out, pixel, vec4(1e30, 0.0, 0.0, 0.0));
@@ -96,7 +99,8 @@ void main() {
         int nx = wrapX(pixel.x + NEIGHBORS[i].x, w);
         int ny = clampY(pixel.y + NEIGHBORS[i].y, h);
         ivec2 neighbor_pos = ivec2(nx, ny);
-        if (imageLoad(water_mask, neighbor_pos).r > 0u) continue;
+        if (imageLoad(water_mask, neighbor_pos).r > 0u ||
+                imageLoad(geo_texture, neighbor_pos).r < params.sea_level) continue;
         uint neighbor_region = imageLoad(region_map_in, neighbor_pos).r;
         if (neighbor_region != 0xFFFFFFFFu &&
                 (assigned_region == 0xFFFFFFFFu || neighbor_region < assigned_region)) {
@@ -115,7 +119,8 @@ void main() {
             int nx = wrapX(pixel.x + NEIGHBORS[i].x, w);
             int ny = clampY(pixel.y + NEIGHBORS[i].y, h);
             ivec2 neighbor_pos = ivec2(nx, ny);
-            if (imageLoad(water_mask, neighbor_pos).r > 0u) continue;
+            if (imageLoad(water_mask, neighbor_pos).r > 0u ||
+                    imageLoad(geo_texture, neighbor_pos).r < params.sea_level) continue;
             uint neighbor_linear = uint(ny * w + nx);
             uint neighbor_hash = hash(neighbor_linear ^ params.seed);
             if (neighbor_hash < my_hash ||

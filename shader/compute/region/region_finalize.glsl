@@ -12,6 +12,7 @@
 // Entrées :
 //   - region_map (binding 0) : R32UI - ID de région
 //   - water_mask (binding 1) : masque eau
+//   - geo_texture (binding 3) : altitude réelle
 //
 // Sorties :
 //   - region_colored (binding 2) : RGBA8 - couleur finale
@@ -23,6 +24,7 @@ layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 layout(set = 0, binding = 0, r32ui) uniform readonly uimage2D region_map;
 layout(set = 0, binding = 1, r8ui) uniform readonly uimage2D water_mask;
 layout(set = 0, binding = 2, rgba8) uniform writeonly image2D region_colored;
+layout(set = 0, binding = 3, rgba32f) uniform readonly image2D geo_texture;
 
 // === SET 1 : PARAMÈTRES ===
 layout(set = 1, binding = 0, std140) uniform FinalizeParams {
@@ -32,7 +34,7 @@ layout(set = 1, binding = 0, std140) uniform FinalizeParams {
     uint water_color_r;    // Couleur eau R (0x16 = 22)
     uint water_color_g;    // Couleur eau G (0x1a = 26)
     uint water_color_b;    // Couleur eau B (0x1f = 31)
-    float padding1;
+    float sea_level;
     float padding2;
 } params;
 
@@ -89,11 +91,12 @@ void main() {
     // Lire la région et le type d'eau
     uint region_id = imageLoad(region_map, pixel).r;
     uint water_type = imageLoad(water_mask, pixel).r;
+    float elevation = imageLoad(geo_texture, pixel).r;
     
     vec4 final_color;
     
     // Si c'est de l'eau, utiliser la couleur d'eau (comme legacy: 0x161a1fFF)
-    if (water_type > 0u) {
+    if (water_type > 0u || elevation < params.sea_level || region_id == 0xFFFFFFFFu) {
         // Couleur eau du legacy : RGB(22, 26, 31) = #161a1f
         final_color = vec4(
             float(params.water_color_r) / 255.0,
@@ -102,12 +105,6 @@ void main() {
             1.0
         );
     } else {
-        // Pixel de terre : TOUTE TERRE DOIT AVOIR UNE RÉGION
-        // Si pas de région assignée par la propagation, en créer une unique
-        if (region_id == 0xFFFFFFFFu) {
-            region_id = uint(pixel.x) + uint(pixel.y) * params.width;
-        }
-        
         // Utiliser un hash de l'ID pour disperser les couleurs
         uint color_index = hashForColor(region_id);
         vec3 rgb = regionIdToColor(color_index);

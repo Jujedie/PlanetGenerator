@@ -247,8 +247,12 @@ func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 		)
 		var land_regions := gpu.readback_texture_raw("region_map")
 		var sea_regions := gpu.readback_texture_raw("ocean_region_map")
-		var land_check := _validate_partition(land_regions, water_data, false)
-		var sea_check := _validate_partition(sea_regions, water_data, true)
+		var land_check := _validate_partition(
+			land_regions, water_data, false, geo_data, float(params["sea_level"])
+		)
+		var sea_check := _validate_partition(
+			sea_regions, water_data, true, geo_data, float(params["sea_level"])
+		)
 		result["administrative_masks"] = bool(land_check[0]) and bool(sea_check[0])
 		result["administrative_continuity"] = bool(land_check[1]) and bool(sea_check[1])
 		result["administrative_disconnected_ids"] = {
@@ -298,9 +302,16 @@ func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 			department_target, float(params["nb_cases_regions"])
 		)
 		result["department_distribution"] = (
-			float(department_stats.get("mean", INF)) <= department_target * 2.0
-			and float(department_stats.get("p95", INF)) <= department_target * 3.5
+			float(department_stats.get("mean", INF)) >= department_target * 0.55
+			and float(department_stats.get("mean", INF)) <= department_target * 1.65
+			and float(department_stats.get("p95", INF)) <= department_target * 2.75
 			and outlier_fraction <= 0.02
+			and int(department_stats.get(
+				"normalization_undersized_nonisolated", -1
+			)) == 0
+			and int(department_stats.get(
+				"normalization_extreme_oversized", -1
+			)) == 0
 		)
 		var land_info := HierarchyBuilder._scan(
 			land_regions, test_resolution.x, test_resolution.y, land_merge
@@ -501,11 +512,14 @@ func _count_raw_ids(data: PackedByteArray) -> int:
 			ids[value] = true
 	return ids.size()
 
-func _validate_partition(region_data: PackedByteArray, water_data: PackedByteArray,
-		maritime: bool) -> Array:
+func _validate_partition(region_data: PackedByteArray,
+		water_data: PackedByteArray, maritime: bool,
+		geo_data: PackedByteArray = PackedByteArray(),
+		sea_level: float = 0.0) -> Array:
 	var pixel_count := test_resolution.x * test_resolution.y
 	if region_data.size() != pixel_count * 4 or water_data.size() != pixel_count:
 		return [false, false, 0]
+	var valid_geo := geo_data.size() == pixel_count * 16
 
 	var mask_valid := true
 	var continuous := true
@@ -517,7 +531,10 @@ func _validate_partition(region_data: PackedByteArray, water_data: PackedByteArr
 
 	for start in range(pixel_count):
 		var is_water := water_data[start] != 0
-		var eligible := is_water if maritime else not is_water
+		var eligible := is_water if maritime else (
+			not is_water
+			and (not valid_geo or geo_data.decode_float(start * 16) >= sea_level)
+		)
 		var region_id := int(region_data.decode_u32(start * 4))
 		if eligible != (region_id != 0xFFFFFFFF):
 			mask_valid = false

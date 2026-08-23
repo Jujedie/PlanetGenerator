@@ -3170,7 +3170,14 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	# couverture topologique de la projection.
 	var max_dim = max(w, h)
 	var water_mask_data := gpu.readback_texture_raw("water_mask")
-	var actual_land_cells := _count_mask_cells(water_mask_data, false)
+	var geo_data := gpu.readback_texture_raw("geo")
+	# Un même prédicat de terre pilote le comptage, les shaders et la
+	# normalisation. Un pixel sous le niveau marin ne devient jamais un
+	# département si la classification hydrologique est incomplète.
+	var land_mask := DepartmentNormalizer.build_land_mask(
+		water_mask_data, geo_data, w, h, sea_level
+	)
+	var actual_land_cells := _count_mask_value(land_mask, 1)
 	# "nb_cases_regions" contrôle la surface locale visible d'un département.
 	# Il ne doit pas être réinterprété comme un nombre global de graines : avec
 	# une valeur de 15, une zone doit couvrir environ 15 cases de terre, quelle
@@ -3196,12 +3203,22 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 		0.000001,
 		0.105
 	)
-	# Le shader conserve le candidat au hash minimal dans son voisinage 3x3.
-	# La densité correspond directement à la taille locale demandée.
+	# Valeur conservée dans l'UBO pour compatibilité. Le shader place désormais
+	# les minima de hash dans un disque dont l'aire suit directement la cible.
 	var seed_probability := 1.0 - pow(
 		maxf(1.0 - 9.0 * desired_seed_density, 0.000001), 1.0 / 9.0
 	)
 	var mean_department_spacing_px := sqrt(target_department_cells)
+	var seed_neighborhood_radius := clampi(int(round(
+		mean_department_spacing_px / sqrt(PI)
+	)), 0, 8)
+	var minimum_department_ratio := clampf(
+		float(params.get("land_department_min_ratio", 0.45)), 0.10, 0.90
+	)
+	var maximum_department_ratio := maxf(
+		float(params.get("land_department_max_ratio", 1.85)),
+		minimum_department_ratio + 0.10
+	)
 	var requested_iterations = int(params.get("region_iterations", max_dim * 2))
 	var region_iterations = clampi(requested_iterations, max_dim, max_dim * 2)
 
@@ -3210,17 +3227,23 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 		" km² | taille département cible: ", snappedf(target_department_cells, 0.1),
 		" cases | départements cibles: ", target_departments,
 		" | régions cibles: ", target_regions)
-	print("  Probabilité candidats blue-noise: ", snappedf(seed_probability, 0.0001),
-		" | espacement moyen: ", snappedf(mean_department_spacing_px, 0.1), " px")
+	print("  Densité blue-noise cible: ", snappedf(desired_seed_density, 0.0001),
+		" | rayon local: ", seed_neighborhood_radius,
+		" px | espacement moyen: ", snappedf(mean_department_spacing_px, 0.1), " px")
 	print("  Irrégularité organique: ", noise_strength,
-		" | passes topologiques: ", region_iterations)
+		" | plage souple: ", snappedf(minimum_department_ratio * 100.0, 0.1),
+		"–", snappedf(maximum_department_ratio * 100.0, 0.1),
+		" % | passes topologiques: ", region_iterations)
 	
 	# Initialiser les textures de région
 	gpu.initialize_region_textures()
 	
 	# === PASSE 1 : PLACEMENT DES SEEDS ===
 	print("  • Placement des seeds de régions...")
-	_dispatch_region_seed_placement(w, h, groups_x, groups_y, seed_val, seed_probability, sea_level, budget_variation)
+	_dispatch_region_seed_placement(
+		w, h, groups_x, groups_y, seed_val, seed_probability, sea_level,
+		budget_variation, mean_department_spacing_px
+	)
 	
 	# === PASSE 2 : CROISSANCE LOCALE MASQUÉE ===
 	print("  • Croissance organique connexe (", region_iterations, " passes)...")
@@ -3240,19 +3263,43 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	var cleanup_passes = maxi(4, ceili(mean_department_spacing_px))
 	for cleanup_pass in range(cleanup_passes):
 		var use_swap = ((region_iterations + cleanup_pass) % 2 == 1)
-		_dispatch_region_cleanup(w, h, groups_x, groups_y, seed_val, use_swap)
+		_dispatch_region_cleanup(
+			w, h, groups_x, groups_y, seed_val, sea_level, use_swap
+		)
 	
 	# Si nombre impair de passes totales, copier le résultat
 	if (region_iterations + cleanup_passes) % 2 == 1:
 		_copy_region_textures(w, h)
-	_repair_disconnected_partition("region_map", w, h)
+	# Une normalisation topologique absorbe les résidus trop petits dans leur
+	# meilleur voisin réel. Elle utilise la même couture X et ne fusionne jamais
+	# deux masses terrestres séparées par l'eau.
+	var normalization := DepartmentNormalizer.normalize(
+		gpu.readback_texture_raw("region_map"), land_mask, w, h,
+		target_department_cells, minimum_department_ratio,
+		maximum_department_ratio
+	)
+	if not normalization.is_empty():
+		var normalized_data: PackedByteArray = normalization["data"]
+		rd.texture_update(gpu.textures["region_map"], 0, normalized_data)
+		print(
+			"  • Normalisation départements : ", normalization["merged_components"],
+			" fusion(s), ", normalization["split_fragments"],
+			" fragment(s) séparé(s), ", normalization["removed_non_land"],
+			" pixel(s) hors terre supprimé(s), ",
+			normalization["isolated_undersized"],
+			" petite(s) île(s) sans voisin"
+		)
 	
 	# === PASSE 3 : FINALISATION ET COLORATION ===
 	print("  • Finalisation et coloration...")
-	_dispatch_region_finalize(w, h, groups_x, groups_y, seed_val)
-	last_administrative_stats["land_departments"] = _measure_partition_sizes(
+	_dispatch_region_finalize(w, h, groups_x, groups_y, seed_val, sea_level)
+	var department_stats := _measure_partition_sizes(
 		"region_map", target_department_cells
 	)
+	for key in normalization.keys():
+		if key != "data":
+			department_stats["normalization_" + str(key)] = normalization[key]
+	last_administrative_stats["land_departments"] = department_stats
 	_print_partition_stats("Départements terrestres", last_administrative_stats["land_departments"])
 	
 	print("[Orchestrator] ✅ Phase 4 : Régions terminées")
@@ -3261,6 +3308,13 @@ func _count_mask_cells(mask_data: PackedByteArray, water: bool) -> int:
 	var count := 0
 	for value in mask_data:
 		if (value != 0) == water:
+			count += 1
+	return count
+
+func _count_mask_value(mask_data: PackedByteArray, expected: int) -> int:
+	var count := 0
+	for value in mask_data:
+		if value == expected:
 			count += 1
 	return count
 
@@ -3292,6 +3346,8 @@ func _measure_partition_sizes(texture_name: String, target_cells: float) -> Dict
 		"target_cells": target_cells,
 		"mean": float(total_cells) / float(sizes.size()),
 		"minimum": sizes[0],
+		"p05": _partition_percentile(sizes, 0.05),
+		"p10": _partition_percentile(sizes, 0.10),
 		"median": _partition_percentile(sizes, 0.50),
 		"p75": _partition_percentile(sizes, 0.75),
 		"p90": _partition_percentile(sizes, 0.90),
@@ -3383,7 +3439,10 @@ func _repair_disconnected_partition(texture_name: String, w: int, h: int) -> int
 	return split_count
 
 ## Dispatch le shader de placement des seeds de région
-func _dispatch_region_seed_placement(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, seed_probability: float, sea_level: float, budget_variation: float) -> void:
+func _dispatch_region_seed_placement(w: int, h: int, groups_x: int,
+		groups_y: int, seed_val: int, seed_probability: float,
+		sea_level: float, budget_variation: float,
+		mean_spacing_px: float) -> void:
 	if not gpu.shaders.has("region_seed_placement") or not gpu.shaders["region_seed_placement"].is_valid():
 		push_warning("[Orchestrator] ⚠️ region_seed_placement shader non disponible")
 		return
@@ -3420,7 +3479,7 @@ func _dispatch_region_seed_placement(w: int, h: int, groups_x: int, groups_y: in
 	buffer_bytes.encode_float(12, seed_probability)
 	buffer_bytes.encode_float(16, sea_level)
 	buffer_bytes.encode_float(20, budget_variation)
-	buffer_bytes.encode_float(24, 0.0)  # padding
+	buffer_bytes.encode_float(24, mean_spacing_px)
 	buffer_bytes.encode_float(28, 0.0)  # padding
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
@@ -3540,7 +3599,9 @@ func _copy_region_textures(w: int, h: int) -> void:
 	_copy_texture(gpu.textures["region_cost_temp"], gpu.textures["region_cost"], w, h)
 
 ## Dispatch le shader de nettoyage final des régions (assigne toute terre restante)
-func _dispatch_region_cleanup(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, use_swap: bool) -> void:
+func _dispatch_region_cleanup(w: int, h: int, groups_x: int,
+		groups_y: int, seed_val: int, sea_level: float,
+		use_swap: bool) -> void:
 	if not gpu.shaders.has("region_cleanup") or not gpu.shaders["region_cleanup"].is_valid():
 		push_warning("[Orchestrator] ⚠️ region_cleanup shader non disponible")
 		return
@@ -3576,6 +3637,9 @@ func _dispatch_region_cleanup(w: int, h: int, groups_x: int, groups_y: int, seed
 	
 	# region_cost_out (R32F)
 	tex_uniforms.append(gpu.create_texture_uniform(3, dst_cost))
+
+	# geo_texture (RGBA32F) : même prédicat de terre que seed/growth
+	tex_uniforms.append(gpu.create_texture_uniform(4, gpu.textures["geo"]))
 	
 	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["region_cleanup"], 0)
 	
@@ -3585,7 +3649,7 @@ func _dispatch_region_cleanup(w: int, h: int, groups_x: int, groups_y: int, seed
 	buffer_bytes.encode_u32(0, w)
 	buffer_bytes.encode_u32(4, h)
 	buffer_bytes.encode_u32(8, seed_val)
-	buffer_bytes.encode_u32(12, 0)  # padding
+	buffer_bytes.encode_float(12, sea_level)
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
 	var param_uniform = RDUniform.new()
@@ -3609,7 +3673,8 @@ func _dispatch_region_cleanup(w: int, h: int, groups_x: int, groups_y: int, seed
 	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de finalisation des régions (coloration)
-func _dispatch_region_finalize(w: int, h: int, groups_x: int, groups_y: int, seed_val: int) -> void:
+func _dispatch_region_finalize(w: int, h: int, groups_x: int,
+		groups_y: int, seed_val: int, sea_level: float) -> void:
 	if not gpu.shaders.has("region_finalize") or not gpu.shaders["region_finalize"].is_valid():
 		push_warning("[Orchestrator] ⚠️ region_finalize shader non disponible")
 		return
@@ -3633,6 +3698,10 @@ func _dispatch_region_finalize(w: int, h: int, groups_x: int, groups_y: int, see
 	
 	# region_colored (binding 2)
 	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["region_colored"]))
+
+	# geo_texture (binding 3) : protège aussi l'aperçu GPU contre un masque
+	# hydrologique incomplet.
+	tex_uniforms.append(gpu.create_texture_uniform(3, gpu.textures["geo"]))
 	
 	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["region_finalize"], 0)
 	
@@ -3646,7 +3715,7 @@ func _dispatch_region_finalize(w: int, h: int, groups_x: int, groups_y: int, see
 	buffer_bytes.encode_u32(12, 22)   # water_color_r
 	buffer_bytes.encode_u32(16, 26)   # water_color_g
 	buffer_bytes.encode_u32(20, 31)   # water_color_b
-	buffer_bytes.encode_float(24, 0.0)  # padding
+	buffer_bytes.encode_float(24, sea_level)
 	buffer_bytes.encode_float(28, 0.0)  # padding
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)

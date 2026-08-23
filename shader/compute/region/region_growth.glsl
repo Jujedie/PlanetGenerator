@@ -138,6 +138,24 @@ float traversalCost(ivec2 pixel, ivec2 neighbor, int w, int h) {
     return max(cost, 0.01);
 }
 
+// Distance au seed en espace équirectangulaire : longitude raccordée, puis
+// corrigée par cos(latitude). La pénalité est douce et ne laisse jamais de
+// terre vide, mais elle rend une extension très longue nettement moins
+// compétitive qu'un seed côtier proche.
+float seedShapePenalty(ivec2 pixel, uint regionId, int w, int h) {
+    int seedX = int(regionId % uint(w));
+    int seedY = int(regionId / uint(w));
+    float dx = abs(float(pixel.x - seedX));
+    dx = min(dx, float(w) - dx);
+    float meanY = 0.5 * (float(pixel.y) + float(seedY));
+    float latitude = ((meanY + 0.5) / float(h) - 0.5) * 3.14159265359;
+    dx *= max(cos(latitude), 0.05);
+    float distancePx = length(vec2(dx, float(pixel.y - seedY)));
+    float softRadius = max(params.mean_spacing_px * 1.10, 2.0);
+    float excess = max(distancePx - softRadius, 0.0) / softRadius;
+    return excess * excess * max(params.cost_flat, 0.25) * 6.0;
+}
+
 const ivec2 CARDINAL[4] = ivec2[4](
     ivec2(-1, 0), ivec2(1, 0), ivec2(0, -1), ivec2(0, 1)
 );
@@ -185,6 +203,7 @@ void main() {
 
         float neighbor_cost = imageLoad(region_cost_in, neighbor).r;
         float candidate_cost = neighbor_cost + traversalCost(pixel, neighbor, w, h);
+        candidate_cost += seedShapePenalty(pixel, n_region, w, h);
 
         if (candidate_cost < best_cost ||
                 (candidate_cost == best_cost && n_region < best_region)) {

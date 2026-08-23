@@ -29,10 +29,10 @@ layout(set = 1, binding = 0, std140) uniform SeedParams {
     uint width;
     uint height;
     uint seed;
-    float seed_probability;    // Probabilité dérivée de la surface et de la cible
+    float seed_probability;    // Conservé pour compatibilité / diagnostic
     float sea_level;
     float budget_variation;    // 0.5 = variation de ±50%
-    float padding1;
+    float mean_spacing_px;     // sqrt(surface département cible)
     float padding2;
 } params;
 
@@ -71,22 +71,29 @@ bool isLand(ivec2 p) {
     return waterType == 0u && elevation >= params.sea_level;
 }
 
-// Distribution Matérn/blue-noise discrète : un pixel doit être candidat puis
-// posséder le plus petit hash candidat de son voisinage 3x3. Cette répulsion
-// locale évite à la fois les amas de seeds et les grands déserts continentaux
-// produits par un simple tirage Bernoulli plafonné à 2 %.
+// Distribution blue-noise déterministe : chaque seed est le minimum de hash
+// d'un disque dont la surface approche la cible du département. Le disque ne
+// compte que la terre réellement disponible. Une côte étroite reçoit donc
+// assez de seeds au lieu de forcer un département à s'étirer verticalement
+// pour compenser la mer. X est raccordé, Y reste borné.
 bool isBlueNoiseSeed(ivec2 pixel, int w, int h, uint pixelHash) {
-    if (hashToFloat(pixelHash) >= params.seed_probability) return false;
+    const int MAX_RADIUS = 8;
+    const float INV_SQRT_PI = 0.56418958355;
+    int radius = clamp(int(round(params.mean_spacing_px * INV_SQRT_PI)), 0, MAX_RADIUS);
+    if (radius == 0) return true;
+    int radiusSquared = radius * radius;
 
-    for (int dy = -1; dy <= 1; dy++) {
-        for (int dx = -1; dx <= 1; dx++) {
+    for (int dy = -MAX_RADIUS; dy <= MAX_RADIUS; dy++) {
+        if (abs(dy) > radius) continue;
+        int ny = pixel.y + dy;
+        if (ny < 0 || ny >= h) continue;
+        for (int dx = -MAX_RADIUS; dx <= MAX_RADIUS; dx++) {
+            if (dx * dx + dy * dy > radiusSquared) continue;
             if (dx == 0 && dy == 0) continue;
             int nx = wrapX(pixel.x + dx, w);
-            int ny = clamp(pixel.y + dy, 0, h - 1);
             ivec2 candidate = ivec2(nx, ny);
             if (!isLand(candidate)) continue;
             uint candidateHash = hash3(uint(nx), uint(ny), params.seed);
-            if (hashToFloat(candidateHash) >= params.seed_probability) continue;
             if (candidateHash < pixelHash ||
                     (candidateHash == pixelHash && (ny * w + nx) < (pixel.y * w + pixel.x))) {
                 return false;
@@ -94,34 +101,6 @@ bool isBlueNoiseSeed(ivec2 pixel, int w, int h, uint pixelHash) {
         }
     }
     return true;
-}
-
-// Garantit un seed aux îles/enclaves entièrement contenues dans une fenêtre
-// de 9x9. Une petite zone isolée reste ainsi autonome au lieu d'être rattachée
-// par un saut à travers la mer.
-bool isSmallComponentSeed(ivec2 pixel, int w, int h, uint pixelHash) {
-    const int RADIUS = 4;
-    bool touchesWindow = false;
-    uint bestHash = pixelHash;
-    ivec2 bestPixel = pixel;
-
-    for (int dy = -RADIUS; dy <= RADIUS; dy++) {
-        for (int dx = -RADIUS; dx <= RADIUS; dx++) {
-            int nx = wrapX(pixel.x + dx, w);
-            int ny = clamp(pixel.y + dy, 0, h - 1);
-            ivec2 candidate = ivec2(nx, ny);
-            if (!isLand(candidate)) continue;
-            if (abs(dx) == RADIUS || abs(dy) == RADIUS) touchesWindow = true;
-
-            uint candidateHash = hash3(uint(nx), uint(ny), params.seed);
-            if (candidateHash < bestHash ||
-                    (candidateHash == bestHash && (ny * w + nx) < (bestPixel.y * w + bestPixel.x))) {
-                bestHash = candidateHash;
-                bestPixel = candidate;
-            }
-        }
-    }
-    return !touchesWindow && all(equal(bestPixel, pixel));
 }
 
 // === MAIN ===
@@ -151,10 +130,9 @@ void main() {
     
     // Hash déterministe pour ce pixel
     uint pixel_hash = hash3(uint(pixel.x), uint(pixel.y), params.seed);
-    // Répartition régulière mais non quadrillée, plus une garantie dédiée aux
-    // très petites îles entièrement contenues dans la fenêtre de contrôle.
-    bool is_seed = isBlueNoiseSeed(pixel, w, h, pixel_hash) ||
-        isSmallComponentSeed(pixel, w, h, pixel_hash);
+    // Répartition régulière mais non quadrillée. Même une petite île possède
+    // exactement son minimum local et reçoit donc naturellement un seed.
+    bool is_seed = isBlueNoiseSeed(pixel, w, h, pixel_hash);
     
     if (is_seed) {
         // Ce pixel est un seed de région !
