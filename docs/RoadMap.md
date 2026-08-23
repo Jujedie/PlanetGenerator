@@ -282,6 +282,8 @@ Acceptance gate:
 
 Goal: generate maximum-scale planets without monolithic textures.
 
+Status: implementation present; full Venus-scale GPU acceptance pending runtime validation.
+
 Work:
 
 - Generate 2,048-pixel tiles with phase-specific overlap halos.

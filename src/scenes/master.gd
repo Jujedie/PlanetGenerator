@@ -221,6 +221,8 @@ func _compile_generation_params() -> Dictionary:
 		"global_cell_area_km2": PlanetGridContract.effective_cell_area_km2(planet_radius_km, canonical_resolution),
 		"tile_size"         : PlanetGridContract.DEFAULT_TILE_SIZE,
 		"projection"        : PlanetGridContract.PROJECTION_ID,
+		"tiled_global_generation": false,
+		"vram_budget_bytes" : TiledGlobalGenerator.HARD_VRAM_BUDGET_BYTES,
 		"avg_temperature"   : get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Temperature_Param/LineEdit").value,
 		
 		# Erosion and tectonics
