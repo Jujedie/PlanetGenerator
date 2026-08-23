@@ -20,6 +20,7 @@ CREATING,Creating,Création en cours,Erstellung
 MAP_TOPOGRAPHIE,Topography,Topographie,Topographie
 MAP_TOPOGRAPHIE_GREY,Topography (Grey),Topographie (Gris),Topographie (Grau)
 MAP_TOPOLOGY,Contour lines,Courbes de niveau,Höhenlinien
+MAP_CARTHOGRAPHIC,Cartographic map,Carte cartographique,Kartographische Karte
 MAP_EAUX,Water map,Carte des eaux,Wasserkarte
 MAP_PLAQUES,Tectonic plates,Plaques tectoniques,Tektonische Platten
 MAP_PLAQUES_BORDURES,Plate boundaries,Bordures de plaques,Plattengrenzen

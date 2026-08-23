@@ -40,6 +40,7 @@ const MAP_NAME_TO_KEY = {
 	"river_type_map.png": "MAP_RIVER_TYPE",
 	"ice_caps_map.png": "MAP_ICE",
 	"biome_map.png": "MAP_BIOMES",
+	"cartographic_map.png": "MAP_CARTHOGRAPHIC",
 	"final_map.png": "MAP_FINAL",
 	"departement_map.png": "MAP_DEPARTEMENT",
 	"region_map.png": "MAP_REGIONS",
@@ -223,6 +224,9 @@ func _compile_generation_params() -> Dictionary:
 		"projection"        : PlanetGridContract.PROJECTION_ID,
 		"tiled_global_generation": false,
 		"vram_budget_bytes" : TiledGlobalGenerator.HARD_VRAM_BUDGET_BYTES,
+		"export_cartographic_map": true,
+		"cartography_palette_path": CartographicPalette.DEFAULT_PATH,
+		"cartography_view": CartographicRenderer.VIEW_PLANET,
 		"avg_temperature"   : get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Temperature_Param/LineEdit").value,
 		
 		# Erosion and tectonics

@@ -41,7 +41,10 @@ const TEXTURE_LIFECYCLE := {
 
 const TERRESTRIAL_EXPORT_TEXTURES := [
 	"geo", "plates", "river_flux", "water_mask", "region_map",
-	"ocean_region_map", "river_biome_id", "ocean_reachable",
+	# Milestone 6 reads the authoritative biome IDs to render palette-driven
+	# cartography after prepare_for_export(). Keeping only biome_colored made the
+	# cartographic exporter silently skip every terrestrial planet.
+	"biome_id", "ocean_region_map", "river_biome_id", "ocean_reachable",
 	"temperature_colored", "precipitation_colored", "clouds", "ice_caps",
 	"petrole", "resources", "region_colored", "ocean_region_colored",
 	"biome_colored", "final_map", "water_colored",

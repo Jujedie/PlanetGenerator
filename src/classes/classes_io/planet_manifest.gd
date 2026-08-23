@@ -2,7 +2,7 @@ class_name PlanetManifest
 extends RefCounted
 
 const MANIFEST_VERSION := 1
-const PALETTE_VERSION := 2
+const PALETTE_VERSION := 3
 
 static func build(generation_params: Dictionary, exported_files: Dictionary) -> Dictionary:
 	var radius_km := float(generation_params.get("planet_radius", 150.0))

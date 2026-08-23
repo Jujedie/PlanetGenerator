@@ -308,6 +308,8 @@ Acceptance gate:
 Goal: produce readable military-style topographic maps without baking style
 into the physical simulation data.
 
+Status: implementation present; visual/tile-seam acceptance pending runtime validation.
+
 Work:
 
 - Implement palette-driven terrain, water, and biome coloring.

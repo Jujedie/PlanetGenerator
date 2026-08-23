@@ -207,6 +207,12 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	var biome_result = _export_biome_map(gpu, output_dir)
 	for key in biome_result.keys():
 		exported_files[key] = biome_result[key]
+
+	# === CARTOGRAPHIE PALETTE-DRIVEN (Milestone 6) ===
+	if bool(params.get("export_cartographic_map", true)):
+		var cartography_result := _export_cartographic_map(gpu, output_dir)
+		for key in cartography_result.keys():
+			exported_files[key] = cartography_result[key]
 	
 	# === EXPORT FINAL MAP (Step 6) ===
 	var final_result = _export_final_map(gpu, output_dir)
@@ -1722,6 +1728,56 @@ func _export_river_type_map(gpu: GPUContext, output_dir: String, width: int, hei
 ## @param gpu: Instance GPUContext avec la texture final_map
 ## @param output_dir: Dossier de sortie
 ## @return Dictionary: Chemin du fichier exporté
+func _export_cartographic_map(gpu: GPUContext, output_dir: String) -> Dictionary:
+	print("[Exporter] 🧭 Exporting Milestone 6 cartographic map...")
+	# geo + water are authoritative requirements. biome_id enriches the style but
+	# is deliberately optional so a future lifecycle change cannot make the whole
+	# cartographic export disappear without an explanation.
+	for texture_name in ["geo", "water_mask"]:
+		if not gpu.textures.has(texture_name) or not gpu.textures[texture_name].is_valid():
+			push_warning("[Exporter] ⚠️ cartographic_map.png skipped: missing texture '%s'" % texture_name)
+			return {}
+	var format = gpu.rd.texture_get_format(gpu.textures["geo"])
+	var dimensions := Vector2i(format.width, format.height)
+	var pixel_count := dimensions.x * dimensions.y
+	var geo_data := _read_texture(gpu, "geo")
+	var water_data := _read_texture(gpu, "water_mask")
+	var biome_data := PackedByteArray()
+	if gpu.textures.has("biome_id") and gpu.textures["biome_id"].is_valid():
+		biome_data = _read_texture(gpu, "biome_id")
+	else:
+		push_warning("[Exporter] ⚠️ biome_id unavailable: cartographic map will render without biome modulation")
+	if geo_data.size() != pixel_count * 16:
+		push_warning("[Exporter] ⚠️ cartographic_map.png skipped: invalid geo payload (%d/%d bytes)" % [geo_data.size(), pixel_count * 16])
+		return {}
+	if water_data.size() != pixel_count:
+		push_warning("[Exporter] ⚠️ cartographic_map.png skipped: invalid water payload (%d/%d bytes)" % [water_data.size(), pixel_count])
+		return {}
+	var palette_path := str(params.get("cartography_palette_path", CartographicPalette.DEFAULT_PATH))
+	var palette := CartographicPalette.load_palette(palette_path)
+	var rendered := CartographicRenderer.render_full_map(
+		geo_data, water_data, biome_data, dimensions,
+		float(params.get("planet_radius", 150.0)),
+		float(params.get("sea_level", 0.0)), palette, {
+			"view": str(params.get("cartography_view", CartographicRenderer.VIEW_PLANET)),
+			"markers": params.get("cartography_markers", []),
+		}
+	)
+	geo_data = PackedByteArray()
+	water_data = PackedByteArray()
+	biome_data = PackedByteArray()
+	if rendered.is_empty():
+		return {}
+	var image: Image = rendered["image"]
+	var path := output_dir.path_join("cartographic_map.png")
+	var save_error := _save_png(image, path)
+	if save_error != OK:
+		push_error("[Exporter] ❌ Failed to save cartographic_map.png: %s" % save_error)
+		return {}
+	print("  ✅ Saved: ", path, " (", dimensions.x, "x", dimensions.y, ", palette=", palette.name, ")")
+	return {"cartographic": path}
+
+
 func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 	print("[Exporter] 🗺️ Exporting final map (GPU compute shader + CPU darkening)...")
 	
