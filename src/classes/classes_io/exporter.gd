@@ -1685,18 +1685,26 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 	var planet_type = int(params.get("planet_type", 0))
 	if planet_type != Enum.TYPE_GAZEUZE and gpu.textures.has("geo") and gpu.textures["geo"].is_valid():
 		var geo_data = rd.texture_get_data(gpu.textures["geo"], 0)
+		var ice_data := PackedByteArray()
+		if gpu.textures.has("ice_caps") and gpu.textures["ice_caps"].is_valid():
+			ice_data = rd.texture_get_data(gpu.textures["ice_caps"], 0)
+		var has_ice_data: bool = ice_data.size() == expected_size
 		
 		if geo_data.size() > 0:
 			print("  Applying water darkening factor: ", WATER_DARKENING_FACTOR)
 			var water_pixels_darkened = 0
+			var ice_pixels_preserved = 0
 			
 			for y in range(height):
 				for x in range(width):
-					var geo_idx = (y * width + x) * 16  # RGBA32F = 16 bytes par pixel
+					var pixel_idx = y * width + x
+					var geo_idx = pixel_idx * 16  # RGBA32F = 16 bytes par pixel
 					var elevation = geo_data.decode_float(geo_idx)  # R = élévation
+					var is_ice: bool = has_ice_data and ice_data[pixel_idx * 4 + 3] > 0
 					
-					# Si c'est de l'eau (élévation négative)
-					if elevation < 0.0:
+					# Ne jamais assombrir la banquise déjà composée par le GPU :
+					# cela détruisait sa teinte ivoire dans final_map.png.
+					if elevation < 0.0 and not is_ice:
 						var current_color = img.get_pixel(x, y)
 						# Assombrir RGB tout en gardant l'alpha
 						var darkened_color = Color(
@@ -1707,8 +1715,11 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 						)
 						img.set_pixel(x, y, darkened_color)
 						water_pixels_darkened += 1
+					elif elevation < 0.0 and is_ice:
+						ice_pixels_preserved += 1
 			
 			print("  Water pixels darkened: ", water_pixels_darkened)
+			print("  Ice pixels preserved: ", ice_pixels_preserved)
 	elif planet_type != Enum.TYPE_GAZEUZE:
 		print("  ⚠️ geo texture not available, skipping water darkening")
 	

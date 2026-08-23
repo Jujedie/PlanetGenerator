@@ -18,7 +18,7 @@
 // - climate_texture (R=temperature)
 //
 // Sorties :
-// - ice_caps_texture : RGBA8 (gris-vert froid=glace, transparent=pas de glace)
+// - ice_caps_texture : RGBA8 (ivoire froid=glace, transparent=pas de glace)
 // ============================================================================
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
@@ -195,8 +195,8 @@ void main() {
         // Bord plus sombre et légèrement bleuté, cœur froid plus clair et
         // neutre. La variation utilise le même bruit continu que la couverture
         // afin d'éviter une calotte plate d'une couleur unique.
-        const vec3 ICE_EDGE = vec3(0.62, 0.72, 0.73);
-        const vec3 ICE_CORE = vec3(0.86, 0.87, 0.82);
+        const vec3 ICE_EDGE = vec3(0.72, 0.76, 0.74);
+        const vec3 ICE_CORE = vec3(0.91, 0.90, 0.84);
         float local_texture = clamp(ice_noise * 0.5 + 0.5, 0.0, 1.0);
         float frost = clamp(temp_factor * 0.72 + local_texture * 0.28, 0.0, 1.0);
         float ice_alpha = mix(0.62, 0.88, frost);
