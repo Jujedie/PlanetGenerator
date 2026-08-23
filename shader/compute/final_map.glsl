@@ -110,7 +110,7 @@ layout(set = 3, binding = 0, std430) readonly buffer RiverBiomeLUT {
 // ============================================================================
 
 // Banquise color constants
-const vec3 BANQUISE_DEFAULT = vec3(0.78, 0.86, 0.89);  // Glace bleu-gris
+const vec3 BANQUISE_DEFAULT = vec3(0.78, 0.82, 0.80);  // Glace gris-vert froide
 const vec3 BANQUISE_VOLCANIC = vec3(0.231, 0.192, 0.169);  // Cooled lava
 
 vec3 getBanquiseColor(uint atmo) {
@@ -139,10 +139,11 @@ vec3 getRiverBlendedColor(vec3 terrain_color, vec3 river_color, uint atmo) {
     if (atmo == 4u) {
         return mix(terrain_color, river_color, 0.65);
     }
-    // TYPE_TERRAN (0) et autres : eau naturelle, lisible mais non fluorescente.
-    // Le mélange multiplicatif précédent blanchissait/cyanisait les rivières.
-    vec3 natural_water = mix(vec3(0.18, 0.36, 0.43), river_color, 0.25);
-    return mix(terrain_color, natural_water, 0.68);
+    // TYPE_TERRAN (0) et autres : bleu-vert sombre accordé aux eaux de la
+    // carte physique. Le biome rivière ne sert plus que de variation légère,
+    // afin d'éviter les filaments cyan clair sur les plaines olive.
+    vec3 natural_water = mix(vec3(0.23, 0.40, 0.42), river_color, 0.10);
+    return mix(terrain_color, natural_water, 0.82);
 }
 
 // ============================================================================
@@ -338,8 +339,15 @@ void main() {
     // === STEP 4: Banquise overlay (highest priority) ===
     // Banquise uniquement sur les pixels eau (double vérification)
     if (is_banquise && is_water) {
-        vec3 banquise_color = getBanquiseColor(params.atmosphere_type);
-        color = mix(color, banquise_color, clamp(ice.a * 0.86, 0.0, 0.86));
+        // Respecter la variation bord/cœur calculée par ice_caps au lieu de
+        // remplacer toute la calotte par un même bleu pâle.
+        vec3 banquise_color = mix(
+            getBanquiseColor(params.atmosphere_type),
+            ice.rgb,
+            params.atmosphere_type == 2u ? 0.25 : 0.65
+        );
+        float ice_opacity = clamp(0.42 + ice.a * 0.38, 0.55, 0.78);
+        color = mix(color, banquise_color, ice_opacity);
     }
     
     // === OUTPUT ===

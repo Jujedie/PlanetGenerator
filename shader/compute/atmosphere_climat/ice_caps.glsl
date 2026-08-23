@@ -18,7 +18,7 @@
 // - climate_texture (R=temperature)
 //
 // Sorties :
-// - ice_caps_texture : RGBA8 (blanc=glace, transparent=pas de glace)
+// - ice_caps_texture : RGBA8 (gris-vert froid=glace, transparent=pas de glace)
 // ============================================================================
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
@@ -192,10 +192,15 @@ void main() {
     bool has_ice = (ice_noise > ice_threshold);
     
     if (has_ice) {
-        // Bleu-gris légèrement translucide : directement composable par la
-        // carte finale, sans aplat blanc opaque sur les régions polaires.
-        float ice_alpha = mix(0.68, 0.92, temp_factor);
-        vec4 ice_color = vec4(0.80, 0.88, 0.91, ice_alpha);
+        // Bord plus sombre et légèrement bleuté, cœur froid plus clair et
+        // neutre. La variation utilise le même bruit continu que la couverture
+        // afin d'éviter une calotte plate d'une couleur unique.
+        const vec3 ICE_EDGE = vec3(0.62, 0.72, 0.73);
+        const vec3 ICE_CORE = vec3(0.86, 0.87, 0.82);
+        float local_texture = clamp(ice_noise * 0.5 + 0.5, 0.0, 1.0);
+        float frost = clamp(temp_factor * 0.72 + local_texture * 0.28, 0.0, 1.0);
+        float ice_alpha = mix(0.62, 0.88, frost);
+        vec4 ice_color = vec4(mix(ICE_EDGE, ICE_CORE, frost), ice_alpha);
         imageStore(ice_caps_texture, pixel, ice_color);
     } else {
         // Pas de glace
