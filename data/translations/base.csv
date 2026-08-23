@@ -43,6 +43,7 @@ MAP_DEPARTEMENT_MER,Departments sea,Mer des départements,Departementsmeer
 MAP_OCEAN_REGIONS,Ocean regions,Régions océaniques,Ozeanregionen
 MAP_BASSIN,Basins,Bassins,Becken
 MAP_OCEAN,Ocean,Océan,Ozean
+MAP_GRID_OVERLAY,Grid Overlay,Superposition de grille,Gitterüberlagerung
 MAP_PREVIEW,Preview,Aperçu,Vorschau
 OCEAN_RATIO,Ocean coverage : {val},Couverture océanique : {val},Ozeanbedeckung : {val}
 

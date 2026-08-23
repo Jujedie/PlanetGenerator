@@ -41,6 +41,7 @@ const MAP_NAME_TO_KEY = {
 	"ice_caps_map.png": "MAP_ICE",
 	"biome_map.png": "MAP_BIOMES",
 	"cartographic_map.png": "MAP_CARTHOGRAPHIC",
+	"grid_overlay.png": "MAP_GRID_OVERLAY",
 	"final_map.png": "MAP_FINAL",
 	"departement_map.png": "MAP_DEPARTEMENT",
 	"region_map.png": "MAP_REGIONS",
