@@ -3743,43 +3743,83 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	var seed_val = int(params.get("seed", 12345))
 	var sea_level = float(params.get("sea_level", 0.0))
-	var ocean_ratio = clampf(float(params.get("ocean_ratio", 55.0)), 5.0, 100.0)
 	
 	# Paramètres de coûts pour océans
 	var cost_flat = float(params.get("ocean_cost_flat", 1.0))
 	var cost_deeper = float(params.get("ocean_cost_deeper", 2.0))
-	var noise_strength = float(params.get("ocean_noise_strength", 0.5))  # Réduit pour ne pas dominer les coûts
+	var noise_strength = clampf(float(params.get("ocean_noise_strength", 0.5)), 0.0, 2.0)
 	
-	var expected_water_pixels = maxf(float(w * h) * ocean_ratio / 100.0, 1.0)
+	# Même contrat que les départements terrestres : nb_cases_ocean_regions est
+	# la TAILLE MOYENNE CIBLE d'un département maritime en pixels, et non un
+	# nombre global de régions transformé ensuite selon la surface de la planète.
+	var water_mask_data := gpu.readback_texture_raw("water_mask")
+	var water_department_mask := PackedByteArray()
+	water_department_mask.resize(w * h)
+	for index in range(w * h):
+		water_department_mask[index] = 1 if water_mask_data[index] > 0 else 0
+	var actual_water_cells := _count_mask_value(water_department_mask, 1)
+	if actual_water_cells <= 0:
+		print("  • Aucune cellule d'eau : phase maritime ignorée")
+		return
+
 	var physical_targets := HierarchyBuilder.compute_physical_targets(
-		params, true, int(round(expected_water_pixels))
+		params, true, actual_water_cells
 	)
-	var target_ocean_regions = int(physical_targets["regions"])
-	var target_departments = int(physical_targets["departments"])
-	var seed_probability = clampf(float(target_departments) / expected_water_pixels, 0.000001, 0.02)
-	var mean_department_spacing_px = sqrt(expected_water_pixels / float(maxi(target_departments, 1)))
+	var target_department_cells := clampf(
+		float(params.get("ocean_department_target_cells",
+			params.get("nb_cases_ocean_regions", 100.0))),
+		1.0, float(maxi(actual_water_cells, 1))
+	)
+	var target_departments := clampi(int(round(
+		float(actual_water_cells) / target_department_cells
+	)), 1, maxi(actual_water_cells, 1))
+	var target_ocean_regions := clampi(
+		int(physical_targets["regions"]), 1, target_departments
+	)
+	var desired_seed_density := clampf(
+		float(target_departments) / float(maxi(actual_water_cells, 1)),
+		0.000001, 0.105
+	)
+	# Même conversion locale que pour la terre, afin d'éviter une densité de
+	# seeds dépendante de la surface totale de la planète.
+	var seed_probability := 1.0 - pow(
+		maxf(1.0 - 9.0 * desired_seed_density, 0.000001), 1.0 / 9.0
+	)
+	var mean_department_spacing_px := sqrt(target_department_cells)
+	var minimum_department_ratio := clampf(
+		float(params.get("ocean_department_min_ratio", 0.45)), 0.10, 0.90
+	)
+	var maximum_department_ratio := maxf(
+		float(params.get("ocean_department_max_ratio", 1.85)),
+		minimum_department_ratio + 0.10
+	)
 	var max_dim = max(w, h)
 	var requested_iterations = int(params.get("ocean_iterations", max_dim * 2))
 	var ocean_iterations = clampi(requested_iterations, max_dim, max_dim * 2)
 	
-	print("  Seed: ", seed_val, " | Régions maritimes cibles: ", target_ocean_regions,
-		" | Départements cibles: ", target_departments)
+	print("  Seed: ", seed_val, " | Cellules d'eau mesurées: ", actual_water_cells)
 	print("  Surface maritime: ", snappedf(float(physical_targets["surface_km2"]), 1.0),
-		" km² | espacement moyen: ", snappedf(mean_department_spacing_px, 0.1), " px")
-	print("  Coûts - Plat: ", cost_flat, " | Profondeur: ", cost_deeper)
-	print("  Bruit frontières: ", noise_strength)
-	print("  Itérations de croissance: ", ocean_iterations)
+		" km² | taille département cible: ", snappedf(target_department_cells, 0.1),
+		" cases | départements cibles: ", target_departments,
+		" | régions maritimes cibles: ", target_ocean_regions)
+	print("  Densité cible: ", snappedf(desired_seed_density, 0.0001),
+		" | espacement moyen: ", snappedf(mean_department_spacing_px, 0.1), " px")
+	print("  Plage de taille admise: ",
+		snappedf(minimum_department_ratio * 100.0, 0.1), "–",
+		snappedf(maximum_department_ratio * 100.0, 0.1), " % de la cible")
+	print("  Coûts - Plat: ", cost_flat, " | Profondeur: ", cost_deeper,
+		" | Bruit frontières: ", noise_strength)
 	
 	# Initialiser les textures océaniques
 	gpu.initialize_ocean_region_textures()
 	
 	# === PASSE 1 : PLACEMENT DES SEEDS ===
-	print("  • Placement des seeds de régions océaniques...")
+	print("  • Placement des seeds de départements maritimes...")
 	_dispatch_ocean_region_seed_placement(w, h, groups_x, groups_y, seed_val,
-		target_ocean_regions, sea_level, seed_probability)
+		target_departments, sea_level, seed_probability)
 	
 	# === PASSE 2 : CROISSANCE ITÉRATIVE ===
-	print("  • Croissance des régions océaniques (", ocean_iterations, " passes)...")
+	print("  • Croissance des départements maritimes (", ocean_iterations, " passes)...")
 	for pass_idx in range(ocean_iterations):
 		var use_swap = (pass_idx % 2 == 1)
 		_dispatch_ocean_region_growth(w, h, groups_x, groups_y, pass_idx,
@@ -3791,7 +3831,6 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# === PASSE 2.5 : NETTOYAGE FINAL ===
 	print("  • Nettoyage final (couverture complète)...")
-	# Le nettoyage reste local afin de préserver les composantes maritimes.
 	var cleanup_passes = maxi(4, ceili(mean_department_spacing_px))
 	for cleanup_pass in range(cleanup_passes):
 		var use_swap = ((ocean_iterations + cleanup_pass) % 2 == 1)
@@ -3799,7 +3838,43 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	if (ocean_iterations + cleanup_passes) % 2 == 1:
 		_copy_ocean_region_textures(w, h)
-	_repair_disconnected_partition("ocean_region_map", w, h)
+
+	# Appliquer exactement le même contrôle de taille qu'aux départements
+	# terrestres. Les micro-départements sont fusionnés avec leur meilleur voisin.
+	# Une composante d'eau entière plus petite que le minimum ne peut pas être
+	# agrandie sans traverser la terre : elle est donc laissée sans département
+	# maritime plutôt que transformée en micro-département trompeur.
+	var normalization := DepartmentNormalizer.normalize(
+		gpu.readback_texture_raw("ocean_region_map"), water_department_mask, w, h,
+		target_department_cells, minimum_department_ratio,
+		maximum_department_ratio, true, true
+	)
+	if not normalization.is_empty():
+		var normalized_data: PackedByteArray = normalization["data"]
+		rd.texture_update(gpu.textures["ocean_region_map"], 0, normalized_data)
+		print(
+			"  • Normalisation maritime : ", normalization["merged_components"],
+			" fusion(s), ", normalization["split_fragments"],
+			" fragment(s) séparé(s), ",
+			normalization["discarded_isolated_undersized"],
+			" composante(s) d'eau trop petite(s) ignorée(s) (",
+			normalization["discarded_isolated_cells"], " pixels)"
+		)
+
+	# Vérification quantitative : elle apparaît dans la console à chaque génération.
+	var department_stats := _measure_partition_sizes(
+		"ocean_region_map", target_department_cells
+	)
+	for key in normalization.keys():
+		if key != "data":
+			department_stats["normalization_" + str(key)] = normalization[key]
+	last_administrative_stats["ocean_departments"] = department_stats
+	_print_partition_stats("Départements maritimes", department_stats)
+	if not department_stats.is_empty():
+		var min_allowed := int(normalization.get("minimum_cells", 1))
+		if int(department_stats["minimum"]) < min_allowed:
+			push_warning("[Orchestrator] Département maritime sous la taille minimale après normalisation: "
+				+ str(department_stats["minimum"]) + " < " + str(min_allowed))
 	
 	# === PASSE 3 : FINALISATION ET COLORATION ===
 	print("  • Finalisation et coloration...")

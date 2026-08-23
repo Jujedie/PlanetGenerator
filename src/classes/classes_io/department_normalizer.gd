@@ -34,7 +34,9 @@ static func build_land_mask(water_data: PackedByteArray,
 static func normalize(region_data: PackedByteArray,
 		land_mask: PackedByteArray, w: int, h: int,
 		target_cells: float, minimum_ratio: float = 0.45,
-		maximum_ratio: float = 1.85) -> Dictionary:
+		maximum_ratio: float = 1.85,
+		discard_isolated_undersized: bool = false,
+		enforce_global_minimum: bool = false) -> Dictionary:
 	var pixel_count := w * h
 	if region_data.size() != pixel_count * 4 or land_mask.size() != pixel_count:
 		return {}
@@ -266,7 +268,7 @@ static func normalize(region_data: PackedByteArray,
 			var neighbors := _canonical_neighbors(root, parent, adjacency)
 			if neighbors.is_empty():
 				continue
-			var required_minimum := _local_minimum(
+			var required_minimum := minimum_cells if enforce_global_minimum else _local_minimum(
 				root, neighbors, areas, minimum_cells
 			)
 			if areas[root] >= required_minimum:
@@ -276,7 +278,7 @@ static func normalize(region_data: PackedByteArray,
 				sum_ys, sum_cosines, sum_sines, adjacency,
 				w, h, target_cells, maximum_cells, false
 			)
-			if target < 0 and areas[root] <= maxi(int(floor(minimum_cells * 0.5)), 2):
+			if target < 0 and (enforce_global_minimum or areas[root] <= maxi(int(floor(minimum_cells * 0.5)), 2)):
 				target = _select_merge_target(
 					root, neighbors, parent, areas, min_ys, max_ys,
 					sum_ys, sum_cosines, sum_sines, adjacency,
@@ -307,7 +309,7 @@ static func normalize(region_data: PackedByteArray,
 		if areas[component] < minimum_cells:
 			if neighbors.is_empty():
 				isolated_undersized += 1
-			elif areas[component] < _local_minimum(
+			elif enforce_global_minimum or areas[component] < _local_minimum(
 					component, neighbors, areas, minimum_cells
 			):
 				undersized_nonisolated += 1
@@ -317,6 +319,21 @@ static func normalize(region_data: PackedByteArray,
 			oversized += 1
 		if areas[component] > int(ceil(float(maximum_cells) * 1.5)):
 			extreme_oversized += 1
+
+	# A disconnected mask component smaller than the configured minimum cannot be
+	# enlarged without crossing excluded pixels.  Land keeps those exceptional
+	# islands, while callers such as maritime administration may explicitly drop
+	# them so they do not become misleading micro-departments.
+	var discarded_roots: Dictionary = {}
+	var discarded_cells := 0
+	if discard_isolated_undersized:
+		for component in range(component_count):
+			if parent[component] != component or areas[component] >= minimum_cells:
+				continue
+			var neighbors := _canonical_neighbors(component, parent, adjacency)
+			if neighbors.is_empty():
+				discarded_roots[component] = true
+				discarded_cells += areas[component]
 
 	# Retain the target root's stable ID.  All cells in a merged department are
 	# rewritten, so subsequent adjacency and hierarchy scans see one component.
@@ -329,7 +346,10 @@ static func normalize(region_data: PackedByteArray,
 			output.encode_u32(index * 4, INVALID_ID)
 			continue
 		var root := _find_root(parent, component)
-		output.encode_u32(index * 4, component_ids[root])
+		if discarded_roots.has(root):
+			output.encode_u32(index * 4, INVALID_ID)
+		else:
+			output.encode_u32(index * 4, component_ids[root])
 
 	return {
 		"data": output,
@@ -346,7 +366,9 @@ static func normalize(region_data: PackedByteArray,
 		"locally_consistent_undersized": locally_consistent_undersized,
 		"oversized": oversized,
 		"extreme_oversized": extreme_oversized,
-		"final_count": final_sizes.size(),
+		"discarded_isolated_undersized": discarded_roots.size(),
+		"discarded_isolated_cells": discarded_cells,
+		"final_count": final_sizes.size() - discarded_roots.size(),
 	}
 
 
