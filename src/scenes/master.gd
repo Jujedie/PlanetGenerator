@@ -204,7 +204,9 @@ func _compile_generation_params() -> Dictionary:
 
 	var generation_params = {
 		"seed"              : _seed,
-		"nb_thread"         : get_node(CATEGORIES_PATHS["GENERAL"]+"Thread_Number_Param/LineEdit").value,
+		# CPU-only PNG conversion policy. Zero selects the automatic worker
+		# count; GPU generation always uses one controlled RenderingDevice queue.
+		"export_worker_count": get_node(CATEGORIES_PATHS["GENERAL"]+"Thread_Number_Param/LineEdit").value,
 
 		# Planet properties
 		"planet_radius"     : circonference / (2.0 * PI),
@@ -583,7 +585,7 @@ func _on_btn_randomise_pressed() -> void:
 	_randomize_slider(get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Radius_Param/LineEdit"))
 	_randomize_slider(get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Density_Param/LineEdit"))
 	_randomize_slider(get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Temperature_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["GENERAL"]+"Thread_Number_Param/LineEdit"))
+	# Keep the export worker policy automatic when randomizing planet physics.
 	
 	_randomize_slider(get_node(CATEGORIES_PATHS["EROSION"]+"Terrain_Scale_Param/LineEdit"))
 	_randomize_slider(get_node(CATEGORIES_PATHS["EROSION"]+"Erosions_Iterations_Param/LineEdit"))
@@ -662,7 +664,7 @@ const PARAM_SLIDER_MAP = {
 	# General
 	"planet_name"        : "GENERAL:Planet_Name_Param/HBoxContainer/LineEdit",
 	"seed"               : "SEED:PanelSeed/seed/LineEdit",
-	"nb_thread"          : "GENERAL:Thread_Number_Param/LineEdit",
+	"export_worker_count": "GENERAL:Thread_Number_Param/LineEdit",
 	"planet_radius"      : "GENERAL:Planet_Radius_Param/LineEdit",
 	"planet_density"     : "GENERAL:Planet_Density_Param/LineEdit",
 	"planet_type"        : "GENERAL:Planet_Type_Param/LineEdit",

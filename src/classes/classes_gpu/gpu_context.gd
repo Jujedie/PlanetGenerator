@@ -9,9 +9,44 @@ static var _shared_rd: RenderingDevice = null
 # === CONSTANTES DE CONFIGURATION ===
 const FORMAT_STATE = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
 const FORMAT_RGBA8 = RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM
+const FORMAT_RGBA8UI = RenderingDevice.DATA_FORMAT_R8G8B8A8_UINT
 const FORMAT_R32F = RenderingDevice.DATA_FORMAT_R32_SFLOAT
 const FORMAT_R32UI = RenderingDevice.DATA_FORMAT_R32_UINT
 const FORMAT_RG32I = RenderingDevice.DATA_FORMAT_R32G32_SINT
+
+# Milestone 3 lifecycle contract. Textures are grouped by their last kind of
+# consumer so temporary simulation state can be discarded before CPU export.
+const TEXTURE_LIFECYCLE := {
+	"permanent": ["geo"],
+	"next_phase": [
+		"climate", "plates", "river_flux", "water_mask", "region_map",
+		"ocean_region_map", "biome_id", "river_biome_id", "ocean_reachable",
+	],
+	"temporary": [
+		"temp_buffer", "crust_age", "crust_age_temp", "geo_temp", "flux_temp",
+		"vapor", "vapor_temp", "water_component", "water_component_temp",
+		"river_sources", "river_flux_temp", "flow_direction",
+		"ocean_reachable_temp", "region_map_temp", "region_cost",
+		"region_cost_temp", "ocean_region_map_temp", "ocean_region_cost",
+		"ocean_region_cost_temp", "biome_id_temp", "biome_colored_temp",
+		"gas_velocity", "gas_dye_a", "gas_dye_b",
+	],
+	"export_only": [
+		"temperature_colored", "precipitation_colored", "clouds", "ice_caps",
+		"petrole", "resources", "region_colored", "ocean_region_colored",
+		"biome_colored", "final_map", "water_colored",
+	],
+	"debug_only": [],
+}
+
+const TERRESTRIAL_EXPORT_TEXTURES := [
+	"geo", "plates", "river_flux", "water_mask", "region_map",
+	"ocean_region_map", "river_biome_id", "ocean_reachable",
+	"temperature_colored", "precipitation_colored", "clouds", "ice_caps",
+	"petrole", "resources", "region_colored", "ocean_region_colored",
+	"biome_colored", "final_map", "water_colored",
+]
+const GAS_EXPORT_TEXTURES := ["final_map"]
 
 # IDs des textures GPU utilisées dans la pipeline
 # geo : GeoTexture (RGBA32F) - R=height, G=bedrock, B=sediment, A=water_height
@@ -41,7 +76,7 @@ static var TextureID_Climat : Array[String] = ["vapor", "vapor_temp", "temperatu
 
 # Textures Étape 5 - Ressources & Pétrole
 # petrole : (RGBA8) - carte de pétrole (noir/transparent)
-# resources : (RGBA32F) - R=resource_id, G=intensity, B=cluster_id, A=has_resource
+# resources : (RGBA8UI) - R=resource_id, G=intensity, B=cluster_id, A=presence
 static var TextureID_Resources : Array[String] = ["petrole", "resources"]
 
 # Textures Étape 2.5 - Classification des Eaux & Rivières
@@ -83,9 +118,14 @@ var pipelines: Dictionary = {}
 var uniform_sets: Dictionary = {}
 var resolution: Vector2i
 var _cleaned_up: bool = false
+var _gpu_commands_pending: bool = false
+var _gpu_work_in_flight: bool = false
+var _deferred_free_rids: Array[RID] = []
+var metrics: Dictionary = {}
 
 func _init(resolution_param: Vector2i) -> void:
 	self.resolution = resolution_param
+	reset_metrics()
 
 	if _shared_rd:
 		rd = _shared_rd
@@ -127,12 +167,176 @@ func _init(resolution_param: Vector2i) -> void:
 	
 	# Créer les textures de travail
 	_initialize_textures()
+	_sample_memory_peaks()
+
+func reset_metrics() -> void:
+	metrics = {
+		"queued_compute_lists": 0,
+		"submit_count": 0,
+		"sync_count": 0,
+		"sync_time_ms": 0.0,
+		"readback_count": 0,
+		"readback_time_ms": 0.0,
+		"readback_bytes": 0,
+		"peak_vram_bytes": 0,
+		"peak_system_ram_bytes": 0,
+		"released_texture_bytes": 0,
+	}
+
+func submit_gpu_work() -> void:
+	if not rd:
+		return
+	# compute_list_end() has queued the command list on the local device. Keep
+	# collecting lists until a CPU dependency requires one real submit+sync.
+	_gpu_commands_pending = true
+	metrics["queued_compute_lists"] = int(metrics.get("queued_compute_lists", 0)) + 1
+
+func release_rid(rid: RID) -> void:
+	if not rd or not rid.is_valid():
+		return
+	if _gpu_commands_pending or _gpu_work_in_flight:
+		_deferred_free_rids.append(rid)
+	else:
+		rd.free_rid(rid)
+
+func _flush_deferred_frees() -> void:
+	var freed_ids: Dictionary = {}
+	for rid in _deferred_free_rids:
+		var rid_id: int = rid.get_id()
+		if rid.is_valid() and not freed_ids.has(rid_id):
+			rd.free_rid(rid)
+			freed_ids[rid_id] = true
+	_deferred_free_rids.clear()
+
+func _free_unique_rids(rids: Array) -> void:
+	var freed_ids: Dictionary = {}
+	for rid in rids:
+		if not rid or not rid.is_valid():
+			continue
+		var rid_id: int = rid.get_id()
+		if freed_ids.has(rid_id):
+			continue
+		rd.free_rid(rid)
+		freed_ids[rid_id] = true
+
+func _free_valid_uniform_sets() -> void:
+	var freed_ids: Dictionary = {}
+	for rid in uniform_sets.values():
+		if not rid or not rid.is_valid() or not rd.uniform_set_is_valid(rid):
+			continue
+		var rid_id: int = rid.get_id()
+		if freed_ids.has(rid_id):
+			continue
+		rd.free_rid(rid)
+		freed_ids[rid_id] = true
+
+## Waits only at a real CPU dependency (readback, CPU solver, export, cleanup).
+func sync_for_cpu(reason: String = "cpu_dependency") -> void:
+	if not rd or (not _gpu_commands_pending and not _gpu_work_in_flight):
+		return
+	if _gpu_commands_pending:
+		rd.submit()
+		_gpu_commands_pending = false
+		_gpu_work_in_flight = true
+		metrics["submit_count"] = int(metrics.get("submit_count", 0)) + 1
+	var started_usec := Time.get_ticks_usec()
+	rd.sync()
+	var elapsed_ms := float(Time.get_ticks_usec() - started_usec) / 1000.0
+	_gpu_work_in_flight = false
+	metrics["sync_count"] = int(metrics.get("sync_count", 0)) + 1
+	metrics["sync_time_ms"] = float(metrics.get("sync_time_ms", 0.0)) + elapsed_ms
+	metrics["last_sync_reason"] = reason
+	_flush_deferred_frees()
+	_sample_memory_peaks()
+
+func get_vram_usage_bytes() -> int:
+	var total_bytes := 0
+	for texture_rid in textures.values():
+		if not texture_rid or not texture_rid.is_valid():
+			continue
+		var texture_format := rd.texture_get_format(texture_rid)
+		total_bytes += (
+			texture_format.width * texture_format.height
+			* _bytes_per_pixel(texture_format.format)
+		)
+	return total_bytes
 
 func get_vram_usage() -> String:
-	var total_bytes = 0
-	for tex_id in textures:
-		total_bytes += resolution.x * resolution.y * 16
-	return "VRAM: %.2f MB" % (total_bytes / 1024.0 / 1024.0)
+	return "VRAM: %.2f MB" % (get_vram_usage_bytes() / 1024.0 / 1024.0)
+
+func get_metrics_snapshot() -> Dictionary:
+	_sample_memory_peaks()
+	var snapshot := metrics.duplicate(true)
+	snapshot["current_vram_bytes"] = get_vram_usage_bytes() if rd else 0
+	snapshot["texture_count"] = textures.size()
+	return snapshot
+
+func get_texture_lifecycle() -> Dictionary:
+	return TEXTURE_LIFECYCLE.duplicate(true)
+
+func _sample_memory_peaks() -> void:
+	if not metrics:
+		return
+	var current_vram := get_vram_usage_bytes() if rd else 0
+	metrics["peak_vram_bytes"] = maxi(
+		int(metrics.get("peak_vram_bytes", 0)), current_vram
+	)
+	var current_ram := int(Performance.get_monitor(Performance.MEMORY_STATIC))
+	metrics["peak_system_ram_bytes"] = maxi(
+		int(metrics.get("peak_system_ram_bytes", 0)), current_ram
+	)
+
+func _bytes_per_pixel(data_format: int) -> int:
+	match data_format:
+		FORMAT_STATE:
+			return 16
+		FORMAT_RG32I:
+			return 8
+		FORMAT_RGBA8, FORMAT_RGBA8UI, FORMAT_R32F, FORMAT_R32UI:
+			return 4
+		RenderingDevice.DATA_FORMAT_R8_UINT:
+			return 1
+		_:
+			push_warning("Unknown texture format in VRAM accounting: " + str(data_format))
+			return 16
+
+## Drops every texture that has reached its final GPU consumer. Exporters keep
+## only their required source layers, preventing stale next-phase state from
+## occupying VRAM during PNG conversion.
+func prepare_for_export(gas_giant: bool = false) -> Dictionary:
+	sync_for_cpu("prepare_for_export")
+	var released_compute_resources := (
+		uniform_sets.size() + pipelines.size() + shaders.size()
+	)
+	# Export is CPU-only. Descriptor sets must be released before any texture
+	# they reference; pipelines must be released before their shaders.
+	_free_valid_uniform_sets()
+	uniform_sets.clear()
+	_free_unique_rids(pipelines.values())
+	pipelines.clear()
+	_free_unique_rids(shaders.values())
+	shaders.clear()
+	var keep: Array = GAS_EXPORT_TEXTURES if gas_giant else TERRESTRIAL_EXPORT_TEXTURES
+	var released_names: Array[String] = []
+	var before_bytes := get_vram_usage_bytes()
+	for texture_name in textures.keys().duplicate():
+		if texture_name in keep:
+			continue
+		var texture_rid: RID = textures[texture_name]
+		if texture_rid.is_valid():
+			rd.free_rid(texture_rid)
+		textures.erase(texture_name)
+		released_names.append(str(texture_name))
+	var released_bytes := maxi(before_bytes - get_vram_usage_bytes(), 0)
+	metrics["released_texture_bytes"] = (
+		int(metrics.get("released_texture_bytes", 0)) + released_bytes
+	)
+	return {
+		"released_names": released_names,
+		"released_bytes": released_bytes,
+		"released_compute_resources": released_compute_resources,
+		"remaining_bytes": get_vram_usage_bytes(),
+	}
 
 # === CRÉATION DES TEXTURES ===
 func _initialize_textures() -> void:
@@ -319,12 +523,13 @@ func initialize_resources_textures() -> void:
 		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
 	)
 	
-	# Format RGBA32F pour texture de ressources (stockage des IDs)
-	var format_rgba32f := RDTextureFormat.new()
-	format_rgba32f.width = resolution.x
-	format_rgba32f.height = resolution.y
-	format_rgba32f.format = FORMAT_STATE  # RGBA32F
-	format_rgba32f.usage_bits = (
+	# Format RGBA8UI : resource_id, intensité, cluster et présence tiennent
+	# chacun dans un octet. L'ancien RGBA32F consommait 4x plus de VRAM.
+	var format_rgba8ui := RDTextureFormat.new()
+	format_rgba8ui.width = resolution.x
+	format_rgba8ui.height = resolution.y
+	format_rgba8ui.format = FORMAT_RGBA8UI
+	format_rgba8ui.usage_bits = (
 		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
 		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
 		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
@@ -345,21 +550,21 @@ func initialize_resources_textures() -> void:
 		else:
 			textures["petrole"] = rid
 	
-	# Créer texture resources (RGBA32F - 16 bytes par pixel)
+	# Créer texture resources (RGBA8UI - 4 bytes par pixel)
 	if not textures.has("resources"):
 		var data = PackedByteArray()
-		data.resize(resolution.x * resolution.y * 16)  # 16 bytes per pixel (RGBA32F)
+		data.resize(resolution.x * resolution.y * 4)
 		data.fill(0)
 		
 		var view := RDTextureView.new()
-		var rid := rd.texture_create(format_rgba32f, view, [data])
+		var rid := rd.texture_create(format_rgba8ui, view, [data])
 		
 		if not rid.is_valid():
 			push_error("❌ Échec création texture resources")
 		else:
 			textures["resources"] = rid
 	
-	print("✅ Textures ressources créées (1x RGBA8 + 1x RGBA32F)")
+	print("✅ Textures ressources créées (1x RGBA8 + 1x RGBA8UI)")
 
 # === CRÉATION DES TEXTURES EAUX (Étape 2.5) ===
 func initialize_water_textures() -> void:
@@ -903,8 +1108,7 @@ func dispatch_compute(shader_name: String, groups_x: int, groups_y: int = 1, gro
 	
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, groups_z)
 	rd.compute_list_end()
-	rd.submit()
-	rd.sync()
+	submit_gpu_work()
 
 # === READBACK TEXTURE ===
 func readback_texture(tex_id: String) -> Image:
@@ -912,7 +1116,7 @@ func readback_texture(tex_id: String) -> Image:
 		push_error("❌ Texture introuvable: ", tex_id)
 		return null
 	
-	var data := rd.texture_get_data(textures[tex_id], 0)
+	var data := readback_texture_raw(tex_id)
 	
 	# Déterminer le format de l'image selon le type de texture
 	var img_format = Image.FORMAT_RGBAF
@@ -925,7 +1129,7 @@ func readback_texture(tex_id: String) -> Image:
 		img_format = Image.FORMAT_RF
 	# Textures R32UI et RG32I ne peuvent pas être converties directement en Image
 	# Utiliser readback_texture_raw() pour ces formats
-	# Textures RGBA32F (par défaut: geo, climate, plates, crust_age, resources)
+	# Textures RGBA32F (par défaut: geo, climate, plates, crust_age)
 	
 	var img := Image.create_from_data(
 		resolution.x,
@@ -979,7 +1183,15 @@ func readback_texture_raw(tex_id: String) -> PackedByteArray:
 		push_error("❌ Texture introuvable: ", tex_id)
 		return PackedByteArray()
 	
-	return rd.texture_get_data(textures[tex_id], 0)
+	sync_for_cpu("readback:" + tex_id)
+	var started_usec := Time.get_ticks_usec()
+	var data := rd.texture_get_data(textures[tex_id], 0)
+	var elapsed_ms := float(Time.get_ticks_usec() - started_usec) / 1000.0
+	metrics["readback_count"] = int(metrics.get("readback_count", 0)) + 1
+	metrics["readback_time_ms"] = float(metrics.get("readback_time_ms", 0.0)) + elapsed_ms
+	metrics["readback_bytes"] = int(metrics.get("readback_bytes", 0)) + data.size()
+	_sample_memory_peaks()
+	return data
 
 # === NETTOYAGE ===
 func cleanup() -> void:
@@ -992,31 +1204,27 @@ func cleanup() -> void:
 	if not rd:
 		print("⚠️ RenderingDevice déjà libéré, nettoyage ignoré")
 		return
+
+	sync_for_cpu("cleanup")
+	_flush_deferred_frees()
 	
 	# Libérer les ressources dans l'ordre inverse de création
 	# 1. Uniform sets (dépendent des shaders et textures)
-	for rid in uniform_sets.values():
-		if rid and rid.is_valid():
-			rd.free_rid(rid)
+	_free_valid_uniform_sets()
 	uniform_sets.clear()
 	
 	# 2. Pipelines (dépendent des shaders)
-	for rid in pipelines.values():
-		if rid and rid.is_valid():
-			rd.free_rid(rid)
+	_free_unique_rids(pipelines.values())
 	pipelines.clear()
 	
 	# 3. Shaders
-	for rid in shaders.values():
-		if rid and rid.is_valid():
-			rd.free_rid(rid)
+	_free_unique_rids(shaders.values())
 	shaders.clear()
 	
 	# 4. Textures (indépendantes)
-	for rid in textures.values():
-		if rid and rid.is_valid():
-			rd.free_rid(rid)
+	_free_unique_rids(textures.values())
 	textures.clear()
+	metrics["current_vram_bytes"] = 0
 
 	# Le device partagé reste vivant pour la prochaine génération ; seule la
 	# référence de ce contexte terminé est relâchée.

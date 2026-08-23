@@ -12,7 +12,6 @@ var nom             : String
 var circonference   : int
 var mapStatusLabel  : Label
 var cheminSauvegarde: String
-var nb_thread       : int
 
 
 # GPU acceleration components
@@ -35,7 +34,8 @@ var _generation_request_id: int = 0
 ## @param water_elevation_param: Niveau de la mer (offset ou niveau absolu).
 ## @param avg_precipitation_param: Facteur global d'humidité (0.0 à 1.0).
 ## @param elevation_modifier_param: Multiplicateur d'altitude pour le relief (Terrain Scale).
-## @param nb_thread_param: Nombre de threads pour la génération CPU (Obsolète pour GPU).
+## Le nombre de workers CPU est résolu automatiquement pour l'export PNG ; il
+## ne contrôle jamais la file de génération GPU.
 ## @param atmosphere_type_param: Enum (0=Terre, 1=Lune, etc.) définissant la densité atmosphérique.
 ## @param renderProgress_param: Référence à la barre de progression de l'UI.
 ## @param mapStatusLabel_param: Référence au label de statut de l'UI.
@@ -222,8 +222,7 @@ func _export_gpu_maps() -> void:
 		push_error("[PlanetGenerator] GPUContext or RD not available for export")
 		return
 	
-	gpu_context.rd.submit()
-	gpu_context.rd.sync()
+	gpu_context.sync_for_cpu("planet_export")
 	
 	# Validate texture RIDs
 	for texture in gpu_context.textures.values():
@@ -237,7 +236,7 @@ func _export_gpu_maps() -> void:
 	
 	# Create exporter and export all maps
 	var exporter = PlanetExporter.new()
-	var exported_files = exporter.export_maps(gpu_context.textures, "user://temp/", generation_params)
+	var exported_files = exporter.export_maps(gpu_context, "user://temp/", generation_params)
 	
 	# Load exported images into legacy properties
 	for map_type in exported_files:

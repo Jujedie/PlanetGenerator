@@ -529,7 +529,21 @@ Cobalt, Lithium, Niobium, Plomb
 > Le multiplicateur **Richesse globale** (`global_richness`) s'applique à toutes les catégories uniformément.  
 > Les **gisements pétroliers** sont générés séparément avec les paramètres `petrole_probability` et `petrole_deposit_size`.
 
+## 9. Optimisation et export
+
+- La simulation GPU utilise une seule file contrôlée. Les synchronisations ne
+  se produisent qu'aux dépendances CPU réelles (hydrologie, lecture ou export).
+- Les cartes sont lues et compressées une par une afin de ne pas conserver
+  plusieurs cartes RGBA32F complètes en mémoire système.
+- Les cartes de ressources utilisent un stockage RGBA8UI compact, puis sont
+  matérialisées individuellement pendant l'export PNG.
+- Le paramètre **Workers export PNG** vaut `0` par défaut (sélection
+  automatique). Une valeur explicite ne concerne que la conversion et
+  l'export CPU, jamais la génération GPU.
+- Le rapport de performance distingue simulation, synchronisation, lecture
+  GPU, conversion CPU, compression PNG, pic VRAM, pic RAM et temps total.
+
 ---
 
 *Documentation générée pour PlanetGenerator Final-Upgrade — Godot 4.x / Vulkan Compute Shaders*  
-*Dernière mise à jour : février 2026*
+*Dernière mise à jour : août 2026*

@@ -19,6 +19,7 @@ var _cleaned_up: bool = false
 var last_phase_timings_ms: Dictionary = {}
 var last_hydrology_stats: Dictionary = {}
 var last_administrative_stats: Dictionary = {}
+var last_performance_report: Dictionary = {}
 
 # SSBO pour comptage de pixels par composante (water classification)
 var water_counter_buffer: RID = RID()
@@ -652,6 +653,7 @@ func run_simulation() -> void:
 	var w = resolution.x
 	var h = resolution.y
 	last_phase_timings_ms.clear()
+	last_performance_report.clear()
 	var simulation_started_usec = Time.get_ticks_usec()
 	
 	print("  Résolution de la simulation : ", w, "x", h)
@@ -668,7 +670,10 @@ func run_simulation() -> void:
 		
 		# Carte finale gazeuse (pipeline multi-passes, écoulement fluide par advection)
 		_run_timed_phase("gas_giant", run_gas_giant_phase.bind(generation_params, w, h))
+		gpu.sync_for_cpu("simulation_complete")
 		_record_total_simulation_time(simulation_started_usec)
+		var gas_release := gpu.prepare_for_export(true)
+		_build_performance_report(simulation_started_usec, gas_release)
 		_print_phase_timing_summary()
 		
 		print("=".repeat(60))
@@ -718,14 +723,19 @@ func run_simulation() -> void:
 	
 	# === ÉTAPE 6 : FINAL MAP (COMBINAISON) ===
 	_run_timed_phase("final_map", run_final_map_phase.bind(generation_params, w, h))
+	# All previous dispatches are ordered on one controlled local-device queue.
+	# This is the final simulation dependency before CPU export.
+	gpu.sync_for_cpu("simulation_complete")
 	_record_total_simulation_time(simulation_started_usec)
+	var lifecycle_release := gpu.prepare_for_export(false)
+	_build_performance_report(simulation_started_usec, lifecycle_release)
 	_print_phase_timing_summary()
 	
 	print("[Orchestrator] 🧹 Nettoyage de ", _rids_to_free.size(), " ressources temporaires...")
 	if rd:
 		for rid in _rids_to_free:
 			if rid.is_valid():
-				rd.free_rid(rid)
+				gpu.release_rid(rid)
 	else:
 		push_warning("[Orchestrator] RD is null, skipping temp cleanup")
 	_rids_to_free.clear()
@@ -741,6 +751,7 @@ func _run_timed_phase(phase_name: String, phase_callable: Callable) -> void:
 	var elapsed_ms = float(Time.get_ticks_usec() - started_usec) / 1000.0
 	last_phase_timings_ms[phase_name] = elapsed_ms
 	print("[Timing] ", phase_name, ": ", snappedf(elapsed_ms, 0.01), " ms")
+	gpu._sample_memory_peaks()
 
 func _record_total_simulation_time(started_usec: int) -> void:
 	last_phase_timings_ms["total_simulation"] = float(Time.get_ticks_usec() - started_usec) / 1000.0
@@ -749,6 +760,19 @@ func _print_phase_timing_summary() -> void:
 	print("[Timing] --- Simulation phase summary ---")
 	for phase_name in last_phase_timings_ms:
 		print("[Timing] ", phase_name, " = ", snappedf(float(last_phase_timings_ms[phase_name]), 0.01), " ms")
+	if not last_performance_report.is_empty():
+		print("[Timing] GPU queue wall = ", snappedf(float(last_performance_report.get("gpu_simulation_wall_ms", 0.0)), 0.01), " ms")
+		print("[Timing] sync/readback = ", snappedf(float(last_performance_report.get("sync_time_ms", 0.0)), 0.01), "/", snappedf(float(last_performance_report.get("readback_time_ms", 0.0)), 0.01), " ms")
+
+func _build_performance_report(started_usec: int, lifecycle_release: Dictionary) -> void:
+	var gpu_metrics := gpu.get_metrics_snapshot()
+	last_performance_report = gpu_metrics.duplicate(true)
+	last_performance_report["gpu_simulation_wall_ms"] = (
+		float(Time.get_ticks_usec() - started_usec) / 1000.0
+	)
+	last_performance_report["phase_enqueue_and_cpu_ms"] = last_phase_timings_ms.duplicate(true)
+	last_performance_report["texture_lifecycle"] = gpu.get_texture_lifecycle()
+	last_performance_report["lifecycle_release"] = lifecycle_release.duplicate(true)
 
 # ============================================================================
 # ÉTAPE 0 : GÉNÉRATION TOPOGRAPHIQUE DE BASE
@@ -839,7 +863,7 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["base_elevation"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create base_elevation param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	# 5. Calcul des groupes de travail (16x16 threads par groupe)
@@ -869,12 +893,11 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	rd.compute_list_end()
 	
 	# 7. Soumettre et synchroniser
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
 	# 8. Nettoyage des ressources temporaires
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 	
 	print("[Orchestrator] ✅ Phase 0 : Topographie de base générée")
 
@@ -1030,7 +1053,7 @@ func _dispatch_jfa_pass(w: int, h: int, groups_x: int, groups_y: int, pass_index
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["crust_age_jfa"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create JFA param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1041,11 +1064,10 @@ func _dispatch_jfa_pass(w: int, h: int, groups_x: int, groups_y: int, pass_index
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 ## Dispatch la passe de finalisation (calcul âge + subsidence)
 func _dispatch_crust_age_finalize(w: int, h: int, groups_x: int, groups_y: int, spreading_rate: float, planet_radius: float, max_age: float, subsidence_coeff: float, sea_level: float) -> void:
@@ -1079,7 +1101,7 @@ func _dispatch_crust_age_finalize(w: int, h: int, groups_x: int, groups_y: int, 
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["crust_age_finalize"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create finalize param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1089,11 +1111,10 @@ func _dispatch_crust_age_finalize(w: int, h: int, groups_x: int, groups_y: int, 
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 # ============================================================================
 # ÉTAPE 0.6 : CRATÈRES D'IMPACT (planètes sans atmosphère)
@@ -1195,7 +1216,7 @@ func run_cratering_phase(params: Dictionary, w: int, h: int) -> void:
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["cratering"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create cratering param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	# Dispatch du compute shader
@@ -1206,12 +1227,11 @@ func run_cratering_phase(params: Dictionary, w: int, h: int) -> void:
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
 	# Nettoyage
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 	
 	print("[Orchestrator] ✅ Phase 0.6 : Cratères générés")
 
@@ -1348,7 +1368,7 @@ func _dispatch_erosion_rainfall(w: int, h: int, groups_x: int, groups_y: int, ra
 	
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["erosion_rainfall"], 1)
 	if not param_set.is_valid():
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1358,11 +1378,10 @@ func _dispatch_erosion_rainfall(w: int, h: int, groups_x: int, groups_y: int, ra
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 ## Dispatch le shader d'écoulement
 func _dispatch_erosion_flow(w: int, h: int, groups_x: int, groups_y: int, flow_rate: float, sea_level: float, gravity: float, pixel_size_x_m: float, pixel_size_y_m: float, use_swap: bool) -> void:
@@ -1400,7 +1419,7 @@ func _dispatch_erosion_flow(w: int, h: int, groups_x: int, groups_y: int, flow_r
 	
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["erosion_flow"], 1)
 	if not param_set.is_valid():
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1410,11 +1429,10 @@ func _dispatch_erosion_flow(w: int, h: int, groups_x: int, groups_y: int, flow_r
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 ## Dispatch le shader de transport de sédiments
 func _dispatch_erosion_sediment(w: int, h: int, groups_x: int, groups_y: int,
@@ -1461,7 +1479,7 @@ func _dispatch_erosion_sediment(w: int, h: int, groups_x: int, groups_y: int,
 	
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["erosion_sediment"], 1)
 	if not param_set.is_valid():
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1471,11 +1489,10 @@ func _dispatch_erosion_sediment(w: int, h: int, groups_x: int, groups_y: int,
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 ## Dispatch le shader d'accumulation de flux
 func _dispatch_erosion_flux_accumulation(w: int, h: int, groups_x: int, groups_y: int, pass_index: int, sea_level: float, base_flux: float, propagation_rate: float, use_swap: bool) -> void:
@@ -1511,7 +1528,7 @@ func _dispatch_erosion_flux_accumulation(w: int, h: int, groups_x: int, groups_y
 	
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["erosion_flux_accumulation"], 1)
 	if not param_set.is_valid():
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1521,11 +1538,10 @@ func _dispatch_erosion_flux_accumulation(w: int, h: int, groups_x: int, groups_y
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 
 # ============================================================================
@@ -1649,7 +1665,7 @@ func _dispatch_temperature(w: int, h: int, groups_x: int, groups_y: int, seed_va
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["temperature"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create temperature param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	# === SET 2 : PALETTE DE COULEURS DYNAMIQUE (SSBO) ===
@@ -1657,8 +1673,8 @@ func _dispatch_temperature(w: int, h: int, groups_x: int, groups_y: int, seed_va
 	var palette_ssbo: RID = rd.storage_buffer_create(palette_data.size(), palette_data)
 	if not palette_ssbo.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create temperature palette SSBO")
-		rd.free_rid(param_set)
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_set)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var palette_uniform := RDUniform.new()
@@ -1669,9 +1685,9 @@ func _dispatch_temperature(w: int, h: int, groups_x: int, groups_y: int, seed_va
 	var palette_set: RID = rd.uniform_set_create([palette_uniform], gpu.shaders["temperature"], 2)
 	if not palette_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create temperature palette uniform set")
-		rd.free_rid(palette_ssbo)
-		rd.free_rid(param_set)
-		rd.free_rid(param_buffer)
+		gpu.release_rid(palette_ssbo)
+		gpu.release_rid(param_set)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1682,13 +1698,12 @@ func _dispatch_temperature(w: int, h: int, groups_x: int, groups_y: int, seed_va
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(palette_set)
-	rd.free_rid(palette_ssbo)
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(palette_set)
+	gpu.release_rid(palette_ssbo)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 ## Dispatch le shader de précipitation
 func _dispatch_precipitation(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, avg_precipitation: float, cylinder_radius: float, atmosphere_type: int, sea_level: float = 0.0) -> void:
@@ -1733,7 +1748,7 @@ func _dispatch_precipitation(w: int, h: int, groups_x: int, groups_y: int, seed_
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["precipitation"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create precipitation param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	# === SET 2 : PALETTE DE COULEURS DYNAMIQUE (SSBO) ===
@@ -1741,8 +1756,8 @@ func _dispatch_precipitation(w: int, h: int, groups_x: int, groups_y: int, seed_
 	var palette_ssbo: RID = rd.storage_buffer_create(palette_data.size(), palette_data)
 	if not palette_ssbo.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create precipitation palette SSBO")
-		rd.free_rid(param_set)
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_set)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var palette_uniform := RDUniform.new()
@@ -1753,9 +1768,9 @@ func _dispatch_precipitation(w: int, h: int, groups_x: int, groups_y: int, seed_
 	var palette_set: RID = rd.uniform_set_create([palette_uniform], gpu.shaders["precipitation"], 2)
 	if not palette_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create precipitation palette uniform set")
-		rd.free_rid(palette_ssbo)
-		rd.free_rid(param_set)
-		rd.free_rid(param_buffer)
+		gpu.release_rid(palette_ssbo)
+		gpu.release_rid(param_set)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1766,13 +1781,12 @@ func _dispatch_precipitation(w: int, h: int, groups_x: int, groups_y: int, seed_
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(palette_set)
-	rd.free_rid(palette_ssbo)
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(palette_set)
+	gpu.release_rid(palette_ssbo)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 
 ## Dispatch le shader de nuages
@@ -1818,7 +1832,7 @@ func _dispatch_clouds(w: int, h: int, groups_x: int, groups_y: int, seed_val: in
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["clouds"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create clouds param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1828,11 +1842,10 @@ func _dispatch_clouds(w: int, h: int, groups_x: int, groups_y: int, seed_val: in
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 
 ## Phase banquise - exécutée APRÈS la phase eau pour avoir accès à water_colored
@@ -1915,7 +1928,7 @@ func _dispatch_ice_caps(w: int, h: int, groups_x: int, groups_y: int, seed_val: 
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["ice_caps"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create ice_caps param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1925,11 +1938,10 @@ func _dispatch_ice_caps(w: int, h: int, groups_x: int, groups_y: int, seed_val: 
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 # ============================================================================
 # SAMPLER HELPER
@@ -2007,9 +2019,9 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  • Priority-Flood convergent et classification des bassins...")
 	var solver := HydrologySolver.new()
 	var surface_result := solver.solve_surface_and_water(
-		rd.texture_get_data(gpu.textures["geo"], 0),
-		rd.texture_get_data(gpu.textures["climate"], 0),
-		rd.texture_get_data(gpu.textures["water_mask"], 0),
+		gpu.readback_texture_raw("geo"),
+		gpu.readback_texture_raw("climate"),
+		gpu.readback_texture_raw("water_mask"),
 		w,
 		h,
 		sea_level,
@@ -2051,7 +2063,7 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	var accumulation_result := solver.accumulate_flow(
 		flow_direction_data,
 		water_mask_data,
-		rd.texture_get_data(gpu.textures["river_flux"], 0),
+		gpu.readback_texture_raw("river_flux"),
 		w,
 		h,
 	)
@@ -2173,12 +2185,11 @@ func _dispatch_water_fill(w: int, h: int, groups_x: int, groups_y: int, sea_leve
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader JFA pour composantes connexes
 func _dispatch_water_jfa(w: int, h: int, groups_x: int, groups_y: int, step_size: int, pass_index: int, use_swap: bool) -> void:
@@ -2235,12 +2246,11 @@ func _dispatch_water_jfa(w: int, h: int, groups_x: int, groups_y: int, step_size
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de classification par taille
 func _dispatch_water_size_classify(w: int, h: int, groups_x: int, groups_y: int, pass_type: int, saltwater_min_size: int, freshwater_max_size: int, sea_level: float, counter_buffer: RID) -> void:
@@ -2301,12 +2311,11 @@ func _dispatch_water_size_classify(w: int, h: int, groups_x: int, groups_y: int,
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de coloration de l'eau (remplace water_size_classify pour la sortie visuelle)
 func _dispatch_water_to_color(w: int, h: int, groups_x: int, groups_y: int, pass_type: int, sea_level: float, atmosphere_type: int, freshwater_max_size: int, counter_buffer: RID) -> void:
@@ -2375,12 +2384,11 @@ func _dispatch_water_to_color(w: int, h: int, groups_x: int, groups_y: int, pass
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de remplissage de depressions (Planchon-Darboux)
 ## mode: 0 = initialisation, 1 = iteration
@@ -2444,12 +2452,11 @@ func _dispatch_fill_depression(w: int, h: int, groups_x: int, groups_y: int, sea
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de calcul des directions d'écoulement D8
 func _dispatch_river_flow_direction(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, sea_level: float) -> void:
@@ -2504,12 +2511,11 @@ func _dispatch_river_flow_direction(w: int, h: int, groups_x: int, groups_y: int
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader d'initialisation distribuée du flux (chaque pixel = précipitation)
 func _dispatch_river_sources(w: int, h: int, groups_x: int, groups_y: int, sea_level: float, precip_scale: float) -> void:
@@ -2558,12 +2564,11 @@ func _dispatch_river_sources(w: int, h: int, groups_x: int, groups_y: int, sea_l
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de propagation des rivières (accumulation conservatrice)
 func _dispatch_river_propagation(w: int, h: int, groups_x: int, groups_y: int, pass_index: int, sea_level: float, precip_scale: float, use_swap: bool) -> void:
@@ -2634,12 +2639,11 @@ func _dispatch_river_propagation(w: int, h: int, groups_x: int, groups_y: int, p
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de vérification de connectivité à l'océan
 func _dispatch_river_ocean_connect(w: int, h: int, groups_x: int, groups_y: int, pass_index: int, use_swap: bool) -> void:
@@ -2703,12 +2707,11 @@ func _dispatch_river_ocean_connect(w: int, h: int, groups_x: int, groups_y: int,
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de classification initiale des types de rivière (flux → type)
 func _dispatch_river_type_assign(w: int, h: int, groups_x: int, groups_y: int, affluent_threshold: float, riviere_threshold: float, fleuve_threshold: float) -> void:
@@ -2757,12 +2760,11 @@ func _dispatch_river_type_assign(w: int, h: int, groups_x: int, groups_y: int, a
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de promotion de type le long du chenal principal (ping-pong)
 func _dispatch_river_type_promote(w: int, h: int, groups_x: int, groups_y: int, use_swap: bool) -> void:
@@ -2812,12 +2814,11 @@ func _dispatch_river_type_promote(w: int, h: int, groups_x: int, groups_y: int, 
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de classification des rivières en biomes (avec connectivité océan)
 func _dispatch_river_classify(w: int, h: int, groups_x: int, groups_y: int, atmosphere_type: int) -> void:
@@ -2861,9 +2862,9 @@ func _dispatch_river_classify(w: int, h: int, groups_x: int, groups_y: int, atmo
 
 	if not river_ssbo.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create river biomes SSBO")
-		rd.free_rid(param_set)
-		rd.free_rid(tex_set)
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_set)
+		gpu.release_rid(tex_set)
+		gpu.release_rid(param_buffer)
 		return
 
 	var ssbo_uniform = RDUniform.new()
@@ -2881,14 +2882,13 @@ func _dispatch_river_classify(w: int, h: int, groups_x: int, groups_y: int, atmo
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 
-	rd.free_rid(ssbo_set)
-	rd.free_rid(river_ssbo)
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(ssbo_set)
+	gpu.release_rid(river_ssbo)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 	print("  [Orchestrator] ✅ Rivières classifiées en biomes")
 
@@ -2960,7 +2960,7 @@ func run_biome_phase(params: Dictionary, w: int, h: int) -> void:
 		push_warning("[Orchestrator] ⚠️ biome_smooth shader not ready, skipping smoothing")
 	
 	# Nettoyer le SSBO
-	rd.free_rid(biomes_ssbo)
+	gpu.release_rid(biomes_ssbo)
 	
 	print("[Orchestrator] ✅ Phase 4.1 terminée")
 
@@ -3029,14 +3029,13 @@ func _dispatch_biome_classify(w: int, h: int, groups_x: int, groups_y: int,
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
 	# Cleanup
-	rd.free_rid(ssbo_set)
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(ssbo_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de lissage des biomes (ping-pong)
 func _dispatch_biome_smooth(w: int, h: int, groups_x: int, groups_y: int,
@@ -3118,14 +3117,13 @@ func _dispatch_biome_smooth(w: int, h: int, groups_x: int, groups_y: int,
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
 	# Cleanup
-	rd.free_rid(ssbo_set)
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(ssbo_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 # ============================================================================
 # ÉTAPE 4 : RÉGIONS ADMINISTRATIVES
@@ -3439,12 +3437,11 @@ func _dispatch_region_seed_placement(w: int, h: int, groups_x: int, groups_y: in
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de croissance des régions (Dijkstra-like)
 func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int,
@@ -3529,12 +3526,11 @@ func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int,
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Copie les textures de région du buffer temp vers le buffer principal
 func _copy_region_textures(w: int, h: int) -> void:
@@ -3606,12 +3602,11 @@ func _dispatch_region_cleanup(w: int, h: int, groups_x: int, groups_y: int, seed
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de finalisation des régions (coloration)
 func _dispatch_region_finalize(w: int, h: int, groups_x: int, groups_y: int, seed_val: int) -> void:
@@ -3668,12 +3663,11 @@ func _dispatch_region_finalize(w: int, h: int, groups_x: int, groups_y: int, see
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 # ============================================================================
 # ÉTAPE 4.5 : RÉGIONS OCÉANIQUES
@@ -3807,12 +3801,11 @@ func _dispatch_ocean_region_seed_placement(w: int, h: int, groups_x: int,
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de croissance des régions océaniques
 func _dispatch_ocean_region_growth(w: int, h: int, groups_x: int,
@@ -3884,12 +3877,11 @@ func _dispatch_ocean_region_growth(w: int, h: int, groups_x: int,
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Copie les textures océaniques du buffer temp vers le buffer principal
 func _copy_ocean_region_textures(w: int, h: int) -> void:
@@ -3951,12 +3943,11 @@ func _dispatch_ocean_region_cleanup(w: int, h: int, groups_x: int, groups_y: int
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de finalisation des régions océaniques (coloration)
 func _dispatch_ocean_region_finalize(w: int, h: int, groups_x: int, groups_y: int, seed_val: int) -> void:
@@ -4007,12 +3998,11 @@ func _dispatch_ocean_region_finalize(w: int, h: int, groups_x: int, groups_y: in
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 # ============================================================================
 # ÉTAPE 5 : RESSOURCES & PÉTROLE
@@ -4103,7 +4093,7 @@ func _dispatch_petrole(w: int, h: int, groups_x: int, groups_y: int, seed_val: i
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["petrole"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create petrole param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -4113,11 +4103,10 @@ func _dispatch_petrole(w: int, h: int, groups_x: int, groups_y: int, seed_val: i
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 ## Dispatch le shader de ressources minérales
 func _dispatch_resources(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, sea_level: float, cylinder_radius: float, atmosphere_type: int, global_richness: float) -> void:
@@ -4163,7 +4152,7 @@ func _dispatch_resources(w: int, h: int, groups_x: int, groups_y: int, seed_val:
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["resources"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create resources param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -4173,11 +4162,10 @@ func _dispatch_resources(w: int, h: int, groups_x: int, groups_y: int, seed_val:
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 # ============================================================================
 # ÉTAPE 6 BIS : FINAL MAP GAZEUSE (TYPE 6)
@@ -4293,12 +4281,11 @@ func _dispatch_gas_giant_velocity_init(w: int, h: int, groups_x: int, groups_y: 
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 
 func _dispatch_gas_giant_dye_init(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, cylinder_radius: float, avg_temperature: float, num_bands: int) -> void:
@@ -4336,12 +4323,11 @@ func _dispatch_gas_giant_dye_init(w: int, h: int, groups_x: int, groups_y: int, 
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 
 func _dispatch_gas_giant_advection(w: int, h: int, groups_x: int, groups_y: int, iterations: int, dt: float, sharpen: float) -> bool:
@@ -4422,8 +4408,7 @@ func _dispatch_gas_giant_advection(w: int, h: int, groups_x: int, groups_y: int,
 	rd.compute_list_end()
 
 	# One submit/sync replaces the previous CPU/GPU round-trip per iteration.
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 
 	_free_rid_array(param_sets)
 	_free_rid_array(param_buffers)
@@ -4469,12 +4454,11 @@ func _dispatch_gas_giant_final(w: int, h: int, groups_x: int, groups_y: int, see
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Génère la carte finale pour une planète gazeuse.
 ##
@@ -4539,7 +4523,7 @@ func run_gas_giant_final_phase(params: Dictionary, w: int, h: int) -> void:
 	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["gas_giant_final"], 0)
 	if not tex_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create gas_giant_final textures uniform set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	# === SET 1 : Parameters UBO ===
@@ -4551,8 +4535,8 @@ func run_gas_giant_final_phase(params: Dictionary, w: int, h: int) -> void:
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["gas_giant_final"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create gas_giant_final param set")
-		rd.free_rid(tex_set)
-		rd.free_rid(param_buffer)
+		gpu.release_rid(tex_set)
+		gpu.release_rid(param_buffer)
 		return
 	
 	# === Dispatch ===
@@ -4562,13 +4546,12 @@ func run_gas_giant_final_phase(params: Dictionary, w: int, h: int) -> void:
 	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
 	# Nettoyer
-	rd.free_rid(param_set)
-	rd.free_rid(tex_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(tex_set)
+	gpu.release_rid(param_buffer)
 	
 	print("[Orchestrator] ✅ Carte finale gazeuse générée")
 
@@ -4640,7 +4623,7 @@ func _run_water_to_color_phase(params: Dictionary, w: int, h: int) -> void:
 	_dispatch_water_to_color(w, h, groups_x, groups_y, 1, sea_level, atmosphere_type, freshwater_max_size, counter_buffer)
 	
 	# Nettoyer le buffer de comptage
-	rd.free_rid(counter_buffer)
+	gpu.release_rid(counter_buffer)
 	
 	print("  [Orchestrator] ✅ Eaux colorées")
 
@@ -4769,9 +4752,9 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 	
 	if not biomes_veg_ssbo.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create vegetation biomes SSBO")
-		rd.free_rid(param_set)
-		rd.free_rid(tex_set)
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_set)
+		gpu.release_rid(tex_set)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var ssbo_uniform = RDUniform.new()
@@ -4787,11 +4770,11 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 	
 	if not river_biomes_ssbo.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create river biomes SSBO for final_map")
-		rd.free_rid(ssbo_set)
-		rd.free_rid(biomes_veg_ssbo)
-		rd.free_rid(param_set)
-		rd.free_rid(tex_set)
-		rd.free_rid(param_buffer)
+		gpu.release_rid(ssbo_set)
+		gpu.release_rid(biomes_veg_ssbo)
+		gpu.release_rid(param_set)
+		gpu.release_rid(tex_set)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var river_ssbo_uniform = RDUniform.new()
@@ -4810,17 +4793,16 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 	rd.compute_list_bind_uniform_set(compute_list, river_ssbo_set, 3)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
 	# Nettoyer
-	rd.free_rid(river_ssbo_set)
-	rd.free_rid(river_biomes_ssbo)
-	rd.free_rid(ssbo_set)
-	rd.free_rid(biomes_veg_ssbo)
-	rd.free_rid(param_set)
-	rd.free_rid(tex_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(river_ssbo_set)
+	gpu.release_rid(river_biomes_ssbo)
+	gpu.release_rid(ssbo_set)
+	gpu.release_rid(biomes_veg_ssbo)
+	gpu.release_rid(param_set)
+	gpu.release_rid(tex_set)
+	gpu.release_rid(param_buffer)
 	
 	print("  [Orchestrator] ✅ Carte finale générée")
 
@@ -4835,10 +4817,7 @@ func export_geo_texture_to_image() -> Image:
 		push_error("[Orchestrator] ❌ Cannot export geo texture - invalid RID")
 		return null
 	
-	rd.submit()
-	rd.sync()
-	
-	var byte_data = rd.texture_get_data(gpu.textures["geo"], 0)
+	var byte_data = gpu.readback_texture_raw("geo")
 	return Image.create_from_data(resolution.x, resolution.y, false, Image.FORMAT_RGBAF, byte_data)
 
 ## Exporte toutes les cartes générées via PlanetExporter
@@ -4849,11 +4828,17 @@ func export_all_maps(output_dir: String) -> Dictionary:
 	print("[Orchestrator] 📤 Exporting all maps to: ", output_dir)
 	
 	var exporter = PlanetExporter.new()
-	return exporter.export_maps(gpu, output_dir, generation_params)
+	var exported := exporter.export_maps(gpu, output_dir, generation_params)
+	last_performance_report["export"] = exporter.last_metrics.duplicate(true)
+	last_performance_report["total_generation_and_export_ms"] = (
+		float(last_performance_report.get("gpu_simulation_wall_ms", 0.0))
+		+ float(exporter.last_metrics.get("total_export_ms", 0.0))
+	)
+	return exported
 
 ## Example d'exportation de carte
 func export_example_to_image() -> Image:
-	var byte_data = rd.texture_get_data(gpu.textures["example"], 0)
+	var byte_data = gpu.readback_texture_raw("example")
 	return Image.create_from_data(resolution.x, resolution.y, false, Image.FORMAT_RGBAF, byte_data)
 
 
@@ -4864,7 +4849,7 @@ func export_example_to_image() -> Image:
 func _free_rid_array(rids: Array[RID]) -> void:
 	for rid in rids:
 		if rid.is_valid():
-			rd.free_rid(rid)
+			gpu.release_rid(rid)
 
 ## Libère toutes les ressources GPU allouées par l'orchestrateur.
 ##
@@ -4884,20 +4869,20 @@ func cleanup() -> void:
 
 	# S'assurer qu'aucune commande n'utilise encore les ressources que nous
 	# allons libérer. C'est indispensable avant de remplacer un device local.
-	rd.submit()
-	rd.sync()
-
-	# Les uniform sets doivent disparaître avant le sampler qu'ils référencent.
-	if gpu:
-		gpu.cleanup()
+	gpu.sync_for_cpu("orchestrator_cleanup")
 
 	if _linear_sampler.is_valid():
-		rd.free_rid(_linear_sampler)
+		gpu.release_rid(_linear_sampler)
 		_linear_sampler = RID()
 
 	if water_counter_buffer.is_valid():
-		rd.free_rid(water_counter_buffer)
+		gpu.release_rid(water_counter_buffer)
 		water_counter_buffer = RID()
+
+	# Les orchestrator-owned resources are gone; the context can now release
+	# descriptor sets, pipelines, shaders and remaining textures.
+	if gpu:
+		gpu.cleanup()
 
 	# Relâcher les références propres à cet orchestrateur. GPUContext conserve
 	# un device partagé pour éviter les create/destroy Vulkan successifs.
@@ -4914,8 +4899,7 @@ func _copy_texture(src: RID, dst: RID, width: int, height: int) -> void:
 		return
 	
 	rd.texture_copy(src, dst, Vector3(0, 0, 0), Vector3(0, 0, 0), Vector3(width, height, 1), 0, 0, 0, 0)
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 
 # ============================================================================
 # PHYSICS HELPERS

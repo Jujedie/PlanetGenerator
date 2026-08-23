@@ -201,6 +201,35 @@ Acceptance gate:
 
 Goal: optimize verified behavior before introducing maximum-scale tiling.
 
+Status: complete (accepted 2026-08-23).
+
+Validation checkpoint:
+
+- Compute work now stays on one controlled local RenderingDevice queue. At the
+  128 × 64 acceptance resolution, 327 dependent compute lists require only 7
+  real submit/synchronization points (all at CPU solvers, readbacks, or final
+  export readiness), instead of one blocking synchronization per dispatch.
+- GPU, synchronization, readback, CPU conversion, PNG compression, tracked
+  VRAM, system RAM, and total generation/export timings are exposed in the
+  generation performance report.
+- Textures have an explicit permanent/next-phase/temporary/export-only/debug
+  lifecycle. After the final GPU consumer, 1,261,568 of 2,031,616 tracked VRAM
+  bytes are released before export in the acceptance scenario.
+- Mineral-resource state is RGBA8UI (4 bytes/cell), replacing its previous
+  RGBA32F allocation (16 bytes/cell).
+- Export reads and converts wide maps sequentially. The acceptance export held
+  one RGBA32F CPU map at a time (131,072 bytes at 128 × 64), and mineral maps
+  are materialized and compressed individually instead of retaining 115 full
+  RGBA8 images simultaneously.
+- The old generation-thread control is now `export_worker_count`: zero selects
+  an automatic CPU policy, and an explicit value affects PNG/export CPU work
+  only. It never creates additional GPU generation queues.
+- Twenty consecutive 128 × 64 terrestrial generations produced the same final
+  hash, released every context-owned RID after cleanup, and completed without
+  retained texture, shader, pipeline, or uniform-set state.
+- Milestone 1 terrain/atmosphere hashes and Milestone 2 hydrology/hierarchy
+  hashes remain unchanged after batching and lifecycle optimization.
+
 Work:
 
 - Measure GPU simulation, synchronization, readback, CPU conversion, PNG

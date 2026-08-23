@@ -12,7 +12,7 @@ A procedural planet surface generator that creates detailed planetary maps based
 - **Average Precipitation**: Global moisture level (0.0 to 1.0)
 - **Additional Elevation**: Terrain height modifier
 - **Cases per Region**: Political/geographical region subdivision
-- **Thread Count**: Parallel processing optimization (4-20 threads)
+- **PNG Export Workers**: Automatic CPU policy by default; optional export-only override
 - **Randomize Button**: Instantly randomize all parameters
 - And many others ...
 
@@ -48,6 +48,8 @@ A procedural planet surface generator that creates detailed planetary maps based
 - **Hydraulic Erosion**: Realistic but not time consuming hydraulic erosion.
 - **River System**: Realistic water flow from mountains to oceans with tributaries (WIP)
 - **Computes Shaders**: Computes shaders improving time complexity up 10 times
+- **Batched GPU Queue**: Dependency-only synchronization with deterministic cleanup
+- **Streamed PNG Export**: One wide map at a time with automatic export-only CPU workers
 
 ### Supported Languages
 - English

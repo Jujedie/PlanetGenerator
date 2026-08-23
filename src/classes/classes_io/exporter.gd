@@ -12,8 +12,10 @@ class_name PlanetExporter
 # Map generation parameters (for context-aware coloring)
 var params: Dictionary = {}
 
-# Number of threads for parallel processing
-var _nb_threads: int = 8
+# PNG/export-only CPU workers. Zero in the public parameters means automatic;
+# this setting never controls the single GPU generation queue.
+var _nb_threads: int = 1
+var last_metrics: Dictionary = {}
 
 # Water colors by atmosphere type
 static var WATER_COLORS = {
@@ -57,15 +59,29 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	Args:
 		gpu: GPUContext with texture RIDs
 		output_dir: Save directory path
-		generation_params: Generation parameters (includes nb_thread)
+		generation_params: Generation parameters (optional export_worker_count)
 	
 	Returns:
 		Dictionary with keys: map_name -> file_path
 	"""
+	var export_started_usec := Time.get_ticks_usec()
 	params = generation_params
-	_nb_threads = int(params.get("nb_thread", 8))
+	_nb_threads = _resolve_export_worker_count(params)
+	last_metrics = {
+		"worker_count": _nb_threads,
+		"worker_policy": "automatic" if int(params.get("export_worker_count", 0)) <= 0 else "explicit_export_only",
+		"readback_time_ms": 0.0,
+		"readback_bytes": 0,
+		"readback_count": 0,
+		"png_compression_ms": 0.0,
+		"peak_cpu_map_bytes": 0,
+		"peak_simultaneous_rgba32f_maps": 0,
+		"rgba32f_map_readbacks": 0,
+		"peak_system_ram_bytes": int(Performance.get_monitor(Performance.MEMORY_STATIC)),
+	}
 	
-	print("[Exporter] Starting map export to: ", output_dir, " (nb_threads=", _nb_threads, ")")
+	print("[Exporter] Starting map export to: ", output_dir,
+		" (PNG workers=", _nb_threads, ", policy=", last_metrics["worker_policy"], ")")
 	
 	if not DirAccess.dir_exists_absolute(output_dir):
 		DirAccess.make_dir_recursive_absolute(output_dir)
@@ -78,9 +94,8 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	
 	var rd = gpu_context.rd
 	
-	# Ensure GPU work is complete before reading
-	rd.submit()
-	rd.sync()
+	# A single dependency barrier completes queued compute before streamed reads.
+	gpu.sync_for_cpu("export_begin")
 	
 	# === TYPE 6 (GAZEUSE) : Export simplifié ===
 	# Une géante gazeuse n'a pas de surface sur laquelle les cartes de climat
@@ -96,12 +111,14 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		for key in final_result.keys():
 			exported_files[key] = final_result[key]
 		
+		_finalize_metrics(export_started_usec)
 		print("[Exporter] Export gazeuse complete: ", exported_files.size(), " maps")
 		return exported_files
 	
-	# Liste des textures RGBA32F (16 bytes/pixel) - exclure les textures climat
-	var rgba32f_textures = ["geo", "climate", "temp_buffer", "plates", "crust_age"]
-	
+	# Only geo and plates are export inputs. The previous path downloaded geo,
+	# climate, temp_buffer, plates and crust_age together, retaining five full
+	# RGBA32F CPU arrays while using only two of them.
+	var rgba32f_textures = ["geo", "plates"]
 	for map_type in rgba32f_textures:
 		if not gpu.textures.has(map_type) or not gpu.textures[map_type]:
 			push_error("[Exporter] ❌ Missing texture for map type: ", map_type)
@@ -113,42 +130,33 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	
 	print("[Exporter] Detected texture size: ", width, "x", height)
 	
-	var maps : Dictionary[String, PackedByteArray] = {}
-	# Read GPU textures (only RGBA32F textures)
-	for map in rgba32f_textures:
-		if gpu.textures.has(map):
-			print("[Exporter] Reading texture for map type: ", map)
-			var data = rd.texture_get_data(gpu.textures[map], 0)
-			maps[map] = data
-	
-	# Validate data size based on DETECTED dimensions (RGBA32F = 16 bytes/pixel)
 	var expected_size = width * height * 16
-	for map in maps.keys():
-		if maps[map].size() != expected_size:
-			push_error("[Exporter] ❌ Data size mismatch for map type: ", map, 
-				". Expected: ", expected_size, ", Got: ", maps[map].size())
-			return {}
-	
-	var imgs : Dictionary[String, Image] = {}
-	# Create images from raw data
-	for map in maps.keys():
-		var img = Image.create_from_data(width, height, false, Image.FORMAT_RGBAF, maps[map])
-		imgs[map] = img
-	
-	# Export all map types
 	var exported_files = {}
 	
-	# === EXPORT TOPOGRAPHIE (Step 0) ===
-	if imgs.has("geo"):
-		var topo_result = _export_topographie_maps(imgs["geo"], output_dir, width, height)
-		for key in topo_result.keys():
-			exported_files[key] = topo_result[key]
-	
-	# === EXPORT PLAQUES TECTONIQUES (Step 0) ===
-	if imgs.has("plates"):
-		var plates_result = _export_plates_map(imgs["plates"], output_dir, width, height)
-		for key in plates_result.keys():
-			exported_files[key] = plates_result[key]
+	# Stream each wide map through readback -> conversion -> PNG, then drop it.
+	var geo_data := _read_texture(gpu, "geo")
+	if geo_data.size() != expected_size:
+		push_error("[Exporter] ❌ Geo data size mismatch: expected ", expected_size,
+			", got ", geo_data.size())
+		return {}
+	var geo_img := Image.create_from_data(width, height, false, Image.FORMAT_RGBAF, geo_data)
+	var topo_result = _export_topographie_maps(geo_img, output_dir, width, height)
+	for key in topo_result.keys():
+		exported_files[key] = topo_result[key]
+	geo_img = null
+	geo_data = PackedByteArray()
+
+	var plates_data := _read_texture(gpu, "plates")
+	if plates_data.size() != expected_size:
+		push_error("[Exporter] ❌ Plates data size mismatch: expected ", expected_size,
+			", got ", plates_data.size())
+		return {}
+	var plates_img := Image.create_from_data(width, height, false, Image.FORMAT_RGBAF, plates_data)
+	var plates_result = _export_plates_map(plates_img, output_dir, width, height)
+	for key in plates_result.keys():
+		exported_files[key] = plates_result[key]
+	plates_img = null
+	plates_data = PackedByteArray()
 	
 	# === EXPORT CLIMAT (Step 3) - Optimisé RGBA8 Direct ===
 	# Pour les planètes sans atmosphère ou stériles, exporter seulement temp/precip (pas nuages/banquise)
@@ -210,8 +218,66 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	for key in resources_result.keys():
 		exported_files[key] = resources_result[key]
 	
+	_finalize_metrics(export_started_usec)
 	print("[Exporter] Export complete: ", exported_files.size(), " maps")
+	print("[Exporter] Metrics: ", last_metrics)
 	return exported_files
+
+func _resolve_export_worker_count(generation_parameters: Dictionary) -> int:
+	var processor_count := maxi(OS.get_processor_count(), 1)
+	var requested := int(generation_parameters.get("export_worker_count", 0))
+	if requested > 0:
+		return clampi(requested, 1, processor_count)
+	# Leave one logical processor available to the UI/OS and cap the number of
+	# short-lived Thread objects. The GPU queue is deliberately unaffected.
+	return clampi(processor_count - 1, 1, 16)
+
+func _read_texture(gpu: GPUContext, texture_name: String) -> PackedByteArray:
+	var started_usec := Time.get_ticks_usec()
+	var data := gpu.readback_texture_raw(texture_name)
+	var elapsed_ms := float(Time.get_ticks_usec() - started_usec) / 1000.0
+	last_metrics["readback_time_ms"] = float(last_metrics.get("readback_time_ms", 0.0)) + elapsed_ms
+	last_metrics["readback_bytes"] = int(last_metrics.get("readback_bytes", 0)) + data.size()
+	last_metrics["readback_count"] = int(last_metrics.get("readback_count", 0)) + 1
+	last_metrics["peak_cpu_map_bytes"] = maxi(
+		int(last_metrics.get("peak_cpu_map_bytes", 0)), data.size()
+	)
+	if gpu.textures.has(texture_name):
+		var texture_format := gpu.rd.texture_get_format(gpu.textures[texture_name])
+		if texture_format.format == GPUContext.FORMAT_STATE:
+			last_metrics["rgba32f_map_readbacks"] = int(last_metrics.get("rgba32f_map_readbacks", 0)) + 1
+			# Calls are intentionally sequential and the caller clears each wide
+			# array before requesting the next one.
+			last_metrics["peak_simultaneous_rgba32f_maps"] = 1
+	_sample_export_ram()
+	return data
+
+func _save_png(image: Image, filepath: String) -> Error:
+	var started_usec := Time.get_ticks_usec()
+	var error := image.save_png(filepath)
+	last_metrics["png_compression_ms"] = (
+		float(last_metrics.get("png_compression_ms", 0.0))
+		+ float(Time.get_ticks_usec() - started_usec) / 1000.0
+	)
+	_sample_export_ram()
+	return error
+
+func _sample_export_ram() -> void:
+	last_metrics["peak_system_ram_bytes"] = maxi(
+		int(last_metrics.get("peak_system_ram_bytes", 0)),
+		int(Performance.get_monitor(Performance.MEMORY_STATIC))
+	)
+
+func _finalize_metrics(export_started_usec: int) -> void:
+	var total_ms := float(Time.get_ticks_usec() - export_started_usec) / 1000.0
+	last_metrics["total_export_ms"] = total_ms
+	last_metrics["cpu_conversion_ms"] = maxf(
+		total_ms
+		- float(last_metrics.get("readback_time_ms", 0.0))
+		- float(last_metrics.get("png_compression_ms", 0.0)),
+		0.0
+	)
+	_sample_export_ram()
 
 # ============================================================================
 # INDIVIDUAL MAP EXPORTERS
@@ -285,10 +351,10 @@ func _export_topographie_maps(geo_img: Image, output_dir: String, width: int, he
 	var path_water = output_dir + "/eaux_map.png"
 	var topology_overlay := _build_topology_overlay(relative_elevations, width, height)
 	
-	var err_colored = elevation_colored.save_png(path_colored)
-	var err_grey = elevation_grey.save_png(path_grey)
-	var err_topology = topology_overlay.save_png(path_topology)
-	var err_water = water_mask.save_png(path_water)
+	var err_colored = _save_png(elevation_colored, path_colored)
+	var err_grey = _save_png(elevation_grey, path_grey)
+	var err_topology = _save_png(topology_overlay, path_topology)
+	var err_water = _save_png(water_mask, path_water)
 	
 	if err_colored == OK:
 		result["topographie_map"] = path_colored
@@ -516,8 +582,8 @@ func _export_plates_map(plates_img: Image, output_dir: String, width: int, heigh
 	var path_plates = output_dir + "/plaques_map.png"
 	var path_borders = output_dir + "/plaques_bordures_map.png"
 	
-	var err_plates = plates_colored.save_png(path_plates)
-	var err_borders = plates_borders.save_png(path_borders)
+	var err_plates = _save_png(plates_colored, path_plates)
+	var err_borders = _save_png(plates_borders, path_borders)
 	
 	if err_plates == OK:
 		result["plaques_map"] = path_plates
@@ -571,7 +637,7 @@ func _export_raw_heightmap(geo_img: Image, output_dir: String, width: int, heigh
 			raw_heightmap.set_pixel(x, y, Color(grey, grey, grey, 1.0))
 	
 	var path = output_dir + "/heightmap_raw.png"
-	var err = raw_heightmap.save_png(path)
+	var err = _save_png(raw_heightmap, path)
 	
 	if err == OK:
 		print("  ✅ Saved: ", path)
@@ -596,8 +662,7 @@ func _export_climate_maps_without_clouds(gpu: GPUContext, output_dir: String) ->
 		push_error("[Exporter] ❌ RenderingDevice not available")
 		return result
 	
-	rd.submit()
-	rd.sync()
+
 	
 	# Seulement température et précipitation, sans nuages ni banquise
 	var climate_textures = {
@@ -610,7 +675,7 @@ func _export_climate_maps_without_clouds(gpu: GPUContext, output_dir: String) ->
 			print("  ⚠️ Texture '", tex_id, "' non disponible, skip")
 			continue
 		
-		var data = rd.texture_get_data(gpu.textures[tex_id], 0)
+		var data = _read_texture(gpu, tex_id)
 		
 		if data.size() == 0:
 			push_error("[Exporter] ❌ Empty data for texture: ", tex_id)
@@ -634,7 +699,7 @@ func _export_climate_maps_without_clouds(gpu: GPUContext, output_dir: String) ->
 		
 		var filename = climate_textures[tex_id]
 		var filepath = output_dir + "/" + filename
-		var save_err = img.save_png(filepath)
+		var save_err = _save_png(img, filepath)
 		
 		if save_err == OK:
 			result[tex_id] = filepath
@@ -674,8 +739,7 @@ func _export_climate_maps_optimized(gpu: GPUContext, output_dir: String) -> Dict
 		return result
 	
 	# Synchroniser le GPU avant lecture
-	rd.submit()
-	rd.sync()
+
 	
 	# Liste des textures climat à exporter (RGBA8)
 	var climate_textures = {
@@ -691,7 +755,7 @@ func _export_climate_maps_optimized(gpu: GPUContext, output_dir: String) -> Dict
 			continue
 		
 		# Lecture directe des données RGBA8 depuis le GPU
-		var data = rd.texture_get_data(gpu.textures[tex_id], 0)
+		var data = _read_texture(gpu, tex_id)
 		
 		if data.size() == 0:
 			push_error("[Exporter] ❌ Empty data for texture: ", tex_id)
@@ -719,7 +783,7 @@ func _export_climate_maps_optimized(gpu: GPUContext, output_dir: String) -> Dict
 		# Sauvegarder en PNG
 		var filename = climate_textures[tex_id]
 		var filepath = output_dir + "/" + filename
-		var err = img.save_png(filepath)
+		var err = _save_png(img, filepath)
 		
 		if err == OK:
 			result[tex_id] = filepath
@@ -753,8 +817,7 @@ func _export_region_map(gpu: GPUContext, output_dir: String, _optimised_region_g
 		return result
 	
 	# Synchroniser le GPU avant lecture
-	rd.submit()
-	rd.sync()
+
 	
 	var tex_id = "region_map"  # R32UI - IDs bruts
 	var filename = "departement_map.png"
@@ -764,7 +827,7 @@ func _export_region_map(gpu: GPUContext, output_dir: String, _optimised_region_g
 		return result
 	
 	# Lecture directe des données R32UI depuis le GPU
-	var data = rd.texture_get_data(gpu.textures[tex_id], 0)
+	var data = _read_texture(gpu, tex_id)
 	
 	if data.size() == 0:
 		push_error("[Exporter] ❌ Empty data for region texture")
@@ -892,7 +955,7 @@ func _export_region_map(gpu: GPUContext, output_dir: String, _optimised_region_g
 	
 	# Sauvegarder en PNG
 	var filepath = output_dir + "/" + filename
-	var err = img.save_png(filepath)
+	var err = _save_png(img, filepath)
 	
 	if err == OK:
 		result["region_colored"] = filepath
@@ -965,8 +1028,7 @@ func _export_ocean_region_map(gpu: GPUContext, output_dir: String, _optimised_re
 		return result
 	
 	# Synchroniser le GPU avant lecture
-	rd.submit()
-	rd.sync()
+
 	
 	var tex_id = "ocean_region_map"  # R32UI - IDs bruts
 	var filename = "departement_mer_map.png"
@@ -976,7 +1038,7 @@ func _export_ocean_region_map(gpu: GPUContext, output_dir: String, _optimised_re
 		return result
 	
 	# Lecture directe des données R32UI depuis le GPU
-	var data = rd.texture_get_data(gpu.textures[tex_id], 0)
+	var data = _read_texture(gpu, tex_id)
 	
 	if data.size() == 0:
 		push_error("[Exporter] ❌ Empty data for ocean region texture")
@@ -1096,7 +1158,7 @@ func _export_ocean_region_map(gpu: GPUContext, output_dir: String, _optimised_re
 	
 	# Sauvegarder en PNG
 	var filepath = output_dir + "/" + filename
-	var err = img.save_png(filepath)
+	var err = _save_png(img, filepath)
 	
 	if err == OK:
 		result["ocean_region_colored"] = filepath
@@ -1123,8 +1185,7 @@ func _export_biome_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 		return result
 	
 	# Synchroniser le GPU avant lecture
-	rd.submit()
-	rd.sync()
+
 	
 	var tex_id = "biome_colored"
 	var filename = "biome_map.png"
@@ -1134,7 +1195,7 @@ func _export_biome_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 		return result
 	
 	# Lecture directe des données RGBA8 depuis le GPU
-	var data = rd.texture_get_data(gpu.textures[tex_id], 0)
+	var data = _read_texture(gpu, tex_id)
 	
 	if data.size() == 0:
 		push_error("[Exporter] ❌ Empty data for biome texture")
@@ -1161,7 +1222,7 @@ func _export_biome_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 	
 	# Sauvegarder en PNG
 	var filepath = output_dir + "/" + filename
-	var err = img.save_png(filepath)
+	var err = _save_png(img, filepath)
 	
 	if err == OK:
 		result[tex_id] = filepath
@@ -1231,19 +1292,18 @@ func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, hei
 		DirAccess.make_dir_recursive_absolute(resources_dir)
 	
 	# Synchroniser le GPU avant lecture
-	rd.submit()
-	rd.sync()
+
 	
 	# === EXPORT PÉTROLE (RGBA8 direct) ===
 	if gpu.textures.has("petrole") and gpu.textures["petrole"].is_valid():
-		var petrole_data = rd.texture_get_data(gpu.textures["petrole"], 0)
+		var petrole_data = _read_texture(gpu, "petrole")
 		
 		if petrole_data.size() > 0:
 			var expected_size = width * height * 4  # RGBA8
 			if petrole_data.size() == expected_size:
 				var petrole_img = Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, petrole_data)
 				var petrole_path = resources_dir + "/petrole_map.png"
-				var err = petrole_img.save_png(petrole_path)
+				var err = _save_png(petrole_img, petrole_path)
 				
 				if err == OK:
 					result["petrole_map"] = petrole_path
@@ -1257,59 +1317,67 @@ func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, hei
 	else:
 		print("  ⚠️ Petrole texture not available, skipping")
 	
-	# === EXPORT RESSOURCES (RGBA32F -> cartes individuelles) ===
+	# === EXPORT RESSOURCES (RGBA8UI -> cartes individuelles streamées) ===
 	if gpu.textures.has("resources") and gpu.textures["resources"].is_valid():
-		var res_data = rd.texture_get_data(gpu.textures["resources"], 0)
+		var res_data = _read_texture(gpu, "resources")
 		
 		if res_data.size() > 0:
-			var expected_size = width * height * 16  # RGBA32F
+			var expected_size = width * height * 4  # RGBA8UI
 			if res_data.size() == expected_size:
-				# Créer l'image source
-				var res_img = Image.create_from_data(width, height, false, Image.FORMAT_RGBAF, res_data)
-				
-				# Créer une image pour chaque ressource
-				var resource_images: Dictionary = {}
-				for i in range(RESOURCE_NAMES.size()):
-					resource_images[i] = Image.create(width, height, false, Image.FORMAT_RGBA8)
-				
-				# Récupérer les couleurs des ressources depuis Enum.gd
-				var resource_colors = []
-				for res in Enum.RESSOURCES:
-					resource_colors.append(res.couleur)  # Utiliser 'couleur' au lieu de 'color'
-				
-				# Parcourir chaque pixel
-				for y in range(height):
-					for x in range(width):
-						var pixel = res_img.get_pixel(x, y)
-						var resource_id = int(round(pixel.r))
-						var intensity = pixel.g
-						var has_resource = pixel.a > 0.5
-						
-						if has_resource and resource_id >= 0 and resource_id < RESOURCE_NAMES.size():
-							# Couleur de la ressource
-							var base_color = resource_colors[resource_id] if resource_id < resource_colors.size() else Color(1, 1, 1, 1)
-							
-							# Alpha variable du shader (bruit + intensité)
-							var alpha = pixel.a
-							
-							# RGB = couleur * intensité, Alpha = alpha du shader
-							var color = Color(
-								base_color.r * intensity,
-								base_color.g * intensity,
-								base_color.b * intensity,
-								alpha
-							)
-							
-							# Écrire dans la carte individuelle
-							resource_images[resource_id].set_pixel(x, y, color)
-				
-				# Sauvegarder TOUTES les cartes individuelles
-				for i in range(RESOURCE_NAMES.size()):
-					if not resource_images.has(i):
+				var resource_count := RESOURCE_NAMES.size()
+				var counts := PackedInt32Array()
+				counts.resize(resource_count)
+				for pixel_index in range(width * height):
+					var source_offset := pixel_index * 4
+					var resource_id := int(res_data[source_offset])
+					if res_data[source_offset + 3] > 0 and resource_id < resource_count:
+						counts[resource_id] += 1
+
+				# Compact counting-sort index: 4 bytes per occupied pixel, avoiding
+				# 115 simultaneous full-size RGBA8 Image allocations.
+				var offsets := PackedInt32Array()
+				offsets.resize(resource_count + 1)
+				for i in range(resource_count):
+					offsets[i + 1] = offsets[i] + counts[i]
+				var cursors := offsets.duplicate()
+				var resource_indices := PackedInt32Array()
+				resource_indices.resize(offsets[resource_count])
+				for pixel_index in range(width * height):
+					var source_offset := pixel_index * 4
+					var resource_id := int(res_data[source_offset])
+					if res_data[source_offset + 3] == 0 or resource_id >= resource_count:
 						continue
-					
+					resource_indices[cursors[resource_id]] = pixel_index
+					cursors[resource_id] += 1
+
+				var resource_colors: Array[Color] = []
+				for resource in Enum.RESSOURCES:
+					resource_colors.append(resource.couleur)
+
+				# Materialize, compress and release exactly one resource map at a time.
+				for i in range(RESOURCE_NAMES.size()):
+					var output := PackedByteArray()
+					output.resize(width * height * 4)
+					output.fill(0)
+					var base_color := resource_colors[i] if i < resource_colors.size() else Color.WHITE
+					for index_position in range(offsets[i], offsets[i + 1]):
+						var pixel_index := resource_indices[index_position]
+						var source_offset := pixel_index * 4
+						var output_offset := source_offset
+						var intensity := float(res_data[source_offset + 1]) / 255.0
+						output[output_offset] = clampi(roundi(base_color.r * intensity * 255.0), 0, 255)
+						output[output_offset + 1] = clampi(roundi(base_color.g * intensity * 255.0), 0, 255)
+						output[output_offset + 2] = clampi(roundi(base_color.b * intensity * 255.0), 0, 255)
+						output[output_offset + 3] = res_data[source_offset + 3]
+					var resource_image := Image.create_from_data(
+						width, height, false, Image.FORMAT_RGBA8, output
+					)
+					last_metrics["peak_cpu_map_bytes"] = maxi(
+						int(last_metrics.get("peak_cpu_map_bytes", 0)),
+						res_data.size() + resource_indices.size() * 4 + output.size()
+					)
 					var res_path = resources_dir + "/" + RESOURCE_NAMES[i] + "_map.png"
-					var err = resource_images[i].save_png(res_path)
+					var err = _save_png(resource_image, res_path)
 					if err == OK:
 						result[RESOURCE_NAMES[i] + "_map"] = res_path
 						print("  ✅ Saved: ", res_path)
@@ -1353,8 +1421,7 @@ func _export_water_classification(gpu: GPUContext, output_dir: String, width: in
 		return result
 	
 	# Synchroniser le GPU
-	rd.submit()
-	rd.sync()
+
 	
 	# Vérifier que water_colored existe (généré par water_to_color.glsl)
 	if not gpu.textures.has("water_colored") or not gpu.textures["water_colored"].is_valid():
@@ -1362,7 +1429,7 @@ func _export_water_classification(gpu: GPUContext, output_dir: String, width: in
 		return result
 	
 	# Lire directement la texture water_colored (RGBA8) déjà calculée par le GPU
-	var water_data = rd.texture_get_data(gpu.textures["water_colored"], 0)
+	var water_data = _read_texture(gpu, "water_colored")
 	if water_data.size() == 0:
 		push_error("[Exporter] ❌ water_colored texture data is empty")
 		return result
@@ -1372,7 +1439,7 @@ func _export_water_classification(gpu: GPUContext, output_dir: String, width: in
 	
 	# Sauvegarder
 	var path_water = output_dir + "/eaux_map.png"
-	var err = water_img.save_png(path_water)
+	var err = _save_png(water_img, path_water)
 	if err == OK:
 		result["eaux_map"] = path_water
 		print("  ✅ Saved: ", path_water, " (GPU direct - water_colored)")
@@ -1409,8 +1476,7 @@ func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: 
 		return result
 
 	# Synchroniser le GPU
-	rd.submit()
-	rd.sync()
+
 
 	# Récupérer le type d'atmosphère
 	var atmosphere_type = int(params.get("planet_type", 0))
@@ -1434,7 +1500,7 @@ func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: 
 		print("  ⚠️ river_biome_id texture not available")
 		return result
 
-	var biome_id_data = rd.texture_get_data(gpu.textures["river_biome_id"], 0)
+	var biome_id_data = _read_texture(gpu, "river_biome_id")
 
 	if biome_id_data.size() == 0:
 		print("  ⚠️ river_biome_id texture empty")
@@ -1445,7 +1511,7 @@ func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: 
 	# cyan extrêmement dense sur toute la planète.
 	var flux_data := PackedByteArray()
 	if gpu.textures.has("river_flux") and gpu.textures["river_flux"].is_valid():
-		flux_data = rd.texture_get_data(gpu.textures["river_flux"], 0)
+		flux_data = _read_texture(gpu, "river_flux")
 	var has_flux_data := flux_data.size() >= width * height * 4
 	var display_flux_threshold := maxf(float(params.get(
 		"river_map_min_flux",
@@ -1511,7 +1577,7 @@ func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: 
 
 	# Sauvegarder
 	var path_river = output_dir + "/river_map.png"
-	var err = river_img.save_png(path_river)
+	var err = _save_png(river_img, path_river)
 	if err == OK:
 		result["river_map"] = path_river
 		print("  ✅ Saved: ", path_river)
@@ -1542,14 +1608,14 @@ func _export_river_type_map(gpu: GPUContext, output_dir: String, width: int, hei
 	var has_biome_id = gpu.textures.has("river_biome_id") and gpu.textures["river_biome_id"].is_valid()
 	var biome_id_data: PackedByteArray = []
 	if has_biome_id:
-		biome_id_data = rd.texture_get_data(gpu.textures["river_biome_id"], 0)
+		biome_id_data = _read_texture(gpu, "river_biome_id")
 
 	var has_river_type = true
 	var has_water_mask = gpu.textures.has("water_mask") and gpu.textures["water_mask"].is_valid()
-	var river_type_data: PackedByteArray = rd.texture_get_data(gpu.textures["ocean_reachable"], 0)
+	var river_type_data: PackedByteArray = _read_texture(gpu, "ocean_reachable")
 	var water_mask_data: PackedByteArray = []
 	if has_water_mask:
-		water_mask_data = rd.texture_get_data(gpu.textures["water_mask"], 0)
+		water_mask_data = _read_texture(gpu, "water_mask")
 
 	# Couleurs fixes pour chaque type
 	var color_affluent = Color(0.4, 0.75, 1.0, 1.0)   # Cyan clair
@@ -1604,7 +1670,7 @@ func _export_river_type_map(gpu: GPUContext, output_dir: String, width: int, hei
 	print("    - Total:            ", count_affluent + count_riviere + count_fleuve)
 
 	var path_type = output_dir + "/river_type_map.png"
-	var err = type_img.save_png(path_type)
+	var err = _save_png(type_img, path_type)
 	if err == OK:
 		result["river_type_map"] = path_type
 		print("  ✅ Saved: ", path_type)
@@ -1642,8 +1708,7 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 		return result
 	
 	# Synchroniser le GPU avant lecture
-	rd.submit()
-	rd.sync()
+
 	
 	var tex_id = "final_map"
 	var filename = "final_map.png"
@@ -1653,7 +1718,7 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 		return result
 	
 	# Lecture directe des données RGBA8 depuis le GPU
-	var data = rd.texture_get_data(gpu.textures[tex_id], 0)
+	var data = _read_texture(gpu, tex_id)
 	
 	if data.size() == 0:
 		push_error("[Exporter] ❌ Empty data for final_map texture")
@@ -1685,14 +1750,14 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 	# volontairement jamais utilisée pour modifier son rendu final.
 	var planet_type = int(params.get("planet_type", 0))
 	if planet_type != Enum.TYPE_GAZEUZE and gpu.textures.has("geo") and gpu.textures["geo"].is_valid():
-		var geo_data = rd.texture_get_data(gpu.textures["geo"], 0)
+		var geo_data = _read_texture(gpu, "geo")
 		var water_data := PackedByteArray()
 		if gpu.textures.has("water_colored") and gpu.textures["water_colored"].is_valid():
-			water_data = rd.texture_get_data(gpu.textures["water_colored"], 0)
+			water_data = _read_texture(gpu, "water_colored")
 		var has_water_data: bool = water_data.size() == expected_size
 		var ice_data := PackedByteArray()
 		if gpu.textures.has("ice_caps") and gpu.textures["ice_caps"].is_valid():
-			ice_data = rd.texture_get_data(gpu.textures["ice_caps"], 0)
+			ice_data = _read_texture(gpu, "ice_caps")
 		var has_ice_data: bool = ice_data.size() == expected_size
 		
 		if geo_data.size() > 0:
@@ -1733,7 +1798,7 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 	
 	# Sauvegarder en PNG
 	var filepath = output_dir + "/" + filename
-	var err = img.save_png(filepath)
+	var err = _save_png(img, filepath)
 	
 	if err == OK:
 		result[tex_id] = filepath
@@ -1760,8 +1825,7 @@ func _export_hierarchy_maps(gpu: GPUContext, output_dir: String) -> Dictionary:
 		push_error("[Exporter] ❌ RenderingDevice not available")
 		return result
 	
-	rd.submit()
-	rd.sync()
+
 	
 	# ─── Lecture des données R32UI ────────────────────────────────────────────
 	var land_data := PackedByteArray()
@@ -1771,7 +1835,7 @@ func _export_hierarchy_maps(gpu: GPUContext, output_dir: String) -> Dictionary:
 	var height: int = 0
 	
 	if gpu.textures.has("region_map") and gpu.textures["region_map"].is_valid():
-		land_data = rd.texture_get_data(gpu.textures["region_map"], 0)
+		land_data = _read_texture(gpu, "region_map")
 		var fmt = rd.texture_get_format(gpu.textures["region_map"])
 		width = fmt.width
 		height = fmt.height
@@ -1781,9 +1845,9 @@ func _export_hierarchy_maps(gpu: GPUContext, output_dir: String) -> Dictionary:
 		return result
 	
 	if gpu.textures.has("ocean_region_map") and gpu.textures["ocean_region_map"].is_valid():
-		sea_data = rd.texture_get_data(gpu.textures["ocean_region_map"], 0)
+		sea_data = _read_texture(gpu, "ocean_region_map")
 	if gpu.textures.has("water_mask") and gpu.textures["water_mask"].is_valid():
-		water_mask_data = rd.texture_get_data(gpu.textures["water_mask"], 0)
+		water_mask_data = _read_texture(gpu, "water_mask")
 	# Compatibilite avec une generation deja terminee par l'ancienne phase
 	# finale : celle-ci pouvait remplacer toutes les valeurs mer (1) par eau
 	# douce (2). Restaurer uniquement les pixels aquatiques sous le niveau marin
@@ -1860,7 +1924,7 @@ func _export_hierarchy_maps(gpu: GPUContext, output_dir: String) -> Dictionary:
 		
 		var img := Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, output)
 		var filepath := output_dir + "/" + filename
-		var err := img.save_png(filepath)
+		var err := _save_png(img, filepath)
 		
 		if err == OK:
 			result[label] = filepath
@@ -1887,7 +1951,7 @@ func _recover_missing_saltwater_mask(gpu: GPUContext,
 		return water_mask_data
 	if not gpu.textures.has("geo") or not gpu.textures["geo"].is_valid():
 		return water_mask_data
-	var geo_data: PackedByteArray = gpu.rd.texture_get_data(gpu.textures["geo"], 0)
+	var geo_data: PackedByteArray = _read_texture(gpu, "geo")
 	if geo_data.size() != width * height * 16:
 		return water_mask_data
 	var sea_level := float(params.get("sea_level", 0.0))

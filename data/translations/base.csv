@@ -2,7 +2,7 @@ key,en,fr,de
 LEAVE,LEAVE,QUITTER,VERLASSEN
 NAME,Planet name,Nom de la planète,Planetname
 TERRAIN_SCALE,Additional elevation : {val},Élévation additionnelle : {val},Zusätzliche Erhöhung : {val}
-THREAD_NUMBER,Number of threads : {val},Nombre de threads : {val},Anzahl der Threads : {val}
+THREAD_NUMBER,PNG export workers (0 = automatic): {val},Workers export PNG (0 = automatique) : {val},PNG-Export-Threads (0 = automatisch): {val}
 PLANET_TYPE,Planet type,Type de planète,Planetentyp
 SAUVEGARDER,SAVE,SAUVEGARDER,SPEICHERN
 GENERER,GENERATE,GENERER,GENERIEREN
