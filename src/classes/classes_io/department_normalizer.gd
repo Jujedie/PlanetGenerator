@@ -372,6 +372,269 @@ static func normalize(region_data: PackedByteArray,
 	}
 
 
+## Consolidate departments that are still below the configured minimum only
+## because their water component is physically disconnected from every other
+## water component.  Such pieces cannot be enlarged contiguously without
+## painting land, so nearby small components are grouped under one shared
+## administrative ID until the group's total area approaches target_cells.
+##
+## Geometry is never invented: only active pixels are relabelled.  Water type is
+## used as a grouping class so freshwater fragments preferentially stay with
+## freshwater and saltwater with saltwater.  X wraps; Y never wraps.
+static func consolidate_disconnected_undersized(region_data: PackedByteArray,
+		active_mask: PackedByteArray, class_mask: PackedByteArray,
+		w: int, h: int, target_cells: float,
+		minimum_ratio: float = 0.45,
+		maximum_ratio: float = 1.85) -> Dictionary:
+	var pixel_count := w * h
+	if region_data.size() != pixel_count * 4 or active_mask.size() != pixel_count:
+		return {}
+	var valid_class_mask := class_mask.size() == pixel_count
+
+	var output := region_data.duplicate()
+	var minimum_cells := maxi(
+		int(ceil(target_cells * clampf(minimum_ratio, 0.0, 1.0))), 2
+	)
+	var maximum_cells := maxi(
+		int(ceil(target_cells * maxf(maximum_ratio, minimum_ratio + 0.05))),
+		minimum_cells + 1
+	)
+	var target_int := maxi(int(round(target_cells)), minimum_cells)
+
+	var counts: Dictionary = {}
+	var sum_x: Dictionary = {}
+	var sum_y: Dictionary = {}
+	var id_class: Dictionary = {}
+	for index in range(pixel_count):
+		if active_mask[index] == 0:
+			continue
+		var region_id := int(output.decode_u32(index * 4))
+		if region_id == INVALID_ID:
+			continue
+		counts[region_id] = int(counts.get(region_id, 0)) + 1
+		sum_x[region_id] = float(sum_x.get(region_id, 0.0)) + float(index % w)
+		sum_y[region_id] = float(sum_y.get(region_id, 0.0)) + float(int(index / w))
+		if not id_class.has(region_id):
+			id_class[region_id] = int(class_mask[index]) if valid_class_mask else 0
+
+	if counts.is_empty():
+		return {
+			"data": output,
+			"minimum_cells": minimum_cells,
+			"maximum_cells": maximum_cells,
+			"grouped_departments": 0,
+			"grouped_cells": 0,
+			"compound_departments": 0,
+			"forced_overflow_groups": 0,
+			"cross_class_fallbacks": 0,
+			"unassigned_mask_cells": _count_unassigned(output, active_mask),
+			"unavoidable_undersized": 0,
+		}
+
+	var small_by_class: Dictionary = {}
+	var valid_by_class: Dictionary = {}
+	var all_valid_ids: Array[int] = []
+	for raw_id in counts.keys():
+		var region_id := int(raw_id)
+		var cls := int(id_class.get(region_id, 0))
+		if int(counts[region_id]) < minimum_cells:
+			if not small_by_class.has(cls):
+				small_by_class[cls] = []
+			var small_list: Array = small_by_class[cls]
+			small_list.append(region_id)
+			small_by_class[cls] = small_list
+		else:
+			if not valid_by_class.has(cls):
+				valid_by_class[cls] = []
+			var valid_list: Array = valid_by_class[cls]
+			valid_list.append(region_id)
+			valid_by_class[cls] = valid_list
+			all_valid_ids.append(region_id)
+
+	if small_by_class.is_empty():
+		return {
+			"data": output,
+			"minimum_cells": minimum_cells,
+			"maximum_cells": maximum_cells,
+			"grouped_departments": 0,
+			"grouped_cells": 0,
+			"compound_departments": 0,
+			"forced_overflow_groups": 0,
+			"cross_class_fallbacks": 0,
+			"unassigned_mask_cells": _count_unassigned(output, active_mask),
+			"unavoidable_undersized": 0,
+		}
+
+	var remap: Dictionary = {}
+	var grouped_departments := 0
+	var grouped_cells := 0
+	var compound_departments := 0
+	var forced_overflow_groups := 0
+	var cross_class_fallbacks := 0
+	var unavoidable_undersized := 0
+	var band_height := maxi(int(round(sqrt(maxf(target_cells, 1.0)) * 2.0)), 1)
+
+	for raw_class in small_by_class.keys():
+		var cls := int(raw_class)
+		var ordered_ids: Array = (small_by_class[cls] as Array).duplicate()
+		# Serpentine geographic order keeps compound departments local without an
+		# O(n²) nearest-neighbour pass when a map contains thousands of tiny lakes.
+		ordered_ids.sort_custom(func(a_raw, b_raw) -> bool:
+			var a := int(a_raw)
+			var b := int(b_raw)
+			var ay := float(sum_y[a]) / float(maxi(int(counts[a]), 1))
+			var by := float(sum_y[b]) / float(maxi(int(counts[b]), 1))
+			var aband := int(floor(ay / float(band_height)))
+			var bband := int(floor(by / float(band_height)))
+			if aband != bband:
+				return aband < bband
+			var ax := float(sum_x[a]) / float(maxi(int(counts[a]), 1))
+			var bx := float(sum_x[b]) / float(maxi(int(counts[b]), 1))
+			if absf(ax - bx) > 0.000001:
+				return ax < bx if (aband % 2) == 0 else ax > bx
+			if absf(ay - by) > 0.000001:
+				return ay < by
+			return a < b
+		)
+
+		var groups: Array[Dictionary] = []
+		var current_ids: Array[int] = []
+		var current_cells := 0
+		for raw_id in ordered_ids:
+			var region_id := int(raw_id)
+			var size := int(counts[region_id])
+			# Once a group is already legal, do not push it past the target simply
+			# to absorb another component.  Start a new local compound department.
+			if (
+				not current_ids.is_empty()
+				and current_cells >= minimum_cells
+				and current_cells + size > target_int
+			):
+				groups.append({"ids": current_ids, "cells": current_cells})
+				current_ids = []
+				current_cells = 0
+			current_ids.append(region_id)
+			current_cells += size
+		if not current_ids.is_empty():
+			groups.append({"ids": current_ids, "cells": current_cells})
+
+		# A final remainder below the minimum is merged into the preceding local
+		# compound group when possible.  With the default 45%-185% window this
+		# remains comfortably below the upper bound in normal cases.
+		if groups.size() >= 2 and int(groups[groups.size() - 1]["cells"]) < minimum_cells:
+			var tail: Dictionary = groups.pop_back()
+			var previous: Dictionary = groups[groups.size() - 1]
+			var combined := int(previous["cells"]) + int(tail["cells"])
+			if combined > maximum_cells:
+				forced_overflow_groups += 1
+			(previous["ids"] as Array).append_array(tail["ids"] as Array)
+			previous["cells"] = combined
+			groups[groups.size() - 1] = previous
+
+		for group_index in range(groups.size()):
+			var group: Dictionary = groups[group_index]
+			var ids: Array = group["ids"]
+			var cells := int(group["cells"])
+			if ids.is_empty():
+				continue
+
+			# If this water class contains too little isolated area to reach the
+			# minimum, attach the remainder to the nearest already-valid department
+			# of the same water class.  Crossing the other class is a last resort.
+			if cells < minimum_cells:
+				var receivers: Array = valid_by_class.get(cls, [])
+				var cross_class := false
+				if receivers.is_empty():
+					receivers = all_valid_ids
+					cross_class = not receivers.is_empty()
+				if not receivers.is_empty():
+					var receiver := _nearest_region_id(
+						ids, receivers, counts, sum_x, sum_y, w
+					)
+					if receiver >= 0:
+						for raw_id in ids:
+							var region_id := int(raw_id)
+							remap[region_id] = receiver
+							grouped_departments += 1
+							grouped_cells += int(counts[region_id])
+						if cross_class:
+							cross_class_fallbacks += 1
+						continue
+				unavoidable_undersized += 1
+
+			var root := int(ids[0])
+			if ids.size() > 1:
+				compound_departments += 1
+			for raw_id in ids:
+				var region_id := int(raw_id)
+				remap[region_id] = root
+				if region_id != root:
+					grouped_departments += 1
+					grouped_cells += int(counts[region_id])
+
+	for index in range(pixel_count):
+		if active_mask[index] == 0:
+			continue
+		var region_id := int(output.decode_u32(index * 4))
+		if remap.has(region_id):
+			output.encode_u32(index * 4, int(remap[region_id]))
+
+	return {
+		"data": output,
+		"minimum_cells": minimum_cells,
+		"maximum_cells": maximum_cells,
+		"grouped_departments": grouped_departments,
+		"grouped_cells": grouped_cells,
+		"compound_departments": compound_departments,
+		"forced_overflow_groups": forced_overflow_groups,
+		"cross_class_fallbacks": cross_class_fallbacks,
+		"unassigned_mask_cells": _count_unassigned(output, active_mask),
+		"unavoidable_undersized": unavoidable_undersized,
+	}
+
+
+static func _nearest_region_id(source_ids: Array, receiver_ids: Array,
+		counts: Dictionary, sum_x: Dictionary, sum_y: Dictionary, w: int) -> int:
+	var source_cells := 0
+	var source_x := 0.0
+	var source_y := 0.0
+	for raw_id in source_ids:
+		var region_id := int(raw_id)
+		var cells := maxi(int(counts.get(region_id, 0)), 1)
+		source_cells += cells
+		source_x += float(sum_x.get(region_id, 0.0))
+		source_y += float(sum_y.get(region_id, 0.0))
+	if source_cells <= 0:
+		return -1
+	var sx := source_x / float(source_cells)
+	var sy := source_y / float(source_cells)
+	var best := -1
+	var best_distance := INF
+	for raw_id in receiver_ids:
+		var region_id := int(raw_id)
+		var cells := maxi(int(counts.get(region_id, 0)), 1)
+		var rx := float(sum_x.get(region_id, 0.0)) / float(cells)
+		var ry := float(sum_y.get(region_id, 0.0)) / float(cells)
+		var dx := absf(sx - rx)
+		dx = minf(dx, float(w) - dx)
+		var distance := dx * dx + (sy - ry) * (sy - ry)
+		if distance < best_distance - 0.000001 or (
+			absf(distance - best_distance) <= 0.000001 and region_id < best
+		):
+			best = region_id
+			best_distance = distance
+	return best
+
+
+static func _count_unassigned(region_data: PackedByteArray,
+		active_mask: PackedByteArray) -> int:
+	var count := 0
+	for index in range(active_mask.size()):
+		if active_mask[index] != 0 and int(region_data.decode_u32(index * 4)) == INVALID_ID:
+			count += 1
+	return count
+
+
 static func _add_contact(a: int, b: int,
 		adjacency: Array[Dictionary]) -> void:
 	if a < 0 or b < 0 or a == b:

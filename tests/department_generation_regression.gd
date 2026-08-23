@@ -14,11 +14,13 @@ func _run() -> void:
 	var vertical_boundary := _test_no_vertical_wrap()
 	var tiny_merge := _test_tiny_leftover_merge()
 	var island_exception := _test_isolated_island_exception()
+	var maritime_coverage := _test_maritime_isolated_micro_absorption()
 	print("[DepartmentRegression] water_mask_land_contract=", land_contract)
 	print("[DepartmentRegression] wrapped_seam_merge=", seam_merge)
 	print("[DepartmentRegression] no_vertical_wrap=", vertical_boundary)
 	print("[DepartmentRegression] tiny_leftover_merge=", tiny_merge)
 	print("[DepartmentRegression] isolated_island_exception=", island_exception)
+	print("[DepartmentRegression] maritime_isolated_micro_absorption=", maritime_coverage)
 	if not land_contract:
 		push_error("Dry below-sea pixels were incorrectly rejected as administrative land")
 	if not seam_merge:
@@ -29,9 +31,11 @@ func _run() -> void:
 		push_error("An undersized land leftover was not absorbed")
 	if not island_exception:
 		push_error("A small isolated island was merged across water")
+	if not maritime_coverage:
+		push_error("Isolated maritime micro-departments were not absorbed while preserving coverage")
 	get_tree().quit(0 if (
 		land_contract and seam_merge and vertical_boundary
-		and tiny_merge and island_exception
+		and tiny_merge and island_exception and maritime_coverage
 	) else 1)
 
 
@@ -152,6 +156,55 @@ func _test_isolated_island_exception() -> bool:
 		int(normalized.decode_u32((1 * w + 1) * 4)) == 11
 		and int(normalized.decode_u32((1 * w + 3) * 4)) == INVALID_ID
 		and int(result["isolated_undersized"]) == 1
+	)
+
+
+func _test_maritime_isolated_micro_absorption() -> bool:
+	var w := 16
+	var h := 5
+	var water := PackedByteArray()
+	water.resize(w * h)
+	water.fill(0)
+	var regions := _empty_regions(w, h)
+
+	# Valid 20-cell water department.
+	for y in range(h):
+		for x in range(4):
+			_set_land_region(water, regions, w, x, y, 10)
+	# Two disconnected water bodies below the 5-cell minimum.
+	_set_land_region(water, regions, w, 8, 1, 100)
+	_set_land_region(water, regions, w, 8, 2, 100)
+	_set_land_region(water, regions, w, 12, 3, 200)
+
+	var normalized := Normalizer.normalize(
+		regions, water, w, h, 10.0, 0.50, 1.85, false, true
+	)
+	if normalized.is_empty():
+		return false
+	var water_types := water.duplicate()
+	for index in range(w * h):
+		if water_types[index] != 0:
+			water_types[index] = 2
+	var absorbed := Normalizer.consolidate_disconnected_undersized(
+		normalized["data"], water, water_types, w, h, 10.0, 0.50, 1.85
+	)
+	if absorbed.is_empty():
+		return false
+	var data: PackedByteArray = absorbed["data"]
+	var counts: Dictionary = {}
+	for index in range(w * h):
+		if water[index] == 0:
+			continue
+		var region_id := int(data.decode_u32(index * 4))
+		if region_id == INVALID_ID:
+			return false
+		counts[region_id] = int(counts.get(region_id, 0)) + 1
+	for size in counts.values():
+		if int(size) < 5:
+			return false
+	return (
+		int(absorbed["unassigned_mask_cells"]) == 0
+		and int(absorbed["grouped_departments"]) >= 1
 	)
 
 
