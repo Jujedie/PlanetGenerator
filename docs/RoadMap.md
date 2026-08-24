@@ -354,10 +354,13 @@ Work:
 Initial local outputs:
 
 - Detailed height, normals, and slope.
-- Water depth and river/coast masks.
-- Biome and material weights.
-- Soil and rock classification.
-- Resource, spawn, and vegetation-density masks.
+- Refined local water depth, water presence, coast context, and flow vectors.
+- Soil type (rock, gravel, sand, dirt, clay, silt, peat, volcanic, regolith, salt).
+- Soil moisture and physical soil depth as independent authoritative layers.
+- Rock classification and visible surface material (rock, sand, dirt, mud, grass, forest floor, peat, salt crust, snow, ice, shallow/deep water).
+- Vegetation density, locally refined resource fields, snow/ice, spawn suitability, and hazard masks.
+- Global precipitation, tectonic plates, river flux, and biome are macro constraints only; they are not blindly enlarged into local output maps.
+- Administrative levels never participate in local physical generation.
 
 Acceptance gate:
 
