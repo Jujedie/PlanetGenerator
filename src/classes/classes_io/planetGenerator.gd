@@ -21,6 +21,7 @@ var use_tiled_global_generation: bool     = false
 var tiled_pipeline: TiledGlobalSimulationPipeline = null
 var _tiled_thread: Thread = null
 var _tiled_output_root: String = ""
+var _local_macro_sampler: GlobalMacroSampler = null
 
 # Generation parameters (compiled from UI)
 var generation_params: Dictionary = {}
@@ -361,11 +362,14 @@ func generate_local_zone(global_cell: Vector2i, resolution: int = LocalZoneGener
 		use_cache: bool = true) -> Dictionary:
 	if _cleaned_up:
 		return {}
-	var sampler: GlobalMacroSampler = null
-	if use_tiled_global_generation:
-		sampler = GlobalMacroSampler.from_tiled_dataset(_tiled_output_root, generation_params)
-	elif gpu_orchestrator != null and gpu_orchestrator.gpu != null:
-		sampler = GlobalMacroSampler.from_gpu(gpu_orchestrator.gpu, generation_params)
+	var sampler: GlobalMacroSampler = _local_macro_sampler
+	if sampler == null or not sampler.is_valid():
+		if use_tiled_global_generation:
+			sampler = GlobalMacroSampler.from_tiled_dataset(_tiled_output_root, generation_params)
+		elif gpu_orchestrator != null and gpu_orchestrator.gpu != null:
+			sampler = GlobalMacroSampler.from_gpu(gpu_orchestrator.gpu, generation_params)
+		if sampler != null and sampler.is_valid():
+			_local_macro_sampler = sampler
 	if sampler == null or not sampler.is_valid():
 		push_warning("[PlanetGenerator] Local zone unavailable: global authoritative layers are not ready")
 		return {}
@@ -393,6 +397,7 @@ func cleanup() -> void:
 		return
 	_generation_request_id += 1
 	_cleaned_up = true
+	_local_macro_sampler = null
 	if tiled_pipeline != null:
 		tiled_pipeline.cancel("cleanup")
 	if _tiled_thread != null and _tiled_thread.is_started():

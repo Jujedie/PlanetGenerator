@@ -4,22 +4,34 @@ extends RefCounted
 ## Optional PNG previews for inspecting M7 authoritative local layers. These
 ## files are visualization only and are never read back by the generator.
 
-static func export_previews(zone: Dictionary, output_dir: String) -> Dictionary:
+static func build_previews(zone: Dictionary) -> Dictionary:
 	var images: Dictionary = zone.get("images", {})
 	if images.is_empty():
 		return {}
-	DirAccess.make_dir_recursive_absolute(output_dir)
-	var result: Dictionary = {}
-	var previews := {
+	return {
 		"height": _height_preview(images.get("height")),
+		"normals": _rgba_preview(images.get("normals")),
+		"slope": _float_range_preview(images.get("slope"), Color8(35, 42, 38), Color8(229, 170, 58)),
 		"water": _water_preview(images.get("water_mask"), images.get("water_depth")),
+		"flow": _rgba_preview(images.get("flow")),
 		"soil": _id_preview(images.get("soil_type"), _soil_colors()),
+		"soil_moisture": _scalar_preview(images.get("soil_moisture"), Color8(142, 102, 58), Color8(48, 116, 177)),
+		"soil_depth": _float_range_preview(images.get("soil_depth"), Color8(71, 62, 52), Color8(194, 159, 101)),
+		"rock": _id_preview(images.get("rock_type"), _rock_colors()),
 		"surface": _id_preview(images.get("surface_material"), _surface_colors()),
 		"vegetation": _scalar_preview(images.get("vegetation_density"), Color8(35, 46, 31), Color8(75, 164, 62)),
 		"resources": _rgba_preview(images.get("resources")),
 		"snow_ice": _scalar_preview(images.get("snow_ice"), Color8(25, 35, 48), Color8(230, 242, 250)),
+		"spawn": _scalar_preview(images.get("spawn_mask"), Color8(52, 43, 38), Color8(95, 190, 92)),
 		"hazard": _scalar_preview(images.get("hazard"), Color8(36, 45, 31), Color8(211, 74, 54)),
 	}
+
+static func export_previews(zone: Dictionary, output_dir: String) -> Dictionary:
+	var previews := build_previews(zone)
+	if previews.is_empty():
+		return {}
+	DirAccess.make_dir_recursive_absolute(output_dir)
+	var result: Dictionary = {}
 	for name in previews.keys():
 		var image: Image = previews[name]
 		if image == null or image.is_empty():
@@ -91,6 +103,25 @@ static func _scalar_preview(source_value, low: Color, high: Color) -> Image:
 			output.set_pixel(x, y, low.lerp(high, source.get_pixel(x, y).r))
 	return output
 
+static func _float_range_preview(source_value, low: Color, high: Color) -> Image:
+	if not source_value is Image:
+		return null
+	var source: Image = source_value
+	var minimum := INF
+	var maximum := -INF
+	for y in range(source.get_height()):
+		for x in range(source.get_width()):
+			var value := source.get_pixel(x, y).r
+			minimum = minf(minimum, value)
+			maximum = maxf(maximum, value)
+	var span := maxf(maximum - minimum, 0.000001)
+	var output := Image.create(source.get_width(), source.get_height(), false, Image.FORMAT_RGBA8)
+	for y in range(source.get_height()):
+		for x in range(source.get_width()):
+			var t := clampf((source.get_pixel(x, y).r - minimum) / span, 0.0, 1.0)
+			output.set_pixel(x, y, low.lerp(high, t))
+	return output
+
 static func _rgba_preview(source_value) -> Image:
 	if not source_value is Image:
 		return null
@@ -105,6 +136,12 @@ static func _soil_colors() -> Array[Color]:
 		Color8(91, 91, 86), Color8(126, 117, 101), Color8(207, 185, 126),
 		Color8(113, 83, 55), Color8(143, 99, 76), Color8(125, 107, 76),
 		Color8(75, 63, 43), Color8(83, 69, 59), Color8(157, 146, 126), Color8(219, 211, 176),
+	]
+
+static func _rock_colors() -> Array[Color]:
+	return [
+		Color8(92, 91, 86), Color8(120, 106, 90), Color8(82, 87, 91),
+		Color8(100, 91, 103), Color8(80, 68, 62), Color8(157, 146, 126),
 	]
 
 static func _surface_colors() -> Array[Color]:

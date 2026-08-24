@@ -78,9 +78,22 @@ func _run() -> void:
 	var cache_ok := not bool(first_cached.get("cache_hit", true)) and bool(second_cached.get("cache_hit", false))
 	PlanetTileStore._remove_tree(cache_root)
 
-	var passed := contract_ok and seam_ok and deterministic and soil_present and cache_ok
+	var preview_layers := LocalZoneDebugExporter.build_previews(zones[Vector2i(3, 2)])
+	var preview_ok := true
+	for preview_name in [
+		"height", "normals", "slope", "water", "flow", "soil", "soil_moisture",
+		"soil_depth", "rock", "surface", "vegetation", "resources", "snow_ice",
+		"spawn", "hazard",
+	]:
+		preview_ok = preview_ok and preview_layers.has(preview_name)
+		if preview_layers.has(preview_name):
+			var preview: Image = preview_layers[preview_name]
+			preview_ok = preview_ok and preview != null and preview.get_size() == Vector2i(64, 64)
+
+	var passed := contract_ok and seam_ok and deterministic and soil_present and cache_ok and preview_ok
 	print("[Milestone7] contract=", contract_ok, " seams=", seam_ok,
-		" deterministic=", deterministic, " soils=", soil_present, " cache=", cache_ok)
+		" deterministic=", deterministic, " soils=", soil_present, " cache=", cache_ok,
+		" ui_previews=", preview_ok)
 	get_tree().quit(0 if passed else 1)
 
 func _zones_match(a: Dictionary, b: Dictionary, horizontal: bool, layers: Array) -> bool:
