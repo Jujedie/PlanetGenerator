@@ -1511,6 +1511,16 @@ func _export_water_classification(gpu: GPUContext, output_dir: String, width: in
 ## @param width: Largeur de l'image
 ## @param height: Hauteur de l'image
 ## @return Dictionary: Chemins des fichiers exportés
+func _river_display_flux_threshold() -> float:
+	return maxf(float(params.get(
+		"river_map_min_flux",
+		params.get(
+			"river_riviere_threshold",
+			params.get("river_affluent_threshold", 0.0)
+		)
+	)), 0.0)
+
+
 func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: int) -> Dictionary:
 	print("[Exporter] 🌊 Exporting river map (GPU river_biome_id based)...")
 
@@ -1559,13 +1569,11 @@ func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: 
 	if gpu.textures.has("river_flux") and gpu.textures["river_flux"].is_valid():
 		flux_data = _read_texture(gpu, "river_flux")
 	var has_flux_data := flux_data.size() >= width * height * 4
-	var display_flux_threshold := maxf(float(params.get(
-		"river_map_min_flux",
-		params.get(
-			"river_riviere_threshold",
-			params.get("river_affluent_threshold", 0.0)
-		)
-	)), 0.0)
+	var display_flux_threshold := _river_display_flux_threshold()
+	var water_mask_data := PackedByteArray()
+	if gpu.textures.has("water_mask") and gpu.textures["water_mask"].is_valid():
+		water_mask_data = _read_texture(gpu, "water_mask")
+	var has_water_mask := water_mask_data.size() >= width * height
 
 	# Créer l'image de sortie
 	var river_img = Image.create(width, height, false, Image.FORMAT_RGBA8)
@@ -1589,6 +1597,8 @@ func _export_river_map(gpu: GPUContext, output_dir: String, width: int, height: 
 
 			# 0xFFFFFFFF = pas de rivière (pas de biome adapté en température)
 			if biome_idx == 0xFFFFFFFF:
+				continue
+			if has_water_mask and water_mask_data[pixel_idx] > 0:
 				continue
 
 			if has_flux_data and flux_data.decode_float(byte_offset) < display_flux_threshold:
@@ -1645,6 +1655,9 @@ func _export_river_type_map(gpu: GPUContext, output_dir: String, width: int, hei
 		push_error("[Exporter] ❌ RenderingDevice not available")
 		return result
 
+	var atmosphere_type := int(params.get("planet_type", 0))
+	var river_biomes_list: Array = Enum.get_river_biomes_for_gpu(atmosphere_type)
+
 	# Lire ocean_reachable qui contient le type promu (0=affluent,1=riviere,2=fleuve,255=none)
 	if not gpu.textures.has("ocean_reachable") or not gpu.textures["ocean_reachable"].is_valid():
 		print("  ⚠️ ocean_reachable (river type) texture not available")
@@ -1660,6 +1673,11 @@ func _export_river_type_map(gpu: GPUContext, output_dir: String, width: int, hei
 	var has_water_mask = gpu.textures.has("water_mask") and gpu.textures["water_mask"].is_valid()
 	var river_type_data: PackedByteArray = _read_texture(gpu, "ocean_reachable")
 	var water_mask_data: PackedByteArray = []
+	var flux_data := PackedByteArray()
+	if gpu.textures.has("river_flux") and gpu.textures["river_flux"].is_valid():
+		flux_data = _read_texture(gpu, "river_flux")
+	var has_flux_data := flux_data.size() >= width * height * 4
+	var display_flux_threshold := _river_display_flux_threshold()
 	if has_water_mask:
 		water_mask_data = _read_texture(gpu, "water_mask")
 
@@ -1692,8 +1710,12 @@ func _export_river_type_map(gpu: GPUContext, output_dir: String, width: int, hei
 			# (température hors plage), ne pas afficher cette rivière
 			if has_biome_id and biome_id_data.size() >= (pixel_idx + 1) * 4:
 				var biome_idx = biome_id_data.decode_u32(pixel_idx * 4)
-				if biome_idx == 0xFFFFFFFF:
+				if biome_idx == 0xFFFFFFFF or biome_idx >= river_biomes_list.size():
 					continue
+
+			# river_type_map classifies the same visible network as river_map.
+			if has_flux_data and flux_data.decode_float(pixel_idx * 4) < display_flux_threshold:
+				continue
 
 			var rtype = 0
 			if has_river_type and river_type_data.size() > pixel_idx:

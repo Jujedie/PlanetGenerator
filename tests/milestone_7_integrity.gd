@@ -30,6 +30,31 @@ func _ready() -> void:
 	})
 	assert(report["result"] == "PASS", JSON.stringify(report, "  "))
 
+	# Local size floors must match DepartmentNormalizer rather than a stricter
+	# global-only interpretation.
+	var local_width := 6
+	var local_height := 2
+	var local_pixels := local_width * local_height
+	var local_water := PackedByteArray(); local_water.resize(local_pixels); local_water.fill(0)
+	var local_land := PackedByteArray(); local_land.resize(local_pixels * 4)
+	var local_sea := PackedByteArray(); local_sea.resize(local_pixels * 4)
+	for i in range(local_pixels):
+		local_sea.encode_u32(i * 4, 0xFFFFFFFF)
+		local_land.encode_u32(i * 4, 30 if (i % local_width) < 3 else 31)
+	var local_flow := PackedByteArray(); local_flow.resize(local_pixels); local_flow.fill(255)
+	var local_flux := PackedByteArray(); local_flux.resize(local_pixels * 4)
+	var local_report := PlanetIntegrityChecker.validate_snapshot({
+		"water_mask": local_water,
+		"region_map": local_land,
+		"ocean_region_map": local_sea,
+		"flow_direction": local_flow,
+		"river_flux": local_flux,
+	}, local_width, local_height, {
+		"planet_type": 3,
+		"nb_cases_regions": 20,
+	})
+	assert(local_report["result"] == "PASS", JSON.stringify(local_report, "  "))
+
 	# Reuse land id 10 as a disconnected island: wrap-aware topology must catch it.
 	land.encode_u32((1 * width + 5) * 4, 10)
 	land.encode_u32((1 * width + 4) * 4, 12)
