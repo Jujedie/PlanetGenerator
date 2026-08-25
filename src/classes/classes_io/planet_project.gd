@@ -5,11 +5,51 @@ extends RefCounted
 
 const PROJECT_VERSION := 1
 const FILE_NAME := "planet_project.json"
-const PREFERRED_MAP_ORDER := [
-	"final_map", "cartographic_map", "elevation", "elevation_alt", "water_colored",
-	"river_map", "river_type", "biome", "region_colored", "land_region",
-	"land_country", "land_continent", "ocean_region_colored", "sea_region",
-	"sea_basin", "sea_ocean", "grid_overlay",
+# Canonical display order for the standalone UI.  Keep this path/file based so
+# generated planets and reloaded PlanetProject manifests are presented in the
+# exact same order regardless of dictionary insertion order.
+#
+# 0. Natural/topographic maps
+# 1. Hydrology
+# 2. Administrative hierarchy
+# 3. Other presentation/debug maps
+# 4. Resources (always last)
+const NATURAL_MAP_ORDER := [
+	"topographie_map.png",
+	"topographie_map_grey.png",
+	"topology_map.png",
+	"final_map.png",
+	"plaques_map.png",
+	"plaques_bordures_map.png",
+	"biome_map.png",
+	"temperature_map.png",
+	"precipitation_map.png",
+	"clouds_map.png",
+	"ice_caps_map.png",
+]
+
+const HYDROLOGY_MAP_ORDER := [
+	"eaux_map.png",
+	"water_map.png",
+	"river_map.png",
+	"river_type_map.png",
+]
+
+const ADMIN_MAP_ORDER := [
+	"departement_map.png",
+	"region_map.png",
+	"pays_map.png",
+	"continent_map.png",
+	"departement_mer_map.png",
+	"region_mer_map.png",
+	"bassin_map.png",
+	"ocean_map.png",
+]
+
+const OTHER_MAP_ORDER := [
+	"cartographic_map.png",
+	"grid_overlay.png",
+	"preview.png",
 ]
 
 static func save(output_dir: String, generation_params: Dictionary,
@@ -86,21 +126,63 @@ static func load_project(path_or_directory: String) -> Dictionary:
 
 
 static func display_maps_from_layers(layers: Dictionary) -> Array[String]:
-	var result: Array[String] = []
-	var used: Dictionary = {}
-	for key in PREFERRED_MAP_ORDER:
-		if layers.has(key):
-			var path := str(layers[key])
-			if path.get_extension().to_lower() == "png" and FileAccess.file_exists(path):
-				result.append(path); used[key] = true
-	var remaining := layers.keys(); remaining.sort()
-	for key in remaining:
-		if used.has(key):
+	# Do not inherit Dictionary ordering from the exporter.  A single canonical
+	# sort controls the arrow navigation, the advanced viewer selectors and
+	# projects loaded back from disk.
+	var entries: Array[Dictionary] = []
+	var seen_paths: Dictionary = {}
+	for key_value in layers.keys():
+		var path := str(layers[key_value])
+		if path.get_extension().to_lower() != "png" or not FileAccess.file_exists(path):
 			continue
-		var path := str(layers[key])
-		if path.get_extension().to_lower() == "png" and FileAccess.file_exists(path):
-			result.append(path)
+		var normalized := path.simplify_path()
+		if seen_paths.has(normalized):
+			continue
+		seen_paths[normalized] = true
+		entries.append({"key": str(key_value), "path": path})
+
+	entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return _display_sort_key(str(a["key"]), str(a["path"])) < _display_sort_key(str(b["key"]), str(b["path"]))
+	)
+
+	var result: Array[String] = []
+	for entry in entries:
+		result.append(str(entry["path"]))
 	return result
+
+
+static func _display_sort_key(layer_key: String, path: String) -> String:
+	var file_name := path.get_file().to_lower()
+	var normalized_path := path.replace("\\", "/").to_lower()
+
+	# Resources are deliberately forced to the very end.  Their filename order
+	# is alphabetical and deterministic, while their UI label remains localized.
+	if (
+		normalized_path.contains("/maps/resources/")
+		or normalized_path.contains("/resources/")
+		or normalized_path.contains("/ressource/")
+	):
+		return "4|%s|%s" % [file_name, layer_key.to_lower()]
+
+	var index := NATURAL_MAP_ORDER.find(file_name)
+	if index >= 0:
+		return "0|%04d|%s" % [index, file_name]
+
+	index = HYDROLOGY_MAP_ORDER.find(file_name)
+	if index >= 0:
+		return "1|%04d|%s" % [index, file_name]
+
+	index = ADMIN_MAP_ORDER.find(file_name)
+	if index >= 0:
+		return "2|%04d|%s" % [index, file_name]
+
+	index = OTHER_MAP_ORDER.find(file_name)
+	if index >= 0:
+		return "3|%04d|%s" % [index, file_name]
+
+	# Unknown/new PNGs belong to the "rest" group.  This makes the ordering
+	# forward-compatible without accidentally placing new maps after resources.
+	return "3|9000|%s|%s" % [file_name, layer_key.to_lower()]
 
 
 static func _relative_path(root: String, path: String) -> String:

@@ -292,6 +292,8 @@ func _compile_generation_params() -> Dictionary:
 		"cartography_view": CartographicRenderer.VIEW_PLANET,
 		"cartography_grid_alpha": 166,
 		"run_integrity_checks": true,
+		# M7.2 export presentation policy. Simulation data is unaffected.
+		"export_preset": ExportCatalog.PRESET_STANDARD,
 		"avg_temperature"   : get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Temperature_Param/LineEdit").value,
 		
 		# Erosion and tectonics
@@ -381,10 +383,41 @@ func _compile_generation_params() -> Dictionary:
 # ============================================================================
 
 func get_map_display_name(file_path: String) -> String:
-	var file_name = file_path.get_file()
+	var file_name := file_path.get_file()
 	if MAP_NAME_TO_KEY.has(file_name):
 		return tr(MAP_NAME_TO_KEY[file_name])
+
+	# Resource maps are numerous and M7.2 stores them below maps/resources/.
+	# Derive their localization key from the stable file identifier instead of
+	# maintaining a second 116-entry filename table in the UI. This also keeps
+	# compatibility with the legacy `ressource/` export directory.
+	var resource_key := _resource_map_translation_key(file_path)
+	if not resource_key.is_empty():
+		var translated := tr(resource_key)
+		if translated != resource_key:
+			return translated
+
 	return file_name
+
+
+func _resource_map_translation_key(file_path: String) -> String:
+	var normalized := file_path.replace("\\", "/")
+	var lower_path := normalized.to_lower()
+	var parent_dir := normalized.get_base_dir().get_file().to_lower()
+	var is_resource_path := (
+		parent_dir in ["ressource", "resources"]
+		or "/ressource/" in lower_path
+		or "/resources/" in lower_path
+	)
+	if not is_resource_path:
+		return ""
+	var stem := normalized.get_file().get_basename()
+	if not stem.ends_with("_map"):
+		return ""
+	stem = stem.trim_suffix("_map")
+	if stem.is_empty():
+		return ""
+	return "RESOURCE_" + stem.to_upper()
 
 func update_map_label() -> void:
 	if maps.is_empty():

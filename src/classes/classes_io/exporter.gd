@@ -118,6 +118,7 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 			var integrity_path := PlanetIntegrityChecker.save_report(output_dir, integrity_report)
 			if not integrity_path.is_empty():
 				exported_files["integrity_report"] = integrity_path
+		exported_files = ExportCatalog.finalize_outputs(output_dir, exported_files, params)
 		var manifest_path := PlanetManifest.save(output_dir, params, exported_files)
 		if not manifest_path.is_empty():
 			exported_files["manifest"] = manifest_path
@@ -247,6 +248,9 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		if not integrity_path.is_empty():
 			exported_files["integrity_report"] = integrity_path
 
+	# M7.2: filtering/layout happens only after integrity has inspected the full
+	# generated set, and before manifests compute their final relative paths.
+	exported_files = ExportCatalog.finalize_outputs(output_dir, exported_files, params)
 	var manifest_path := PlanetManifest.save(output_dir, params, exported_files)
 	if not manifest_path.is_empty():
 		exported_files["manifest"] = manifest_path
@@ -1338,8 +1342,10 @@ func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, hei
 		push_error("[Exporter] ❌ RenderingDevice not available")
 		return result
 	
-	# Créer le sous-dossier ressource
-	var resources_dir = output_dir + "/ressource"
+	# M7.2b: resources are a first-class export category. Write them directly
+	# to their final directory instead of staging them in `ressource/` and
+	# relying on a later move. This also makes interrupted exports unambiguous.
+	var resources_dir := output_dir.path_join("maps").path_join("resources")
 	if not DirAccess.dir_exists_absolute(resources_dir):
 		DirAccess.make_dir_recursive_absolute(resources_dir)
 	

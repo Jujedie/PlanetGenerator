@@ -4,7 +4,7 @@ extends RefCounted
 const MANIFEST_VERSION := 1
 const PALETTE_VERSION := 3
 
-static func build(generation_params: Dictionary, exported_files: Dictionary) -> Dictionary:
+static func build(generation_params: Dictionary, exported_files: Dictionary, output_dir: String = "") -> Dictionary:
 	var radius_km := float(generation_params.get("planet_radius", 150.0))
 	var dimensions: Vector2i = generation_params.get(
 		"global_dimensions",
@@ -19,7 +19,7 @@ static func build(generation_params: Dictionary, exported_files: Dictionary) -> 
 		if path.is_empty() or not FileAccess.file_exists(path):
 			continue
 		layers[str(layer_name)] = {
-			"path": path.get_file(),
+			"path": _relative_path(output_dir, path) if not output_dir.is_empty() else path.get_file(),
 			"sha256": FileAccess.get_sha256(path),
 		}
 
@@ -43,7 +43,7 @@ static func build(generation_params: Dictionary, exported_files: Dictionary) -> 
 
 static func save(output_dir: String, generation_params: Dictionary,
 		exported_files: Dictionary) -> String:
-	var manifest := build(generation_params, exported_files)
+	var manifest := build(generation_params, exported_files, output_dir)
 	var path := output_dir.path_join("planet_manifest.json")
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
@@ -71,3 +71,11 @@ static func _stable_parameters(generation_params: Dictionary) -> Dictionary:
 		elif value is Dictionary or value is Array or value is String or value is StringName or value is bool or value is int or value is float:
 			result[str(key)] = value
 	return result
+
+
+static func _relative_path(root: String, path: String) -> String:
+	var normalized_root := root.simplify_path().trim_suffix("/") + "/"
+	var normalized_path := path.simplify_path()
+	if normalized_path.begins_with(normalized_root):
+		return normalized_path.substr(normalized_root.length())
+	return normalized_path
