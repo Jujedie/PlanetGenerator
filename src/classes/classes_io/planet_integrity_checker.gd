@@ -52,6 +52,8 @@ static func run(gpu: GPUContext, generation_params: Dictionary,
 		int(generation_params.get("planet_type", 0)))
 	_check_exports(checks, metrics, exported_files, width, height,
 		int(generation_params.get("planet_type", 0)))
+	_check_river_export_consistency(checks, metrics, exported_files,
+		int(generation_params.get("planet_type", 0)))
 	_check_administrative_colors(checks, metrics, exported_files)
 
 	return _finish(checks, metrics, started)
@@ -283,6 +285,8 @@ static func _check_department_topology(checks: Array[Dictionary], metrics: Dicti
 	var max_cells := maxi(min_cells + 1, int(ceil(target * 1.85)))
 	var undersized_mergeable := 0
 	var undersized_topological := 0
+	var undersized_locally_consistent := 0
+	var undersized_blocked_by_maximum := 0
 	var oversized := 0
 	var min_area := 0x7FFFFFFF
 	var max_area := 0
@@ -293,10 +297,32 @@ static func _check_department_topology(checks: Array[Dictionary], metrics: Dicti
 		max_area = maxi(max_area, area)
 		total_area += area
 		if area < min_cells:
-			if neighbor_ids.has(raw_id) and not neighbor_ids[raw_id].is_empty():
-				undersized_mergeable += 1
-			else:
+			var neighbors: Dictionary = neighbor_ids.get(raw_id, {})
+			if neighbors.is_empty():
 				undersized_topological += 1
+			else:
+				var neighbor_areas: Array[int] = []
+				var has_safe_merge := false
+				for neighbor_id in neighbors.keys():
+					var neighbor_area := int(area_by_id.get(neighbor_id, 0))
+					if neighbor_area <= 0:
+						continue
+					neighbor_areas.append(neighbor_area)
+					if area + neighbor_area <= max_cells:
+						has_safe_merge = true
+				neighbor_areas.sort()
+				var local_minimum := min_cells
+				if not neighbor_areas.is_empty():
+					var local_median := neighbor_areas[int((neighbor_areas.size() - 1) / 2)]
+					local_minimum = mini(min_cells, maxi(int(ceil(float(local_median) * 0.55)), 2))
+				if area >= local_minimum:
+					undersized_locally_consistent += 1
+				elif has_safe_merge:
+					undersized_mergeable += 1
+				elif area <= maxi(int(floor(float(min_cells) * 0.5)), 2):
+					undersized_mergeable += 1
+				else:
+					undersized_blocked_by_maximum += 1
 		elif area > max_cells:
 			oversized += 1
 	if area_by_id.is_empty():
@@ -318,12 +344,16 @@ static func _check_department_topology(checks: Array[Dictionary], metrics: Dicti
 			"maximum_actual": max_area, "mean_actual": float(total_area) / float(maxi(area_by_id.size(), 1)),
 			"undersized_mergeable": undersized_mergeable,
 			"undersized_topological_exceptions": undersized_topological,
+			"undersized_locally_consistent": undersized_locally_consistent,
+			"undersized_blocked_by_maximum": undersized_blocked_by_maximum,
 			"oversized_soft_limit": oversized,
 		})
 	metrics["%s_departments" % domain_name] = {
 		"count": area_by_id.size(), "disconnected_ids": disconnected.size(),
 		"undersized_mergeable": undersized_mergeable,
 		"undersized_topological_exceptions": undersized_topological,
+		"undersized_locally_consistent": undersized_locally_consistent,
+		"undersized_blocked_by_maximum": undersized_blocked_by_maximum,
 		"oversized_soft_limit": oversized,
 	}
 
@@ -378,11 +408,12 @@ static func _check_exports(checks: Array[Dictionary], metrics: Dictionary,
 		var image := Image.new()
 		if image.load(path) != OK or image.get_width() != width or image.get_height() != height:
 			wrong_size.append(str(key))
-	var required := ["elevation", "biome", "final_map", "region_colored"]
+	# Validate the keys actually returned by PlanetExporter, not obsolete aliases.
+	var required := ["topographie_map", "biome_colored", "final_map", "region_colored"]
 	if planet_type == 6:
 		required = ["final_map"]
 	elif planet_type not in [3, 5]:
-		required.append_array(["water_colored", "river_map", "river_type", "ocean_region_colored"])
+		required.append_array(["eaux_map", "river_map", "river_type_map", "ocean_region_colored"])
 	var required_missing: Array[String] = []
 	for key in required:
 		if not exported_files.has(key) or not FileAccess.file_exists(str(exported_files[key])):
@@ -394,6 +425,57 @@ static func _check_exports(checks: Array[Dictionary], metrics: Dictionary,
 	}
 	_add(checks, "exports.files", "PASS" if ok else "FAIL",
 		"All announced PNG exports exist and share the canonical dimensions." if ok else "Export set contains missing or inconsistent files.", metrics["exports"])
+
+
+static func _check_river_export_consistency(checks: Array[Dictionary], metrics: Dictionary,
+		exported_files: Dictionary, planet_type: int) -> void:
+	if planet_type in [3, 5, 6]:
+		_add(checks, "hydrology.river_export_consistency", "SKIP",
+			"This planet type has no exported surface river network.")
+		return
+	if not exported_files.has("river_map") or not exported_files.has("river_type_map"):
+		_add(checks, "hydrology.river_export_consistency", "FAIL",
+			"river_map.png or river_type_map.png is missing.")
+		return
+	var river := Image.new()
+	var river_type := Image.new()
+	if river.load(str(exported_files["river_map"])) != OK or river_type.load(str(exported_files["river_type_map"])) != OK:
+		_add(checks, "hydrology.river_export_consistency", "FAIL",
+			"One of the river PNGs cannot be decoded.")
+		return
+	if river.get_size() != river_type.get_size():
+		_add(checks, "hydrology.river_export_consistency", "FAIL",
+			"River and river-type maps have different dimensions.", {
+				"river_size": [river.get_width(), river.get_height()],
+				"river_type_size": [river_type.get_width(), river_type.get_height()],
+			})
+		return
+	var river_pixels := 0
+	var type_pixels := 0
+	var only_river := 0
+	var only_type := 0
+	for y in range(river.get_height()):
+		for x in range(river.get_width()):
+			var in_river := river.get_pixel(x, y).a > 0.0
+			var in_type := river_type.get_pixel(x, y).a > 0.0
+			if in_river:
+				river_pixels += 1
+			if in_type:
+				type_pixels += 1
+			if in_river and not in_type:
+				only_river += 1
+			elif in_type and not in_river:
+				only_type += 1
+	var ok := only_river == 0 and only_type == 0
+	metrics["river_exports"] = {
+		"river_pixels": river_pixels,
+		"river_type_pixels": type_pixels,
+		"only_in_river_map": only_river,
+		"only_in_river_type_map": only_type,
+	}
+	_add(checks, "hydrology.river_export_consistency", "PASS" if ok else "FAIL",
+		"river_type_map classifies exactly the same river pixels as river_map." if ok else "river_type_map and river_map disagree on river presence.",
+		metrics["river_exports"])
 
 
 static func _check_administrative_colors(checks: Array[Dictionary], metrics: Dictionary,
@@ -460,7 +542,7 @@ static func _finish(checks: Array[Dictionary], metrics: Dictionary, started_usec
 			"SKIP": skipped += 1
 	var result := "FAIL" if failed > 0 else ("WARN" if warnings > 0 else "PASS")
 	return {
-		"integrity_report_version": 1,
+		"integrity_report_version": 2,
 		"generator_version": str(ProjectSettings.get_setting("application/config/version", "unknown")),
 		"created_unix": int(Time.get_unix_time_from_system()),
 		"result": result,
@@ -475,6 +557,12 @@ static func _print_summary(report: Dictionary) -> void:
 	print("\nPLANET INTEGRITY REPORT")
 	print("=======================")
 	for check in report.get("checks", []):
-		print("%-42s %s" % [str(check.get("id", "")), str(check.get("status", ""))])
+		var status := str(check.get("status", ""))
+		print("%-42s %s" % [str(check.get("id", "")), status])
+		if status in ["FAIL", "WARN", "SKIP"]:
+			print("    ↳ ", str(check.get("message", "")))
+			var data: Dictionary = check.get("data", {})
+			if not data.is_empty():
+				print("      ", data)
 	print("-----------------------")
 	print("RESULT: ", report.get("result", "UNKNOWN"), "  ", report.get("summary", {}))
