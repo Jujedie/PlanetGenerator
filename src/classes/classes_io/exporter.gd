@@ -121,6 +121,9 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		var manifest_path := PlanetManifest.save(output_dir, params, exported_files)
 		if not manifest_path.is_empty():
 			exported_files["manifest"] = manifest_path
+		var project_path := PlanetProject.save(output_dir, params, exported_files)
+		if not project_path.is_empty():
+			exported_files["project"] = project_path
 		_finalize_metrics(export_started_usec)
 		print("[Exporter] Export gazeuse complete: ", exported_files.size(), " maps")
 		return exported_files
@@ -247,6 +250,9 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	var manifest_path := PlanetManifest.save(output_dir, params, exported_files)
 	if not manifest_path.is_empty():
 		exported_files["manifest"] = manifest_path
+	var project_path := PlanetProject.save(output_dir, params, exported_files)
+	if not project_path.is_empty():
+		exported_files["project"] = project_path
 
 	_finalize_metrics(export_started_usec)
 	print("[Exporter] Export complete: ", exported_files.size(), " maps")

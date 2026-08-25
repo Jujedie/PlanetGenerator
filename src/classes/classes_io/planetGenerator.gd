@@ -55,7 +55,8 @@ func _init(nom_param: String, generation_param : Dictionary, cheminSauvegarde_pa
 
 	# Store all parameters
 	self.nom                  = nom_param
-	self.generation_params    = generation_param
+	self.generation_params    = generation_param.duplicate(true)
+	self.generation_params["planet_name"] = nom_param
 
 	self.mapStatusLabel       = mapStatusLabel_param
 	self.cheminSauvegarde     = cheminSauvegarde_param
@@ -400,10 +401,9 @@ func getMaps() -> Array[String]:
 	deleteImagesTemps()
 	var temp_dir = "user://temp/"
 	var exported_files = gpu_orchestrator.export_all_maps(temp_dir)
-	var lstChemin: Array[String] = []
-	for file_path in exported_files.values():
-		lstChemin.append(file_path)
-	return lstChemin
+	# Metadata files (manifest, integrity report, project manifest) are part of
+	# the export set but must never be sent to Image.load() by the map viewer.
+	return PlanetProject.display_maps_from_layers(exported_files)
 
 ## Sauvegarde une image unique dans le dossier temporaire.
 ##

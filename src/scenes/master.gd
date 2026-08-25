@@ -8,6 +8,8 @@ var langue: String = "fr"
 var _sfx_player: AudioStreamPlayer
 var _generation_epoch: int = 0
 var _is_exiting: bool = false
+var _loaded_project: Dictionary = {}
+var _load_planet_button: Button
 
 # --- Constants ---
 const BASE_PATH_SLIDERS = "ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"
@@ -79,12 +81,71 @@ func _ready() -> void:
 
 	# 4. UI Initialization
 	maj_labels()
+	_setup_project_loader_ui()
+
+
+func _setup_project_loader_ui() -> void:
+	var parent := $"ImageFrame/Control General"
+	_load_planet_button = Button.new()
+	_load_planet_button.name = "btnLoadPlanetProject"
+	_load_planet_button.text = "LOAD PLANET"
+	_load_planet_button.theme = $"ImageFrame/Control General/btnSauvegarder".theme
+	_load_planet_button.position = Vector2(1028.8, 691.0)
+	_load_planet_button.size = Vector2(269.0, 42.0)
+	_load_planet_button.focus_mode = Control.FOCUS_NONE
+	_load_planet_button.pressed.connect(_on_load_planet_project_pressed)
+	parent.add_child(_load_planet_button)
+
+
+func _on_load_planet_project_pressed() -> void:
+	var dialog := FileDialog.new()
+	dialog.access = FileDialog.ACCESS_FILESYSTEM
+	dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	dialog.title = "Load Planet Project"
+	dialog.filters = PackedStringArray(["planet_project.json ; Planet Generator Project"])
+	dialog.min_size = Vector2i(700, 450)
+	add_child(dialog)
+	dialog.file_selected.connect(func(path: String):
+		_load_planet_project(path)
+		dialog.queue_free()
+	)
+	dialog.canceled.connect(dialog.queue_free)
+	dialog.popup_centered()
+
+
+func _load_planet_project(path: String) -> void:
+	var project := PlanetProject.load_project(path)
+	if not bool(project.get("ok", false)):
+		push_error("[Master] Cannot load planet project: %s" % project.get("reason", "unknown"))
+		return
+	_release_planet_generator()
+	_loaded_project = project
+	maps = project.get("maps", [])
+	map_index = 0
+	if maps.is_empty():
+		push_warning("[Master] Project contains no displayable PNG maps")
+		return
+	_show_map_path(maps[0])
+	var manifest: Dictionary = project.get("manifest", {})
+	$"ImageFrame/LabelNomMap".text = "%s — loaded project" % manifest.get("planet_name", "Planet")
+
+
+func _show_map_path(path: String) -> bool:
+	var image := Image.new()
+	if image.load(path) != OK:
+		push_warning("[Master] Cannot load map: " + path)
+		return false
+	$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = ImageTexture.create_from_image(image)
+	update_map_label()
+	return true
+
 
 # ============================================================================
 # GENERATION LOGIC
 # ============================================================================
 
 func _on_btn_comfirme_pressed() -> void:
+	_loaded_project = {}
 	# UI Gather Data
 	var nom          = get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Name_Param/HBoxContainer/LineEdit")
 	var lblMapStatus = $"ImageFrame/LabelNomMap"
