@@ -40,9 +40,7 @@ const TEXTURE_LIFECYCLE := {
 }
 
 const TERRESTRIAL_EXPORT_TEXTURES := [
-	# Milestone 7 local terrain is available after global export, so preserve the
-	# physical macro constraints it needs for soil moisture and local drainage.
-	"geo", "climate", "plates", "river_flux", "flow_direction", "water_mask", "region_map",
+	"geo", "plates", "river_flux", "water_mask", "region_map",
 	# Milestone 6 reads the authoritative biome IDs to render palette-driven
 	# cartography after prepare_for_export(). Keeping only biome_colored made the
 	# cartographic exporter silently skip every terrestrial planet.

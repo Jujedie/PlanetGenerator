@@ -21,7 +21,6 @@ var use_tiled_global_generation: bool     = false
 var tiled_pipeline: TiledGlobalSimulationPipeline = null
 var _tiled_thread: Thread = null
 var _tiled_output_root: String = ""
-var _local_macro_sampler: GlobalMacroSampler = null
 
 # Generation parameters (compiled from UI)
 var generation_params: Dictionary = {}
@@ -354,35 +353,6 @@ func export_to_directory(output_dir: String) -> void:
 		push_warning("[PlanetGenerator] Export skipped: generation resources are unavailable")
 	print("[PlanetGenerator] Export complete")
 
-## Generate one deterministic high-resolution 1 km² local terrain zone.
-## Administrative layers never influence this result. On maximum-scale planets
-## the macro sampler reads the authoritative M5 tile store instead of requiring
-## monolithic textures to be rebuilt in RAM/VRAM.
-func generate_local_zone(global_cell: Vector2i, resolution: int = LocalZoneGenerator.DEFAULT_RESOLUTION,
-		use_cache: bool = true) -> Dictionary:
-	if _cleaned_up:
-		return {}
-	var sampler: GlobalMacroSampler = _local_macro_sampler
-	if sampler == null or not sampler.is_valid():
-		if use_tiled_global_generation:
-			sampler = GlobalMacroSampler.from_tiled_dataset(_tiled_output_root, generation_params)
-		elif gpu_orchestrator != null and gpu_orchestrator.gpu != null:
-			sampler = GlobalMacroSampler.from_gpu(gpu_orchestrator.gpu, generation_params)
-		if sampler != null and sampler.is_valid():
-			_local_macro_sampler = sampler
-	if sampler == null or not sampler.is_valid():
-		push_warning("[PlanetGenerator] Local zone unavailable: global authoritative layers are not ready")
-		return {}
-	var cache: LocalZoneCache = null
-	if use_cache:
-		cache = LocalZoneCache.new(cheminSauvegarde.path_join("local_zones"))
-	return LocalZoneGenerator.generate_zone(global_cell, sampler, generation_params, resolution, cache)
-
-## Save human-readable PNG previews of selected local layers. The authoritative
-## cached zone remains raw data; these PNGs are diagnostic/game-tooling output.
-func export_local_zone_previews(zone: Dictionary, output_dir: String) -> Dictionary:
-	return LocalZoneDebugExporter.export_previews(zone, output_dir)
-
 ## Sauvegarde les cartes générées dans le dossier temporaire par défaut.
 func save_maps():
 	"""Legacy save to default directory"""
@@ -397,7 +367,6 @@ func cleanup() -> void:
 		return
 	_generation_request_id += 1
 	_cleaned_up = true
-	_local_macro_sampler = null
 	if tiled_pipeline != null:
 		tiled_pipeline.cancel("cleanup")
 	if _tiled_thread != null and _tiled_thread.is_started():

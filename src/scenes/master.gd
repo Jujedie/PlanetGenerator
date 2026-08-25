@@ -9,23 +9,6 @@ var _sfx_player: AudioStreamPlayer
 var _generation_epoch: int = 0
 var _is_exiting: bool = false
 
-# --- Milestone 7 Local Zone UI ---
-var _local_zone_panel: PanelContainer
-var _local_zone_toggle_button: Button
-var _local_zone_select_button: Button
-var _local_zone_generate_button: Button
-var _local_zone_export_button: Button
-var _local_zone_back_button: Button
-var _local_zone_resolution: OptionButton
-var _local_zone_layer: OptionButton
-var _local_zone_coord_label: Label
-var _local_zone_status_label: Label
-var _local_zone_selecting := false
-var _local_zone_cell := Vector2i(-1, -1)
-var _local_zone_result: Dictionary = {}
-var _local_zone_previews: Dictionary = {}
-var _local_zone_preview_mode := false
-
 # --- Constants ---
 const BASE_PATH_SLIDERS = "ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"
 const PRESETS_DIR = "user://presets/"
@@ -96,7 +79,6 @@ func _ready() -> void:
 
 	# 4. UI Initialization
 	maj_labels()
-	_setup_local_zone_ui()
 
 # ============================================================================
 # GENERATION LOGIC
@@ -111,7 +93,6 @@ func _on_btn_comfirme_pressed() -> void:
 	# Reset state
 	maps      = []
 	map_index = 0
-	_reset_local_zone_ui_state()
 	$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = load("res://data/img/UI/no_data.png")
 
 	# Le constructeur du nouveau générateur acquiert immédiatement le device
@@ -342,15 +323,11 @@ func update_map_label() -> void:
 	lbl.text = get_map_display_name(maps[map_index])
 
 func _on_btn_suivant_pressed() -> void:
-	if _local_zone_preview_mode:
-		_local_zone_preview_mode = false
 	if maps.is_empty(): return 
 	map_index = (map_index + 1) % maps.size()
 	_load_current_map()
 
 func _on_btn_precedant_pressed() -> void:
-	if _local_zone_preview_mode:
-		_local_zone_preview_mode = false
 	if maps.is_empty(): return 
 	map_index -= 1
 	if map_index < 0: map_index = maps.size() - 1
@@ -367,275 +344,6 @@ func _on_fold_button_pressed(cible : String) -> void:
 	print("Node : ", get_node(cible))
 	var margin_container = get_node(cible) as MarginContainer
 	margin_container.visible = !margin_container.visible
-
-# ============================================================================
-# MILESTONE 7 — LOCAL ZONE UI
-# ============================================================================
-
-func _setup_local_zone_ui() -> void:
-	var map_control := $"ImageFrame/ImageMenu/Control Images/Frame Map/Map" as TextureRect
-	map_control.mouse_filter = Control.MOUSE_FILTER_STOP
-	if not map_control.gui_input.is_connected(_on_global_map_gui_input):
-		map_control.gui_input.connect(_on_global_map_gui_input)
-
-	var layer := CanvasLayer.new()
-	layer.name = "LocalZoneUILayer"
-	layer.layer = 20
-	add_child(layer)
-
-	_local_zone_toggle_button = Button.new()
-	_local_zone_toggle_button.name = "LocalZoneToggle"
-	_local_zone_toggle_button.text = "LOCAL ZONE"
-	_local_zone_toggle_button.position = Vector2(18, 18)
-	_local_zone_toggle_button.pressed.connect(_on_local_zone_toggle_pressed)
-	layer.add_child(_local_zone_toggle_button)
-
-	_local_zone_panel = PanelContainer.new()
-	_local_zone_panel.name = "LocalZonePanel"
-	_local_zone_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_local_zone_panel.position = Vector2(18, 58)
-	_local_zone_panel.custom_minimum_size = Vector2(300, 0)
-	_local_zone_panel.visible = false
-	layer.add_child(_local_zone_panel)
-
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.035, 0.045, 0.045, 0.94)
-	panel_style.border_color = Color(0.93, 0.62, 0.0, 0.92)
-	panel_style.set_border_width_all(1)
-	panel_style.corner_radius_top_left = 4
-	panel_style.corner_radius_top_right = 4
-	panel_style.corner_radius_bottom_left = 4
-	panel_style.corner_radius_bottom_right = 4
-	panel_style.content_margin_left = 12
-	panel_style.content_margin_right = 12
-	panel_style.content_margin_top = 10
-	panel_style.content_margin_bottom = 10
-	_local_zone_panel.add_theme_stylebox_override("panel", panel_style)
-
-	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", 7)
-	_local_zone_panel.add_child(root)
-
-	var title := Label.new()
-	title.text = "LOCAL ZONE — M7"
-	title.add_theme_color_override("font_color", Color(0.93, 0.62, 0.0))
-	title.add_theme_font_size_override("font_size", 20)
-	root.add_child(title)
-
-	var hint := Label.new()
-	hint.text = "Select a 1 km² global cell, then generate detailed terrain."
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.custom_minimum_size.x = 276
-	root.add_child(hint)
-
-	_local_zone_coord_label = Label.new()
-	_local_zone_coord_label.text = "Cell: none"
-	root.add_child(_local_zone_coord_label)
-
-	_local_zone_select_button = Button.new()
-	_local_zone_select_button.text = "SELECT ON GLOBAL MAP"
-	_local_zone_select_button.pressed.connect(_on_local_zone_select_pressed)
-	root.add_child(_local_zone_select_button)
-
-	var resolution_row := HBoxContainer.new()
-	root.add_child(resolution_row)
-	var resolution_label := Label.new()
-	resolution_label.text = "Resolution"
-	resolution_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	resolution_row.add_child(resolution_label)
-	_local_zone_resolution = OptionButton.new()
-	for value in [256, 512, 1024, 2048]:
-		_local_zone_resolution.add_item("%d × %d" % [value, value], value)
-	_local_zone_resolution.select(2)
-	resolution_row.add_child(_local_zone_resolution)
-
-	_local_zone_generate_button = Button.new()
-	_local_zone_generate_button.text = "GENERATE LOCAL ZONE"
-	_local_zone_generate_button.disabled = true
-	_local_zone_generate_button.pressed.connect(_on_local_zone_generate_pressed)
-	root.add_child(_local_zone_generate_button)
-
-	var layer_row := HBoxContainer.new()
-	root.add_child(layer_row)
-	var layer_label := Label.new()
-	layer_label.text = "Preview"
-	layer_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	layer_row.add_child(layer_label)
-	_local_zone_layer = OptionButton.new()
-	for layer_name in [
-		"height", "normals", "slope", "water", "flow", "soil", "soil_moisture",
-		"soil_depth", "rock", "surface", "vegetation", "resources", "snow_ice",
-		"spawn", "hazard",
-	]:
-		_local_zone_layer.add_item(layer_name.capitalize())
-		_local_zone_layer.set_item_metadata(_local_zone_layer.item_count - 1, layer_name)
-	_local_zone_layer.disabled = true
-	_local_zone_layer.item_selected.connect(_on_local_zone_layer_selected)
-	layer_row.add_child(_local_zone_layer)
-
-	var buttons := HBoxContainer.new()
-	root.add_child(buttons)
-	_local_zone_export_button = Button.new()
-	_local_zone_export_button.text = "EXPORT PNG"
-	_local_zone_export_button.disabled = true
-	_local_zone_export_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_local_zone_export_button.pressed.connect(_on_local_zone_export_pressed)
-	buttons.add_child(_local_zone_export_button)
-	_local_zone_back_button = Button.new()
-	_local_zone_back_button.text = "GLOBAL MAP"
-	_local_zone_back_button.disabled = true
-	_local_zone_back_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_local_zone_back_button.pressed.connect(_on_local_zone_back_pressed)
-	buttons.add_child(_local_zone_back_button)
-
-	_local_zone_status_label = Label.new()
-	_local_zone_status_label.text = "Ready after planet generation."
-	_local_zone_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	root.add_child(_local_zone_status_label)
-
-
-func _on_local_zone_toggle_pressed() -> void:
-	_local_zone_panel.visible = not _local_zone_panel.visible
-	_local_zone_toggle_button.text = "CLOSE LOCAL ZONE" if _local_zone_panel.visible else "LOCAL ZONE"
-
-
-func _reset_local_zone_ui_state() -> void:
-	_local_zone_selecting = false
-	_local_zone_cell = Vector2i(-1, -1)
-	_local_zone_result = {}
-	_local_zone_previews = {}
-	_local_zone_preview_mode = false
-	if is_instance_valid(_local_zone_coord_label):
-		_local_zone_coord_label.text = "Cell: none"
-	if is_instance_valid(_local_zone_generate_button):
-		_local_zone_generate_button.disabled = true
-	if is_instance_valid(_local_zone_layer):
-		_local_zone_layer.disabled = true
-	if is_instance_valid(_local_zone_export_button):
-		_local_zone_export_button.disabled = true
-	if is_instance_valid(_local_zone_back_button):
-		_local_zone_back_button.disabled = true
-	if is_instance_valid(_local_zone_select_button):
-		_local_zone_select_button.text = "SELECT ON GLOBAL MAP"
-	if is_instance_valid(_local_zone_status_label):
-		_local_zone_status_label.text = "Ready after planet generation."
-
-
-func _on_local_zone_select_pressed() -> void:
-	if planetGenerator == null or maps.is_empty():
-		_local_zone_status_label.text = "Generate a planet first."
-		return
-	if _local_zone_preview_mode:
-		_on_local_zone_back_pressed()
-	_local_zone_selecting = not _local_zone_selecting
-	_local_zone_select_button.text = "CANCEL SELECTION" if _local_zone_selecting else "SELECT ON GLOBAL MAP"
-	_local_zone_status_label.text = (
-		"Click anywhere on the displayed global map."
-		if _local_zone_selecting else "Selection cancelled."
-	)
-
-
-func _on_global_map_gui_input(event: InputEvent) -> void:
-	if not _local_zone_selecting or planetGenerator == null:
-		return
-	if not event is InputEventMouseButton:
-		return
-	var mouse_event := event as InputEventMouseButton
-	if mouse_event.button_index != MOUSE_BUTTON_LEFT or not mouse_event.pressed:
-		return
-	var map_control := $"ImageFrame/ImageMenu/Control Images/Frame Map/Map" as TextureRect
-	if map_control.texture == null or map_control.size.x <= 0.0 or map_control.size.y <= 0.0:
-		return
-	var uv := Vector2(
-		clampf(mouse_event.position.x / map_control.size.x, 0.0, 0.999999),
-		clampf(mouse_event.position.y / map_control.size.y, 0.0, 0.999999)
-	)
-	var dimensions: Vector2i = planetGenerator.generation_params.get(
-		"global_dimensions", planetGenerator.generation_params.get("resolution", Vector2i(1, 1))
-	)
-	_local_zone_cell = Vector2i(
-		clampi(floori(uv.x * dimensions.x), 0, dimensions.x - 1),
-		clampi(floori(uv.y * dimensions.y), 0, dimensions.y - 1)
-	)
-	var world := PlanetGridContract.global_cell_to_world(_local_zone_cell, dimensions)
-	_local_zone_coord_label.text = "Cell: %d, %d   Lon: %.2f°   Lat: %.2f°" % [
-		_local_zone_cell.x, _local_zone_cell.y, rad_to_deg(world.x), rad_to_deg(world.y)
-	]
-	_local_zone_generate_button.disabled = false
-	_local_zone_selecting = false
-	_local_zone_select_button.text = "SELECT ANOTHER CELL"
-	_local_zone_status_label.text = "Selected 1 km² zone. Choose resolution and generate."
-	get_viewport().set_input_as_handled()
-
-
-func _on_local_zone_generate_pressed() -> void:
-	if planetGenerator == null or _local_zone_cell.x < 0:
-		return
-	var resolution := _local_zone_resolution.get_selected_id()
-	if resolution <= 0:
-		resolution = 1024
-	_local_zone_status_label.text = "Generating %d × %d local terrain…" % [resolution, resolution]
-	_local_zone_generate_button.disabled = true
-	_local_zone_select_button.disabled = true
-	# M7 is deterministic and cache-backed. This call is CPU-heavy at 1024²;
-	# keep it on the main thread because the monolithic macro sampler may need
-	# RenderingDevice readback during sampler construction.
-	_local_zone_result = planetGenerator.generate_local_zone(_local_zone_cell, resolution, true)
-	_local_zone_select_button.disabled = false
-	_local_zone_generate_button.disabled = false
-	if _local_zone_result.is_empty():
-		_local_zone_status_label.text = "Local generation failed; check global authoritative layers."
-		return
-	_local_zone_previews = LocalZoneDebugExporter.build_previews(_local_zone_result)
-	if _local_zone_previews.is_empty():
-		_local_zone_status_label.text = "Zone generated, but previews could not be built."
-		return
-	_local_zone_layer.disabled = false
-	_local_zone_export_button.disabled = false
-	_local_zone_back_button.disabled = false
-	_local_zone_preview_mode = true
-	_local_zone_status_label.text = "Local terrain ready%s." % (
-		" (cache hit)" if bool(_local_zone_result.get("cache_hit", false)) else ""
-	)
-	_show_local_zone_layer(str(_local_zone_layer.get_item_metadata(_local_zone_layer.selected)))
-
-
-func _on_local_zone_layer_selected(index: int) -> void:
-	if index < 0 or index >= _local_zone_layer.item_count:
-		return
-	_show_local_zone_layer(str(_local_zone_layer.get_item_metadata(index)))
-
-
-func _show_local_zone_layer(layer_name: String) -> void:
-	if not _local_zone_previews.has(layer_name):
-		return
-	var image: Image = _local_zone_previews[layer_name]
-	if image == null or image.is_empty():
-		return
-	$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = ImageTexture.create_from_image(image)
-	$"ImageFrame/LabelNomMap".text = "LOCAL — %s — CELL %d,%d" % [
-		layer_name.to_upper(), _local_zone_cell.x, _local_zone_cell.y
-	]
-	_local_zone_preview_mode = true
-
-
-func _on_local_zone_export_pressed() -> void:
-	if planetGenerator == null or _local_zone_result.is_empty():
-		return
-	var output_dir := "user://temp/local_zone_%d_%d/" % [_local_zone_cell.x, _local_zone_cell.y]
-	var exported := planetGenerator.export_local_zone_previews(_local_zone_result, output_dir)
-	if exported.is_empty():
-		_local_zone_status_label.text = "PNG export failed."
-	else:
-		_local_zone_status_label.text = "Exported %d previews → %s" % [exported.size(), output_dir]
-
-
-func _on_local_zone_back_pressed() -> void:
-	_local_zone_preview_mode = false
-	if not maps.is_empty():
-		_load_current_map()
-	_local_zone_status_label.text = "Global map restored; local zone remains cached."
-
 
 # ============================================================================
 # SLIDER CALLBACKS
