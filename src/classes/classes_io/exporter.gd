@@ -113,6 +113,11 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		for key in final_result.keys():
 			exported_files[key] = final_result[key]
 		
+		if bool(params.get("run_integrity_checks", true)):
+			var integrity_report := PlanetIntegrityChecker.run(gpu, params, exported_files)
+			var integrity_path := PlanetIntegrityChecker.save_report(output_dir, integrity_report)
+			if not integrity_path.is_empty():
+				exported_files["integrity_report"] = integrity_path
 		var manifest_path := PlanetManifest.save(output_dir, params, exported_files)
 		if not manifest_path.is_empty():
 			exported_files["manifest"] = manifest_path
@@ -233,6 +238,12 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	for key in resources_result.keys():
 		exported_files[key] = resources_result[key]
 	
+	if bool(params.get("run_integrity_checks", true)):
+		var integrity_report := PlanetIntegrityChecker.run(gpu, params, exported_files)
+		var integrity_path := PlanetIntegrityChecker.save_report(output_dir, integrity_report)
+		if not integrity_path.is_empty():
+			exported_files["integrity_report"] = integrity_path
+
 	var manifest_path := PlanetManifest.save(output_dir, params, exported_files)
 	if not manifest_path.is_empty():
 		exported_files["manifest"] = manifest_path

@@ -175,11 +175,43 @@ static func build_land(data: PackedByteArray, w: int, h: int,
 		mini(target_countries, region_ids.size()), w, h, radius_km,
 		country_bridge_km, false, gen
 	)
+	var target_country_weight := total_land_weight / float(target_countries)
 	region_to_country = _split_oversized_groups(
 		region_to_country, region_adjacency, region_coords, region_weights,
-		total_land_weight / float(target_countries), max_country_factor,
+		target_country_weight, max_country_factor,
 		w, h, radius_km, gen
 	)
+
+	# Nettoyage territorial des pays. Le groupement par plus court chemin peut
+	# laisser une très petite composante d'un pays à l'intérieur (ou juste au
+	# milieu de l'archipel) d'un autre pays. Ce n'est pas une nouvelle croissance
+	# politique : seules les composantes très inférieures à la taille cible sont
+	# candidates, et elles ne changent de propriétaire que si un pays voisin
+	# domine nettement leur environnement local. Les îles éloignées restent donc
+	# des territoires valides de leur pays d'origine.
+	if bool(settings.get("admin_country_enclave_cleanup", true)):
+		var before_enclave_cleanup := region_to_country.duplicate()
+		var enclave_max_fraction := clampf(float(settings.get(
+			"admin_country_enclave_max_fraction", 0.22
+		)), 0.02, 0.60)
+		var enclave_dominance := clampf(float(settings.get(
+			"admin_country_enclave_dominance", 0.75
+		)), 0.50, 1.0)
+		var enclave_proximity_km := country_bridge_km * clampf(float(settings.get(
+			"admin_country_enclave_proximity_factor", 0.30
+		)), 0.05, 0.80)
+		region_to_country = _absorb_small_country_enclaves(
+			region_to_country, region_adjacency, region_coords, region_weights,
+			target_country_weight, max_country_factor, w, h, radius_km,
+			enclave_proximity_km, enclave_max_fraction, enclave_dominance
+		)
+		var moved_regions := 0
+		for region in region_to_country.keys():
+			if before_enclave_cleanup.get(region, -1) != region_to_country[region]:
+				moved_regions += 1
+		if moved_regions > 0:
+			print("      enclaves pays absorbées: %d région(s)" % moved_regions)
+
 	print("    → %d pays" % _unique_values(region_to_country).size())
 	print("      tailles pays: ", measure_group_weights(region_to_country, region_weights))
 
@@ -765,6 +797,254 @@ static func _merge_undersized_groups(mapping: Dictionary, unit_coords: Dictionar
 		for child in (children_by_group.get(group, []) as Array):
 			result[child] = nearest
 	return result
+
+
+## Absorbe uniquement les petites composantes territoriales qui sont dominées
+## par un autre pays. Deux cas sont couverts :
+##   1. enclave terrestre : la composante touche directement d'autres régions ;
+##   2. enclave/îlot d'archipel : aucun contact terrestre, mais les régions
+##      étrangères proches appartiennent très majoritairement au même pays.
+##
+## La limite de poids évite de déplacer une vraie masse territoriale et la
+## limite max_country_weight empêche le nettoyage de recréer un pays géant.
+static func _absorb_small_country_enclaves(mapping: Dictionary,
+		adjacency: Dictionary, coords: Dictionary, weights: Dictionary,
+		target_weight: float, max_factor: float, w: int, h: int, radius_km: float,
+		proximity_limit_km: float, max_fraction: float, dominance: float) -> Dictionary:
+	if mapping.is_empty() or target_weight <= 0.0:
+		return mapping
+	var result := mapping.duplicate()
+	var maximum_component_weight := target_weight * max_fraction
+	var maximum_country_weight := target_weight * max_factor
+
+	# Plusieurs passes sont utiles lorsqu'une micro-enclave appartient à un pays
+	# qui disparaît lui-même pendant le nettoyage. Le nombre est volontairement
+	# borné afin que l'opération reste déterministe et bon marché.
+	for _pass in range(4):
+		var country_ids := _unique_values(result)
+		if country_ids.size() <= 1:
+			break
+		var children_by_country := _invert(result)
+		var country_weights: Dictionary = {}
+		for country in country_ids:
+			country_weights[country] = _sum_weights(
+				children_by_country.get(country, []), weights
+			)
+		var changed := false
+
+		for country in country_ids:
+			var children: Array = children_by_country.get(country, [])
+			if children.is_empty():
+				continue
+
+			# D'abord les composantes réellement détachées, comme dans le premier
+			# correctif. Ensuite, on ajoute les poches situées derrière un point
+			# d'articulation : elles sont topologiquement connectées au pays, mais
+			# uniquement par un goulot d'une région. C'est le cas des pseudo-enclaves
+			# qui restaient visibles sur pays_map malgré le premier nettoyage.
+			var candidates: Array = _connected_components(children, adjacency)
+			candidates.append_array(_country_articulation_pockets(children, adjacency, weights))
+			var seen_candidates: Dictionary = {}
+			for component_value in candidates:
+				var component: Array = component_value
+				if component.is_empty():
+					continue
+				var signature := _component_signature(component)
+				if seen_candidates.has(signature):
+					continue
+				seen_candidates[signature] = true
+				var still_owned: Array = []
+				for region in component:
+					if int(result.get(region, -1)) == int(country):
+						still_owned.append(region)
+				if still_owned.is_empty() or still_owned.size() == children.size():
+					continue
+				var component_weight := float(_sum_weights(still_owned, weights))
+				if component_weight > maximum_component_weight:
+					continue
+
+				var candidate := _dominant_country_around_component(
+					still_owned, int(country), result, adjacency, coords, weights,
+					w, h, radius_km, proximity_limit_km
+				)
+				var target_country := int(candidate[0])
+				var target_dominance := float(candidate[1])
+				if target_country == -1 or target_country == int(country):
+					continue
+				if target_dominance + _DIST_EPSILON < dominance:
+					continue
+				if (
+					float(country_weights.get(target_country, 0)) + component_weight
+					> maximum_country_weight
+				):
+					continue
+
+				for region in still_owned:
+					result[region] = target_country
+				country_weights[country] = maxi(
+					int(country_weights.get(country, 0)) - int(component_weight), 0
+				)
+				country_weights[target_country] = int(
+					country_weights.get(target_country, 0)
+				) + int(component_weight)
+				changed = true
+
+		if not changed:
+			break
+	return result
+
+
+## Retourne les petites branches d'un pays qui ne restent connectées au
+## territoire principal que par un seul noeud d'articulation. On ne coupe rien
+## dans les données : le retrait est uniquement logique pour identifier la poche.
+static func _country_articulation_pockets(children: Array, adjacency: Dictionary,
+		weights: Dictionary) -> Array:
+	if children.size() < 4:
+		return []
+	var allowed: Dictionary = {}
+	for child in children:
+		allowed[child] = true
+	var local_adjacency: Dictionary = {}
+	for child in children:
+		local_adjacency[child] = {}
+		for neighbor in (adjacency.get(child, {}) as Dictionary).keys():
+			if allowed.has(neighbor):
+				(local_adjacency[child] as Dictionary)[neighbor] = true
+
+	var pockets: Array = []
+	for articulation in _articulation_points(children, local_adjacency):
+		var remaining: Array = []
+		for child in children:
+			if child != articulation:
+				remaining.append(child)
+		if remaining.is_empty():
+			continue
+		var components := _connected_components(remaining, local_adjacency)
+		if components.size() <= 1:
+			continue
+		var largest_index := -1
+		var largest_weight := -1
+		for i in range(components.size()):
+			var component_weight := _sum_weights(components[i], weights)
+			if component_weight > largest_weight:
+				largest_weight = component_weight
+				largest_index = i
+		for i in range(components.size()):
+			if i != largest_index:
+				pockets.append(components[i])
+	return pockets
+
+
+static func _articulation_points(nodes: Array, adjacency: Dictionary) -> Array:
+	var visited: Dictionary = {}
+	var discovery: Dictionary = {}
+	var low: Dictionary = {}
+	var parent: Dictionary = {}
+	var points: Dictionary = {}
+	var clock := [0]
+	for node in nodes:
+		if not visited.has(node):
+			_articulation_dfs(node, adjacency, visited, discovery, low, parent, points, clock)
+	var result: Array = points.keys()
+	result.sort()
+	return result
+
+
+static func _articulation_dfs(node, adjacency: Dictionary, visited: Dictionary,
+		discovery: Dictionary, low: Dictionary, parent: Dictionary,
+		points: Dictionary, clock: Array) -> void:
+	visited[node] = true
+	discovery[node] = int(clock[0])
+	low[node] = int(clock[0])
+	clock[0] = int(clock[0]) + 1
+	var child_count := 0
+	for neighbor in (adjacency.get(node, {}) as Dictionary).keys():
+		if not visited.has(neighbor):
+			parent[neighbor] = node
+			child_count += 1
+			_articulation_dfs(
+				neighbor, adjacency, visited, discovery, low, parent, points, clock
+			)
+			low[node] = mini(int(low[node]), int(low[neighbor]))
+			if not parent.has(node) and child_count > 1:
+				points[node] = true
+			elif parent.has(node) and int(low[neighbor]) >= int(discovery[node]):
+				points[node] = true
+		elif parent.get(node, null) != neighbor:
+			low[node] = mini(int(low[node]), int(discovery[neighbor]))
+
+
+static func _component_signature(component: Array) -> String:
+	var ordered := component.duplicate()
+	ordered.sort()
+	var parts: PackedStringArray = []
+	for value in ordered:
+		parts.append(str(value))
+	return ",".join(parts)
+
+
+## Retourne [country_id, dominance]. La priorité va aux contacts terrestres :
+## une enclave qui touche uniquement un pays hôte obtient une dominance de 1.
+## Pour une petite île sans contact terrestre, on utilise une influence locale
+## inversement proportionnelle à la distance des régions voisines.
+static func _dominant_country_around_component(component: Array, own_country: int,
+		mapping: Dictionary, adjacency: Dictionary, coords: Dictionary,
+		weights: Dictionary, w: int, h: int, radius_km: float,
+		proximity_limit_km: float) -> Array:
+	var boundary_votes: Dictionary = {}
+	var boundary_total := 0.0
+	for region in component:
+		for neighbor in (adjacency.get(region, {}) as Dictionary).keys():
+			var other_country := int(mapping.get(neighbor, -1))
+			if other_country == -1 or other_country == own_country:
+				continue
+			# Une frontière entre deux grosses régions ne doit pas compter des
+			# centaines de fois plus qu'une autre : le poids est très faiblement
+			# surfacique et reste surtout topologique.
+			var vote := pow(maxf(float(weights.get(neighbor, 1)), 1.0), 0.10)
+			boundary_votes[other_country] = float(
+				boundary_votes.get(other_country, 0.0)
+			) + vote
+			boundary_total += vote
+	if boundary_total > 0.0:
+		return _dominant_vote(boundary_votes, boundary_total)
+
+	if proximity_limit_km <= 0.0:
+		return [-1, 0.0]
+	var center := _weighted_center(component, coords, weights, w)
+	var nearby_votes: Dictionary = {}
+	var nearby_total := 0.0
+	for region in mapping.keys():
+		var other_country := int(mapping.get(region, -1))
+		if other_country == -1 or other_country == own_country:
+			continue
+		var distance_km := sqrt(_map_distance_squared(
+			center, coords.get(region, Vector2.ZERO), w, h
+		)) * radius_km
+		if distance_km > proximity_limit_km:
+			continue
+		var influence := (
+			pow(maxf(float(weights.get(region, 1)), 1.0), 0.08)
+			/ maxf(distance_km, 0.5)
+		)
+		nearby_votes[other_country] = float(nearby_votes.get(other_country, 0.0)) + influence
+		nearby_total += influence
+	if nearby_total <= 0.0:
+		return [-1, 0.0]
+	return _dominant_vote(nearby_votes, nearby_total)
+
+
+static func _dominant_vote(votes: Dictionary, total: float) -> Array:
+	var winner := -1
+	var winner_vote := -1.0
+	for country in votes.keys():
+		var vote := float(votes[country])
+		if vote > winner_vote or (is_equal_approx(vote, winner_vote) and int(country) < winner):
+			winner = int(country)
+			winner_vote = vote
+	if winner == -1 or total <= 0.0:
+		return [-1, 0.0]
+	return [winner, winner_vote / total]
 
 
 static func _sum_weights(units: Array, weights: Dictionary) -> int:

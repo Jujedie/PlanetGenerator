@@ -230,6 +230,7 @@ func _compile_generation_params() -> Dictionary:
 		"cartography_palette_path": CartographicPalette.DEFAULT_PATH,
 		"cartography_view": CartographicRenderer.VIEW_PLANET,
 		"cartography_grid_alpha": 166,
+		"run_integrity_checks": true,
 		"avg_temperature"   : get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Temperature_Param/LineEdit").value,
 		
 		# Erosion and tectonics
@@ -286,6 +287,14 @@ func _compile_generation_params() -> Dictionary:
 		"region_budget_variation": get_node(CATEGORIES_PATHS["REGION"]+"Region_Budget_Variation_Param/LineEdit").value, # 0.5
 		"region_noise_strength"  : get_node(CATEGORIES_PATHS["REGION"]+"Region_Noise_Strength_Param/LineEdit").value, # 0.5
 		"region_iterations"	     : max(canonical_resolution.x, canonical_resolution.y) * 2,
+
+		# Country enclave cleanup. These remain advanced/non-UI parameters for now:
+		# small detached or enclosed country fragments can be absorbed by a strongly
+		# dominant neighbouring country, while remote islands remain untouched.
+		"admin_country_enclave_cleanup": true,
+		"admin_country_enclave_max_fraction": 0.30,
+		"admin_country_enclave_dominance": 0.60,
+		"admin_country_enclave_proximity_factor": 0.35,
 
 		# Regions Ocean 
 		"nb_cases_ocean_regions": get_node(CATEGORIES_PATHS["OCEAN"]+"Nb_Cases_Ocean_Regions_Param/LineEdit").value, # 100

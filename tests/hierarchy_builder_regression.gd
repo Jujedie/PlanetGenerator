@@ -105,6 +105,72 @@ func _run() -> void:
 		if (sea_hierarchy[0] as Dictionary).has(freshwater_unit):
 			freshwater_propagated = true
 			break
+	# Une micro-composante enclavée dans un autre pays doit rejoindre le pays
+	# hôte, tandis qu'une île éloignée sans voisin local doit conserver son
+	# propriétaire. Ce test isole le post-traitement des pays du reste du GPU.
+	var enclave_mapping := {
+		1: 100, 2: 100, 3: 100, 7: 100,
+		4: 200, 5: 200, 6: 200,
+	}
+	var enclave_adjacency := {
+		1: {2: true},
+		2: {1: true},
+		3: {4: true, 5: true},
+		4: {3: true, 5: true},
+		5: {3: true, 4: true, 6: true},
+		6: {5: true},
+		7: {},
+	}
+	var enclave_coords := {
+		1: Vector2(10, 20), 2: Vector2(12, 20),
+		3: Vector2(50, 30), 4: Vector2(49, 30), 5: Vector2(51, 30),
+		6: Vector2(52, 30), 7: Vector2(90, 50),
+	}
+	var enclave_weights := {1: 4, 2: 4, 3: 1, 4: 4, 5: 4, 6: 4, 7: 1}
+	var enclave_cleaned := HierarchyBuilder._absorb_small_country_enclaves(
+		enclave_mapping, enclave_adjacency, enclave_coords, enclave_weights,
+		8.0, 2.5, 120, 60, 150.0, 5.0, 0.25, 0.75
+	)
+	var small_enclave_absorbed := int(enclave_cleaned.get(3, -1)) == 200
+	var remote_island_preserved := int(enclave_cleaned.get(7, -1)) == 100
+
+	# Pseudo-enclave : 4 est le goulot du pays 300 et les régions 5-6 sont une
+	# petite poche derrière ce goulot, fortement bordée par le pays 400. Sans la
+	# détection de points d'articulation, tout 1..6 forme une seule composante et
+	# le premier correctif ne pouvait donc jamais absorber 5-6.
+	var isthmus_mapping := {
+		1: 300, 2: 300, 3: 300, 4: 300, 5: 300, 6: 300,
+		10: 400, 11: 400, 12: 400,
+	}
+	var isthmus_adjacency := {
+		1: {2: true},
+		2: {1: true, 3: true},
+		3: {2: true, 4: true},
+		4: {3: true, 5: true},
+		5: {4: true, 6: true, 10: true, 11: true},
+		6: {5: true, 10: true, 12: true},
+		10: {5: true, 6: true, 11: true},
+		11: {5: true, 10: true, 12: true},
+		12: {6: true, 10: true, 11: true},
+	}
+	var isthmus_coords := {
+		1: Vector2(20, 20), 2: Vector2(22, 20), 3: Vector2(24, 20),
+		4: Vector2(26, 20), 5: Vector2(28, 20), 6: Vector2(29, 21),
+		10: Vector2(29, 19), 11: Vector2(30, 20), 12: Vector2(30, 22),
+	}
+	var isthmus_weights := {
+		1: 8, 2: 8, 3: 8, 4: 3, 5: 2, 6: 2, 10: 8, 11: 8, 12: 8,
+	}
+	var isthmus_cleaned := HierarchyBuilder._absorb_small_country_enclaves(
+		isthmus_mapping, isthmus_adjacency, isthmus_coords, isthmus_weights,
+		16.0, 2.5, 120, 60, 150.0, 10.0, 0.30, 0.60
+	)
+	var isthmus_pocket_absorbed := (
+		int(isthmus_cleaned.get(5, -1)) == 400
+		and int(isthmus_cleaned.get(6, -1)) == 400
+		and int(isthmus_cleaned.get(1, -1)) == 300
+	)
+
 	var passed: bool = (
 		land_counts[0] > land_counts[1]
 		and land_counts[1] > land_counts[2]
@@ -118,6 +184,9 @@ func _run() -> void:
 		and float(country_stats.get("max_to_mean", 999.0)) <= 3.0
 		and float(continent_stats.get("min_to_mean", 0.0)) >= 0.20
 		and resolution_invariant_targets
+		and small_enclave_absorbed
+		and remote_island_preserved
+		and isthmus_pocket_absorbed
 	)
 	print("[HierarchyRegression] land_counts=", land_counts)
 	print("[HierarchyRegression] sea_counts=", sea_counts)
@@ -127,6 +196,9 @@ func _run() -> void:
 	print("[HierarchyRegression] continent_stats=", continent_stats)
 	print("[HierarchyRegression] huge_capacity_targets=", huge_capacity_targets)
 	print("[HierarchyRegression] resolution_invariant_targets=", resolution_invariant_targets)
+	print("[HierarchyRegression] small_enclave_absorbed=", small_enclave_absorbed)
+	print("[HierarchyRegression] remote_island_preserved=", remote_island_preserved)
+	print("[HierarchyRegression] isthmus_pocket_absorbed=", isthmus_pocket_absorbed)
 	if not passed:
 		push_error("Hierarchy size/sea propagation regression failed")
 	get_tree().quit(0 if passed else 1)
