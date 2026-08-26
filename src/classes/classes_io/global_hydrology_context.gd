@@ -84,9 +84,7 @@ func _build_fields(params: Dictionary) -> void:
 	elevation.resize(count)
 	var seed := int(params.get("seed", 12345))
 	var planet_type := int(params.get("planet_type", 0))
-	var terrain_scale := float(params.get("terrain_scale", 1.0))
-	if is_zero_approx(terrain_scale):
-		terrain_scale = 1.0
+	var terrain_scale := float(params.get("terrain_scale", 0.0))
 	for y in range(macro_dimensions.y):
 		for x in range(macro_dimensions.x):
 			var index := y * macro_dimensions.x + x

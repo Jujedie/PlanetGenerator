@@ -82,14 +82,17 @@ func style_button(button: Button, compact: bool = false) -> void:
 
 func _style_option(option: OptionButton) -> void:
 	option.focus_mode = Control.FOCUS_NONE
-	option.custom_minimum_size = Vector2(250, 36)
+	option.custom_minimum_size = Vector2(360, 38)
+	option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	option.add_theme_color_override("font_color", UI_TEXT)
 	option.add_theme_color_override("font_hover_color", UI_AMBER_BRIGHT)
-	option.add_theme_font_size_override("font_size", 18)
+	option.add_theme_font_size_override("font_size", 19)
 	var field_style := _panel_style(Color(0.045, 0.055, 0.06, 1.0), UI_BORDER, 1, 6.0)
 	for style_name in ["normal", "normal_mirrored", "pressed", "pressed_mirrored", "hover", "hover_mirrored", "hover_pressed", "hover_pressed_mirrored", "disabled", "disabled_mirrored"]:
 		option.add_theme_stylebox_override(style_name, field_style)
 	option.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	var popup: PopupMenu = option.get_popup()
+	popup.min_size = Vector2i(560, 0)
 
 
 func _make_group(parent: Container, min_width: float) -> VBoxContainer:
@@ -248,22 +251,29 @@ func _build_interface() -> void:
 	viewer_title_label.add_theme_color_override("font_color", UI_AMBER)
 	viewer_title_label.add_theme_font_size_override("font_size", 21)
 	viewer_box.add_child(viewer_title_label)
-	var controls_row := HBoxContainer.new()
-	controls_row.add_theme_constant_override("separation", 10)
-	viewer_box.add_child(controls_row)
-	var base_group := _make_group(controls_row, 290)
+	# Map selectors get a dedicated full-width row. The exported map catalogue
+	# can contain dozens of layers/resources, so keeping them in narrow 290 px
+	# columns made the PopupMenu unnecessarily difficult to use.
+	var selectors_row := HBoxContainer.new()
+	selectors_row.add_theme_constant_override("separation", 10)
+	viewer_box.add_child(selectors_row)
+	var base_group := _make_group(selectors_row, 520)
 	base_title_label = base_group.get_child(0) as Label
 	base_select = OptionButton.new()
 	base_select.name = "BaseSelect"
 	_style_option(base_select)
 	base_group.add_child(base_select)
-	var overlay_group := _make_group(controls_row, 290)
+	var overlay_group := _make_group(selectors_row, 520)
 	overlay_title_label = overlay_group.get_child(0) as Label
 	overlay_select = OptionButton.new()
 	overlay_select.name = "OverlaySelect"
 	_style_option(overlay_select)
 	overlay_group.add_child(overlay_select)
-	var opacity_group := _make_group(controls_row, 285)
+
+	var tools_row := HBoxContainer.new()
+	tools_row.add_theme_constant_override("separation", 10)
+	viewer_box.add_child(tools_row)
+	var opacity_group := _make_group(tools_row, 620)
 	opacity_title_label = opacity_group.get_child(0) as Label
 	var opacity_row := HBoxContainer.new()
 	opacity_row.add_theme_constant_override("separation", 8)
@@ -274,19 +284,19 @@ func _build_interface() -> void:
 	opacity_slider.step = 0.05
 	opacity_slider.value = 0.65
 	opacity_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	opacity_slider.custom_minimum_size = Vector2(205, 24)
+	opacity_slider.custom_minimum_size = Vector2(360, 24)
 	opacity_slider.add_theme_icon_override("grabber", load("res://data/img/UI/Range/Grabber.png"))
 	opacity_slider.add_theme_icon_override("grabber_highlight", load("res://data/img/UI/Range/Grabber_grabbed.png"))
 	opacity_slider.add_theme_stylebox_override("slider", load("res://data/styles/slider_non_highlight.tres"))
 	opacity_slider.add_theme_stylebox_override("grabber_area", load("res://data/styles/slider_highlight.tres"))
 	opacity_row.add_child(opacity_slider)
 	opacity_percent_label = Label.new()
-	opacity_percent_label.custom_minimum_size.x = 46
+	opacity_percent_label.custom_minimum_size.x = 52
 	opacity_percent_label.text = "65%"
 	opacity_percent_label.add_theme_color_override("font_color", UI_TEXT)
 	opacity_percent_label.add_theme_font_size_override("font_size", 18)
 	opacity_row.add_child(opacity_percent_label)
-	var zoom_group := _make_group(controls_row, 250)
+	var zoom_group := _make_group(tools_row, 360)
 	(zoom_group.get_child(0) as Label).text = "ZOOM"
 	var zoom_row := HBoxContainer.new()
 	zoom_row.add_theme_constant_override("separation", 8)
@@ -325,7 +335,7 @@ func _layout_interface() -> void:
 	var viewport_size := get_viewport().get_visible_rect().size
 	var margin := 22.0
 	var header_height := 88.0
-	var viewer_height := clampf(viewport_size.y * 0.255, 205.0, 245.0)
+	var viewer_height := clampf(viewport_size.y * 0.34, 295.0, 345.0)
 	var viewer_top := viewport_size.y - viewer_height - margin
 	var action_height := 52.0
 	var action_top := viewer_top - action_height - 10.0

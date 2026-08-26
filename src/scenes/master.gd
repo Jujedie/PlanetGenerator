@@ -48,6 +48,7 @@ var _viewer_load_action: Button
 var _viewer_save_action: Button
 var _parameter_workspace
 var _viewer_workspace
+var _batch_runner: BatchGenerationRunner
 
 # --- Constants ---
 const PRESETS_DIR = "user://presets/"
@@ -129,6 +130,7 @@ func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute(PRESETS_DIR)
 
 	_setup_parameter_workspace()
+	_setup_batch_runner()
 	_setup_reference_viewer_workspace()
 	maj_labels()
 	_show_viewer_workspace()
@@ -146,6 +148,16 @@ func _setup_parameter_workspace() -> void:
 	_parameter_workspace.viewer_requested.connect(_show_viewer_workspace)
 	_parameter_workspace.quit_requested.connect(_on_btn_quitter_pressed)
 	_parameter_workspace.language_requested.connect(_change_lang)
+	_parameter_workspace.batch_start_requested.connect(_on_batch_start_requested)
+	_parameter_workspace.batch_cancel_requested.connect(_on_batch_cancel_requested)
+
+
+func _setup_batch_runner() -> void:
+	_batch_runner = BatchGenerationRunner.new()
+	_batch_runner.name = "BatchGenerationRunner"
+	add_child(_batch_runner)
+	_batch_runner.batch_progress.connect(_on_batch_progress)
+	_batch_runner.batch_completed.connect(_on_batch_completed)
 
 
 func _setup_reference_viewer_workspace() -> void:
@@ -284,14 +296,16 @@ func _update_viewer_sources() -> void:
 	var overlay_selection := 0
 	for i in range(maps.size()):
 		var path := maps[i]
-		_viewer_base_select.add_item(get_map_display_name(path))
+		var display_name := get_map_display_name(path)
+		_viewer_base_select.add_item(display_name)
 		_viewer_base_select.set_item_metadata(_viewer_base_select.item_count - 1, i)
-		var file_name := path.get_file()
-		if file_name in ["grid_overlay.png", "topology_map.png", "river_map.png", "plaques_bordures_map.png"]:
-			_viewer_overlay_select.add_item(get_map_display_name(path))
-			_viewer_overlay_select.set_item_metadata(_viewer_overlay_select.item_count - 1, path)
-			if path == selected_overlay_path:
-				overlay_selection = _viewer_overlay_select.item_count - 1
+		# Any exported map can be used as an overlay. This is deliberately kept
+		# symmetrical with the base selector so newly exported layers become
+		# overlay-capable automatically without another hard-coded allow-list.
+		_viewer_overlay_select.add_item(display_name)
+		_viewer_overlay_select.set_item_metadata(_viewer_overlay_select.item_count - 1, path)
+		if path == selected_overlay_path:
+			overlay_selection = _viewer_overlay_select.item_count - 1
 	if not maps.is_empty():
 		_viewer_base_select.select(selected_base)
 	_viewer_overlay_select.select(overlay_selection)
@@ -517,6 +531,54 @@ func _show_map_path(path: String) -> bool:
 
 
 # ============================================================================
+# BATCH / BENCHMARK
+# ============================================================================
+
+func _on_batch_start_requested(count: int, first_seed: int) -> void:
+	if _batch_runner == null or _batch_runner.running:
+		return
+
+	_release_planet_generator()
+	var params: Dictionary = _compile_generation_params()
+	var planet_name: String = str(_parameter_workspace.get_value("planet_name")).strip_edges()
+	if planet_name.is_empty():
+		planet_name = "Planet"
+	var safe_name: String = planet_name.validate_filename()
+	if safe_name.is_empty():
+		safe_name = "Planet"
+	var batch_root: String = "user://batch/%s_%d" % [
+		safe_name,
+		int(Time.get_unix_time_from_system()),
+	]
+
+	if _batch_runner.start(params, count, first_seed, batch_root, safe_name):
+		_parameter_workspace.set_batch_running(true)
+		_parameter_workspace.set_batch_status("BATCH_STARTING")
+		_set_buttons_enabled(false)
+	else:
+		_parameter_workspace.set_batch_status("BATCH_START_FAILED")
+
+
+func _on_batch_cancel_requested() -> void:
+	if _batch_runner == null or not _batch_runner.running:
+		return
+	_batch_runner.cancel()
+	_parameter_workspace.set_batch_status("BATCH_CANCELLING")
+
+
+func _on_batch_progress(completed: int, total: int, seed: int, status: String) -> void:
+	if _parameter_workspace != null:
+		_parameter_workspace.set_batch_progress(completed, total, seed, status)
+
+
+func _on_batch_completed(report: Dictionary) -> void:
+	if _parameter_workspace != null:
+		_parameter_workspace.set_batch_running(false)
+		_parameter_workspace.set_batch_completed(report)
+	_set_buttons_enabled(true)
+
+
+# ============================================================================
 # GENERATION LOGIC
 # ============================================================================
 
@@ -579,6 +641,8 @@ func _release_planet_generator() -> void:
 
 func _exit_tree() -> void:
 	_is_exiting = true
+	if _batch_runner != null:
+		_batch_runner.shutdown()
 	_release_planet_generator()
 	# Drain all GPU cleanup jobs and destroy the shared local RenderingDevice on
 	# its owning background thread. Blocking here is safe because the app exits.

@@ -26,6 +26,7 @@ var _tiled_output_root: String = ""
 var _monolithic_job_active: bool = false
 var _cached_display_maps: Array[String] = []
 var _cached_export_files: Dictionary = {}
+var last_performance_report: Dictionary = {}
 var _cancel_mutex: Mutex = Mutex.new()
 var _cancel_requested: bool = false
 var _cancel_reason: String = ""
@@ -98,6 +99,7 @@ func _init_gpu_system() -> void:
 
 func generate_planet() -> bool:
 	"""Entry point - routes to the bounded tiled path or legacy GPU path."""
+	last_performance_report.clear()
 	if _cleaned_up or not use_gpu_acceleration:
 		print("[PlanetGenerator] Cancelling generation: GPU acceleration not available")
 		return false
@@ -241,6 +243,7 @@ func _run_monolithic_generation_worker(request_id: int) -> void:
 		call_deferred("_complete_monolithic_generation", request_id, false, [], export_cancel_reason)
 		return
 	var display_maps: Array[String] = PlanetProject.display_maps_from_layers(exported_files)
+	last_performance_report = orchestrator.last_performance_report.duplicate(true)
 	_cached_export_files = exported_files.duplicate(true)
 	_cached_display_maps = display_maps.duplicate()
 	# The UI consumes exported CPU files, not live GPU RIDs. Release per-planet

@@ -6,7 +6,7 @@ extends RefCounted
 ## be regenerated in isolation without changing its neighbours.
 
 static func terrain_height_m(cell: Vector2i, dimensions: Vector2i,
-		seed: int, planet_type: int = 0, terrain_scale: float = 1.0) -> float:
+		seed: int, planet_type: int = 0, terrain_scale: float = 0.0) -> float:
 	var c := PlanetGridContract.wrapped_global_cell(cell, dimensions)
 	var continent_scale := maxi(dimensions.x / 6, 32)
 	var macro_scale := maxi(dimensions.x / 12, 16)
@@ -17,6 +17,7 @@ static func terrain_height_m(cell: Vector2i, dimensions: Vector2i,
 	var detail := AbsoluteFieldSampler.smooth_noise(c, dimensions, seed, ridge_scale, 12)
 	var fine := AbsoluteFieldSampler.smooth_noise(c, dimensions, seed, detail_scale, 13)
 	var ridge := pow(1.0 - abs(detail * 2.0 - 1.0), 3.0)
+	var uplift_noise := AbsoluteFieldSampler.smooth_noise(c, dimensions, seed, macro_scale, 14)
 	var height := (continent - 0.505) * 9200.0
 	height += (macro - 0.5) * 2600.0
 	height += (ridge - 0.35) * 2100.0
@@ -30,7 +31,8 @@ static func terrain_height_m(cell: Vector2i, dimensions: Vector2i,
 			height *= 0.82
 		_:
 			pass
-	return height * maxf(terrain_scale, 0.05)
+	height += clampf(uplift_noise, 0.0, 1.0) * maxf(terrain_scale, 0.0) * 0.4
+	return height
 
 static func climate_at(cell: Vector2i, dimensions: Vector2i, seed: int,
 		height_m: float, average_temperature: float) -> Vector2:

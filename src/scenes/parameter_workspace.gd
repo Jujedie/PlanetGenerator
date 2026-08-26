@@ -8,6 +8,8 @@ signal save_preset_requested
 signal viewer_requested
 signal quit_requested
 signal language_requested(code: String)
+signal batch_start_requested(count: int, first_seed: int)
+signal batch_cancel_requested
 
 const UI_AMBER := Color(0.92549, 0.619608, 0.0, 1.0)
 const UI_AMBER_BRIGHT := Color(1.0, 0.72, 0.04, 1.0)
@@ -41,6 +43,15 @@ var save_planet_button: Button
 var template_select: OptionButton
 var template_apply_button: Button
 var smart_random_button: Button
+var batch_toggle_button: Button
+var batch_panel: PanelContainer
+var batch_title_label: Label
+var batch_count_label: Label
+var batch_seed_label: Label
+var batch_count_spin: SpinBox
+var batch_seed_spin: SpinBox
+var batch_status_label: Label
+var batch_start_button: Button
 
 var _parameter_tree: VBoxContainer
 var _controls: Dictionary = {}
@@ -48,6 +59,9 @@ var _value_labels: Dictionary = {}
 var _category_buttons: Dictionary = {}
 var _category_bodies: Dictionary = {}
 var _option_definitions: Dictionary = {}
+var _batch_running: bool = false
+var _batch_status_key: String = "BATCH_READY"
+var _batch_status_args: Dictionary = {}
 
 
 func _ready() -> void:
@@ -296,6 +310,11 @@ func _build_interface() -> void:
 	style_button(smart_random_button, true)
 	smart_random_button.custom_minimum_size.x = 150
 	action_row.add_child(smart_random_button)
+	batch_toggle_button = Button.new()
+	batch_toggle_button.name = "BatchToggleButton"
+	style_button(batch_toggle_button, true)
+	batch_toggle_button.custom_minimum_size.x = 110
+	action_row.add_child(batch_toggle_button)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	action_row.add_child(spacer)
@@ -303,6 +322,73 @@ func _build_interface() -> void:
 	save_planet_button.name = "SavePlanetButton"
 	style_button(save_planet_button)
 	action_row.add_child(save_planet_button)
+
+	_build_batch_panel()
+
+
+func _build_batch_panel() -> void:
+	batch_panel = PanelContainer.new()
+	batch_panel.name = "BatchPanel"
+	batch_panel.visible = false
+	batch_panel.add_theme_stylebox_override(
+		"panel",
+		_panel_style(Color(0.045, 0.055, 0.06, 1.0), UI_AMBER, 2, 12.0)
+	)
+	root.add_child(batch_panel)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	batch_panel.add_child(box)
+
+	batch_title_label = Label.new()
+	batch_title_label.add_theme_color_override("font_color", UI_AMBER)
+	batch_title_label.add_theme_font_size_override("font_size", 22)
+	box.add_child(batch_title_label)
+
+	var count_row := HBoxContainer.new()
+	count_row.add_theme_constant_override("separation", 10)
+	box.add_child(count_row)
+	batch_count_label = Label.new()
+	batch_count_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	batch_count_label.add_theme_color_override("font_color", UI_TEXT)
+	count_row.add_child(batch_count_label)
+	batch_count_spin = SpinBox.new()
+	batch_count_spin.custom_minimum_size = Vector2(130, 34)
+	batch_count_spin.min_value = 1.0
+	batch_count_spin.max_value = 500.0
+	batch_count_spin.step = 1.0
+	batch_count_spin.value = 10.0
+	_style_line_edit(batch_count_spin.get_line_edit())
+	count_row.add_child(batch_count_spin)
+
+	var seed_row := HBoxContainer.new()
+	seed_row.add_theme_constant_override("separation", 10)
+	box.add_child(seed_row)
+	batch_seed_label = Label.new()
+	batch_seed_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	batch_seed_label.add_theme_color_override("font_color", UI_TEXT)
+	seed_row.add_child(batch_seed_label)
+	batch_seed_spin = SpinBox.new()
+	batch_seed_spin.custom_minimum_size = Vector2(130, 34)
+	batch_seed_spin.min_value = 0.0
+	batch_seed_spin.max_value = 2147483647.0
+	batch_seed_spin.step = 1.0
+	batch_seed_spin.value = 1000.0
+	_style_line_edit(batch_seed_spin.get_line_edit())
+	seed_row.add_child(batch_seed_spin)
+
+	batch_status_label = Label.new()
+	batch_status_label.add_theme_color_override("font_color", UI_MUTED)
+	batch_status_label.add_theme_font_size_override("font_size", 16)
+	batch_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	batch_status_label.custom_minimum_size.y = 42.0
+	box.add_child(batch_status_label)
+
+	batch_start_button = Button.new()
+	batch_start_button.name = "BatchStartButton"
+	style_button(batch_start_button, true)
+	batch_start_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_child(batch_start_button)
 
 
 func _build_parameters_from_schema() -> void:
@@ -452,6 +538,19 @@ func _connect_actions() -> void:
 	french_button.pressed.connect(func() -> void: language_requested.emit("fr"))
 	english_button.pressed.connect(func() -> void: language_requested.emit("en"))
 	german_button.pressed.connect(func() -> void: language_requested.emit("de"))
+	batch_toggle_button.pressed.connect(_toggle_batch_panel)
+	batch_start_button.pressed.connect(_on_batch_start_pressed)
+
+
+func _toggle_batch_panel() -> void:
+	batch_panel.visible = not batch_panel.visible
+
+
+func _on_batch_start_pressed() -> void:
+	if _batch_running:
+		batch_cancel_requested.emit()
+		return
+	batch_start_requested.emit(int(batch_count_spin.value), int(batch_seed_spin.value))
 
 
 func _layout_interface() -> void:
@@ -481,6 +580,13 @@ func _layout_interface() -> void:
 	var actions := root.get_node("Actions") as Control
 	actions.position = Vector2(margin, action_top)
 	actions.size = Vector2(viewport_size.x - margin * 2.0, action_height)
+	if batch_panel != null:
+		var batch_size := Vector2(430.0, 218.0)
+		batch_panel.size = batch_size
+		batch_panel.position = Vector2(
+			maxf(margin, (viewport_size.x - batch_size.x) * 0.5),
+			maxf(body_top, action_top - batch_size.y - 10.0)
+		)
 
 
 func set_preview_texture(texture: Texture2D) -> void:
@@ -631,6 +737,12 @@ func refresh_translations() -> void:
 	smart_random_button.text = tr("TEMPLATE_SMART_RANDOM")
 	template_select.tooltip_text = tr("TEMPLATE_TOOLTIP")
 	smart_random_button.tooltip_text = tr("TEMPLATE_SMART_RANDOM_TOOLTIP")
+	batch_toggle_button.text = tr("BATCH_BUTTON")
+	batch_title_label.text = tr("BATCH_TITLE")
+	batch_count_label.text = tr("BATCH_COUNT")
+	batch_seed_label.text = tr("BATCH_FIRST_SEED")
+	batch_start_button.text = tr("BATCH_CANCEL") if _batch_running else tr("BATCH_START")
+	_refresh_batch_status()
 	save_planet_button.text = tr("SAUVEGARDER")
 	_refresh_template_items()
 
@@ -655,6 +767,54 @@ func set_actions_enabled(enabled: bool) -> void:
 	load_preset_button.disabled = not enabled
 	save_preset_button.disabled = not enabled
 	viewer_button.disabled = not enabled
+	batch_toggle_button.disabled = not enabled and not _batch_running
+	batch_count_spin.editable = enabled and not _batch_running
+	batch_seed_spin.editable = enabled and not _batch_running
+	batch_start_button.disabled = not enabled and not _batch_running
+
+
+func set_batch_running(running: bool) -> void:
+	_batch_running = running
+	if running:
+		batch_panel.visible = true
+	batch_count_spin.editable = not running
+	batch_seed_spin.editable = not running
+	batch_start_button.disabled = false
+	batch_start_button.text = tr("BATCH_CANCEL") if running else tr("BATCH_START")
+
+
+func set_batch_status(key: String, args: Dictionary = {}) -> void:
+	_batch_status_key = key
+	_batch_status_args = args.duplicate(true)
+	_refresh_batch_status()
+
+
+func set_batch_progress(completed: int, total: int, seed: int, status: String) -> void:
+	var status_key: String = "BATCH_PROGRESS_GENERATING"
+	match status:
+		"exporting": status_key = "BATCH_PROGRESS_EXPORTING"
+		"complete": status_key = "BATCH_PROGRESS_COMPLETE"
+		"integrity_fail": status_key = "BATCH_PROGRESS_INTEGRITY_FAIL"
+		"failed": status_key = "BATCH_PROGRESS_FAILED"
+	set_batch_status(status_key, {
+		"completed": completed,
+		"total": total,
+		"seed": seed,
+	})
+
+
+func set_batch_completed(report: Dictionary) -> void:
+	set_batch_status("BATCH_RESULT", {
+		"successful": int(report.get("successful", 0)),
+		"completed": int(report.get("completed", 0)),
+		"report": str(report.get("report_path", "")),
+	})
+
+
+func _refresh_batch_status() -> void:
+	if batch_status_label == null:
+		return
+	batch_status_label.text = tr(_batch_status_key).format(_batch_status_args)
 
 
 func set_save_planet_enabled(enabled: bool) -> void:

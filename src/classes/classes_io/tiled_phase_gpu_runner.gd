@@ -68,8 +68,7 @@ func generate_terrain(descriptor: Dictionary, cancel_token: GenerationCancelToke
 	ubo.resize(48)
 	_encode_common_absolute(ubo, descriptor)
 	ubo.encode_float(32, float(params.get("sea_level", 0.0)))
-	var terrain_scale := float(params.get("terrain_scale", 1.0))
-	if is_zero_approx(terrain_scale): terrain_scale = 1.0
+	var terrain_scale := float(params.get("terrain_scale", 0.0))
 	ubo.encode_float(36, terrain_scale)
 	ubo.encode_float(40, float(params.get("planet_radius", 150.0)))
 	ubo.encode_float(44, 0.0)

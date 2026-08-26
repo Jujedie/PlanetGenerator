@@ -75,6 +75,7 @@ void main() {
     float detail = smooth_noise(g, ridge_scale, 12u);
     float fine = smooth_noise(g, detail_scale, 13u);
     float ridge = pow(1.0 - abs(detail * 2.0 - 1.0), 3.0);
+    float uplift_noise = smooth_noise(g, macro_scale, 14u);
     float height = (continent - 0.505) * 9200.0;
     height += (macro - 0.5) * 2600.0;
     height += (ridge - 0.35) * 2100.0;
@@ -86,8 +87,10 @@ void main() {
     } else if (params.planet_type == 5u) {
         height *= 0.82;
     }
-    float scale = max(params.terrain_scale, 0.05);
-    imageStore(height_out, p, vec4(height * scale, 0.0, 0.0, 0.0));
+    // terrain_scale is the UI's additional elevation in metres, matching the
+    // monolithic base_elevation shader. It must not multiply the whole terrain.
+    height += clamp(uplift_noise, 0.0, 1.0) * max(params.terrain_scale, 0.0) * 0.4;
+    imageStore(height_out, p, vec4(height, 0.0, 0.0, 0.0));
 
     int plate_scale = max(int(params.global_width) / 32, 8);
     ivec2 coarse = ivec2(g.x / plate_scale, g.y / plate_scale);

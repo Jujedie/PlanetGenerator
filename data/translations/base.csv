@@ -307,3 +307,19 @@ TEMPLATE_VENUS_LIKE,Venus-like,Type Vénus,Venusähnlich
 TEMPLATE_HIGH_TECTONICS,High Tectonics,Forte tectonique,Starke Tektonik
 TEMPLATE_LOW_RELIEF,Low Relief,Faible relief,Geringes Relief
 TEMPLATE_MOUNTAIN_WORLD,Mountain World,Monde montagneux,Gebirgswelt
+BATCH_BUTTON,Batch,Batch,Stapel
+BATCH_TITLE,BATCH / BENCHMARK,BATCH / BENCHMARK,STAPEL / BENCHMARK
+BATCH_COUNT,Planets,Planètes,Planeten
+BATCH_FIRST_SEED,First seed,Première graine,Erster Seed
+BATCH_START,Start batch,Lancer le batch,Stapel starten
+BATCH_CANCEL,Cancel batch,Annuler le batch,Stapel abbrechen
+BATCH_READY,Ready,Prêt,Bereit
+BATCH_STARTING,Starting batch…,Démarrage du batch…,Stapel wird gestartet…
+BATCH_START_FAILED,Unable to start batch.,Impossible de lancer le batch.,Stapel konnte nicht gestartet werden.
+BATCH_CANCELLING,Cancelling after the current safe phase…,Annulation à la prochaine phase sûre…,Abbruch nach der aktuellen sicheren Phase…
+BATCH_PROGRESS_GENERATING,{completed}/{total} • seed {seed} • generating,{completed}/{total} • graine {seed} • génération,{completed}/{total} • Seed {seed} • Generierung
+BATCH_PROGRESS_EXPORTING,{completed}/{total} • seed {seed} • exporting,{completed}/{total} • graine {seed} • export,{completed}/{total} • Seed {seed} • Export
+BATCH_PROGRESS_COMPLETE,{completed}/{total} • seed {seed} • complete,{completed}/{total} • graine {seed} • terminée,{completed}/{total} • Seed {seed} • abgeschlossen
+BATCH_PROGRESS_INTEGRITY_FAIL,{completed}/{total} • seed {seed} • integrity failed,{completed}/{total} • graine {seed} • intégrité échouée,{completed}/{total} • Seed {seed} • Integrität fehlgeschlagen
+BATCH_PROGRESS_FAILED,{completed}/{total} • seed {seed} • failed,{completed}/{total} • graine {seed} • échec,{completed}/{total} • Seed {seed} • fehlgeschlagen
+BATCH_RESULT,{successful}/{completed} successful • report: {report},{successful}/{completed} réussies • rapport : {report},{successful}/{completed} erfolgreich • Bericht: {report}
