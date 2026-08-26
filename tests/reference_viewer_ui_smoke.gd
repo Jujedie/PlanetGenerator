@@ -33,6 +33,15 @@ func _ready() -> void:
 	assert(parameter_layer != null and parameter_layer.visible)
 	assert(parameter_layer.template_select.custom_minimum_size.y >= 44.0)
 	assert(parameter_layer.template_select.get_popup().get_theme_font_size("font_size") >= 21)
+	var parameter_controls := parameter_layer.get("_controls") as Dictionary
+	var seed_spin := parameter_controls.get("seed") as SpinBox
+	var name_edit := parameter_controls.get("planet_name") as LineEdit
+	assert(seed_spin != null and seed_spin.get_theme_icon("updown") != null)
+	assert(seed_spin.get_line_edit().get_theme_font_size("font_size") >= 20)
+	assert(name_edit != null and name_edit.get_theme_font_size("font_size") >= 20)
+	assert(name_edit.get_theme_stylebox("focus").get_border_width(SIDE_LEFT) >= 2)
+	assert(parameter_layer.find_child("RandomSeedButton", true, false) != null)
+	assert(parameter_layer.find_child("RandomNameButton", true, false) != null)
 	master.call("_show_viewer_workspace")
 	assert(viewer_layer.visible and not parameter_layer.visible)
 

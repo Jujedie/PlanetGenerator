@@ -60,6 +60,8 @@ var _value_labels: Dictionary = {}
 var _category_buttons: Dictionary = {}
 var _category_bodies: Dictionary = {}
 var _option_definitions: Dictionary = {}
+var _spinbox_arrows_icon: Texture2D
+var _refresh_icon: Texture2D
 var _batch_running: bool = false
 var _batch_status_key: String = "BATCH_READY"
 var _batch_status_args: Dictionary = {}
@@ -140,13 +142,74 @@ func _flag_style(texture_path: String) -> StyleBoxTexture:
 func _style_line_edit(edit: LineEdit) -> void:
 	edit.custom_minimum_size.y = 40
 	edit.add_theme_color_override("font_color", UI_TEXT_BRIGHT)
+	edit.add_theme_color_override("font_selected_color", UI_TEXT_BRIGHT)
+	edit.add_theme_color_override("font_placeholder_color", Color(0.53, 0.57, 0.58, 1.0))
+	edit.add_theme_color_override("font_uneditable_color", UI_MUTED)
 	edit.add_theme_color_override("caret_color", UI_AMBER_BRIGHT)
 	edit.add_theme_color_override("selection_color", Color(0.42, 0.28, 0.0, 1.0))
 	edit.add_theme_font_size_override("font_size", 20)
-	var style := load("res://data/styles/lineEdit.tres") as StyleBox
-	if style != null:
-		edit.add_theme_stylebox_override("normal", style)
-	edit.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	edit.add_theme_stylebox_override("normal", _panel_style(Color(0.055, 0.065, 0.07, 1.0), UI_AMBER, 1, 8.0))
+	edit.add_theme_stylebox_override("focus", _panel_style(Color(0.035, 0.045, 0.05, 1.0), UI_AMBER_BRIGHT, 2, 8.0))
+	edit.add_theme_stylebox_override("read_only", _panel_style(Color(0.045, 0.052, 0.056, 1.0), UI_BORDER, 1, 8.0))
+
+
+func _style_spinbox(spin: SpinBox) -> void:
+	_style_line_edit(spin.get_line_edit())
+	if _spinbox_arrows_icon == null:
+		_spinbox_arrows_icon = _make_spinbox_arrows_icon()
+	for icon_name in ["updown", "updown_hover", "updown_pressed", "updown_disabled"]:
+		spin.add_theme_icon_override(icon_name, _spinbox_arrows_icon)
+
+
+func _style_refresh_button(button: Button, accessible_name: String) -> void:
+	style_button(button, true)
+	if _refresh_icon == null:
+		_refresh_icon = _make_refresh_icon()
+	button.text = ""
+	button.tooltip_text = accessible_name
+	button.custom_minimum_size = Vector2(46, 40)
+	button.icon = _refresh_icon
+	button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	button.add_theme_constant_override("icon_max_width", 20)
+	button.add_theme_color_override("icon_normal_color", UI_AMBER_BRIGHT)
+	button.add_theme_color_override("icon_hover_color", UI_DARK)
+	button.add_theme_color_override("icon_pressed_color", UI_DARK)
+	button.add_theme_color_override("icon_disabled_color", UI_MUTED)
+
+
+func _make_spinbox_arrows_icon() -> Texture2D:
+	var image := Image.create(14, 30, false, Image.FORMAT_RGBA8)
+	image.fill(Color.TRANSPARENT)
+	_fill_pixel_rect(image, Rect2i(6, 6, 2, 1), UI_AMBER_BRIGHT)
+	_fill_pixel_rect(image, Rect2i(5, 7, 4, 1), UI_AMBER_BRIGHT)
+	_fill_pixel_rect(image, Rect2i(4, 8, 6, 1), UI_AMBER_BRIGHT)
+	_fill_pixel_rect(image, Rect2i(3, 9, 8, 1), UI_AMBER_BRIGHT)
+	_fill_pixel_rect(image, Rect2i(3, 20, 8, 1), UI_AMBER_BRIGHT)
+	_fill_pixel_rect(image, Rect2i(4, 21, 6, 1), UI_AMBER_BRIGHT)
+	_fill_pixel_rect(image, Rect2i(5, 22, 4, 1), UI_AMBER_BRIGHT)
+	_fill_pixel_rect(image, Rect2i(6, 23, 2, 1), UI_AMBER_BRIGHT)
+	return ImageTexture.create_from_image(image)
+
+
+func _make_refresh_icon() -> Texture2D:
+	var image := Image.create(18, 18, false, Image.FORMAT_RGBA8)
+	image.fill(Color.TRANSPARENT)
+	var white := Color.WHITE
+	_fill_pixel_rect(image, Rect2i(5, 3, 7, 2), white)
+	_fill_pixel_rect(image, Rect2i(3, 5, 2, 7), white)
+	_fill_pixel_rect(image, Rect2i(5, 12, 7, 2), white)
+	_fill_pixel_rect(image, Rect2i(12, 9, 2, 4), white)
+	_fill_pixel_rect(image, Rect2i(11, 4, 5, 2), white)
+	_fill_pixel_rect(image, Rect2i(12, 6, 4, 1), white)
+	_fill_pixel_rect(image, Rect2i(13, 7, 3, 1), white)
+	_fill_pixel_rect(image, Rect2i(14, 8, 2, 1), white)
+	return ImageTexture.create_from_image(image)
+
+
+func _fill_pixel_rect(image: Image, rect: Rect2i, color: Color) -> void:
+	for y in range(rect.position.y, rect.end.y):
+		for x in range(rect.position.x, rect.end.x):
+			image.set_pixel(x, y, color)
 
 
 func _style_option(option: OptionButton) -> void:
@@ -401,7 +464,7 @@ func _build_batch_panel() -> void:
 	batch_count_spin.max_value = 500.0
 	batch_count_spin.step = 1.0
 	batch_count_spin.value = 10.0
-	_style_line_edit(batch_count_spin.get_line_edit())
+	_style_spinbox(batch_count_spin)
 	count_row.add_child(batch_count_spin)
 
 	var seed_row := HBoxContainer.new()
@@ -417,7 +480,7 @@ func _build_batch_panel() -> void:
 	batch_seed_spin.max_value = 2147483647.0
 	batch_seed_spin.step = 1.0
 	batch_seed_spin.value = 1000.0
-	_style_line_edit(batch_seed_spin.get_line_edit())
+	_style_spinbox(batch_seed_spin)
 	seed_row.add_child(batch_seed_spin)
 
 	batch_status_label = Label.new()
@@ -511,10 +574,8 @@ func _create_parameter(definition: Dictionary) -> void:
 			_style_line_edit(edit)
 			hbox.add_child(edit)
 			var random_name_button := Button.new()
-			random_name_button.text = "↻"
-			random_name_button.tooltip_text = "Random name"
-			style_button(random_name_button, true)
-			random_name_button.custom_minimum_size = Vector2(42, 32)
+			random_name_button.name = "RandomNameButton"
+			_style_refresh_button(random_name_button, "Random name")
 			random_name_button.pressed.connect(randomize_name)
 			hbox.add_child(random_name_button)
 			_controls[key] = edit
@@ -529,13 +590,11 @@ func _create_parameter(definition: Dictionary) -> void:
 			spin.max_value = float(definition.get("max", 100.0))
 			spin.step = float(definition.get("step", 1.0))
 			spin.value = float(definition.get("default", 0.0))
-			_style_line_edit(spin.get_line_edit())
+			_style_spinbox(spin)
 			hbox.add_child(spin)
 			var random_seed_button := Button.new()
-			random_seed_button.text = "↻"
-			random_seed_button.tooltip_text = "Random seed"
-			style_button(random_seed_button, true)
-			random_seed_button.custom_minimum_size = Vector2(42, 32)
+			random_seed_button.name = "RandomSeedButton"
+			_style_refresh_button(random_seed_button, "Random seed")
 			random_seed_button.pressed.connect(randomize_seed)
 			hbox.add_child(random_seed_button)
 			_controls[key] = spin
