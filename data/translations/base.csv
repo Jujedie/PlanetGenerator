@@ -292,3 +292,18 @@ MAP_VIEWER_INSPECT_VALUE,"Cell {x},{y} • Lon {lon}° Lat {lat}°
 RGBA {r} / {g} / {b} / {a}","Cellule {x},{y} • Lon {lon}° Lat {lat}°
 RGBA {r} / {g} / {b} / {a}","Zelle {x},{y} • Lon {lon}° Lat {lat}°
 RGBA {r} / {g} / {b} / {a}"
+TEMPLATE_APPLY,Apply template,Appliquer modèle,Vorlage anwenden
+TEMPLATE_SMART_RANDOM,Smart random,Aléatoire cohérent,Intelligenter Zufall
+TEMPLATE_TOOLTIP,Choose a coherent starting parameter set.,Choisir un ensemble cohérent de paramètres de départ.,Einen kohärenten Startparametersatz auswählen.
+TEMPLATE_SMART_RANDOM_TOOLTIP,Pick a coherent template then apply modest correlated variation.,Choisit un modèle cohérent puis applique une variation corrélée modérée.,Wählt eine kohärente Vorlage und variiert ihre Werte moderat und zusammenhängend.
+TEMPLATE_EARTH_LIKE,Earth-like,Type Terre,Erdähnlich
+TEMPLATE_ARCHIPELAGO,Archipelago,Archipel,Archipel
+TEMPLATE_SUPERCONTINENT,Supercontinent,Supercontinent,Superkontinent
+TEMPLATE_OCEAN_WORLD,Ocean World,Monde océanique,Ozeanwelt
+TEMPLATE_DRY_WORLD,Dry World,Monde aride,Trockene Welt
+TEMPLATE_FROZEN_WORLD,Frozen World,Monde gelé,Eiswelt
+TEMPLATE_MARS_LIKE,Mars-like,Type Mars,Marsähnlich
+TEMPLATE_VENUS_LIKE,Venus-like,Type Vénus,Venusähnlich
+TEMPLATE_HIGH_TECTONICS,High Tectonics,Forte tectonique,Starke Tektonik
+TEMPLATE_LOW_RELIEF,Low Relief,Faible relief,Geringes Relief
+TEMPLATE_MOUNTAIN_WORLD,Mountain World,Monde montagneux,Gebirgswelt

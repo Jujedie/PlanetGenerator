@@ -18,6 +18,7 @@ const UI_BORDER := Color(0.19, 0.23, 0.24, 1.0)
 const UI_TEXT := Color(0.78, 0.81, 0.82, 1.0)
 const UI_MUTED := Color(0.39, 0.43, 0.44, 1.0)
 const PARAMETER_SCHEMA := preload("res://src/scenes/planet_parameter_schema.gd")
+const PLANET_TEMPLATES := preload("res://src/classes/classes_io/planet_templates.gd")
 
 var root: Control
 var title_label: Label
@@ -37,6 +38,9 @@ var german_button: Button
 var generate_button: Button
 var random_button: Button
 var save_planet_button: Button
+var template_select: OptionButton
+var template_apply_button: Button
+var smart_random_button: Button
 
 var _parameter_tree: VBoxContainer
 var _controls: Dictionary = {}
@@ -87,6 +91,35 @@ func style_button(button: Button, compact: bool = false, primary: bool = false) 
 	button.add_theme_stylebox_override("pressed", _panel_style(UI_AMBER, UI_AMBER, 2, 4.0))
 	button.add_theme_stylebox_override("disabled", _panel_style(Color(0.05, 0.06, 0.065, 1.0), UI_BORDER, 1, 4.0))
 	button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+
+
+func _style_language_button(
+	button: Button,
+	normal_path: String,
+	hover_path: String,
+	pressed_path: String,
+	tooltip: String
+) -> void:
+	button.focus_mode = Control.FOCUS_NONE
+	button.text = ""
+	button.tooltip_text = tooltip
+	var normal_texture: Texture2D = load(normal_path) as Texture2D
+	if normal_texture != null:
+		button.custom_minimum_size = Vector2(normal_texture.get_width(), normal_texture.get_height()) * 0.8
+	else:
+		button.custom_minimum_size = Vector2(56, 40)
+	button.add_theme_stylebox_override("normal", _flag_style(normal_path))
+	button.add_theme_stylebox_override("hover", _flag_style(hover_path))
+	button.add_theme_stylebox_override("pressed", _flag_style(pressed_path))
+	button.add_theme_stylebox_override("disabled", _flag_style(normal_path))
+	button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+
+
+func _flag_style(texture_path: String) -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	var flag_texture: Texture2D = load(texture_path) as Texture2D
+	style.texture = flag_texture
+	return style
 
 
 func _style_line_edit(edit: LineEdit) -> void:
@@ -154,19 +187,31 @@ func _build_interface() -> void:
 	style_button(viewer_button, true)
 	header_row.add_child(viewer_button)
 	french_button = Button.new()
-	french_button.text = "FR"
-	style_button(french_button, true)
-	french_button.custom_minimum_size.x = 52
+	_style_language_button(
+		french_button,
+		"res://data/img/UI/Flags/fra.png",
+		"res://data/img/UI/Flags/fra_hover.png",
+		"res://data/img/UI/Flags/fra_pressed.png",
+		"Français"
+	)
 	header_row.add_child(french_button)
 	english_button = Button.new()
-	english_button.text = "EN"
-	style_button(english_button, true)
-	english_button.custom_minimum_size.x = 52
+	_style_language_button(
+		english_button,
+		"res://data/img/UI/Flags/can.png",
+		"res://data/img/UI/Flags/can_hover.png",
+		"res://data/img/UI/Flags/can_pressed.png",
+		"English"
+	)
 	header_row.add_child(english_button)
 	german_button = Button.new()
-	german_button.text = "DE"
-	style_button(german_button, true)
-	german_button.custom_minimum_size.x = 52
+	_style_language_button(
+		german_button,
+		"res://data/img/UI/Flags/deu.png",
+		"res://data/img/UI/Flags/deu_hover.png",
+		"res://data/img/UI/Flags/deu_pressed.png",
+		"Deutsch"
+	)
 	header_row.add_child(german_button)
 	quit_button = Button.new()
 	style_button(quit_button, true)
@@ -228,6 +273,21 @@ func _build_interface() -> void:
 	random_button.name = "RandomButton"
 	style_button(random_button)
 	action_row.add_child(random_button)
+	template_select = OptionButton.new()
+	template_select.name = "PlanetTemplateSelect"
+	template_select.custom_minimum_size = Vector2(220, 40)
+	_style_option(template_select)
+	action_row.add_child(template_select)
+	template_apply_button = Button.new()
+	template_apply_button.name = "ApplyTemplateButton"
+	style_button(template_apply_button, true)
+	template_apply_button.custom_minimum_size.x = 135
+	action_row.add_child(template_apply_button)
+	smart_random_button = Button.new()
+	smart_random_button.name = "SmartRandomButton"
+	style_button(smart_random_button, true)
+	smart_random_button.custom_minimum_size.x = 150
+	action_row.add_child(smart_random_button)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	action_row.add_child(spacer)
@@ -374,6 +434,8 @@ func _create_parameter(definition: Dictionary) -> void:
 func _connect_actions() -> void:
 	generate_button.pressed.connect(func() -> void: generate_requested.emit())
 	random_button.pressed.connect(randomize_parameters)
+	template_apply_button.pressed.connect(apply_selected_template)
+	smart_random_button.pressed.connect(smart_randomize_parameters)
 	save_planet_button.pressed.connect(func() -> void: save_planet_requested.emit())
 	load_preset_button.pressed.connect(func() -> void: load_preset_requested.emit())
 	save_preset_button.pressed.connect(func() -> void: save_preset_requested.emit())
@@ -464,6 +526,52 @@ func apply_values(values: Dictionary) -> void:
 	refresh_translations()
 
 
+func apply_selected_template() -> void:
+	if template_select == null or template_select.selected < 0:
+		return
+	var template_name: String = str(template_select.get_item_metadata(template_select.selected))
+	if template_name.is_empty():
+		return
+	apply_values(PLANET_TEMPLATES.values(template_name))
+
+
+func smart_randomize_parameters() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var values: Dictionary = PLANET_TEMPLATES.smart_random(rng)
+	var template_name: String = str(values.get("template_name", PLANET_TEMPLATES.ORDER[0]))
+	values.erase("template_name")
+	_select_template_by_name(template_name)
+	apply_values(values)
+	randomize_seed()
+	randomize_name()
+
+
+func _refresh_template_items() -> void:
+	if template_select == null:
+		return
+	var selected_name := ""
+	if template_select.selected >= 0:
+		selected_name = str(template_select.get_item_metadata(template_select.selected))
+	template_select.clear()
+	for template_name in PLANET_TEMPLATES.ORDER:
+		var stable_name: String = str(template_name)
+		template_select.add_item(tr(PLANET_TEMPLATES.translation_key(stable_name)))
+		template_select.set_item_metadata(template_select.item_count - 1, stable_name)
+	if selected_name.is_empty():
+		selected_name = str(PLANET_TEMPLATES.ORDER[0])
+	_select_template_by_name(selected_name)
+
+
+func _select_template_by_name(template_name: String) -> void:
+	if template_select == null:
+		return
+	for index in range(template_select.item_count):
+		if str(template_select.get_item_metadata(index)) == template_name:
+			template_select.select(index)
+			return
+
+
 func randomize_parameters() -> void:
 	randomize()
 	randomize_name()
@@ -510,7 +618,12 @@ func refresh_translations() -> void:
 	quit_button.text = tr("LEAVE")
 	generate_button.text = tr("GENERER")
 	random_button.text = tr("RANDOMISE")
+	template_apply_button.text = tr("TEMPLATE_APPLY")
+	smart_random_button.text = tr("TEMPLATE_SMART_RANDOM")
+	template_select.tooltip_text = tr("TEMPLATE_TOOLTIP")
+	smart_random_button.tooltip_text = tr("TEMPLATE_SMART_RANDOM_TOOLTIP")
 	save_planet_button.text = tr("SAUVEGARDER")
+	_refresh_template_items()
 
 	for category in PARAMETER_SCHEMA.CATEGORY_ORDER:
 		var category_key := str(category)
@@ -527,6 +640,9 @@ func refresh_translations() -> void:
 func set_actions_enabled(enabled: bool) -> void:
 	generate_button.disabled = not enabled
 	random_button.disabled = not enabled
+	template_select.disabled = not enabled
+	template_apply_button.disabled = not enabled
+	smart_random_button.disabled = not enabled
 	load_preset_button.disabled = not enabled
 	save_preset_button.disabled = not enabled
 	viewer_button.disabled = not enabled

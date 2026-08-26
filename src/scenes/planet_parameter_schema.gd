@@ -48,7 +48,7 @@ const DEFINITIONS := [
 	{"key":"crater_ejecta_decay", "category":"CRATER", "kind":"slider", "label":"CRATER_EJECTA_DECAY", "default":3.0, "min":0.5, "max":10.0, "step":0.5},
 	{"key":"crater_azimuth_var", "category":"CRATER", "kind":"slider", "label":"CRATER_AZIMUTH_VAR", "default":0.3, "min":0.1, "max":1.0, "step":0.1},
 
-	{"key":"ocean_ratio", "category":"EAU", "kind":"slider", "label":"OCEAN_RATIO", "unit":"%", "default":55.0, "min":40.0, "max":90.0, "step":0.1},
+	{"key":"ocean_ratio", "category":"EAU", "kind":"slider", "label":"OCEAN_RATIO", "unit":"%", "default":55.0, "min":0.0, "max":100.0, "step":0.1},
 	{"key":"ice_probability", "category":"EAU", "kind":"slider", "label":"ICE_PROBABILITY", "unit":"%", "default":0.9, "min":0.0, "max":1.0, "step":0.1},
 	{"key":"global_humidity", "category":"EAU", "kind":"slider", "label":"GLOBAL_HUMIDITY", "unit":"%", "default":0.5, "min":0.0, "max":1.0, "step":0.1},
 	{"key":"sea_level", "category":"EAU", "kind":"slider", "label":"SEA_LEVEL", "unit":" m", "default":0.0, "min":-5000.0, "max":5000.0, "step":50.0},
