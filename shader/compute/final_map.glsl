@@ -273,7 +273,7 @@ void main() {
     float relative_height = elevation - params.sea_level;
     
     bool is_water = water.a > 0.0;  // L'eau a alpha > 0 dans water_colored
-    bool is_banquise = ice.a > 0.0;
+    bool is_banquise = ice.a > 0.025;
     bool is_river = (river_bid != 0xFFFFFFFFu) &&
         (flux >= params.river_threshold);
     
@@ -340,7 +340,9 @@ void main() {
             ice.rgb,
             params.atmosphere_type == 2u ? 0.25 : 0.65
         );
-        float ice_opacity = clamp(0.42 + ice.a * 0.38, 0.55, 0.78);
+        // ice.a encode désormais la concentration. Une lisière peu compacte
+        // doit laisser voir l'océan, tandis que le pack ancien reste opaque.
+        float ice_opacity = smoothstep(0.025, 0.92, ice.a) * 0.84;
         color = mix(color, banquise_color, ice_opacity);
     }
     

@@ -1931,7 +1931,7 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 					var is_water: bool = (
 						has_water_data and water_data[pixel_idx * 4 + 3] > 0
 					) or (not has_water_data and elevation < 0.0)
-					var is_ice: bool = has_ice_data and ice_data[pixel_idx * 4 + 3] > 0
+					var is_ice: bool = has_ice_data and ice_data[pixel_idx * 4 + 3] > 6
 					
 					# Ne jamais assombrir la banquise déjà composée par le GPU :
 					# cela détruisait sa teinte ivoire dans final_map.png.
@@ -2186,4 +2186,3 @@ func _paint_hierarchy_rows(data: PackedByteArray, output: PackedByteArray,
 			output[off + 1] = roundi(c.g * 255.0)
 			output[off + 2] = roundi(c.b * 255.0)
 			output[off + 3] = roundi(c.a * 255.0)
-
