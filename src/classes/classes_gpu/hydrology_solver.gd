@@ -21,6 +21,10 @@ const NEIGHBORS: Array[Vector2i] = [
 	Vector2i(-1, 0),                         Vector2i(1, 0),
 	Vector2i(-1, 1),  Vector2i(0, 1),  Vector2i(1, 1),
 ]
+# Integer D8 offsets used in the hot loops. Keeping these separate avoids
+# allocating/accessing Vector2i values millions of times during hydrology.
+const NEIGHBOR_DX: Array[int] = [-1, 0, 1, -1, 1, -1, 0, 1]
+const NEIGHBOR_DY: Array[int] = [-1, -1, -1, 0, 0, 1, 1, 1]
 
 ## Builds a globally converged filled surface, identifies lakes from basin
 ## depth, removes sub-resolution lake components, and classifies complete water
@@ -37,6 +41,7 @@ func solve_surface_and_water(
 	saltwater_min_cells: int,
 	atmosphere_type: int,
 ) -> Dictionary:
+	var solve_start_usec: int = Time.get_ticks_usec()
 	var pixel_count := width * height
 	if (
 		width <= 0
@@ -48,69 +53,126 @@ func solve_surface_and_water(
 		push_error("[Hydrology] Invalid input sizes for surface solve")
 		return {}
 
+	# Only the original and filled surfaces are required. The previous
+	# routing_surface duplicated another float per pixel solely to manufacture a
+	# downhill epsilon. routing_parent already is a tree by construction, so it
+	# cannot contain a cycle and needs no synthetic elevation gradient.
 	var original := PackedFloat32Array()
 	var filled := PackedFloat32Array()
-	var routing_surface := PackedFloat32Array()
 	var routing_parent := PackedInt32Array()
-	var temperatures := PackedFloat32Array()
 	original.resize(pixel_count)
 	filled.resize(pixel_count)
-	routing_surface.resize(pixel_count)
 	routing_parent.resize(pixel_count)
 	routing_parent.fill(-1)
-	temperatures.resize(pixel_count)
 
 	for index in range(pixel_count):
-		var byte_offset := index * 16
-		var elevation := geo_data.decode_float(byte_offset)
+		var elevation := geo_data.decode_float(index * 16)
 		original[index] = elevation
 		filled[index] = elevation
-		routing_surface[index] = elevation
-		temperatures[index] = climate_data.decode_float(byte_offset)
+	var decode_ms: float = float(Time.get_ticks_usec() - solve_start_usec) / 1000.0
 
+	var flood_start_usec: int = Time.get_ticks_usec()
 	var visited := PackedByteArray()
 	visited.resize(pixel_count)
 	visited.fill(0)
-	var heap: Array[int] = []
+	var visited_count := 0
 
-	# Oceans and the two polar rows are the global outlets. X remains periodic;
-	# there are deliberately no artificial outlets at the left/right seam.
+	# Mark all global outlets first. Initial ocean cells are independent outlets,
+	# and the polar rows deliberately remain open. Unlike the old implementation,
+	# we do NOT insert every ocean pixel into the heap: an interior water pixel
+	# can never discover land because all water pixels are already marked visited.
 	for index in range(pixel_count):
 		var y := index / width
 		if initial_water_mask[index] > WATER_NONE or y < 2 or y >= height - 2:
 			visited[index] = 1
+			visited_count += 1
+
+	# Only outlet cells touching an unvisited cell need to enter the priority
+	# queue. On an Earth-like planet this changes the initial heap from tens or
+	# hundreds of thousands of ocean pixels to roughly the shoreline length.
+	var heap: Array[int] = []
+	for index in range(pixel_count):
+		if visited[index] == 0:
+			continue
+		var x := index % width
+		var y := index / width
+		var is_frontier := false
+		for direction in range(8):
+			var nx := x + NEIGHBOR_DX[direction]
+			if nx < 0:
+				nx += width
+			elif nx >= width:
+				nx -= width
+			var ny := y + NEIGHBOR_DY[direction]
+			if ny < 0:
+				ny = 0
+			elif ny >= height:
+				ny = height - 1
+			if visited[ny * width + nx] == 0:
+				is_frontier = true
+				break
+		if is_frontier:
 			_heap_push(heap, filled, index)
 
-	var visited_count := heap.size()
-	while not heap.is_empty():
-		var current := _heap_pop(heap, filled)
+	var outlet_frontier_cells := heap.size()
+
+	# Optimized Priority-Flood (Barnes-style pit queue): cells lying at or below
+	# the current spill elevation belong to the same depression and can be
+	# processed FIFO. Only terrain rising above the spill level needs O(log N)
+	# heap work. The resulting filled surface is still exact and deterministic.
+	var pit_queue: Array[int] = []
+	var pit_head := 0
+	var heap_pop_count := 0
+	var pit_pop_count := 0
+	while not heap.is_empty() or pit_head < pit_queue.size():
+		var current: int
+		if pit_head < pit_queue.size():
+			current = pit_queue[pit_head]
+			pit_head += 1
+			pit_pop_count += 1
+		else:
+			# Drop already-consumed pit entries before returning to the heap so a
+			# huge depression does not remain referenced for the rest of the solve.
+			if not pit_queue.is_empty():
+				pit_queue.clear()
+				pit_head = 0
+			current = _heap_pop(heap, filled)
+			heap_pop_count += 1
+
 		var current_level := filled[current]
-		var current_routing_level := routing_surface[current]
-		for direction in range(NEIGHBORS.size()):
-			var neighbor := _neighbor_index(current, direction, width, height)
+		var current_x := current % width
+		var current_y := current / width
+		for direction in range(8):
+			var nx := current_x + NEIGHBOR_DX[direction]
+			if nx < 0:
+				nx += width
+			elif nx >= width:
+				nx -= width
+			var ny := current_y + NEIGHBOR_DY[direction]
+			if ny < 0:
+				ny = 0
+			elif ny >= height:
+				ny = height - 1
+			var neighbor := ny * width + nx
 			if visited[neighbor] != 0:
 				continue
 
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
-			# `filled` is the true spill surface used for lake depth. A separate
-			# routing surface adds the smallest reliably representable downhill
-			# gradient, avoiding cycles without inflating calculated lake depth.
-			filled[neighbor] = maxf(original[neighbor], current_level)
-			var routing_epsilon := maxf(
-				MIN_ROUTING_EPSILON_M,
-				absf(current_routing_level) * 0.000001,
-			)
-			routing_surface[neighbor] = maxf(
-				original[neighbor],
-				current_routing_level + routing_epsilon,
-			)
-			_heap_push(heap, filled, neighbor)
+			var neighbor_level := original[neighbor]
+			if neighbor_level <= current_level:
+				filled[neighbor] = current_level
+				pit_queue.append(neighbor)
+			else:
+				filled[neighbor] = neighbor_level
+				_heap_push(heap, filled, neighbor)
 
 	if visited_count != pixel_count:
 		push_error("[Hydrology] Priority flood did not visit the complete map")
+	var priority_flood_ms: float = float(Time.get_ticks_usec() - flood_start_usec) / 1000.0
 
+	var candidate_start_usec: int = Time.get_ticks_usec()
 	var candidate_mask := PackedByteArray()
 	candidate_mask.resize(pixel_count)
 	candidate_mask.fill(0)
@@ -123,10 +185,10 @@ func solve_surface_and_water(
 		if fill_depth > MIN_ROUTING_EPSILON_M:
 			filled_cell_count += 1
 
-		var liquid_temperature := (
-			temperatures[index] >= WATER_MIN_TEMP
-			and temperatures[index] <= WATER_MAX_TEMP
-		)
+		# Decode temperature only here instead of storing a second full-size float
+		# array during the initial surface pass.
+		var temperature := climate_data.decode_float(index * 16)
+		var liquid_temperature := temperature >= WATER_MIN_TEMP and temperature <= WATER_MAX_TEMP
 		if (
 			initial_water_mask[index] == WATER_NONE
 			and liquid_temperature
@@ -134,8 +196,10 @@ func solve_surface_and_water(
 		):
 			candidate_mask[index] = 1
 			lake_candidate_cells += 1
+	var candidate_ms: float = float(Time.get_ticks_usec() - candidate_start_usec) / 1000.0
 
 	var water_mask := initial_water_mask.duplicate()
+	var lake_components_start_usec: int = Time.get_ticks_usec()
 	var lake_component_stats := _retain_lake_components(
 		candidate_mask,
 		water_mask,
@@ -143,6 +207,9 @@ func solve_surface_and_water(
 		height,
 		max(min_lake_cells, 1),
 	)
+	var lake_components_ms: float = float(Time.get_ticks_usec() - lake_components_start_usec) / 1000.0
+
+	var water_components_start_usec: int = Time.get_ticks_usec()
 	var water_stats := _classify_water_components(
 		water_mask,
 		original,
@@ -151,12 +218,32 @@ func solve_surface_and_water(
 		sea_level,
 		max(saltwater_min_cells, 1),
 	)
+	var water_components_ms: float = float(Time.get_ticks_usec() - water_components_start_usec) / 1000.0
+
+	var flow_start_usec: int = Time.get_ticks_usec()
 	var flow_result := _build_flow_directions(routing_parent, water_mask, width, height)
+	var flow_direction_ms: float = float(Time.get_ticks_usec() - flow_start_usec) / 1000.0
+
+	var color_start_usec: int = Time.get_ticks_usec()
+	var water_colored := _build_water_colors(water_mask, atmosphere_type)
+	var water_color_ms: float = float(Time.get_ticks_usec() - color_start_usec) / 1000.0
+	var surface_total_ms: float = float(Time.get_ticks_usec() - solve_start_usec) / 1000.0
 
 	var stats := {
 		"priority_flood_visited_cells": visited_count,
+		"priority_flood_outlet_frontier_cells": outlet_frontier_cells,
+		"priority_flood_heap_pops": heap_pop_count,
+		"priority_flood_pit_pops": pit_pop_count,
 		"depression_filled_cells": filled_cell_count,
 		"lake_candidate_cells": lake_candidate_cells,
+		"surface_decode_ms": decode_ms,
+		"priority_flood_ms": priority_flood_ms,
+		"lake_candidate_ms": candidate_ms,
+		"lake_components_ms": lake_components_ms,
+		"water_components_ms": water_components_ms,
+		"flow_direction_ms": flow_direction_ms,
+		"water_color_ms": water_color_ms,
+		"surface_total_ms": surface_total_ms,
 	}
 	stats.merge(lake_component_stats, true)
 	stats.merge(water_stats, true)
@@ -164,7 +251,7 @@ func solve_surface_and_water(
 
 	return {
 		"water_mask": water_mask,
-		"water_colored": _build_water_colors(water_mask, atmosphere_type),
+		"water_colored": water_colored,
 		"flow_direction": flow_result["flow_direction"],
 		"stats": stats,
 	}
@@ -462,8 +549,18 @@ func _direction_between_neighbors(index: int, target: int, width: int) -> int:
 		dx = -1
 	elif dx < -1:
 		dx = 1
-	var offset := Vector2i(dx, target_y - y)
-	return NEIGHBORS.find(offset)
+	var dy := target_y - y
+	if dy == -1:
+		return dx + 1 if dx >= -1 and dx <= 1 else -1
+	if dy == 0:
+		if dx == -1:
+			return 3
+		if dx == 1:
+			return 4
+		return -1
+	if dy == 1:
+		return dx + 6 if dx >= -1 and dx <= 1 else -1
+	return -1
 
 func _saltwater_color(atmosphere_type: int) -> Array[int]:
 	match atmosphere_type:
@@ -482,9 +579,16 @@ func _freshwater_color(atmosphere_type: int) -> Array[int]:
 func _neighbor_index(index: int, direction: int, width: int, height: int) -> int:
 	var x := index % width
 	var y := index / width
-	var offset := NEIGHBORS[direction]
-	var nx := posmod(x + offset.x, width)
-	var ny := clampi(y + offset.y, 0, height - 1)
+	var nx := x + NEIGHBOR_DX[direction]
+	if nx < 0:
+		nx += width
+	elif nx >= width:
+		nx -= width
+	var ny := y + NEIGHBOR_DY[direction]
+	if ny < 0:
+		ny = 0
+	elif ny >= height:
+		ny = height - 1
 	return ny * width + nx
 
 func _heap_push(heap: Array[int], priorities: PackedFloat32Array, index: int) -> void:
@@ -492,11 +596,14 @@ func _heap_push(heap: Array[int], priorities: PackedFloat32Array, index: int) ->
 	var position := heap.size() - 1
 	while position > 0:
 		var parent := (position - 1) / 2
-		if not _has_higher_priority(heap[position], heap[parent], priorities):
+		var child_index := heap[position]
+		var parent_index := heap[parent]
+		var child_level := priorities[child_index]
+		var parent_level := priorities[parent_index]
+		if child_level > parent_level or (child_level == parent_level and child_index >= parent_index):
 			break
-		var temporary := heap[parent]
-		heap[parent] = heap[position]
-		heap[position] = temporary
+		heap[parent] = child_index
+		heap[position] = parent_index
 		position = parent
 
 func _heap_pop(heap: Array[int], priorities: PackedFloat32Array) -> int:
@@ -513,18 +620,22 @@ func _heap_pop(heap: Array[int], priorities: PackedFloat32Array) -> int:
 			break
 		var right := left + 1
 		var best := left
-		if right < heap.size() and _has_higher_priority(heap[right], heap[left], priorities):
-			best = right
-		if not _has_higher_priority(heap[best], heap[position], priorities):
+		if right < heap.size():
+			var right_index := heap[right]
+			var left_index := heap[left]
+			var right_level := priorities[right_index]
+			var left_level := priorities[left_index]
+			if right_level < left_level or (right_level == left_level and right_index < left_index):
+				best = right
+
+		var best_index := heap[best]
+		var position_index := heap[position]
+		var best_level := priorities[best_index]
+		var position_level := priorities[position_index]
+		if best_level > position_level or (best_level == position_level and best_index >= position_index):
 			break
-		var temporary := heap[position]
-		heap[position] = heap[best]
-		heap[best] = temporary
+		heap[position] = best_index
+		heap[best] = position_index
 		position = best
 
 	return result
-
-func _has_higher_priority(first: int, second: int, priorities: PackedFloat32Array) -> bool:
-	var first_level := priorities[first]
-	var second_level := priorities[second]
-	return first_level < second_level or (first_level == second_level and first < second)

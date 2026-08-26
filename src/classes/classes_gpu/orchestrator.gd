@@ -2089,6 +2089,18 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	last_hydrology_stats = Dictionary(surface_result["stats"]).duplicate()
 
 	print(
+		"    [Hydrology timing] surface=", snappedf(float(last_hydrology_stats.get("surface_total_ms", 0.0)), 0.01), " ms",
+		" | flood=", snappedf(float(last_hydrology_stats.get("priority_flood_ms", 0.0)), 0.01), " ms",
+		" | lake-components=", snappedf(float(last_hydrology_stats.get("lake_components_ms", 0.0)), 0.01), " ms",
+		" | water-components=", snappedf(float(last_hydrology_stats.get("water_components_ms", 0.0)), 0.01), " ms",
+	)
+	print(
+		"    [Hydrology queue] outlet-frontier=", last_hydrology_stats.get("priority_flood_outlet_frontier_cells", 0),
+		" | heap-pops=", last_hydrology_stats.get("priority_flood_heap_pops", 0),
+		" | pit-pops=", last_hydrology_stats.get("priority_flood_pit_pops", 0),
+	)
+
+	print(
 		"    Lacs conservés: ", last_hydrology_stats.get("lake_components_retained", 0),
 		" | cellules lac supprimées: ", last_hydrology_stats.get("lake_cells_removed", 0),
 		" | composantes eau: ", last_hydrology_stats.get("water_components", 0),
@@ -2105,6 +2117,7 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	# 5. Accumulation topologique exacte. river_iterations n'est volontairement
 	# plus lu : le réseau ne dépend d'aucun compteur de propagation.
 	print("  • Accumulation topologique conservatrice...")
+	var accumulation_start_usec: int = Time.get_ticks_usec()
 	var accumulation_result := solver.accumulate_flow(
 		flow_direction_data,
 		water_mask_data,
@@ -2119,6 +2132,9 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	var accumulated_flux: PackedByteArray = accumulation_result["flux_data"]
 	rd.texture_update(gpu.textures["river_flux"], 0, accumulated_flux)
 	last_hydrology_stats.merge(Dictionary(accumulation_result["stats"]), true)
+	var accumulation_ms: float = float(Time.get_ticks_usec() - accumulation_start_usec) / 1000.0
+	last_hydrology_stats["flow_accumulation_ms"] = accumulation_ms
+	print("    [Hydrology timing] flow-accumulation=", snappedf(accumulation_ms, 0.01), " ms")
 	var max_flux := float(accumulation_result["max_land_flux"])
 	last_hydrology_stats["max_land_flux"] = max_flux
 
