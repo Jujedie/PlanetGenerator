@@ -35,8 +35,9 @@ var _viewer_zoom: float = 1.0
 var _viewer_pan_origin := Vector2.ZERO
 var _viewer_dragging: bool = false
 var _viewer_image_cache: Dictionary = {}
-var _viewer_workspace: ReferenceViewerWorkspace
-var _parameter_workspace: ParameterWorkspace
+var _viewer_shell_layer: CanvasLayer
+var _viewer_shell_root: Control
+var _viewer_return_layer: CanvasLayer
 var _viewer_map_viewport: PanelContainer
 var _viewer_map_frame: Control
 var _viewer_map_texture: TextureRect
@@ -47,15 +48,22 @@ var _viewer_overlay_title_label: Label
 var _viewer_overlay_percent_label: Label
 var _viewer_status_dot: Label
 var _viewer_parameters_button: Button
+var _viewer_return_button: Button
 var _viewer_load_action: Button
 var _viewer_save_action: Button
 var _legacy_map_status_label: Label
 
 # --- Constants ---
-const BASE_PATH_SLIDERS = "ParameterWorkspaceLayer/ParameterWorkspace/ParametersHost/Control_Parameters/SC Parameters/Parameters_tree"
+const BASE_PATH_SLIDERS = "ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"
 const PRESETS_DIR = "user://presets/"
 const SFX_GENERATION_DONE = "res://data/sound/Foley UI E.wav"
 const UI_AMBER := Color(0.92549, 0.619608, 0.0, 1.0)
+const UI_AMBER_BRIGHT := Color(1.0, 0.72, 0.04, 1.0)
+const UI_DARK := Color(0.035, 0.045, 0.05, 1.0)
+const UI_PANEL := Color(0.065, 0.078, 0.082, 0.98)
+const UI_PANEL_ALT := Color(0.09, 0.105, 0.11, 0.98)
+const UI_BORDER := Color(0.19, 0.23, 0.24, 1.0)
+const UI_TEXT := Color(0.78, 0.81, 0.82, 1.0)
 const UI_MUTED := Color(0.39, 0.43, 0.44, 1.0)
 
 const GENERATION_PHASE_TRANSLATION_KEYS := {
@@ -147,10 +155,11 @@ func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute(PRESETS_DIR)
 
 	# 4. UI Initialization
+	maj_labels()
 	_setup_project_loader_ui()
 	_setup_generation_status_ui()
-	_setup_workspace_scenes()
-	maj_labels()
+	_setup_advanced_map_viewer()
+	_setup_reference_viewer_ui()
 
 
 func _ensure_legacy_map_status_label() -> void:
@@ -165,105 +174,350 @@ func _ensure_legacy_map_status_label() -> void:
 	add_child(_legacy_map_status_label)
 
 
-func _setup_workspace_scenes() -> void:
-	_viewer_workspace = preload("res://data/scn/reference_viewer_workspace.tscn").instantiate() as ReferenceViewerWorkspace
-	add_child(_viewer_workspace)
-	_parameter_workspace = preload("res://data/scn/parameter_workspace.tscn").instantiate() as ParameterWorkspace
-	add_child(_parameter_workspace)
+func _pixel_panel_style(
+	background: Color = UI_PANEL,
+	border: Color = UI_BORDER,
+	border_width: int = 1,
+	content_margin: float = 10.0
+) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = background
+	style.border_color = border
+	style.set_border_width_all(border_width)
+	style.content_margin_left = content_margin
+	style.content_margin_top = content_margin
+	style.content_margin_right = content_margin
+	style.content_margin_bottom = content_margin
+	return style
 
-	# Reuse the complete authored parameter tree instead of maintaining a second
-	# copy. Existing signal connections survive the reparenting operation.
-	var legacy_parameters := $"ImageFrame/Control General/Control_Parameters" as MarginContainer
-	legacy_parameters.reparent(_parameter_workspace.parameters_host, false)
-	legacy_parameters.visible = true
-	$ImageFrame.visible = false
 
-	_generation_status_panel = _viewer_workspace.header_panel
-	_generation_phase_label = _viewer_workspace.phase_label
-	_generation_memory_label = _viewer_workspace.memory_label
-	_generation_progress_bar = _viewer_workspace.progress_bar
-	_cancel_generation_button = _viewer_workspace.cancel_button
-	_viewer_status_dot = _viewer_workspace.status_dot
-	_viewer_panel = _viewer_workspace.viewer_panel
-	_viewer_title_label = _viewer_workspace.viewer_title_label
-	_viewer_base_title_label = _viewer_workspace.base_title_label
-	_viewer_base_select = _viewer_workspace.base_select
-	_viewer_overlay_title_label = _viewer_workspace.overlay_title_label
-	_viewer_overlay_select = _viewer_workspace.overlay_select
-	_viewer_overlay_alpha_label = _viewer_workspace.opacity_title_label
-	_viewer_overlay_alpha = _viewer_workspace.opacity_slider
-	_viewer_overlay_percent_label = _viewer_workspace.opacity_percent_label
-	_viewer_zoom_label = _viewer_workspace.zoom_label
-	_viewer_reset_button = _viewer_workspace.reset_button
-	_viewer_inspector_label = _viewer_workspace.inspector_label
-	_viewer_help_label = _viewer_workspace.help_label
-	_viewer_map_viewport = _viewer_workspace.map_viewport
-	_viewer_map_frame = _viewer_workspace.map_canvas
-	_viewer_map_texture = _viewer_workspace.map_texture
-	_viewer_overlay_texture = _viewer_workspace.overlay_texture
-	_viewer_crosshair = _viewer_workspace.crosshair
-	_viewer_empty_label = _viewer_workspace.empty_label
-	_viewer_parameters_button = _viewer_workspace.parameters_button
-	_viewer_load_action = _viewer_workspace.load_button
-	_viewer_save_action = _viewer_workspace.save_button
+func _style_pixel_button(button: Button, compact: bool = false) -> void:
+	button.focus_mode = Control.FOCUS_NONE
+	button.custom_minimum_size = Vector2(118 if compact else 170, 34 if compact else 40)
+	button.add_theme_color_override("font_color", UI_AMBER)
+	button.add_theme_color_override("font_hover_color", UI_DARK)
+	button.add_theme_color_override("font_pressed_color", UI_DARK)
+	button.add_theme_color_override("font_disabled_color", UI_MUTED)
+	button.add_theme_font_size_override("font_size", 18 if compact else 21)
+	button.add_theme_stylebox_override("normal", _pixel_panel_style(Color(0.04, 0.05, 0.055, 1.0), UI_AMBER, 2, 4.0))
+	button.add_theme_stylebox_override("hover", _pixel_panel_style(UI_AMBER_BRIGHT, UI_AMBER_BRIGHT, 2, 4.0))
+	button.add_theme_stylebox_override("pressed", _pixel_panel_style(UI_AMBER, UI_AMBER, 2, 4.0))
+	button.add_theme_stylebox_override("disabled", _pixel_panel_style(Color(0.05, 0.06, 0.065, 1.0), UI_BORDER, 1, 4.0))
+	button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 
+
+func _style_pixel_option(option: OptionButton) -> void:
+	option.focus_mode = Control.FOCUS_NONE
+	option.custom_minimum_size = Vector2(250, 36)
+	option.add_theme_color_override("font_color", UI_TEXT)
+	option.add_theme_color_override("font_hover_color", UI_AMBER_BRIGHT)
+	option.add_theme_font_size_override("font_size", 18)
+	var field_style := _pixel_panel_style(Color(0.045, 0.055, 0.06, 1.0), UI_BORDER, 1, 6.0)
+	for style_name in ["normal", "normal_mirrored", "pressed", "pressed_mirrored", "hover", "hover_mirrored", "hover_pressed", "hover_pressed_mirrored", "disabled", "disabled_mirrored"]:
+		option.add_theme_stylebox_override(style_name, field_style)
+	option.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+
+
+func _make_viewer_group(parent: Container, title: String, min_width: float) -> VBoxContainer:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size.x = min_width
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.add_theme_stylebox_override("panel", _pixel_panel_style(UI_PANEL_ALT, UI_BORDER, 1, 8.0))
+	parent.add_child(panel)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 4)
+	panel.add_child(content)
+	var label := Label.new()
+	label.text = title
+	label.add_theme_color_override("font_color", UI_AMBER)
+	label.add_theme_font_size_override("font_size", 16)
+	content.add_child(label)
+	return content
+
+
+func _setup_reference_viewer_ui() -> void:
+	# Keep the legacy parameter editor intact, but present the map in a dedicated
+	# full-screen workspace whose composition mirrors the supplied reference.
+	_generation_status_panel.visible = false
+	_viewer_panel.visible = false
+
+	_viewer_shell_layer = CanvasLayer.new()
+	_viewer_shell_layer.name = "ReferenceViewerLayer"
+	_viewer_shell_layer.layer = 40
+	add_child(_viewer_shell_layer)
+
+	_viewer_shell_root = Control.new()
+	_viewer_shell_root.name = "ReferenceViewer"
+	_viewer_shell_root.theme = load("res://data/font/font.tres")
+	_viewer_shell_layer.add_child(_viewer_shell_root)
+	_viewer_shell_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	var background := ColorRect.new()
+	background.color = UI_DARK
+	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_viewer_shell_root.add_child(background)
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	var header_panel := PanelContainer.new()
+	header_panel.name = "GenerationStatus"
+	header_panel.add_theme_stylebox_override("panel", _pixel_panel_style(Color(0.045, 0.055, 0.06, 1.0), UI_BORDER, 2, 12.0))
+	_viewer_shell_root.add_child(header_panel)
+	var header_box := VBoxContainer.new()
+	header_box.add_theme_constant_override("separation", 6)
+	header_panel.add_child(header_box)
+	var header_row := HBoxContainer.new()
+	header_row.add_theme_constant_override("separation", 10)
+	header_box.add_child(header_row)
+	var status_dot := Label.new()
+	status_dot.name = "StatusDot"
+	status_dot.text = "●"
+	status_dot.add_theme_color_override("font_color", UI_MUTED)
+	status_dot.add_theme_font_size_override("font_size", 20)
+	header_row.add_child(status_dot)
+	_viewer_status_dot = status_dot
+	_generation_phase_label = Label.new()
+	_generation_phase_label.name = "PhaseLabel"
+	_generation_phase_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_generation_phase_label.add_theme_color_override("font_color", UI_AMBER)
+	_generation_phase_label.add_theme_font_size_override("font_size", 22)
+	header_row.add_child(_generation_phase_label)
+	_generation_memory_label = Label.new()
+	_generation_memory_label.name = "TimingLabel"
+	_generation_memory_label.custom_minimum_size.x = 360
+	_generation_memory_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_generation_memory_label.add_theme_color_override("font_color", UI_TEXT)
+	_generation_memory_label.add_theme_font_size_override("font_size", 20)
+	header_row.add_child(_generation_memory_label)
+	_viewer_parameters_button = Button.new()
+	_viewer_parameters_button.name = "ParametersButton"
+	_style_pixel_button(_viewer_parameters_button, true)
 	_viewer_parameters_button.pressed.connect(_show_parameters_workspace)
+	header_row.add_child(_viewer_parameters_button)
+	_cancel_generation_button = Button.new()
+	_cancel_generation_button.name = "CancelButton"
+	_style_pixel_button(_cancel_generation_button, true)
+	_cancel_generation_button.disabled = true
 	_cancel_generation_button.pressed.connect(_on_cancel_generation_pressed)
-	_viewer_load_action.pressed.connect(_on_load_planet_project_pressed)
-	_viewer_save_action.pressed.connect(_on_btn_sauvegarder_pressed)
+	header_row.add_child(_cancel_generation_button)
+	_generation_progress_bar = ProgressBar.new()
+	_generation_progress_bar.name = "Progress"
+	_generation_progress_bar.custom_minimum_size.y = 18
+	_generation_progress_bar.min_value = 0.0
+	_generation_progress_bar.max_value = 100.0
+	_generation_progress_bar.show_percentage = true
+	_generation_progress_bar.add_theme_color_override("font_color", UI_DARK)
+	_generation_progress_bar.add_theme_font_size_override("font_size", 13)
+	_generation_progress_bar.add_theme_stylebox_override("background", _pixel_panel_style(Color(0.11, 0.13, 0.14, 1.0), UI_BORDER, 1, 0.0))
+	_generation_progress_bar.add_theme_stylebox_override("fill", _pixel_panel_style(UI_AMBER, UI_AMBER, 0, 0.0))
+	header_box.add_child(_generation_progress_bar)
+
+	_viewer_map_viewport = PanelContainer.new()
+	_viewer_map_viewport.name = "MapViewport"
+	_viewer_map_viewport.clip_contents = true
+	_viewer_map_viewport.mouse_filter = Control.MOUSE_FILTER_STOP
+	_viewer_map_viewport.add_theme_stylebox_override("panel", _pixel_panel_style(Color(0.018, 0.023, 0.025, 1.0), UI_BORDER, 2, 2.0))
+	_viewer_shell_root.add_child(_viewer_map_viewport)
+	_viewer_map_frame = Control.new()
+	_viewer_map_frame.name = "MapCanvas"
+	_viewer_map_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_viewer_map_viewport.add_child(_viewer_map_frame)
+	_viewer_map_texture = TextureRect.new()
+	_viewer_map_texture.name = "Map"
+	_viewer_map_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_viewer_map_texture.stretch_mode = TextureRect.STRETCH_SCALE
+	_viewer_map_texture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_viewer_map_frame.add_child(_viewer_map_texture)
+	_viewer_map_texture.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_viewer_overlay_texture = TextureRect.new()
+	_viewer_overlay_texture.name = "MapOverlay"
+	_viewer_overlay_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_viewer_overlay_texture.stretch_mode = TextureRect.STRETCH_SCALE
+	_viewer_overlay_texture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_viewer_overlay_texture.modulate.a = 0.65
+	_viewer_map_frame.add_child(_viewer_overlay_texture)
+	_viewer_overlay_texture.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_viewer_crosshair = PlanetMapCrosshair.new()
+	_viewer_crosshair.name = "MapCrosshair"
+	_viewer_map_frame.add_child(_viewer_crosshair)
+	_viewer_empty_label = Label.new()
+	_viewer_empty_label.name = "EmptyState"
+	_viewer_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_viewer_empty_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_viewer_empty_label.add_theme_color_override("font_color", UI_MUTED)
+	_viewer_empty_label.add_theme_font_size_override("font_size", 28)
+	_viewer_empty_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_viewer_map_viewport.add_child(_viewer_empty_label)
 	_viewer_map_viewport.gui_input.connect(_on_map_viewer_input)
+
+	var action_panel := PanelContainer.new()
+	action_panel.name = "MapActions"
+	action_panel.add_theme_stylebox_override("panel", _pixel_panel_style(Color(0.045, 0.055, 0.06, 1.0), UI_BORDER, 1, 8.0))
+	_viewer_shell_root.add_child(action_panel)
+	var action_row := HBoxContainer.new()
+	action_row.add_theme_constant_override("separation", 10)
+	action_panel.add_child(action_row)
+	_viewer_load_action = Button.new()
+	_viewer_load_action.name = "LoadPlanetButton"
+	_style_pixel_button(_viewer_load_action)
+	_viewer_load_action.pressed.connect(_on_load_planet_project_pressed)
+	action_row.add_child(_viewer_load_action)
+	var left_spacer := Control.new()
+	left_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	action_row.add_child(left_spacer)
+	var brand := Label.new()
+	brand.text = "JUJEDIE INC."
+	brand.add_theme_color_override("font_color", Color(0.18, 0.2, 0.21, 1.0))
+	brand.add_theme_font_size_override("font_size", 30)
+	brand.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	action_row.add_child(brand)
+	var right_spacer := Control.new()
+	right_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	action_row.add_child(right_spacer)
+	_viewer_save_action = Button.new()
+	_viewer_save_action.name = "SavePlanetButton"
+	_style_pixel_button(_viewer_save_action)
+	_viewer_save_action.pressed.connect(_on_btn_sauvegarder_pressed)
+	action_row.add_child(_viewer_save_action)
+
+	_viewer_panel = PanelContainer.new()
+	_viewer_panel.name = "MapViewerControls"
+	_viewer_panel.add_theme_stylebox_override("panel", _pixel_panel_style(Color(0.045, 0.055, 0.06, 1.0), UI_BORDER, 2, 10.0))
+	_viewer_shell_root.add_child(_viewer_panel)
+	var viewer_box := VBoxContainer.new()
+	viewer_box.add_theme_constant_override("separation", 7)
+	_viewer_panel.add_child(viewer_box)
+	_viewer_title_label = Label.new()
+	_viewer_title_label.name = "ViewerTitle"
+	_viewer_title_label.add_theme_color_override("font_color", UI_AMBER)
+	_viewer_title_label.add_theme_font_size_override("font_size", 21)
+	viewer_box.add_child(_viewer_title_label)
+	var controls_row := HBoxContainer.new()
+	controls_row.add_theme_constant_override("separation", 10)
+	viewer_box.add_child(controls_row)
+	var base_group := _make_viewer_group(controls_row, "", 290)
+	_viewer_base_title_label = base_group.get_child(0) as Label
+	_viewer_base_select = OptionButton.new()
+	_viewer_base_select.name = "BaseSelect"
+	_style_pixel_option(_viewer_base_select)
+	base_group.add_child(_viewer_base_select)
+	var overlay_group := _make_viewer_group(controls_row, "", 290)
+	_viewer_overlay_title_label = overlay_group.get_child(0) as Label
+	_viewer_overlay_select = OptionButton.new()
+	_viewer_overlay_select.name = "OverlaySelect"
+	_style_pixel_option(_viewer_overlay_select)
+	overlay_group.add_child(_viewer_overlay_select)
+	var opacity_group := _make_viewer_group(controls_row, "", 285)
+	_viewer_overlay_alpha_label = opacity_group.get_child(0) as Label
+	var opacity_row := HBoxContainer.new()
+	opacity_row.add_theme_constant_override("separation", 8)
+	opacity_group.add_child(opacity_row)
+	_viewer_overlay_alpha = HSlider.new()
+	_viewer_overlay_alpha.name = "OverlayOpacity"
+	_viewer_overlay_alpha.min_value = 0.0
+	_viewer_overlay_alpha.max_value = 1.0
+	_viewer_overlay_alpha.step = 0.05
+	_viewer_overlay_alpha.value = 0.65
+	_viewer_overlay_alpha.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_viewer_overlay_alpha.custom_minimum_size = Vector2(205, 24)
+	_viewer_overlay_alpha.add_theme_icon_override("grabber", load("res://data/img/UI/Range/Grabber.png"))
+	_viewer_overlay_alpha.add_theme_icon_override("grabber_highlight", load("res://data/img/UI/Range/Grabber_grabbed.png"))
+	_viewer_overlay_alpha.add_theme_stylebox_override("slider", load("res://data/styles/slider_non_highlight.tres"))
+	_viewer_overlay_alpha.add_theme_stylebox_override("grabber_area", load("res://data/styles/slider_highlight.tres"))
+	opacity_row.add_child(_viewer_overlay_alpha)
+	_viewer_overlay_percent_label = Label.new()
+	_viewer_overlay_percent_label.custom_minimum_size.x = 46
+	_viewer_overlay_percent_label.text = "65%"
+	_viewer_overlay_percent_label.add_theme_color_override("font_color", UI_TEXT)
+	_viewer_overlay_percent_label.add_theme_font_size_override("font_size", 18)
+	opacity_row.add_child(_viewer_overlay_percent_label)
+	var zoom_group := _make_viewer_group(controls_row, "ZOOM", 250)
+	var zoom_row := HBoxContainer.new()
+	zoom_row.add_theme_constant_override("separation", 8)
+	zoom_group.add_child(zoom_row)
+	_viewer_zoom_label = Label.new()
+	_viewer_zoom_label.name = "ZoomLabel"
+	_viewer_zoom_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_viewer_zoom_label.add_theme_color_override("font_color", UI_AMBER)
+	_viewer_zoom_label.add_theme_font_size_override("font_size", 18)
+	zoom_row.add_child(_viewer_zoom_label)
+	_viewer_reset_button = Button.new()
+	_viewer_reset_button.name = "ResetButton"
+	_style_pixel_button(_viewer_reset_button, true)
+	zoom_row.add_child(_viewer_reset_button)
+
+	var inspector_panel := PanelContainer.new()
+	inspector_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inspector_panel.add_theme_stylebox_override("panel", _pixel_panel_style(UI_PANEL_ALT, UI_BORDER, 1, 7.0))
+	viewer_box.add_child(inspector_panel)
+	_viewer_inspector_label = Label.new()
+	_viewer_inspector_label.name = "InspectorLabel"
+	_viewer_inspector_label.custom_minimum_size.y = 40
+	_viewer_inspector_label.add_theme_color_override("font_color", UI_TEXT)
+	_viewer_inspector_label.add_theme_font_size_override("font_size", 16)
+	_viewer_inspector_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	inspector_panel.add_child(_viewer_inspector_label)
+	_viewer_help_label = Label.new()
+	_viewer_help_label.add_theme_color_override("font_color", UI_MUTED)
+	_viewer_help_label.add_theme_font_size_override("font_size", 14)
+	viewer_box.add_child(_viewer_help_label)
+
 	_viewer_base_select.item_selected.connect(_on_viewer_base_selected)
 	_viewer_overlay_select.item_selected.connect(_on_viewer_overlay_selected)
 	_viewer_overlay_alpha.value_changed.connect(_on_viewer_overlay_alpha_changed)
 	_viewer_reset_button.pressed.connect(_reset_viewer_transform)
 
-	_parameter_workspace.viewer_button.pressed.connect(_show_viewer_workspace)
-	_parameter_workspace.load_preset_button.pressed.connect(load_preset)
-	_parameter_workspace.save_preset_button.pressed.connect(save_preset)
-	_parameter_workspace.quit_button.pressed.connect(_on_btn_quitter_pressed)
-	_parameter_workspace.french_button.pressed.connect(_on_btn_french_pressed)
-	_parameter_workspace.english_button.pressed.connect(_on_btn_english_pressed)
-	_parameter_workspace.german_button.pressed.connect(_on_btn_german_pressed)
-	_parameter_workspace.generate_button.pressed.connect(_on_btn_comfirme_pressed)
-	_parameter_workspace.random_button.pressed.connect(_on_btn_randomise_pressed)
-	_parameter_workspace.save_planet_button.pressed.connect(_on_btn_sauvegarder_pressed)
+	_viewer_return_layer = CanvasLayer.new()
+	_viewer_return_layer.name = "ViewerReturnLayer"
+	_viewer_return_layer.layer = 60
+	_viewer_return_layer.visible = false
+	add_child(_viewer_return_layer)
+	_viewer_return_button = Button.new()
+	_viewer_return_button.name = "ViewerReturnButton"
+	_style_pixel_button(_viewer_return_button)
+	_viewer_return_button.pressed.connect(_show_viewer_workspace)
+	_viewer_return_layer.add_child(_viewer_return_button)
 
-	_viewer_workspace.visible = true
-	_parameter_workspace.visible = false
-	_viewer_pan_origin = Vector2.ZERO
+	get_viewport().size_changed.connect(_layout_reference_viewer_ui)
+	_layout_reference_viewer_ui()
 	_refresh_generation_status_translation()
 	_refresh_advanced_viewer_translation()
-	_refresh_parameter_workspace_translation()
 	_update_viewer_sources()
 	_sync_reference_map()
 
 
-func _refresh_parameter_workspace_translation() -> void:
-	if _parameter_workspace == null:
+func _layout_reference_viewer_ui() -> void:
+	if _viewer_shell_root == null:
 		return
-	_parameter_workspace.preview_title_label.text = tr("VIEWER_PREVIEW")
-	_parameter_workspace.parameter_title_label.text = tr("PARAMETRES").to_upper()
-	_parameter_workspace.viewer_button.text = tr("MAP_VIEWER_TITLE").to_upper()
-	_parameter_workspace.load_preset_button.text = tr("LOAD_PRESET")
-	_parameter_workspace.save_preset_button.text = tr("SAVE_PRESET")
-	_parameter_workspace.quit_button.text = tr("LEAVE")
-	_parameter_workspace.generate_button.text = tr("GENERER")
-	_parameter_workspace.random_button.text = tr("RANDOMISE")
-	_parameter_workspace.save_planet_button.text = tr("SAUVEGARDER")
-	_parameter_workspace.preview_empty_label.text = "%s\n%s" % [tr("VIEWER_EMPTY_TITLE"), tr("VIEWER_EMPTY_HINT")]
-
-
+	var viewport_size := get_viewport_rect().size
+	var margin := 22.0
+	var header_height := 88.0
+	var viewer_height := clampf(viewport_size.y * 0.255, 205.0, 245.0)
+	var viewer_top := viewport_size.y - viewer_height - margin
+	var action_height := 52.0
+	var action_top := viewer_top - action_height - 10.0
+	var map_top := margin + header_height + 14.0
+	var map_bottom := action_top - 10.0
+	var header := _viewer_shell_root.get_node("GenerationStatus") as Control
+	var actions := _viewer_shell_root.get_node("MapActions") as Control
+	header.position = Vector2(margin, margin)
+	header.size = Vector2(viewport_size.x - margin * 2.0, header_height)
+	_viewer_map_viewport.position = Vector2(margin, map_top)
+	_viewer_map_viewport.size = Vector2(viewport_size.x - margin * 2.0, maxf(map_bottom - map_top, 180.0))
+	actions.position = Vector2(margin, action_top)
+	actions.size = Vector2(viewport_size.x - margin * 2.0, action_height)
+	_viewer_panel.position = Vector2(margin, viewer_top)
+	_viewer_panel.size = Vector2(viewport_size.x - margin * 2.0, viewer_height)
+	_viewer_return_button.position = Vector2(viewport_size.x - 214.0, 20.0)
 
 
 func _show_parameters_workspace() -> void:
-	_viewer_workspace.visible = false
-	_parameter_workspace.visible = true
-	_parameter_workspace.set_preview_texture(_viewer_map_texture.texture)
+	_viewer_shell_layer.visible = false
+	_viewer_return_layer.visible = true
 
 
 func _show_viewer_workspace() -> void:
-	_viewer_workspace.visible = true
-	_parameter_workspace.visible = false
+	_viewer_shell_layer.visible = true
+	_viewer_return_layer.visible = false
 	_sync_reference_map()
 
 
@@ -274,16 +528,13 @@ func _sync_reference_map() -> void:
 	_viewer_empty_label.visible = not has_map
 	_viewer_map_frame.visible = has_map
 	_viewer_save_action.disabled = not has_map
-	_parameter_workspace.set_preview_texture(null)
 	if not has_map:
 		_viewer_map_texture.texture = null
 		_viewer_overlay_texture.texture = null
 		return
 	var image := _viewer_load_image(maps[map_index])
 	if image != null:
-		var texture := ImageTexture.create_from_image(image)
-		_viewer_map_texture.texture = texture
-		_parameter_workspace.set_preview_texture(texture)
+		_viewer_map_texture.texture = ImageTexture.create_from_image(image)
 
 
 func _set_map_texture(texture: Texture2D) -> void:
@@ -294,10 +545,54 @@ func _set_map_texture(texture: Texture2D) -> void:
 		_viewer_map_frame.visible = texture != null
 		_viewer_empty_label.visible = texture == null
 		_viewer_save_action.disabled = texture == null
-	if _parameter_workspace != null:
-		_parameter_workspace.set_preview_texture(texture)
 
 
+func _setup_advanced_map_viewer() -> void:
+	var map_control := $"ImageFrame/ImageMenu/Control Images/Frame Map/Map" as TextureRect
+	var frame := $"ImageFrame/ImageMenu/Control Images/Frame Map" as Control
+	var image_control := $"ImageFrame/ImageMenu/Control Images" as Control
+	image_control.clip_contents = false
+	_viewer_pan_origin = frame.position
+
+	_viewer_overlay_texture = TextureRect.new()
+	_viewer_overlay_texture.name = "MapOverlay"
+	_viewer_overlay_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_viewer_overlay_texture.stretch_mode = TextureRect.STRETCH_SCALE
+	_viewer_overlay_texture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_viewer_overlay_texture.modulate.a = 0.65
+	_viewer_overlay_texture.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	frame.add_child(_viewer_overlay_texture)
+
+	_viewer_crosshair = PlanetMapCrosshair.new()
+	_viewer_crosshair.name = "MapCrosshair"
+	frame.add_child(_viewer_crosshair)
+	map_control.gui_input.connect(_on_map_viewer_input)
+
+	# M7.4b: the advanced viewer replaces the legacy previous/next map cycler.
+	# Its controls are authored in master.tscn so they share the application's
+	# existing layout, font and UI textures instead of covering the map.
+	_viewer_panel = $"ImageFrame/ImageMenu/IntegratedMapViewer"
+	_viewer_title_label = $"ImageFrame/ImageMenu/IntegratedMapViewer/Content/Header/TitleLabel"
+	_viewer_base_select = $"ImageFrame/ImageMenu/IntegratedMapViewer/Content/Selectors/BaseSelect"
+	_viewer_overlay_select = $"ImageFrame/ImageMenu/IntegratedMapViewer/Content/Selectors/OverlaySelect"
+	_viewer_overlay_alpha_label = $"ImageFrame/ImageMenu/IntegratedMapViewer/Content/Footer/OpacityGroup/OverlayOpacityLabel"
+	_viewer_overlay_alpha = $"ImageFrame/ImageMenu/IntegratedMapViewer/Content/Footer/OpacityGroup/OverlayOpacity"
+	_viewer_zoom_label = $"ImageFrame/ImageMenu/IntegratedMapViewer/Content/Header/ZoomLabel"
+	_viewer_reset_button = $"ImageFrame/ImageMenu/IntegratedMapViewer/Content/Header/ResetButton"
+	_viewer_inspector_label = $"ImageFrame/ImageMenu/IntegratedMapViewer/Content/Footer/InspectorLabel"
+	_viewer_inspector_label.visible = true
+	_viewer_inspector_label.text = tr("MAP_VIEWER_INSPECT_HINT")
+
+	if not _viewer_base_select.item_selected.is_connected(_on_viewer_base_selected):
+		_viewer_base_select.item_selected.connect(_on_viewer_base_selected)
+	if not _viewer_overlay_select.item_selected.is_connected(_on_viewer_overlay_selected):
+		_viewer_overlay_select.item_selected.connect(_on_viewer_overlay_selected)
+	if not _viewer_overlay_alpha.value_changed.is_connected(_on_viewer_overlay_alpha_changed):
+		_viewer_overlay_alpha.value_changed.connect(_on_viewer_overlay_alpha_changed)
+	if not _viewer_reset_button.pressed.is_connected(_reset_viewer_transform):
+		_viewer_reset_button.pressed.connect(_reset_viewer_transform)
+	_refresh_advanced_viewer_translation()
+	_update_viewer_sources()
 
 
 func _refresh_advanced_viewer_translation() -> void:
@@ -321,6 +616,8 @@ func _refresh_advanced_viewer_translation() -> void:
 		_viewer_help_label.text = tr("VIEWER_HELP")
 	if _viewer_parameters_button != null:
 		_viewer_parameters_button.text = tr("PARAMETRES").to_upper()
+	if _viewer_return_button != null:
+		_viewer_return_button.text = tr("MAP_VIEWER_TITLE").to_upper()
 	if _viewer_load_action != null:
 		_viewer_load_action.text = "▰  " + tr("LOAD_PLANET").to_upper()
 	if _viewer_save_action != null:
@@ -747,12 +1044,6 @@ func _set_buttons_enabled(enabled: bool) -> void:
 		_viewer_parameters_button.disabled = not enabled
 	if _viewer_save_action != null:
 		_viewer_save_action.disabled = not enabled or maps.is_empty()
-	if _parameter_workspace != null:
-		_parameter_workspace.generate_button.disabled = not enabled
-		_parameter_workspace.random_button.disabled = not enabled
-		_parameter_workspace.load_preset_button.disabled = not enabled
-		_parameter_workspace.save_preset_button.disabled = not enabled
-		_parameter_workspace.save_planet_button.disabled = not enabled or maps.is_empty()
 
 ## Compile et normalise les paramètres de génération pour le GPU.
 ##
@@ -1155,7 +1446,6 @@ func _change_lang(code: String) -> void:
 	maj_labels()
 	_refresh_generation_status_translation()
 	_refresh_advanced_viewer_translation()
-	_refresh_parameter_workspace_translation()
 	update_map_label()
 
 func _on_btn_quitter_pressed() -> void:

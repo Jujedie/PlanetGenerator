@@ -168,6 +168,23 @@ default_font_size = 20
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_gihwl"]
 
+[sub_resource type="Theme" id="Theme_dbnah"]
+default_font = ExtResource("14_dfspw")
+default_font_size = 25
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_hvy7f"]
+content_margin_left = 6.0
+texture = ExtResource("15_dbnah")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_wim0k"]
+texture = ExtResource("29_iijg3")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_xtfv3"]
+texture = ExtResource("30_a0y5r")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_4smu3"]
+texture = ExtResource("31_syvc8")
+
 [node name="Master" type="Node2D" unique_id=1847100083]
 script = ExtResource("1_7eaih")
 metadata/_edit_lock_ = true
@@ -2450,7 +2467,6 @@ theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_xtfv3")
 theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
 text = "LOAD_PLANET"
 
-[connection signal="pressed" from="ImageFrame/ImageMenu/Control Images/GenerationStatusPanel/VBoxContainer/Header/CancelGenerationButton" to="." method="_on_cancel_generation_pressed"]
 [connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed/seed/TextureButton" to="." method="_on_random_seed_pressed"]
 [connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/Title/TextureButton" to="." method="_on_fold_button_pressed" binds= ["ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer"]]
 [connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Name_Param/HBoxContainer/TextureButton" to="." method="_on_random_name_pressed"]
