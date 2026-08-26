@@ -1,7 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://cpvjfsk5s8sfn"]
 
-[ext_resource path="res://src/scenes/reference_viewer_workspace.gd" type="Script" id="1"]
+[ext_resource type="Script" path="res://src/scenes/reference_viewer_workspace.gd" id="1"]
 
-[node name="ReferenceViewerLayer" type="CanvasLayer"]
+[node name="ReferenceViewerLayer" type="CanvasLayer" unique_id=1356489719]
 layer = 40
 script = ExtResource("1")

@@ -12,7 +12,6 @@ signal generation_cancelled(reason: String)
 
 var nom             : String
 var circonference   : int
-var mapStatusLabel  : Label
 var cheminSauvegarde: String
 var _generation_output_root: String
 
@@ -51,10 +50,9 @@ var _generation_request_id: int = 0
 ## ne contrôle jamais la file de génération GPU.
 ## @param atmosphere_type_param: Enum (0=Terre, 1=Lune, etc.) définissant la densité atmosphérique.
 ## @param renderProgress_param: Référence à la barre de progression de l'UI.
-## @param mapStatusLabel_param: Référence au label de statut de l'UI.
 ## @param nb_avg_cases_param: Nombre de sites de Voronoi pour les plaques tectoniques/régions.
 ## @param cheminSauvegarde_param: Dossier racine pour la sauvegarde temporaire.
-func _init(nom_param: String, generation_param : Dictionary, cheminSauvegarde_param: String = "user://temp/", mapStatusLabel_param: Label = null):
+func _init(nom_param: String, generation_param : Dictionary, cheminSauvegarde_param: String = "user://temp/"):
 
 	"""
 	PlanetGenerator constructor
@@ -67,7 +65,6 @@ func _init(nom_param: String, generation_param : Dictionary, cheminSauvegarde_pa
 	self.generation_params    = generation_param.duplicate(true)
 	self.generation_params["planet_name"] = nom_param
 
-	self.mapStatusLabel       = mapStatusLabel_param
 	self.cheminSauvegarde     = cheminSauvegarde_param
 	self._generation_output_root = cheminSauvegarde_param
 	
@@ -99,31 +96,6 @@ func _init_gpu_system() -> void:
 	else:
 		print("[PlanetGenerator] Monolithic GPU backend configured for background execution: ", generation_params["resolution"])
 
-## Met à jour le label de statut dans l'interface utilisateur.
-##
-## Cette méthode est thread-safe et utilise [method Object.call_deferred] pour
-## manipuler l'UI depuis un thread de génération.
-##
-## @param map_key: La clé de traduction correspondant à l'étape actuelle (ex: "MAP_TECTONIC").
-func update_map_status(map_key: String) -> void:
-	"""Update UI status label"""
-	if mapStatusLabel != null:
-		var map_name = tr(map_key)
-		var text = tr("CREATING").format({"map": map_name})
-		mapStatusLabel.call_deferred("set_text", text)
-
-# ============================================================================
-# MAIN GENERATION ENTRY POINT
-# ============================================================================
-
-## ============================================================================
-## GPU GENERATION - RENDER THREAD SAFE VERSION
-## ============================================================================
-
-## Point d'entrée principal de la génération.
-##
-## Démarre le processus de génération. Selon la configuration interne, 
-## cette méthode initie la séquence GPU ([method generate_planet_gpu]).
 func generate_planet() -> bool:
 	"""Entry point - routes to the bounded tiled path or legacy GPU path."""
 	if _cleaned_up or not use_gpu_acceleration:
@@ -297,134 +269,6 @@ func _complete_monolithic_generation(request_id: int, ok: bool, display_maps: Ar
 		push_error("[PlanetGenerator] Background generation failed: %s" % reason)
 		emit_signal("generation_cancelled", reason)
 
-# ============================================================================
-# GPU GENERATION PIPELINE
-# ============================================================================
-
-## Exécute la pipeline de génération complète sur GPU (Compute Shaders).
-##
-## C'est le coeur du nouveau système. Elle exécute séquentiellement :
-## 1. Tectonique des plaques (Voronoi + Drift).
-## 2. Érosion hydraulique et thermique (Simulation itérative).
-## 3. Simulation atmosphérique (Pression, Température).
-## 4. Rapatriement des données (Readback).
-##
-## Émet le signal [signal finished] une fois terminé.
-func generate_planet_gpu():
-	"""
-	GPU-accelerated generation pipeline
-	Phase 1: Initialize → Phase 2: Simulate → Phase 3: Export → Phase 4: Visualize
-	"""
-	
-	# === INITIAL LOGGING ===
-	print("\n" + "=".repeat(60))
-	print("GPU-ACCELERATED PLANET GENERATION")
-	print("=".repeat(60))
-	print("Planet: ", nom)
-	print("Resolution: ", generation_params["resolution"])
-	print("Seed: ", generation_params["seed"])
-	print("=".repeat(60) + "\n")
-	
-	# === FULL SIMULATION ===
-	print("Running full GPU simulation...")
-	
-	gpu_orchestrator.run_simulation()
-	
-	# === EXPORT MAPS ===
-	print("\n" + "=".repeat(60))
-	print("GENERATION COMPLETE")
-	print("Total time: ", Time.get_ticks_msec() / 1000.0, " seconds")
-	print("=".repeat(60) + "\n")
-	
-	emit_signal("finished")
-
-## Récupère les textures depuis la VRAM et les convertit en Images CPU.
-##
-## Appelle [method GPUOrchestrator.get_final_heightmap] et autres getters
-## pour extraire les données brutes (PackedByteArray) du GPU et remplir les variables
-## membres (elevation_map, water_map, etc.) de cette classe.
-func _export_gpu_maps() -> void:
-	"""
-	Export GPU textures to PNG files using PlanetExporter
-	"""
-	
-	var gpu_context = gpu_orchestrator.gpu
-	
-	# CRITICAL: Ensure all GPU work is complete
-	if not gpu_context or not gpu_context.rd:
-		push_error("[PlanetGenerator] GPUContext or RD not available for export")
-		return
-	
-	gpu_context.sync_for_cpu("planet_export")
-	
-	# Validate texture RIDs
-	for texture in gpu_context.textures.values():
-		if not texture or texture.is_valid() == false:
-			push_error("[PlanetGenerator] ❌ Missing texture RID during export")
-			return
-	
-	print("[PlanetGenerator] Exporting textures...")
-	for tex_id in gpu_context.textures.keys():
-		print("  Texture ID: ", tex_id, " RID: ", gpu_context.textures[tex_id])
-	
-	# Create exporter and export all maps
-	var exporter = PlanetExporter.new()
-	var exported_files = exporter.export_maps(gpu_context, "user://temp/", generation_params)
-	
-	# Load exported images into legacy properties
-	for map_type in exported_files:
-		var file_path = exported_files[map_type]
-		var img = Image.new()
-		
-		if img.load(file_path) == OK:
-			match map_type:
-				"elevation":
-					self.elevation_map = img
-				"elevation_alt":
-					self.elevation_map_alt = img
-			
-			print("[PlanetGenerator] Loaded ", map_type, ": ", img.get_width(), "x", img.get_height())
-		else:
-			push_warning("[PlanetGenerator] Failed to load ", map_type, " from ", file_path)
-	
-	print("[PlanetGenerator] Maps exported to user://temp/")
-
-# ============================================================================
-# PUBLIC API FOR EXTERNAL COMPONENTS
-# ============================================================================
-
-## Récupère les identifiants de texture (RID) du GPU.
-##
-## Utile pour le débogage ou pour afficher les textures directement dans un Viewport
-## sans repasser par le CPU (via Texture2DRD).
-##
-## @return Dictionary: Un dictionnaire { "geo": RID, "atmo": RID, ... }.
-func get_gpu_texture_rids() -> Dictionary:
-	"""
-	Get GPU texture RIDs for direct 3D binding
-	
-	Returns:
-		Dictionary with keys: "geo", "atmo"
-	"""
-	if not gpu_orchestrator:
-		return {}
-	
-	var gpu_context = gpu_orchestrator.gpu
-	if not gpu_context or not gpu_context.rd:
-		return {}
-	
-	# Return texture RIDs from GPU context texturesID
-
-	var texture_rids = {}
-	for tex_id in gpu_context.textures.keys():
-		texture_rids[tex_id] = gpu_context.textures[tex_id]
-
-	return texture_rids
-
-## Exporte toutes les cartes générées vers un dossier spécifique.
-##
-## @param directory_path: Le chemin absolu ou relatif (user://) du dossier de destination.
-## @return bool: `true` si toutes les sauvegardes ont réussi.
 func export_to_directory(output_dir: String) -> void:
 	"""Export monolithic PNGs or copy the completed raw tiled dataset."""
 	print("[PlanetGenerator] Exporting to: ", output_dir)

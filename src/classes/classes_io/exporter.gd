@@ -698,59 +698,6 @@ func _export_plates_map(plates_img: Image, output_dir: String, width: int, heigh
 	
 	return result
 
-## Exporte la heightmap brute (valeurs float normalisées en niveaux de gris)
-## Utile pour le debug et l'importation dans d'autres outils
-##
-## @param geo_img: Image RGBAF provenant de la texture GPU "geo"
-## @param output_dir: Dossier de sortie
-## @param width: Largeur de l'image
-## @param height: Hauteur de l'image
-## @return String: Chemin du fichier exporté
-func _export_raw_heightmap(geo_img: Image, output_dir: String, width: int, height: int) -> String:
-	print("[Exporter] 📊 Exporting raw heightmap...")
-	
-	var raw_heightmap = Image.create(width, height, false, Image.FORMAT_RGBA8)
-	
-	# Trouver min/max pour normalisation
-	var min_elev = INF
-	var max_elev = -INF
-	
-	for y in range(height):
-		for x in range(width):
-			var elev = geo_img.get_pixel(x, y).r
-			min_elev = min(min_elev, elev)
-			max_elev = max(max_elev, elev)
-	
-	print("  Elevation range: ", min_elev, " to ", max_elev, " meters")
-	
-	var range_elev = max_elev - min_elev
-	if range_elev < 0.001:
-		range_elev = 1.0  # Éviter division par zéro
-	
-	# Normaliser et écrire
-	for y in range(height):
-		for x in range(width):
-			var elev = geo_img.get_pixel(x, y).r
-			var normalized = (elev - min_elev) / range_elev
-			var grey = clamp(normalized, 0.0, 1.0)
-			raw_heightmap.set_pixel(x, y, Color(grey, grey, grey, 1.0))
-	
-	var path = output_dir + "/heightmap_raw.png"
-	var err = _save_png(raw_heightmap, path)
-	
-	if err == OK:
-		print("  ✅ Saved: ", path)
-		return path
-	else:
-		push_error("[Exporter] ❌ Failed to save raw heightmap: ", err)
-		return ""
-
-# ============================================================================
-# EXPORT CLIMAT SANS NUAGES (température + précipitation seulement)
-# ============================================================================
-
-## Exporte uniquement température et précipitation pour les planètes sans
-## couches nuageuses exportables (types sans atmosphère et stérile).
 func _export_climate_maps_without_clouds(gpu: GPUContext, output_dir: String) -> Dictionary:
 	print("[Exporter] Exporting climate maps without clouds (temp + precip)...")
 	
@@ -906,7 +853,7 @@ func _export_climate_maps_optimized(gpu: GPUContext, output_dir: String) -> Dict
 ## @param output_dir: Dossier de sortie
 ## @return Dictionary: Chemin du fichier exporté
 func _export_region_map(gpu: GPUContext, output_dir: String, _optimised_region_generation : bool = true) -> Dictionary:
-	print("[Exporter] 🗺️ Exporting region map (CPU coloration with Region.gd system)...")
+	print("[Exporter] 🗺️ Exporting region map (CPU administrative coloration)...")
 	
 	var result = {}
 	var rd = gpu.rd
@@ -978,7 +925,7 @@ func _export_region_map(gpu: GPUContext, output_dir: String, _optimised_region_g
 	print("    Found ", region_first_seen.size(), " unique regions")
 	
 	# =========================================================================
-	# PHASE 2 : Assigner les couleurs séquentiellement (système Region.gd)
+	# PHASE 2 : Assigner les couleurs séquentiellement
 	# =========================================================================
 	print("  Phase 2: Assigning deterministic high-contrast colors...")
 	
@@ -1117,7 +1064,7 @@ func _color_region_rows_fast(data: PackedByteArray, output_data: PackedByteArray
 ## @param output_dir: Dossier de sortie
 ## @return Dictionary: Chemin du fichier exporté
 func _export_ocean_region_map(gpu: GPUContext, output_dir: String, _optimised_region_generation : bool = true) -> Dictionary:
-	print("[Exporter] 🌊 Exporting ocean region map (CPU coloration with Region.gd system)...")
+	print("[Exporter] 🌊 Exporting ocean region map (CPU administrative coloration)...")
 	
 	var result = {}
 	var rd = gpu.rd
@@ -1186,7 +1133,7 @@ func _export_ocean_region_map(gpu: GPUContext, output_dir: String, _optimised_re
 	print("    Found ", region_first_seen.size(), " unique ocean regions")
 	
 	# =========================================================================
-	# PHASE 2 : Assigner les couleurs séquentiellement (système Region.gd)
+	# PHASE 2 : Assigner les couleurs séquentiellement
 	# =========================================================================
 	print("  Phase 2: Assigning deterministic high-contrast colors...")
 	
@@ -2240,16 +2187,3 @@ func _paint_hierarchy_rows(data: PackedByteArray, output: PackedByteArray,
 			output[off + 2] = roundi(c.b * 255.0)
 			output[off + 3] = roundi(c.a * 255.0)
 
-
-## Compare deux couleurs avec tolérance pour erreurs de compression
-func _colors_equal(c1: Color, c2: Color) -> bool:
-	var threshold = 0.01
-	return (
-		absf(c1.r - c2.r) < threshold and
-		absf(c1.g - c2.g) < threshold and
-		absf(c1.b - c2.b) < threshold
-	)
-
-## Convertit une couleur en clé de dictionnaire
-func _color_to_key(c: Color) -> String:
-	return str(int(c.r * 255)) + "," + str(int(c.g * 255)) + "," + str(int(c.b * 255))

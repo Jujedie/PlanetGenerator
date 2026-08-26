@@ -24,9 +24,9 @@ const TEXTURE_LIFECYCLE := {
 	],
 	"temporary": [
 		"temp_buffer", "crust_age", "crust_age_temp", "geo_temp", "flux_temp",
-		"vapor", "vapor_temp", "water_component", "water_component_temp",
-		"river_sources", "river_flux_temp", "flow_direction",
-		"ocean_reachable_temp", "region_map_temp", "region_cost",
+		"vapor", "vapor_temp", "water_component",
+		"river_sources", "flow_direction",
+		"region_map_temp", "region_cost",
 		"region_cost_temp", "ocean_region_map_temp", "ocean_region_cost",
 		"ocean_region_cost_temp", "biome_id_temp", "biome_colored_temp",
 		"gas_velocity", "gas_dye_a", "gas_dye_b",
@@ -85,14 +85,11 @@ static var TextureID_Resources : Array[String] = ["petrole", "resources"]
 # Textures Étape 2.5 - Classification des Eaux & Rivières
 # water_mask : (R8) - Type d'eau : 0=terre, 1=eau salée, 2=eau douce
 # water_component : (RG32I) - Coordonnées seed JFA pour composantes connexes
-# water_component_temp : (RG32I) - Buffer ping-pong JFA
 # river_sources : (R32UI) - IDs des sources de rivières (legacy)
 # river_flux : (R32F) - Intensité du flux des rivières
-# river_flux_temp : (R32F) - Buffer ping-pong pour propagation
 # flow_direction : (R8UI) - Direction d'écoulement D8 (0-7, 255=puits)
 # ocean_reachable : (R8UI) - Connectivité à l'océan (0=non, 1=oui)
-# ocean_reachable_temp : (R8UI) - Buffer ping-pong pour connectivité
-static var TextureID_Water : Array[String] = ["water_mask", "water_component", "water_component_temp", "river_sources", "river_flux", "river_flux_temp", "river_biome_id", "flow_direction", "ocean_reachable", "ocean_reachable_temp"]
+static var TextureID_Water : Array[String] = ["water_mask", "water_component", "river_sources", "river_flux", "river_biome_id", "flow_direction", "ocean_reachable"]
 
 # Textures Étape 4 - Régions administratives
 # region_map : (R32UI) - ID de région par pixel (0xFFFFFFFF = non assigné)
@@ -577,11 +574,11 @@ func initialize_water_textures() -> void:
 	
 	Textures créées:
 	- water_mask (R8) : Type d'eau (0=terre, 1=salée, 2=douce)
-	- water_component / water_component_temp (RG32I) : JFA pour composantes connexes
+	- water_component (RG32I) : labels temporaires des cellules d'eau
 	- river_sources (R32UI) : IDs des points sources (legacy)
-	- river_flux / river_flux_temp (R32F) : Flux des rivières (ping-pong)
+	- river_flux (R32F) : Flux accumulé des rivières
 	- flow_direction (R8UI) : Direction d'écoulement D8 (0-7, 255=puits)
-	- ocean_reachable / ocean_reachable_temp (R8UI) : Connectivité à l'océan (ping-pong)
+	- ocean_reachable (R8UI) : Classe de rivière exportée
 	"""
 	
 	# Format R8 pour masque d'eau (1 byte par pixel)
@@ -652,8 +649,8 @@ func initialize_water_textures() -> void:
 		else:
 			push_error("❌ Échec création texture water_mask")
 	
-	# Créer water_component et water_component_temp (RG32I - 8 bytes par pixel)
-	for tex_id in ["water_component", "water_component_temp"]:
+	# Créer water_component (RG32I - 8 bytes par pixel)
+	for tex_id in ["water_component"]:
 		var wc_data = PackedByteArray()
 		wc_data.resize(resolution.x * resolution.y * 8)
 		# Initialiser à -1 (invalide)
@@ -683,8 +680,8 @@ func initialize_water_textures() -> void:
 		else:
 			push_error("❌ Échec création texture river_sources")
 	
-	# Créer river_flux et river_flux_temp (R32F - 4 bytes par pixel)
-	for tex_id in ["river_flux", "river_flux_temp"]:
+	# Créer river_flux (R32F - 4 bytes par pixel)
+	for tex_id in ["river_flux"]:
 		var rf_data = PackedByteArray()
 		rf_data.resize(resolution.x * resolution.y * 4)
 		rf_data.fill(0)
@@ -727,8 +724,8 @@ func initialize_water_textures() -> void:
 		else:
 			push_error("❌ Échec création texture flow_direction")
 
-	# Créer ocean_reachable et ocean_reachable_temp (R8UI - 1 byte par pixel, ping-pong)
-	for tex_id in ["ocean_reachable", "ocean_reachable_temp"]:
+	# Créer ocean_reachable (R8UI - 1 byte par pixel)
+	for tex_id in ["ocean_reachable"]:
 		var or_data = PackedByteArray()
 		or_data.resize(resolution.x * resolution.y)
 		or_data.fill(0)  # 0 = non connecté par défaut
@@ -742,7 +739,7 @@ func initialize_water_textures() -> void:
 			else:
 				push_error("❌ Échec création texture " + tex_id)
 
-	print("✅ Textures eaux créées (4x R8 + 2x RG32I + 2x R32UI + 2x R32F)")
+	print("✅ Textures eaux créées (3x R8 + 1x RG32I + 2x R32UI + 1x R32F)")
 
 # === CRÉATION DES TEXTURES RÉGIONS (Étape 4) ===
 func initialize_region_textures() -> void:

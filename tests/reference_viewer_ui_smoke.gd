@@ -22,14 +22,12 @@ func _ready() -> void:
 	var controls := viewer_root.get_node_or_null("MapViewerControls") as Control
 	assert(map_viewport != null and map_viewport.size.x > 1000.0)
 	assert(controls != null and controls.position.y > map_viewport.position.y + map_viewport.size.y)
-	var parameter_layer := master.get_node_or_null("ParameterWorkspaceLayer") as CanvasLayer
-	assert(parameter_layer != null)
-	assert(master.get_node_or_null("ParameterWorkspaceLayer/ParameterWorkspace/ParametersHost/Control_Parameters") != null)
 	master.call("_show_parameters_workspace")
 	assert(not viewer_layer.visible)
-	assert(parameter_layer.visible)
+	var return_layer := master.get_node_or_null("ViewerReturnLayer") as CanvasLayer
+	assert(return_layer != null and return_layer.visible)
 	master.call("_show_viewer_workspace")
-	assert(viewer_layer.visible and not parameter_layer.visible)
+	assert(viewer_layer.visible and not return_layer.visible)
 
 	DirAccess.make_dir_recursive_absolute("user://temp")
 	var capture_path := "user://temp/reference_viewer_smoke.png"
