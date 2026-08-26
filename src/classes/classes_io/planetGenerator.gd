@@ -195,9 +195,12 @@ func _emit_tiled_progress(phase: String, completed: int, total: int) -> void:
 
 func cancel_generation(reason: String = "user") -> void:
 	_cancel_mutex.lock()
+	var first_request := not _cancel_requested
 	_cancel_requested = true
 	_cancel_reason = reason
 	_cancel_mutex.unlock()
+	if first_request:
+		print("[PlanetGenerator] Cancellation requested from UI: ", reason)
 	if tiled_pipeline != null:
 		tiled_pipeline.cancel(reason)
 

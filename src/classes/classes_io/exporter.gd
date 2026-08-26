@@ -16,6 +16,7 @@ var params: Dictionary = {}
 # this setting never controls the single GPU generation queue.
 var _nb_threads: int = 1
 var last_metrics: Dictionary = {}
+var cancellation_probe: Callable = Callable()
 var _admin_color_cursor: int = 0
 
 # Water colors by atmosphere type
@@ -52,6 +53,24 @@ static var WATER_DARKENING_FACTOR = 0.85
 ## pour transformer les buffers de données brutes du GPU (VRAM) en objets [Image] manipulables par le CPU.
 ## Elle assure la cohérence des données entre les différentes couches (ex: s'assurer que la carte
 ## des biomes utilise bien les données d'élévation fraîchement extraites).
+func _cancel_requested() -> bool:
+	if not cancellation_probe.is_valid():
+		return false
+	var request = cancellation_probe.call()
+	if request is Dictionary:
+		return bool(request.get("cancelled", false))
+	return bool(request)
+
+
+func _abort_export_if_cancelled(export_started_usec: int) -> bool:
+	if not _cancel_requested():
+		return false
+	last_metrics["cancelled"] = true
+	_finalize_metrics(export_started_usec)
+	print("[Exporter] Export cancelled by generation request")
+	return true
+
+
 func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictionary) -> Dictionary:
 	"""
 	Export all map types from GPU textures to PNG files
@@ -81,6 +100,8 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		"rgba32f_map_readbacks": 0,
 		"peak_system_ram_bytes": int(Performance.get_monitor(Performance.MEMORY_STATIC)),
 	}
+	if _abort_export_if_cancelled(export_started_usec):
+		return {}
 	
 	print("[Exporter] Starting map export to: ", output_dir,
 		" (PNG workers=", _nb_threads, ", policy=", last_metrics["worker_policy"], ")")
@@ -112,6 +133,8 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		var final_result = _export_final_map(gpu, output_dir)
 		for key in final_result.keys():
 			exported_files[key] = final_result[key]
+		if _abort_export_if_cancelled(export_started_usec):
+			return exported_files
 		
 		if bool(params.get("run_integrity_checks", true)):
 			var integrity_report := PlanetIntegrityChecker.run(gpu, params, exported_files)
@@ -159,6 +182,8 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		exported_files[key] = topo_result[key]
 	geo_img = null
 	geo_data = PackedByteArray()
+	if _abort_export_if_cancelled(export_started_usec):
+		return exported_files
 
 	var plates_data := _read_texture(gpu, "plates")
 	if plates_data.size() != expected_size:
@@ -171,6 +196,8 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		exported_files[key] = plates_result[key]
 	plates_img = null
 	plates_data = PackedByteArray()
+	if _abort_export_if_cancelled(export_started_usec):
+		return exported_files
 	
 	# === EXPORT CLIMAT (Step 3) - Optimisé RGBA8 Direct ===
 	# Pour les planètes sans atmosphère ou stériles, exporter seulement temp/precip (pas nuages/banquise)
@@ -182,6 +209,8 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		var climate_result = _export_climate_maps_optimized(gpu, output_dir)
 		for key in climate_result.keys():
 			exported_files[key] = climate_result[key]
+	if _abort_export_if_cancelled(export_started_usec):
+		return exported_files
 	
 	# === EXPORT EAUX (Step 2.5) - Classification des masses d'eau ===
 	# Pas d'eau sur planètes sans atmosphère ou stériles
@@ -199,6 +228,8 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		var river_type_result = _export_river_type_map(gpu, output_dir, width, height)
 		for key in river_type_result.keys():
 			exported_files[key] = river_type_result[key]
+	if _abort_export_if_cancelled(export_started_usec):
+		return exported_files
 	
 	# === EXPORT RÉGIONS (Step 4) - Régions administratives ===
 	var region_result = _export_region_map(gpu, output_dir,params.get("region_generation_optimised",true))
@@ -211,11 +242,15 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		var ocean_region_result = _export_ocean_region_map(gpu, output_dir,params.get("region_generation_optimised",true))
 		for key in ocean_region_result.keys():
 			exported_files[key] = ocean_region_result[key]
+	if _abort_export_if_cancelled(export_started_usec):
+		return exported_files
 	
 	# === EXPORT BIOMES (Step 4.1) ===
 	var biome_result = _export_biome_map(gpu, output_dir)
 	for key in biome_result.keys():
 		exported_files[key] = biome_result[key]
+	if _abort_export_if_cancelled(export_started_usec):
+		return exported_files
 
 	# === CARTOGRAPHIE PALETTE-DRIVEN (Milestone 6) ===
 	if bool(params.get("export_cartographic_map", true)):
@@ -226,21 +261,29 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		var grid_overlay_result := _export_grid_overlay(gpu, output_dir)
 		for key in grid_overlay_result.keys():
 			exported_files[key] = grid_overlay_result[key]
+	if _abort_export_if_cancelled(export_started_usec):
+		return exported_files
 	
 	# === EXPORT FINAL MAP (Step 6) ===
 	var final_result = _export_final_map(gpu, output_dir)
 	for key in final_result.keys():
 		exported_files[key] = final_result[key]
+	if _abort_export_if_cancelled(export_started_usec):
+		return exported_files
 	
 	# === EXPORT HIÉRARCHIE ADMINISTRATIVE (Step 4.6) ===
 	var hierarchy_result = _export_hierarchy_maps(gpu, output_dir)
 	for key in hierarchy_result.keys():
 		exported_files[key] = hierarchy_result[key]
+	if _abort_export_if_cancelled(export_started_usec):
+		return exported_files
 	
 	# === EXPORT RESSOURCES (Step 5) ===
 	var resources_result = _export_resources_maps(gpu, output_dir, width, height)
 	for key in resources_result.keys():
 		exported_files[key] = resources_result[key]
+	if _abort_export_if_cancelled(export_started_usec):
+		return exported_files
 	
 	if bool(params.get("run_integrity_checks", true)):
 		var integrity_report := PlanetIntegrityChecker.run(gpu, params, exported_files)
@@ -1375,6 +1418,10 @@ func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, hei
 	else:
 		print("  ⚠️ Petrole texture not available, skipping")
 	
+	if _cancel_requested():
+		print("[Exporter] Resource export cancelled after petroleum map")
+		return result
+
 	# === EXPORT RESSOURCES (RGBA8UI -> cartes individuelles streamées) ===
 	if gpu.textures.has("resources") and gpu.textures["resources"].is_valid():
 		var res_data = _read_texture(gpu, "resources")
@@ -1386,6 +1433,9 @@ func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, hei
 				var counts := PackedInt32Array()
 				counts.resize(resource_count)
 				for pixel_index in range(width * height):
+					if (pixel_index & 65535) == 0 and _cancel_requested():
+						print("[Exporter] Resource export cancelled while counting resources")
+						return result
 					var source_offset := pixel_index * 4
 					var resource_id := int(res_data[source_offset])
 					if res_data[source_offset + 3] > 0 and resource_id < resource_count:
@@ -1401,6 +1451,9 @@ func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, hei
 				var resource_indices := PackedInt32Array()
 				resource_indices.resize(offsets[resource_count])
 				for pixel_index in range(width * height):
+					if (pixel_index & 65535) == 0 and _cancel_requested():
+						print("[Exporter] Resource export cancelled while building resource index")
+						return result
 					var source_offset := pixel_index * 4
 					var resource_id := int(res_data[source_offset])
 					if res_data[source_offset + 3] == 0 or resource_id >= resource_count:
@@ -1414,6 +1467,9 @@ func _export_resources_maps(gpu: GPUContext, output_dir: String, width: int, hei
 
 				# Materialize, compress and release exactly one resource map at a time.
 				for i in range(RESOURCE_NAMES.size()):
+					if _cancel_requested():
+						print("[Exporter] Resource export cancelled at resource ", i)
+						return result
 					var output := PackedByteArray()
 					output.resize(width * height * 4)
 					output.fill(0)

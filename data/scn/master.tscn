@@ -39,6 +39,22 @@
 [ext_resource type="Texture2D" uid="uid://nb4amu2omgpi" path="res://data/img/UI/button/red_btn_hover.png" id="31_syvc8"]
 [ext_resource type="Texture2D" uid="uid://d00rk2qqtvjo7" path="res://data/img/UI/button/random_btn_hover.png" id="32_23ir5"]
 
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_statuspanel"]
+content_margin_left = 8.0
+content_margin_top = 5.0
+content_margin_right = 8.0
+content_margin_bottom = 5.0
+texture = ExtResource("6_gihwl")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_wim0k"]
+texture = ExtResource("29_iijg3")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_xtfv3"]
+texture = ExtResource("30_a0y5r")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_4smu3"]
+texture = ExtResource("31_syvc8")
+
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_dbnah"]
 
 [sub_resource type="Theme" id="Theme_7eaih"]
@@ -76,15 +92,6 @@ default_font_size = 25
 [sub_resource type="StyleBoxTexture" id="StyleBoxTexture_hvy7f"]
 content_margin_left = 6.0
 texture = ExtResource("15_dbnah")
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_wim0k"]
-texture = ExtResource("29_iijg3")
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_xtfv3"]
-texture = ExtResource("30_a0y5r")
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_4smu3"]
-texture = ExtResource("31_syvc8")
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_7eaih"]
 
@@ -192,6 +199,74 @@ theme_override_colors/font_color = Color(0.21996303, 0.21996303, 0.21996303, 1)
 theme_override_font_sizes/font_size = 25
 text = "VIEW_MODE"
 horizontal_alignment = 1
+metadata/_edit_lock_ = true
+
+[node name="GenerationStatusPanel" type="PanelContainer" parent="ImageFrame/ImageMenu/Control Images" unique_id=1749739835]
+layout_mode = 0
+offset_left = 61.09782
+offset_top = -60.797504
+offset_right = 583.0561
+offset_bottom = -7.7975044
+mouse_filter = 1
+theme_override_styles/panel = SubResource("StyleBoxTexture_statuspanel")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="ImageFrame/ImageMenu/Control Images/GenerationStatusPanel" unique_id=1549739835]
+layout_mode = 2
+theme_override_constants/separation = 2
+metadata/_edit_lock_ = true
+
+[node name="Header" type="HBoxContainer" parent="ImageFrame/ImageMenu/Control Images/GenerationStatusPanel/VBoxContainer" unique_id=1649739835]
+layout_mode = 2
+metadata/_edit_lock_ = true
+
+[node name="PhaseLabel" type="Label" parent="ImageFrame/ImageMenu/Control Images/GenerationStatusPanel/VBoxContainer/Header" unique_id=1149739835]
+layout_mode = 2
+size_flags_horizontal = 3
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_font_sizes/font_size = 18
+text = "GEN_STATUS_READY"
+metadata/_edit_lock_ = true
+
+[node name="MemoryLabel" type="Label" parent="ImageFrame/ImageMenu/Control Images/GenerationStatusPanel/VBoxContainer/Header" unique_id=1449739835]
+layout_mode = 2
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.85, 0.85, 0.85, 1)
+theme_override_font_sizes/font_size = 18
+text = "GEN_STATUS_IDLE"
+metadata/_edit_lock_ = true
+
+[node name="CancelGenerationButton" type="Button" parent="ImageFrame/ImageMenu/Control Images/GenerationStatusPanel/VBoxContainer/Header" unique_id=1249739835]
+custom_minimum_size = Vector2(82, 0)
+layout_mode = 2
+focus_mode = 0
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_focus_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_pressed_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_disabled_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_font_sizes/font_size = 14
+theme_override_styles/normal = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
+disabled = true
+text = "GEN_CANCEL"
+metadata/_edit_lock_ = true
+
+[node name="GenerationProgressBar" type="ProgressBar" parent="ImageFrame/ImageMenu/Control Images/GenerationStatusPanel/VBoxContainer" unique_id=1349739835]
+layout_mode = 2
+theme = ExtResource("5_e2i44")
+theme_override_font_sizes/font_size = 12
 metadata/_edit_lock_ = true
 
 [node name="ImageMenu" type="Sprite2D" parent="ImageFrame/ImageMenu" unique_id=1330868936]
@@ -1970,6 +2045,7 @@ offset_right = -25.502563
 offset_bottom = -633.45825
 grow_horizontal = 2
 grow_vertical = 2
+metadata/_edit_lock_ = true
 
 [node name="CAN" type="TextureButton" parent="ImageFrame/Control General/HBoxContainer" unique_id=1559100294]
 layout_mode = 2
@@ -2028,10 +2104,10 @@ metadata/_edit_lock_ = true
 
 [node name="btnGenerer" type="Button" parent="ImageFrame/Control General" unique_id=1429739835]
 layout_mode = 0
-offset_left = 1028.7977
-offset_top = 587.473
-offset_right = 1297.7979
-offset_bottom = 634.473
+offset_left = 983.4413
+offset_top = 588.19293
+offset_right = 1252.4414
+offset_bottom = 635.19293
 focus_mode = 0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
@@ -2056,10 +2132,10 @@ metadata/_edit_lock_ = true
 
 [node name="btnSauvegarder" type="Button" parent="ImageFrame/Control General" unique_id=1585738532]
 layout_mode = 0
-offset_left = 1028.7976
-offset_top = 639.30884
-offset_right = 1297.7976
-offset_bottom = 686.30884
+offset_left = 982.7214
+offset_top = 640.0288
+offset_right = 1251.7214
+offset_bottom = 687.0288
 focus_mode = 0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
@@ -2152,6 +2228,34 @@ theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
 text = "LOAD_PRESET"
 metadata/_edit_lock_ = true
 
+[node name="btnLoadPlanetProject" type="Button" parent="ImageFrame/Control General" unique_id=1469739835]
+layout_mode = 0
+offset_left = 1257.0194
+offset_top = 640.0288
+offset_right = 1390.3024
+offset_bottom = 678.0288
+focus_mode = 0
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_focus_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_pressed_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_font_sizes/font_size = 20
+theme_override_styles/normal = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
+text = "LOAD_PLANET"
+metadata/_edit_lock_ = true
+
 [node name="btnPrecedent" type="TextureButton" parent="ImageFrame" unique_id=1620452075]
 offset_left = 336.21307
 offset_top = 631.38947
@@ -2194,6 +2298,7 @@ texture_disabled = ExtResource("8_k8o41")
 texture_focused = ExtResource("7_o3yh3")
 metadata/_edit_lock_ = true
 
+[connection signal="pressed" from="ImageFrame/ImageMenu/Control Images/GenerationStatusPanel/VBoxContainer/Header/CancelGenerationButton" to="." method="_on_cancel_generation_pressed"]
 [connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed/seed/TextureButton" to="." method="_on_random_seed_pressed"]
 [connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/Title/TextureButton" to="." method="_on_fold_button_pressed" binds= ["ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer"]]
 [connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/General_Categorie/MarginContainer/Parameters/Planet_Name_Param/HBoxContainer/TextureButton" to="." method="_on_random_name_pressed"]

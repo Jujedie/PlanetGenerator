@@ -10,17 +10,45 @@ var _generation_epoch: int = 0
 var _is_exiting: bool = false
 var _loaded_project: Dictionary = {}
 var _load_planet_button: Button
-var _generation_status_panel: PanelContainer
+var _generation_status_panel: Control
 var _generation_phase_label: Label
 var _generation_progress_bar: ProgressBar
 var _generation_memory_label: Label
 var _cancel_generation_button: Button
 var _generation_started_usec: int = 0
+var _generation_phase_key: String = "GEN_STATUS_READY"
+var _generation_phase_fallback: String = ""
+var _generation_memory_key: String = "GEN_STATUS_IDLE"
+var _generation_memory_args: Dictionary = {}
 
 # --- Constants ---
 const BASE_PATH_SLIDERS = "ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"
 const PRESETS_DIR = "user://presets/"
 const SFX_GENERATION_DONE = "res://data/sound/Foley UI E.wav"
+
+const GENERATION_PHASE_TRANSLATION_KEYS := {
+	"gpu_initialization": "GEN_PHASE_GPU_INITIALIZATION",
+	"base_elevation": "GEN_PHASE_BASE_ELEVATION",
+	"crust_age": "GEN_PHASE_CRUST_AGE",
+	"cratering": "GEN_PHASE_CRATERING",
+	"pre_erosion_climate": "GEN_PHASE_PRE_EROSION_CLIMATE",
+	"erosion": "GEN_PHASE_EROSION",
+	"final_climate": "GEN_PHASE_FINAL_CLIMATE",
+	"water": "GEN_PHASE_WATER",
+	"ice_caps": "GEN_PHASE_ICE_CAPS",
+	"biomes": "GEN_PHASE_BIOMES",
+	"land_regions": "GEN_PHASE_LAND_REGIONS",
+	"ocean_regions": "GEN_PHASE_OCEAN_REGIONS",
+	"resources": "GEN_PHASE_RESOURCES",
+	"final_map": "GEN_PHASE_FINAL_MAP",
+	"export": "GEN_PHASE_EXPORT",
+	"complete": "GEN_PHASE_COMPLETE",
+	"global_hydrology_context": "GEN_PHASE_GLOBAL_HYDROLOGY_CONTEXT",
+	"terrain_tectonics": "GEN_PHASE_TERRAIN_TECTONICS",
+	"climate": "GEN_PHASE_CLIMATE",
+	"hydrology": "GEN_PHASE_HYDROLOGY",
+	"classification": "GEN_PHASE_CLASSIFICATION",
+}
 
 const CATEGORIES_PATHS = {
 	"GENERAL" : BASE_PATH_SLIDERS+"/General_Categorie/MarginContainer/Parameters/",
@@ -92,102 +120,88 @@ func _ready() -> void:
 
 
 func _setup_generation_status_ui() -> void:
-	# M7.3 status is a permanent part of the right-hand control column. Keeping
-	# it visible while idle makes the feature discoverable and avoids a floating
-	# overlay covering the header/map.
-	var parent := $"ImageFrame/Control General"
-	var parameters_panel := $"ImageFrame/Control General/Control_Parameters"
-	# Reserve a compact strip between the parameter scroller and action buttons.
-	parameters_panel.offset_bottom = 510.0
-
-	_generation_status_panel = PanelContainer.new()
-	_generation_status_panel.name = "GenerationStatusPanel"
-	_generation_status_panel.position = Vector2(977.0, 515.0)
-	_generation_status_panel.size = Vector2(363.0, 66.0)
-	_generation_status_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	parent.add_child(_generation_status_panel)
-
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 2)
-	_generation_status_panel.add_child(box)
-
-	var header := HBoxContainer.new()
-	box.add_child(header)
-	_generation_phase_label = Label.new()
-	_generation_phase_label.text = "READY"
-	_generation_phase_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(_generation_phase_label)
-	_cancel_generation_button = Button.new()
-	_cancel_generation_button.text = "CANCEL"
-	_cancel_generation_button.disabled = true
-	_cancel_generation_button.focus_mode = Control.FOCUS_NONE
-	_cancel_generation_button.pressed.connect(_on_cancel_generation_pressed)
-	header.add_child(_cancel_generation_button)
-
-	_generation_progress_bar = ProgressBar.new()
+	_generation_status_panel = $"ImageFrame/ImageMenu/Control Images/GenerationStatusPanel"
+	_generation_phase_label = $"ImageFrame/ImageMenu/Control Images/GenerationStatusPanel/VBoxContainer/Header/PhaseLabel"
+	_generation_progress_bar = $"ImageFrame/ImageMenu/Control Images/GenerationStatusPanel/VBoxContainer/GenerationProgressBar"
+	_generation_memory_label = $"ImageFrame/ImageMenu/Control Images/GenerationStatusPanel/VBoxContainer/Header/MemoryLabel"
+	_cancel_generation_button = $"ImageFrame/ImageMenu/Control Images/GenerationStatusPanel/VBoxContainer/Header/CancelGenerationButton"
+	_set_generation_phase_text("GEN_STATUS_READY")
 	_generation_progress_bar.min_value = 0
 	_generation_progress_bar.max_value = 100
 	_generation_progress_bar.value = 0
 	_generation_progress_bar.show_percentage = true
-	box.add_child(_generation_progress_bar)
+	_set_generation_memory_text("GEN_STATUS_IDLE")
+	_generation_memory_label.tooltip_text = tr("GEN_STATUS_MEMORY_TOOLTIP")
+	_cancel_generation_button.disabled = true
+	if not _cancel_generation_button.pressed.is_connected(_on_cancel_generation_pressed):
+		_cancel_generation_button.pressed.connect(_on_cancel_generation_pressed)
 
-	_generation_memory_label = Label.new()
-	_generation_memory_label.text = "Idle • no active generation"
-	_generation_memory_label.clip_text = true
-	_generation_memory_label.tooltip_text = "Estimated active generation memory and elapsed time"
-	box.add_child(_generation_memory_label)
+func _set_generation_phase_text(key: String, fallback: String = "") -> void:
+	_generation_phase_key = key
+	_generation_phase_fallback = fallback
+	if key.is_empty():
+		_generation_phase_label.text = fallback
+		return
+	var translated := tr(key)
+	_generation_phase_label.text = fallback if translated == key and not fallback.is_empty() else translated
+
+
+func _set_generation_memory_text(key: String, args: Dictionary = {}) -> void:
+	_generation_memory_key = key
+	_generation_memory_args = args.duplicate(true)
+	var translated := tr(key)
+	_generation_memory_label.text = translated.format(args) if not args.is_empty() else translated
+
+
+func _refresh_generation_status_translation() -> void:
+	_set_generation_phase_text(_generation_phase_key, _generation_phase_fallback)
+	_set_generation_memory_text(_generation_memory_key, _generation_memory_args)
+	_generation_memory_label.tooltip_text = tr("GEN_STATUS_MEMORY_TOOLTIP")
+
 
 func _show_generation_status(params: Dictionary) -> void:
 	_generation_started_usec = Time.get_ticks_usec()
 	_generation_progress_bar.value = 0
-	_generation_phase_label.text = "Preparing generation…"
+	_set_generation_phase_text("GEN_STATUS_PREPARING")
 	var dims: Vector2i = params.get("global_dimensions", params.get("resolution", Vector2i.ZERO))
 	# Deliberately conservative UI estimate: several authoritative fields plus
 	# working textures coexist in the monolithic path.
 	var estimate := int(dims.x) * int(dims.y) * 64
-	_generation_memory_label.text = "Raster %dx%d • est. active ~%.2f GiB" % [dims.x, dims.y, float(estimate) / 1073741824.0]
+	_set_generation_memory_text("GEN_STATUS_MEMORY", {"width": dims.x, "height": dims.y, "gib": "%.2f" % (float(estimate) / 1073741824.0)})
 	_cancel_generation_button.disabled = false
 
 func _on_generation_progress(phase: String, completed: int, total: int) -> void:
 	var safe_total := maxi(total, 1)
-	_generation_phase_label.text = phase.replace("_", " ").capitalize()
+	var phase_key := str(GENERATION_PHASE_TRANSLATION_KEYS.get(phase, ""))
+	_set_generation_phase_text(phase_key, phase.replace("_", " ").capitalize())
 	_generation_progress_bar.value = clampf(float(completed) * 100.0 / float(safe_total), 0.0, 98.0)
 
 func _on_cancel_generation_pressed() -> void:
 	if planetGenerator != null:
 		_cancel_generation_button.disabled = true
-		_generation_phase_label.text = "Cancelling at the next safe boundary…"
+		_set_generation_phase_text("GEN_STATUS_CANCELLING")
 		planetGenerator.cancel_generation("user")
 
 func _on_generation_cancelled(reason: String) -> void:
-	_generation_phase_label.text = "CANCELLED"
+	_set_generation_phase_text("GEN_STATUS_CANCELLED")
 	_generation_progress_bar.value = 0
-	_generation_memory_label.text = "Cancelled: %s" % reason
+	_set_generation_memory_text("GEN_STATUS_CANCELLED_REASON", {"reason": reason})
 	_cancel_generation_button.disabled = true
 	_set_buttons_enabled(true)
 	$"ImageFrame/LabelNomMap".text = "Generation cancelled (%s)" % reason
 
 func _setup_project_loader_ui() -> void:
-	var parent := $"ImageFrame/Control General"
-	_load_planet_button = Button.new()
-	_load_planet_button.name = "btnLoadPlanetProject"
-	_load_planet_button.text = "LOAD PLANET"
-	_load_planet_button.theme = $"ImageFrame/Control General/btnSauvegarder".theme
-	# Previous M7.1 coordinates placed this below the 700 px viewport.
-	_load_planet_button.position = Vector2(843.0, 88.0)
-	_load_planet_button.size = Vector2(126.0, 42.0)
-	_load_planet_button.text = "LOAD PLANET"
-	_load_planet_button.add_theme_font_size_override("font_size", 20)
+	_load_planet_button = $"ImageFrame/Control General/btnLoadPlanetProject"
 	_load_planet_button.focus_mode = Control.FOCUS_NONE
-	_load_planet_button.pressed.connect(_on_load_planet_project_pressed)
-	parent.add_child(_load_planet_button)
+	if not _load_planet_button.pressed.is_connected(_on_load_planet_project_pressed):
+		_load_planet_button.pressed.connect(_on_load_planet_project_pressed)
 
 
 func _on_load_planet_project_pressed() -> void:
 	var dialog := FileDialog.new()
 	dialog.access = FileDialog.ACCESS_FILESYSTEM
 	dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
-	dialog.title = "Load Planet Project"
+	dialog.title = tr("LOAD_PLANET_DIALOG_TITLE")
 	dialog.filters = PackedStringArray(["planet_project.json ; Planet Generator Project"])
 	dialog.min_size = Vector2i(700, 450)
 	add_child(dialog)
@@ -273,8 +287,8 @@ func _on_btn_comfirme_pressed() -> void:
 	# Ne pas bloquer l'interface si l'initialisation GPU a tout de même échoué.
 	_set_buttons_enabled(not generation_started)
 	if not generation_started:
-		_generation_phase_label.text = "UNAVAILABLE"
-		_generation_memory_label.text = "GPU generation could not start"
+		_set_generation_phase_text("GEN_STATUS_UNAVAILABLE")
+		_set_generation_memory_text("GEN_STATUS_GPU_START_FAILED")
 		_cancel_generation_button.disabled = true
 
 
@@ -323,9 +337,9 @@ func _on_planetGenerator_finished_main(generation_epoch: int) -> void:
 		print("Erreur lors du chargement de l'image: ", maps[map_index])
 
 	_generation_progress_bar.value = 100
-	_generation_phase_label.text = "COMPLETE"
+	_set_generation_phase_text("GEN_STATUS_COMPLETE")
 	var elapsed_s := float(Time.get_ticks_usec() - _generation_started_usec) / 1000000.0
-	_generation_memory_label.text = "Completed in %.2f s" % elapsed_s
+	_set_generation_memory_text("GEN_STATUS_COMPLETED_IN", {"seconds": "%.2f" % elapsed_s})
 	_cancel_generation_button.disabled = true
 
 	# 2. Play completion sound
@@ -742,6 +756,7 @@ func _change_lang(code: String) -> void:
 	langue = code
 	TranslationServer.set_locale(langue)
 	maj_labels()
+	_refresh_generation_status_translation()
 	update_map_label()
 
 func _on_btn_quitter_pressed() -> void:

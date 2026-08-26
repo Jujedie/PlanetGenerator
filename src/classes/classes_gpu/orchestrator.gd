@@ -681,7 +681,8 @@ func run_simulation() -> void:
 		print("[Orchestrator] 🪐 Planète gazeuse détectée - pipeline simplifié")
 		
 		# Carte finale gazeuse (pipeline multi-passes, écoulement fluide par advection)
-		_run_timed_phase("gas_giant", run_gas_giant_phase.bind(generation_params, w, h))
+		if not _run_timed_phase("gas_giant", run_gas_giant_phase.bind(generation_params, w, h)):
+			return
 		gpu.sync_for_cpu("simulation_complete")
 		_record_total_simulation_time(simulation_started_usec)
 		var gas_release := gpu.prepare_for_export(true)
@@ -694,47 +695,60 @@ func run_simulation() -> void:
 		return
 
 	# === ÉTAPE 0 : GÉNÉRATION TOPOGRAPHIQUE DE BASE ===
-	_run_timed_phase("base_elevation", run_base_elevation_phase.bind(generation_params, w, h))
+	if not _run_timed_phase("base_elevation", run_base_elevation_phase.bind(generation_params, w, h)):
+		return
 	
 	# === ÉTAPE 0.5 : ÂGE DE CROÛTE OCÉANIQUE (JFA) ===
-	_run_timed_phase("crust_age", run_crust_age_phase.bind(generation_params, w, h))
+	if not _run_timed_phase("crust_age", run_crust_age_phase.bind(generation_params, w, h)):
+		return
 	
 	# === ÉTAPE 0.6 : CRATÈRES D'IMPACT (planètes sans atmosphère) ===
-	_run_timed_phase("cratering", run_cratering_phase.bind(generation_params, w, h))
+	if not _run_timed_phase("cratering", run_cratering_phase.bind(generation_params, w, h)):
+		return
 
 	# === ÉTAPE 1.5 : CLIMAT PRÉLIMINAIRE POUR L'ÉROSION ===
 	# L'érosion lit climate.G pour la pluie et climate.R pour le gel/évaporation.
 	# Ces canaux doivent être valides avant la première itération hydraulique.
-	_run_timed_phase("pre_erosion_climate", run_pre_erosion_climate_phase.bind(generation_params, w, h))
+	if not _run_timed_phase("pre_erosion_climate", run_pre_erosion_climate_phase.bind(generation_params, w, h)):
+		return
 	
 	# === ÉTAPE 2 : ÉROSION HYDRAULIQUE ===
-	_run_timed_phase("erosion", run_erosion_phase.bind(generation_params, w, h))
+	if not _run_timed_phase("erosion", run_erosion_phase.bind(generation_params, w, h)):
+		return
 	
 	# === ÉTAPE 3 : ATMOSPHÈRE & CLIMAT ===
 	# IMPORTANT: Doit être exécuté AVANT la classification des eaux
 	# car les rivières dépendent des précipitations (climate texture canal G)
-	_run_timed_phase("final_climate", run_atmosphere_phase.bind(generation_params, w, h))
+	if not _run_timed_phase("final_climate", run_atmosphere_phase.bind(generation_params, w, h)):
+		return
 	
 	# === ÉTAPE 2.5 : CLASSIFICATION DES EAUX & RIVIÈRES ===
-	_run_timed_phase("water", run_water_phase.bind(generation_params, w, h))
+	if not _run_timed_phase("water", run_water_phase.bind(generation_params, w, h)):
+		return
 	
 	# === ÉTAPE 3.5 : BANQUISE (après eau pour vérifier water_colored) ===
-	_run_timed_phase("ice_caps", run_ice_caps_phase.bind(generation_params, w, h))
+	if not _run_timed_phase("ice_caps", run_ice_caps_phase.bind(generation_params, w, h)):
+		return
 	
 	# === ÉTAPE 4.1 : BIOMES ===
-	_run_timed_phase("biomes", run_biome_phase.bind(generation_params, w, h))
+	if not _run_timed_phase("biomes", run_biome_phase.bind(generation_params, w, h)):
+		return
 	
 	# === ÉTAPE 4 : RÉGIONS ADMINISTRATIVES ===
-	_run_timed_phase("land_regions", run_region_phase.bind(generation_params, w, h))
+	if not _run_timed_phase("land_regions", run_region_phase.bind(generation_params, w, h)):
+		return
 	
 	# === ÉTAPE 4.5 : RÉGIONS OCÉANIQUES ===
-	_run_timed_phase("ocean_regions", run_ocean_region_phase.bind(generation_params, w, h))
+	if not _run_timed_phase("ocean_regions", run_ocean_region_phase.bind(generation_params, w, h)):
+		return
 	
 	# === ÉTAPE 5 : RESSOURCES & PÉTROLE ===
-	_run_timed_phase("resources", run_resources_phase.bind(generation_params, w, h))
+	if not _run_timed_phase("resources", run_resources_phase.bind(generation_params, w, h)):
+		return
 	
 	# === ÉTAPE 6 : FINAL MAP (COMBINAISON) ===
-	_run_timed_phase("final_map", run_final_map_phase.bind(generation_params, w, h))
+	if not _run_timed_phase("final_map", run_final_map_phase.bind(generation_params, w, h)):
+		return
 	# All previous dispatches are ordered on one controlled local-device queue.
 	# This is the final simulation dependency before CPU export.
 	gpu.sync_for_cpu("simulation_complete")
@@ -757,10 +771,10 @@ func run_simulation() -> void:
 	print("=".repeat(60) + "\n")
 
 ## Exécute une phase et conserve sa durée pour les benchmarks déterministes.
-func _run_timed_phase(phase_name: String, phase_callable: Callable) -> void:
+func _run_timed_phase(phase_name: String, phase_callable: Callable) -> bool:
 	_poll_external_cancel()
 	if was_cancelled:
-		return
+		return false
 	_phase_counter += 1
 	emit_signal("phase_started", phase_name, _phase_counter, _phase_total)
 	var started_usec = Time.get_ticks_usec()
@@ -771,6 +785,7 @@ func _run_timed_phase(phase_name: String, phase_callable: Callable) -> void:
 	print("[Timing] ", phase_name, ": ", snappedf(elapsed_ms, 0.01), " ms")
 	gpu._sample_memory_peaks()
 	emit_signal("phase_finished", phase_name, _phase_counter, _phase_total, elapsed_ms)
+	return not was_cancelled
 
 func request_cancel(reason: String = "user") -> void:
 	# Monolithic compute dispatches cannot be interrupted halfway safely. The
@@ -5022,6 +5037,7 @@ func export_all_maps(output_dir: String) -> Dictionary:
 	print("[Orchestrator] 📤 Exporting all maps to: ", output_dir)
 	
 	var exporter = PlanetExporter.new()
+	exporter.cancellation_probe = cancellation_probe
 	var exported := exporter.export_maps(gpu, output_dir, generation_params)
 	last_performance_report["export"] = exporter.last_metrics.duplicate(true)
 	last_performance_report["total_generation_and_export_ms"] = (

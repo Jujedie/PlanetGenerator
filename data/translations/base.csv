@@ -236,3 +236,40 @@ RESOURCE_CESIUM,Cesium,Césium,Cäsium
 RESOURCE_RUBIDIUM,Rubidium,Rubidium,Rubidium
 RESOURCE_HELIUM,Helium,Hélium,Helium
 RESOURCE_TERRES_RARES_MELANGEES,Mixed rare earths,Terres rares mélangées,Gemischte Seltene Erden
+
+LOAD_PLANET,Load planet,Charger planète,Planet laden
+GEN_CANCEL,Cancel,Annuler,Abbrechen
+GEN_STATUS_READY,Ready,Prêt,Bereit
+GEN_STATUS_PREPARING,Preparing generation…,Préparation de la génération…,Generierung wird vorbereitet…
+GEN_STATUS_CANCELLING,Cancelling at the next safe boundary…,Annulation à la prochaine étape sûre…,Abbruch an der nächsten sicheren Grenze…
+GEN_STATUS_CANCELLED,Cancelled,Annulée,Abgebrochen
+GEN_STATUS_CANCELLED_REASON,Cancelled: {reason},Annulée : {reason},Abgebrochen: {reason}
+GEN_STATUS_IDLE,Idle • no active generation,Inactif • aucune génération en cours,Leerlauf • keine aktive Generierung
+GEN_STATUS_MEMORY,Raster {width}×{height} • est. active ~{gib} GiB,Raster {width}×{height} • actif estimé ~{gib} Gio,Raster {width}×{height} • geschätzt aktiv ~{gib} GiB
+GEN_STATUS_MEMORY_TOOLTIP,Estimated active generation memory and elapsed time,Mémoire active estimée et temps écoulé,Geschätzter aktiver Generierungsspeicher und verstrichene Zeit
+GEN_STATUS_COMPLETE,Complete,Terminée,Abgeschlossen
+GEN_STATUS_COMPLETED_IN,Completed in {seconds} s,Terminée en {seconds} s,Abgeschlossen in {seconds} s
+GEN_STATUS_UNAVAILABLE,Unavailable,Indisponible,Nicht verfügbar
+GEN_STATUS_GPU_START_FAILED,GPU generation could not start,La génération GPU n'a pas pu démarrer,GPU-Generierung konnte nicht gestartet werden
+LOAD_PLANET_DIALOG_TITLE,Load Planet Project,Charger un projet de planète,Planetenprojekt laden
+GEN_PHASE_GPU_INITIALIZATION,GPU initialization,Initialisation GPU,GPU-Initialisierung
+GEN_PHASE_BASE_ELEVATION,Base elevation,Relief de base,Basisrelief
+GEN_PHASE_CRUST_AGE,Crust age,Âge de la croûte,Krustenalter
+GEN_PHASE_CRATERING,Cratering,Cratérisation,Kraterbildung
+GEN_PHASE_PRE_EROSION_CLIMATE,Pre-erosion climate,Climat pré-érosion,Klima vor Erosion
+GEN_PHASE_EROSION,Erosion,Érosion,Erosion
+GEN_PHASE_FINAL_CLIMATE,Final climate,Climat final,Endklima
+GEN_PHASE_WATER,Hydrology,Hydrologie,Hydrologie
+GEN_PHASE_ICE_CAPS,Ice caps,Banquise,Eiskappen
+GEN_PHASE_BIOMES,Biomes,Biomes,Biome
+GEN_PHASE_LAND_REGIONS,Land administration,Administration terrestre,Landverwaltung
+GEN_PHASE_OCEAN_REGIONS,Ocean administration,Administration maritime,Meeresverwaltung
+GEN_PHASE_RESOURCES,Resources,Ressources,Ressourcen
+GEN_PHASE_FINAL_MAP,Final map,Carte finale,Endkarte
+GEN_PHASE_EXPORT,Export,Export,Export
+GEN_PHASE_COMPLETE,Complete,Terminée,Abgeschlossen
+GEN_PHASE_GLOBAL_HYDROLOGY_CONTEXT,Global hydrology context,Contexte hydrologique global,Globaler Hydrologiekontext
+GEN_PHASE_TERRAIN_TECTONICS,Terrain & tectonics,Terrain et tectonique,Gelände und Tektonik
+GEN_PHASE_CLIMATE,Climate,Climat,Klima
+GEN_PHASE_HYDROLOGY,Hydrology,Hydrologie,Hydrologie
+GEN_PHASE_CLASSIFICATION,Classification,Classification,Klassifizierung
