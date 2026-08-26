@@ -34,7 +34,7 @@ Enum="*uid://d4mf37hohkuh4"
 [display]
 
 window/size/viewport_width=1400
-window/size/viewport_height=700
+window/size/viewport_height=900
 window/size/maximize_disabled=true
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"

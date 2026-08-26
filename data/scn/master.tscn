@@ -4,15 +4,10 @@
 [ext_resource type="Texture2D" uid="uid://bk66lt4swbv6k" path="res://data/img/UI/fond_machine.png" id="1_krsn2"]
 [ext_resource type="Texture2D" uid="uid://bxt5lqvtrj7js" path="res://data/img/UI/menu_map_machine.png" id="2_ctyun"]
 [ext_resource type="StyleBox" uid="uid://drou36ra2vb7i" path="res://data/styles/lineEdit.tres" id="4_i0hn2"]
-[ext_resource type="Texture2D" uid="uid://5rhhd771dqru" path="res://data/img/UI/button/left_btn.png" id="5_4smu3"]
 [ext_resource type="Theme" uid="uid://bdbapd43uy2gd" path="res://data/font/font.tres" id="5_e2i44"]
 [ext_resource type="Texture2D" uid="uid://b5i5opr4x8t52" path="res://data/img/UI/menu_map_machine_bar_jaune.png" id="5_lb8ov"]
-[ext_resource type="Texture2D" uid="uid://dx2wpv57n767g" path="res://data/img/UI/button/left_btn_hover.png" id="6_7eaih"]
 [ext_resource type="Texture2D" uid="uid://05cgsscpwcv2" path="res://data/img/UI/box.png" id="6_gihwl"]
-[ext_resource type="Texture2D" uid="uid://dy228j2rt426r" path="res://data/img/UI/label.png" id="7_7eaih"]
-[ext_resource type="Texture2D" uid="uid://dd0e84odwseev" path="res://data/img/UI/button/right_btn.png" id="7_o3yh3"]
 [ext_resource type="Texture2D" uid="uid://e4muyhsa1c45" path="res://data/img/UI/button/random_seed_btn.png" id="8_dfspw"]
-[ext_resource type="Texture2D" uid="uid://ftnswkgkcy2e" path="res://data/img/UI/button/right_btn_hover.png" id="8_k8o41"]
 [ext_resource type="Texture2D" uid="uid://csa4fftdxwsnr" path="res://data/img/UI/button/random_seed_btn_pressed.png" id="9_ctyun"]
 [ext_resource type="Texture2D" uid="uid://8x5ar6wn6thw" path="res://data/img/UI/Flags/can.png" id="9_dbnah"]
 [ext_resource type="Texture2D" uid="uid://bcwqacic6q2c5" path="res://data/img/UI/Range/Grabber.png" id="10_gg1ai"]
@@ -45,6 +40,23 @@ content_margin_top = 5.0
 content_margin_right = 8.0
 content_margin_bottom = 5.0
 texture = ExtResource("6_gihwl")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_wim0k"]
+texture = ExtResource("29_iijg3")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_xtfv3"]
+texture = ExtResource("30_a0y5r")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_4smu3"]
+texture = ExtResource("31_syvc8")
+
+[sub_resource type="Theme" id="Theme_dbnah"]
+default_font = ExtResource("14_dfspw")
+default_font_size = 25
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_hvy7f"]
+content_margin_left = 6.0
+texture = ExtResource("15_dbnah")
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_wim0k"]
 content_margin_right = 3.0
@@ -156,25 +168,6 @@ default_font_size = 20
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_gihwl"]
 
-[sub_resource type="Theme" id="Theme_dbnah"]
-default_font = ExtResource("14_dfspw")
-default_font_size = 25
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_hvy7f"]
-content_margin_left = 6.0
-texture = ExtResource("15_dbnah")
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_wim0k"]
-texture = ExtResource("29_iijg3")
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_xtfv3"]
-texture = ExtResource("30_a0y5r")
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_4smu3"]
-texture = ExtResource("31_syvc8")
-
-[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_7eaih"]
-
 [node name="Master" type="Node2D" unique_id=1847100083]
 script = ExtResource("1_7eaih")
 metadata/_edit_lock_ = true
@@ -188,15 +181,156 @@ position = Vector2(-3, 0)
 scale = Vector2(1.389, 1.389)
 texture = ExtResource("1_krsn2")
 centered = false
+metadata/_edit_lock_ = true
 
 [node name="ImageMenu" type="Sprite2D" parent="ImageFrame" unique_id=1713802134]
 texture = ExtResource("2_ctyun")
 centered = false
 metadata/_edit_lock_ = true
 
-[node name="ImageNameLabel" type="Sprite2D" parent="ImageFrame/ImageMenu" unique_id=454676289]
-position = Vector2(482.3614, 655.1475)
-texture = ExtResource("7_7eaih")
+[node name="IntegratedMapViewer" type="PanelContainer" parent="ImageFrame/ImageMenu" unique_id=1967452075]
+offset_left = 830.09357
+offset_top = 103.67169
+offset_right = 1438.0935
+offset_bottom = 232.67169
+mouse_filter = 1
+theme_override_styles/panel = SubResource("StyleBoxTexture_statuspanel")
+
+[node name="Content" type="VBoxContainer" parent="ImageFrame/ImageMenu/IntegratedMapViewer" unique_id=1967452090]
+layout_mode = 2
+theme_override_constants/separation = 4
+metadata/_edit_lock_ = true
+
+[node name="Header" type="HBoxContainer" parent="ImageFrame/ImageMenu/IntegratedMapViewer/Content" unique_id=1967452091]
+layout_mode = 2
+theme_override_constants/separation = 6
+metadata/_edit_lock_ = true
+
+[node name="TitleLabel" type="Label" parent="ImageFrame/ImageMenu/IntegratedMapViewer/Content/Header" unique_id=1967452092]
+layout_mode = 2
+size_flags_horizontal = 3
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_font_sizes/font_size = 21
+text = "MAP_VIEWER_TITLE"
+metadata/_edit_lock_ = true
+
+[node name="ZoomLabel" type="Label" parent="ImageFrame/ImageMenu/IntegratedMapViewer/Content/Header" unique_id=1967452082]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.8784314, 0.5882353, 0, 1)
+theme_override_font_sizes/font_size = 18
+text = "Zoom 100 %"
+horizontal_alignment = 2
+metadata/_edit_lock_ = true
+
+[node name="ResetButton" type="Button" parent="ImageFrame/ImageMenu/IntegratedMapViewer/Content/Header" unique_id=1967452083]
+custom_minimum_size = Vector2(145, 28)
+layout_mode = 2
+focus_mode = 0
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_focus_color = Color(0.9254902, 0.61960787, 0, 1)
+theme_override_colors/font_pressed_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_colors/font_hover_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
+theme_override_font_sizes/font_size = 17
+theme_override_styles/normal = SubResource("StyleBoxTexture_wim0k")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/hover = SubResource("StyleBoxTexture_4smu3")
+theme_override_styles/disabled = SubResource("StyleBoxTexture_xtfv3")
+theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
+text = "MAP_VIEWER_RESET"
+metadata/_edit_lock_ = true
+
+[node name="Selectors" type="HBoxContainer" parent="ImageFrame/ImageMenu/IntegratedMapViewer/Content" unique_id=1967452076]
+layout_mode = 2
+theme_override_constants/separation = 8
+metadata/_edit_lock_ = true
+
+[node name="BaseSelect" type="OptionButton" parent="ImageFrame/ImageMenu/IntegratedMapViewer/Content/Selectors" unique_id=1967452077]
+custom_minimum_size = Vector2(280, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+theme = SubResource("Theme_dbnah")
+theme_override_colors/font_color = Color(0.8784314, 0.5882353, 0, 1)
+theme_override_font_sizes/font_size = 19
+theme_override_styles/normal = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/hover = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/disabled = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/focus = SubResource("StyleBoxTexture_hvy7f")
+metadata/_edit_lock_ = true
+
+[node name="OverlaySelect" type="OptionButton" parent="ImageFrame/ImageMenu/IntegratedMapViewer/Content/Selectors" unique_id=1967452078]
+custom_minimum_size = Vector2(280, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+theme = SubResource("Theme_dbnah")
+theme_override_colors/font_color = Color(0.8784314, 0.5882353, 0, 1)
+theme_override_font_sizes/font_size = 19
+theme_override_styles/normal = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/hover = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/disabled = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_hvy7f")
+theme_override_styles/focus = SubResource("StyleBoxTexture_hvy7f")
+metadata/_edit_lock_ = true
+
+[node name="Footer" type="HBoxContainer" parent="ImageFrame/ImageMenu/IntegratedMapViewer/Content" unique_id=1967452093]
+layout_mode = 2
+theme_override_constants/separation = 10
+metadata/_edit_lock_ = true
+
+[node name="InspectorLabel" type="Label" parent="ImageFrame/ImageMenu/IntegratedMapViewer/Content/Footer" unique_id=1967452094]
+custom_minimum_size = Vector2(300, 38)
+layout_mode = 2
+size_flags_horizontal = 3
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.7607843, 0.78039217, 0.7882353, 1)
+theme_override_font_sizes/font_size = 14
+text = "MAP_VIEWER_INSPECT_HINT"
+vertical_alignment = 1
+autowrap_mode = 2
+metadata/_edit_lock_ = true
+
+[node name="OpacityGroup" type="VBoxContainer" parent="ImageFrame/ImageMenu/IntegratedMapViewer/Content/Footer" unique_id=1967452095]
+custom_minimum_size = Vector2(270, 38)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+metadata/_edit_lock_ = true
+
+[node name="OverlayOpacityLabel" type="Label" parent="ImageFrame/ImageMenu/IntegratedMapViewer/Content/Footer/OpacityGroup" unique_id=1967452080]
+layout_mode = 2
+theme = ExtResource("5_e2i44")
+theme_override_colors/font_color = Color(0.36078432, 0.3764706, 0.38039216, 1)
+theme_override_font_sizes/font_size = 14
+text = "MAP_VIEWER_OVERLAY_OPACITY"
+metadata/_edit_lock_ = true
+
+[node name="OverlayOpacity" type="HSlider" parent="ImageFrame/ImageMenu/IntegratedMapViewer/Content/Footer/OpacityGroup" unique_id=1967452081]
+custom_minimum_size = Vector2(260, 20)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_icons/grabber = ExtResource("10_gg1ai")
+theme_override_icons/grabber_highlight = ExtResource("11_lb8ov")
+theme_override_styles/slider = ExtResource("12_g0s8p")
+theme_override_styles/grabber_area = ExtResource("13_dfspw")
+max_value = 1.0
+step = 0.05
+value = 0.65
 metadata/_edit_lock_ = true
 
 [node name="Control Images" type="Control" parent="ImageFrame/ImageMenu" unique_id=1194335819]
@@ -232,24 +366,12 @@ offset_right = 40.0
 offset_bottom = 40.0
 metadata/_edit_lock_ = true
 
-[node name="LabelFeed" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels" unique_id=1568433128]
-layout_mode = 0
-offset_left = 12.141739
-offset_top = -15.441147
-offset_right = 57.14174
-offset_bottom = -2.4411469
-theme = ExtResource("5_e2i44")
-theme_override_colors/font_color = Color(0.21996303, 0.21996303, 0.21996303, 1)
-text = "L I V E  F E E D"
-metadata/_edit_lock_ = true
-
 [node name="LabelDataCoord" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels" unique_id=1110231136]
-visible = false
 layout_mode = 0
-offset_left = 12.141739
-offset_top = 7.5970154
-offset_right = 74.14174
-offset_bottom = 52.597015
+offset_left = -100.16927
+offset_top = -51.43826
+offset_right = -38.169273
+offset_bottom = -6.438259
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
 text = "PL A C E H O L D ER 
@@ -257,28 +379,16 @@ PL A C E H O L D ER
 PL A C E H O L D ER"
 metadata/_edit_lock_ = true
 
-[node name="LabelBrand" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels" unique_id=1761630903]
+[node name="LabelBrand" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels" unique_id=1998272192]
 layout_mode = 0
-offset_left = 219.48514
-offset_top = 333.011
-offset_right = 418.48514
-offset_bottom = 394.011
-theme = ExtResource("5_e2i44")
-theme_override_colors/font_color = Color(0.21996303, 0.21996303, 0.21996303, 1)
-theme_override_font_sizes/font_size = 50
-text = "JUJEDIE INC."
-metadata/_edit_lock_ = true
-
-[node name="LabelBtn" type="Label" parent="ImageFrame/ImageMenu/Control Images/Labels" unique_id=1998272192]
-layout_mode = 0
-offset_left = 177.00851
-offset_top = 411.48468
-offset_right = 482.2641
-offset_bottom = 442.48468
+offset_left = 164.04958
+offset_top = 273.25574
+offset_right = 469.30518
+offset_bottom = 304.25574
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.21996303, 0.21996303, 0.21996303, 1)
 theme_override_font_sizes/font_size = 25
-text = "VIEW_MODE"
+text = "MAP_VIEWER_TITLE"
 horizontal_alignment = 1
 metadata/_edit_lock_ = true
 
@@ -2315,10 +2425,10 @@ metadata/_edit_lock_ = true
 
 [node name="btnLoadPlanetProject" type="Button" parent="ImageFrame/Control General" unique_id=1469739835]
 layout_mode = 0
-offset_left = 149.02808
-offset_top = 587.47296
-offset_right = 321.0943
-offset_bottom = 623.4701
+offset_left = 310.29517
+offset_top = 226.78186
+offset_right = 482.36133
+offset_bottom = 262.779
 focus_mode = 0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
@@ -2339,49 +2449,6 @@ theme_override_styles/disabled = SubResource("StyleBoxTexture_xtfv3")
 theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_xtfv3")
 theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
 text = "LOAD_PLANET"
-metadata/_edit_lock_ = true
-
-[node name="btnPrecedent" type="TextureButton" parent="ImageFrame" unique_id=1620452075]
-offset_left = 336.21307
-offset_top = 631.38947
-offset_right = 384.21307
-offset_bottom = 679.38947
-focus_mode = 0
-action_mode = 0
-texture_normal = ExtResource("5_4smu3")
-texture_pressed = ExtResource("6_7eaih")
-texture_hover = ExtResource("6_7eaih")
-texture_disabled = ExtResource("6_7eaih")
-texture_focused = ExtResource("5_4smu3")
-metadata/_edit_lock_ = true
-
-[node name="LabelNomMap" type="Label" parent="ImageFrame" unique_id=203585700]
-offset_left = 388.7689
-offset_top = 633.5493
-offset_right = 575.9539
-offset_bottom = 676.74585
-theme = ExtResource("5_e2i44")
-theme_override_colors/font_color = Color(0.8784314, 0.5882353, 0, 1)
-theme_override_font_sizes/font_size = 30
-theme_override_styles/focus = SubResource("StyleBoxEmpty_7eaih")
-text = "Topographie (Gris)"
-horizontal_alignment = 1
-clip_text = true
-metadata/_edit_lock_ = true
-
-[node name="btnSuivant" type="TextureButton" parent="ImageFrame" unique_id=858032159]
-offset_left = 579.5536
-offset_top = 631.38947
-offset_right = 627.5536
-offset_bottom = 679.38947
-focus_mode = 0
-action_mode = 0
-texture_normal = ExtResource("7_o3yh3")
-texture_pressed = ExtResource("8_k8o41")
-texture_hover = ExtResource("8_k8o41")
-texture_disabled = ExtResource("8_k8o41")
-texture_focused = ExtResource("7_o3yh3")
-metadata/_edit_lock_ = true
 
 [connection signal="pressed" from="ImageFrame/ImageMenu/Control Images/GenerationStatusPanel/VBoxContainer/Header/CancelGenerationButton" to="." method="_on_cancel_generation_pressed"]
 [connection signal="pressed" from="ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree/PanelSeed/seed/TextureButton" to="." method="_on_random_seed_pressed"]
@@ -2454,5 +2521,3 @@ metadata/_edit_lock_ = true
 [connection signal="pressed" from="ImageFrame/Control General/btnRandomiser" to="." method="_on_btn_randomise_pressed"]
 [connection signal="pressed" from="ImageFrame/Control General/btnSavePreset" to="." method="save_preset"]
 [connection signal="pressed" from="ImageFrame/Control General/btnLoadPreset" to="." method="load_preset"]
-[connection signal="pressed" from="ImageFrame/btnPrecedent" to="." method="_on_btn_precedant_pressed"]
-[connection signal="pressed" from="ImageFrame/btnSuivant" to="." method="_on_btn_suivant_pressed"]

@@ -6,6 +6,7 @@ THREAD_NUMBER,PNG export workers (0 = automatic): {val},Workers export PNG (0 = 
 PLANET_TYPE,Planet type,Type de planète,Planetentyp
 SAUVEGARDER,SAVE,SAUVEGARDER,SPEICHERN
 GENERER,GENERATE,GENERER,GENERIEREN
+RANDOMISE,RANDOMIZE,RANDOMISER,ZUFÄLLIG
 
 TYPE_DEFAUT,Default,Défaut,Standard
 TYPE_TOXIQUE,Toxic,Toxique,Giftig
@@ -273,3 +274,21 @@ GEN_PHASE_TERRAIN_TECTONICS,Terrain & tectonics,Terrain et tectonique,Gelände u
 GEN_PHASE_CLIMATE,Climate,Climat,Klima
 GEN_PHASE_HYDROLOGY,Hydrology,Hydrologie,Hydrologie
 GEN_PHASE_CLASSIFICATION,Classification,Classification,Klassifizierung
+MAP_VIEWER_TITLE,Map viewer,Visionneuse de carte,Kartenansicht
+VIEWER_PREVIEW,Planet preview,Aperçu de la planète,Planetenvorschau
+MAP_VIEWER_BASE,Base map,Carte,Basiskarte
+MAP_VIEWER_OVERLAY,Overlay,Superposition,Überlagerung
+MAP_VIEWER_BASE_TOOLTIP,Choose the base map without regenerating the planet.,Choisir la carte de base sans régénérer la planète.,Basiskarte auswählen ohne den Planeten neu zu generieren.
+MAP_VIEWER_OVERLAY_TOOLTIP,Blend another exported map over the base layer.,Superposer une autre carte exportée à la carte de base.,Eine weitere exportierte Karte über die Basiskarte legen.
+MAP_VIEWER_NO_OVERLAY,No overlay,Aucune superposition,Keine Überlagerung
+MAP_VIEWER_OVERLAY_OPACITY,Overlay opacity,Opacité de la superposition,Deckkraft der Überlagerung
+MAP_VIEWER_ZOOM,Zoom {percent}%,Zoom {percent} %,Zoom {percent} %
+MAP_VIEWER_RESET,Reset view,Réinitialiser la vue,Ansicht zurücksetzen
+VIEWER_EMPTY_TITLE,NO PLANET LOADED,AUCUNE PLANÈTE CHARGÉE,KEIN PLANET GELADEN
+VIEWER_EMPTY_HINT,Open a planet project or configure a new generation.,Chargez un projet de planète ou configurez une nouvelle génération.,Öffnen Sie ein Planetenprojekt oder konfigurieren Sie eine neue Generierung.
+VIEWER_HELP,Wheel: zoom   •   Middle click + drag: pan   •   Left click: inspect,Molette : zoom   •   Clic milieu + glisser : déplacer   •   Clic gauche : inspecter,Mausrad: Zoom   •   Mittelklick + Ziehen: Verschieben   •   Linksklick: Prüfen
+MAP_VIEWER_INSPECT_HINT,Click the map to inspect a coordinate.,Cliquer sur la carte pour inspecter une coordonnée.,Auf die Karte klicken um eine Koordinate zu prüfen.
+MAP_VIEWER_INSPECT_VALUE,"Cell {x},{y} • Lon {lon}° Lat {lat}°
+RGBA {r} / {g} / {b} / {a}","Cellule {x},{y} • Lon {lon}° Lat {lat}°
+RGBA {r} / {g} / {b} / {a}","Zelle {x},{y} • Lon {lon}° Lat {lat}°
+RGBA {r} / {g} / {b} / {a}"

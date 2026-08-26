@@ -20,11 +20,43 @@ var _generation_phase_key: String = "GEN_STATUS_READY"
 var _generation_phase_fallback: String = ""
 var _generation_memory_key: String = "GEN_STATUS_IDLE"
 var _generation_memory_args: Dictionary = {}
+var _viewer_panel: Control
+var _viewer_title_label: Label
+var _viewer_base_select: OptionButton
+var _viewer_overlay_select: OptionButton
+var _viewer_overlay_alpha: HSlider
+var _viewer_overlay_alpha_label: Label
+var _viewer_overlay_texture: TextureRect
+var _viewer_crosshair: PlanetMapCrosshair
+var _viewer_inspector_label: Label
+var _viewer_zoom_label: Label
+var _viewer_reset_button: Button
+var _viewer_zoom: float = 1.0
+var _viewer_pan_origin := Vector2.ZERO
+var _viewer_dragging: bool = false
+var _viewer_image_cache: Dictionary = {}
+var _viewer_workspace: ReferenceViewerWorkspace
+var _parameter_workspace: ParameterWorkspace
+var _viewer_map_viewport: PanelContainer
+var _viewer_map_frame: Control
+var _viewer_map_texture: TextureRect
+var _viewer_empty_label: Label
+var _viewer_help_label: Label
+var _viewer_base_title_label: Label
+var _viewer_overlay_title_label: Label
+var _viewer_overlay_percent_label: Label
+var _viewer_status_dot: Label
+var _viewer_parameters_button: Button
+var _viewer_load_action: Button
+var _viewer_save_action: Button
+var _legacy_map_status_label: Label
 
 # --- Constants ---
-const BASE_PATH_SLIDERS = "ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"
+const BASE_PATH_SLIDERS = "ParameterWorkspaceLayer/ParameterWorkspace/ParametersHost/Control_Parameters/SC Parameters/Parameters_tree"
 const PRESETS_DIR = "user://presets/"
 const SFX_GENERATION_DONE = "res://data/sound/Foley UI E.wav"
+const UI_AMBER := Color(0.92549, 0.619608, 0.0, 1.0)
+const UI_MUTED := Color(0.39, 0.43, 0.44, 1.0)
 
 const GENERATION_PHASE_TRANSLATION_KEYS := {
 	"gpu_initialization": "GEN_PHASE_GPU_INITIALIZATION",
@@ -102,6 +134,7 @@ func _ready() -> void:
 		langue = "en"
 	TranslationServer.set_locale(langue)
 
+	_ensure_legacy_map_status_label()
 	$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = load("res://data/img/UI/no_data.png")
 
 	# 2. Audio player for SFX
@@ -114,9 +147,337 @@ func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute(PRESETS_DIR)
 
 	# 4. UI Initialization
-	maj_labels()
 	_setup_project_loader_ui()
 	_setup_generation_status_ui()
+	_setup_workspace_scenes()
+	maj_labels()
+
+
+func _ensure_legacy_map_status_label() -> void:
+	_legacy_map_status_label = get_node_or_null("ImageFrame/LabelNomMap") as Label
+	if _legacy_map_status_label != null:
+		return
+	# The advanced viewer replaced the old map-name label in the authored scene,
+	# but PlanetGenerator still expects a Label sink for textual phase updates.
+	_legacy_map_status_label = Label.new()
+	_legacy_map_status_label.name = "RuntimeMapStatus"
+	_legacy_map_status_label.visible = false
+	add_child(_legacy_map_status_label)
+
+
+func _setup_workspace_scenes() -> void:
+	_viewer_workspace = preload("res://data/scn/reference_viewer_workspace.tscn").instantiate() as ReferenceViewerWorkspace
+	add_child(_viewer_workspace)
+	_parameter_workspace = preload("res://data/scn/parameter_workspace.tscn").instantiate() as ParameterWorkspace
+	add_child(_parameter_workspace)
+
+	# Reuse the complete authored parameter tree instead of maintaining a second
+	# copy. Existing signal connections survive the reparenting operation.
+	var legacy_parameters := $"ImageFrame/Control General/Control_Parameters" as MarginContainer
+	legacy_parameters.reparent(_parameter_workspace.parameters_host, false)
+	legacy_parameters.visible = true
+	$ImageFrame.visible = false
+
+	_generation_status_panel = _viewer_workspace.header_panel
+	_generation_phase_label = _viewer_workspace.phase_label
+	_generation_memory_label = _viewer_workspace.memory_label
+	_generation_progress_bar = _viewer_workspace.progress_bar
+	_cancel_generation_button = _viewer_workspace.cancel_button
+	_viewer_status_dot = _viewer_workspace.status_dot
+	_viewer_panel = _viewer_workspace.viewer_panel
+	_viewer_title_label = _viewer_workspace.viewer_title_label
+	_viewer_base_title_label = _viewer_workspace.base_title_label
+	_viewer_base_select = _viewer_workspace.base_select
+	_viewer_overlay_title_label = _viewer_workspace.overlay_title_label
+	_viewer_overlay_select = _viewer_workspace.overlay_select
+	_viewer_overlay_alpha_label = _viewer_workspace.opacity_title_label
+	_viewer_overlay_alpha = _viewer_workspace.opacity_slider
+	_viewer_overlay_percent_label = _viewer_workspace.opacity_percent_label
+	_viewer_zoom_label = _viewer_workspace.zoom_label
+	_viewer_reset_button = _viewer_workspace.reset_button
+	_viewer_inspector_label = _viewer_workspace.inspector_label
+	_viewer_help_label = _viewer_workspace.help_label
+	_viewer_map_viewport = _viewer_workspace.map_viewport
+	_viewer_map_frame = _viewer_workspace.map_canvas
+	_viewer_map_texture = _viewer_workspace.map_texture
+	_viewer_overlay_texture = _viewer_workspace.overlay_texture
+	_viewer_crosshair = _viewer_workspace.crosshair
+	_viewer_empty_label = _viewer_workspace.empty_label
+	_viewer_parameters_button = _viewer_workspace.parameters_button
+	_viewer_load_action = _viewer_workspace.load_button
+	_viewer_save_action = _viewer_workspace.save_button
+
+	_viewer_parameters_button.pressed.connect(_show_parameters_workspace)
+	_cancel_generation_button.pressed.connect(_on_cancel_generation_pressed)
+	_viewer_load_action.pressed.connect(_on_load_planet_project_pressed)
+	_viewer_save_action.pressed.connect(_on_btn_sauvegarder_pressed)
+	_viewer_map_viewport.gui_input.connect(_on_map_viewer_input)
+	_viewer_base_select.item_selected.connect(_on_viewer_base_selected)
+	_viewer_overlay_select.item_selected.connect(_on_viewer_overlay_selected)
+	_viewer_overlay_alpha.value_changed.connect(_on_viewer_overlay_alpha_changed)
+	_viewer_reset_button.pressed.connect(_reset_viewer_transform)
+
+	_parameter_workspace.viewer_button.pressed.connect(_show_viewer_workspace)
+	_parameter_workspace.load_preset_button.pressed.connect(load_preset)
+	_parameter_workspace.save_preset_button.pressed.connect(save_preset)
+	_parameter_workspace.quit_button.pressed.connect(_on_btn_quitter_pressed)
+	_parameter_workspace.french_button.pressed.connect(_on_btn_french_pressed)
+	_parameter_workspace.english_button.pressed.connect(_on_btn_english_pressed)
+	_parameter_workspace.german_button.pressed.connect(_on_btn_german_pressed)
+	_parameter_workspace.generate_button.pressed.connect(_on_btn_comfirme_pressed)
+	_parameter_workspace.random_button.pressed.connect(_on_btn_randomise_pressed)
+	_parameter_workspace.save_planet_button.pressed.connect(_on_btn_sauvegarder_pressed)
+
+	_viewer_workspace.visible = true
+	_parameter_workspace.visible = false
+	_viewer_pan_origin = Vector2.ZERO
+	_refresh_generation_status_translation()
+	_refresh_advanced_viewer_translation()
+	_refresh_parameter_workspace_translation()
+	_update_viewer_sources()
+	_sync_reference_map()
+
+
+func _refresh_parameter_workspace_translation() -> void:
+	if _parameter_workspace == null:
+		return
+	_parameter_workspace.preview_title_label.text = tr("VIEWER_PREVIEW")
+	_parameter_workspace.parameter_title_label.text = tr("PARAMETRES").to_upper()
+	_parameter_workspace.viewer_button.text = tr("MAP_VIEWER_TITLE").to_upper()
+	_parameter_workspace.load_preset_button.text = tr("LOAD_PRESET")
+	_parameter_workspace.save_preset_button.text = tr("SAVE_PRESET")
+	_parameter_workspace.quit_button.text = tr("LEAVE")
+	_parameter_workspace.generate_button.text = tr("GENERER")
+	_parameter_workspace.random_button.text = tr("RANDOMISE")
+	_parameter_workspace.save_planet_button.text = tr("SAUVEGARDER")
+	_parameter_workspace.preview_empty_label.text = "%s\n%s" % [tr("VIEWER_EMPTY_TITLE"), tr("VIEWER_EMPTY_HINT")]
+
+
+
+
+func _show_parameters_workspace() -> void:
+	_viewer_workspace.visible = false
+	_parameter_workspace.visible = true
+	_parameter_workspace.set_preview_texture(_viewer_map_texture.texture)
+
+
+func _show_viewer_workspace() -> void:
+	_viewer_workspace.visible = true
+	_parameter_workspace.visible = false
+	_sync_reference_map()
+
+
+func _sync_reference_map() -> void:
+	if _viewer_map_texture == null:
+		return
+	var has_map := not maps.is_empty() and map_index >= 0 and map_index < maps.size()
+	_viewer_empty_label.visible = not has_map
+	_viewer_map_frame.visible = has_map
+	_viewer_save_action.disabled = not has_map
+	_parameter_workspace.set_preview_texture(null)
+	if not has_map:
+		_viewer_map_texture.texture = null
+		_viewer_overlay_texture.texture = null
+		return
+	var image := _viewer_load_image(maps[map_index])
+	if image != null:
+		var texture := ImageTexture.create_from_image(image)
+		_viewer_map_texture.texture = texture
+		_parameter_workspace.set_preview_texture(texture)
+
+
+func _set_map_texture(texture: Texture2D) -> void:
+	var legacy_map := $"ImageFrame/ImageMenu/Control Images/Frame Map/Map" as TextureRect
+	legacy_map.texture = texture
+	if _viewer_map_texture != null:
+		_viewer_map_texture.texture = texture
+		_viewer_map_frame.visible = texture != null
+		_viewer_empty_label.visible = texture == null
+		_viewer_save_action.disabled = texture == null
+	if _parameter_workspace != null:
+		_parameter_workspace.set_preview_texture(texture)
+
+
+
+
+func _refresh_advanced_viewer_translation() -> void:
+	if _viewer_panel == null:
+		return
+	_viewer_title_label.text = tr("MAP_VIEWER_TITLE")
+	if _viewer_base_title_label != null:
+		_viewer_base_title_label.text = tr("MAP_VIEWER_BASE")
+	if _viewer_overlay_title_label != null:
+		_viewer_overlay_title_label.text = tr("MAP_VIEWER_OVERLAY")
+	_viewer_base_select.tooltip_text = tr("MAP_VIEWER_BASE_TOOLTIP")
+	_viewer_overlay_select.tooltip_text = tr("MAP_VIEWER_OVERLAY_TOOLTIP")
+	_viewer_overlay_alpha_label.text = tr("MAP_VIEWER_OVERLAY_OPACITY")
+	_viewer_reset_button.text = tr("MAP_VIEWER_RESET")
+	_viewer_zoom_label.text = tr("MAP_VIEWER_ZOOM").format({"percent": int(round(_viewer_zoom * 100.0))})
+	_viewer_overlay_alpha.tooltip_text = "%s: %d%%" % [tr("MAP_VIEWER_OVERLAY_OPACITY"), int(round(_viewer_overlay_alpha.value * 100.0))]
+	$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".tooltip_text = tr("MAP_VIEWER_INSPECT_HINT")
+	if _viewer_empty_label != null:
+		_viewer_empty_label.text = "%s\n%s" % [tr("VIEWER_EMPTY_TITLE"), tr("VIEWER_EMPTY_HINT")]
+	if _viewer_help_label != null:
+		_viewer_help_label.text = tr("VIEWER_HELP")
+	if _viewer_parameters_button != null:
+		_viewer_parameters_button.text = tr("PARAMETRES").to_upper()
+	if _viewer_load_action != null:
+		_viewer_load_action.text = "▰  " + tr("LOAD_PLANET").to_upper()
+	if _viewer_save_action != null:
+		_viewer_save_action.text = tr("SAUVEGARDER").to_upper()
+	if _cancel_generation_button != null:
+		_cancel_generation_button.text = tr("GEN_CANCEL").to_upper()
+	if not _viewer_crosshair.has_point:
+		_viewer_inspector_label.visible = true
+		_viewer_inspector_label.text = tr("MAP_VIEWER_INSPECT_HINT")
+	_update_viewer_sources()
+
+
+func _update_viewer_sources() -> void:
+	if _viewer_base_select == null:
+		return
+	var selected_base := clampi(map_index, 0, maxi(maps.size() - 1, 0))
+	var selected_overlay_path := ""
+	if _viewer_overlay_select != null and _viewer_overlay_select.selected >= 0:
+		selected_overlay_path = str(_viewer_overlay_select.get_item_metadata(_viewer_overlay_select.selected))
+	_viewer_base_select.clear()
+	_viewer_overlay_select.clear()
+	_viewer_overlay_select.add_item(tr("MAP_VIEWER_NO_OVERLAY"))
+	_viewer_overlay_select.set_item_metadata(0, "")
+	var overlay_selection := 0
+	for i in range(maps.size()):
+		var path := maps[i]
+		_viewer_base_select.add_item(get_map_display_name(path))
+		_viewer_base_select.set_item_metadata(_viewer_base_select.item_count - 1, i)
+		var file_name := path.get_file()
+		if file_name in ["grid_overlay.png", "topology_map.png", "river_map.png", "plaques_bordures_map.png"]:
+			_viewer_overlay_select.add_item(get_map_display_name(path))
+			_viewer_overlay_select.set_item_metadata(_viewer_overlay_select.item_count - 1, path)
+			if path == selected_overlay_path:
+				overlay_selection = _viewer_overlay_select.item_count - 1
+	if not maps.is_empty():
+		_viewer_base_select.select(selected_base)
+	_viewer_overlay_select.select(overlay_selection)
+
+
+func _on_viewer_base_selected(index: int) -> void:
+	if index < 0 or index >= _viewer_base_select.item_count:
+		return
+	map_index = int(_viewer_base_select.get_item_metadata(index))
+	_load_current_map()
+
+
+func _on_viewer_overlay_selected(index: int) -> void:
+	if index < 0 or index >= _viewer_overlay_select.item_count:
+		return
+	var path := str(_viewer_overlay_select.get_item_metadata(index))
+	if path.is_empty():
+		_viewer_overlay_texture.texture = null
+		return
+	var image := _viewer_load_image(path)
+	if image != null:
+		_viewer_overlay_texture.texture = ImageTexture.create_from_image(image)
+
+
+func _on_viewer_overlay_alpha_changed(value: float) -> void:
+	_viewer_overlay_texture.modulate.a = clampf(value, 0.0, 1.0)
+	if _viewer_overlay_percent_label != null:
+		_viewer_overlay_percent_label.text = "%d%%" % int(round(value * 100.0))
+	_viewer_overlay_alpha.tooltip_text = "%s: %d%%" % [
+		tr("MAP_VIEWER_OVERLAY_OPACITY"), int(round(value * 100.0))
+	]
+
+
+func _viewer_load_image(path: String) -> Image:
+	if _viewer_image_cache.has(path):
+		return _viewer_image_cache[path]
+	var image := Image.new()
+	if image.load(path) != OK:
+		return null
+	_viewer_image_cache[path] = image
+	return image
+
+
+func _on_map_viewer_input(event: InputEvent) -> void:
+	var frame := _viewer_map_frame
+	if frame == null:
+		frame = $"ImageFrame/ImageMenu/Control Images/Frame Map" as Control
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
+			_set_viewer_zoom(_viewer_zoom * 1.15)
+			get_viewport().set_input_as_handled()
+			return
+		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
+			_set_viewer_zoom(_viewer_zoom / 1.15)
+			get_viewport().set_input_as_handled()
+			return
+		if event.button_index == MOUSE_BUTTON_MIDDLE:
+			_viewer_dragging = event.pressed
+			get_viewport().set_input_as_handled()
+			return
+		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			var local_point: Vector2 = (event.position - frame.position) / frame.scale
+			_inspect_map_point(local_point)
+			get_viewport().set_input_as_handled()
+			return
+	elif event is InputEventMouseMotion and _viewer_dragging:
+		frame.position += event.relative
+		get_viewport().set_input_as_handled()
+
+
+func _set_viewer_zoom(value: float) -> void:
+	_viewer_zoom = clampf(value, 1.0, 8.0)
+	var frame := _viewer_map_frame
+	if frame == null:
+		frame = $"ImageFrame/ImageMenu/Control Images/Frame Map" as Control
+	frame.pivot_offset = frame.size * 0.5
+	frame.scale = Vector2.ONE * _viewer_zoom
+	_viewer_zoom_label.text = tr("MAP_VIEWER_ZOOM").format({"percent": int(round(_viewer_zoom * 100.0))})
+
+
+func _reset_viewer_transform() -> void:
+	_viewer_zoom = 1.0
+	var frame := _viewer_map_frame
+	if frame == null:
+		frame = $"ImageFrame/ImageMenu/Control Images/Frame Map" as Control
+	frame.scale = Vector2.ONE
+	frame.position = Vector2.ZERO if _viewer_map_frame != null else _viewer_pan_origin
+	_viewer_zoom_label.text = tr("MAP_VIEWER_ZOOM").format({"percent": 100})
+	_viewer_crosshair.clear_point()
+	_viewer_inspector_label.visible = true
+	_viewer_inspector_label.text = tr("MAP_VIEWER_INSPECT_HINT")
+
+
+func _inspect_map_point(local_point: Vector2) -> void:
+	if maps.is_empty():
+		return
+	var map_control := _viewer_map_texture
+	if map_control == null:
+		map_control = $"ImageFrame/ImageMenu/Control Images/Frame Map/Map" as TextureRect
+	if map_control.size.x <= 0.0 or map_control.size.y <= 0.0:
+		return
+	var image := _viewer_load_image(maps[map_index])
+	if image == null:
+		return
+	var uv := Vector2(
+		clampf(local_point.x / map_control.size.x, 0.0, 0.999999),
+		clampf(local_point.y / map_control.size.y, 0.0, 0.999999)
+	)
+	var cell := Vector2i(
+		int(floor(uv.x * image.get_width())),
+		int(floor(uv.y * image.get_height()))
+	)
+	var lon_lat := PlanetGridContract.global_cell_to_world(cell, image.get_size())
+	var color := image.get_pixelv(cell)
+	_viewer_crosshair.set_point(local_point)
+	_viewer_inspector_label.visible = true
+	_viewer_inspector_label.text = tr("MAP_VIEWER_INSPECT_VALUE").format({
+		"x": cell.x, "y": cell.y,
+		"lon": "%.3f" % rad_to_deg(lon_lat.x),
+		"lat": "%.3f" % rad_to_deg(lon_lat.y),
+		"r": "%.3f" % color.r, "g": "%.3f" % color.g,
+		"b": "%.3f" % color.b, "a": "%.3f" % color.a,
+	})
 
 
 func _setup_generation_status_ui() -> void:
@@ -141,9 +502,18 @@ func _set_generation_phase_text(key: String, fallback: String = "") -> void:
 	_generation_phase_fallback = fallback
 	if key.is_empty():
 		_generation_phase_label.text = fallback
-		return
-	var translated := tr(key)
-	_generation_phase_label.text = fallback if translated == key and not fallback.is_empty() else translated
+	else:
+		var translated := tr(key)
+		_generation_phase_label.text = fallback if translated == key and not fallback.is_empty() else translated
+	if _viewer_status_dot != null:
+		if key == "GEN_STATUS_COMPLETE":
+			_viewer_status_dot.add_theme_color_override("font_color", Color(0.16, 0.75, 0.2, 1.0))
+		elif key in ["GEN_STATUS_CANCELLED", "GEN_STATUS_UNAVAILABLE"]:
+			_viewer_status_dot.add_theme_color_override("font_color", Color(0.82, 0.18, 0.16, 1.0))
+		elif key == "GEN_STATUS_READY":
+			_viewer_status_dot.add_theme_color_override("font_color", UI_MUTED)
+		else:
+			_viewer_status_dot.add_theme_color_override("font_color", UI_AMBER)
 
 
 func _set_generation_memory_text(key: String, args: Dictionary = {}) -> void:
@@ -157,9 +527,12 @@ func _refresh_generation_status_translation() -> void:
 	_set_generation_phase_text(_generation_phase_key, _generation_phase_fallback)
 	_set_generation_memory_text(_generation_memory_key, _generation_memory_args)
 	_generation_memory_label.tooltip_text = tr("GEN_STATUS_MEMORY_TOOLTIP")
+	if _cancel_generation_button != null:
+		_cancel_generation_button.text = tr("GEN_CANCEL").to_upper()
 
 
 func _show_generation_status(params: Dictionary) -> void:
+	_show_viewer_workspace()
 	_generation_started_usec = Time.get_ticks_usec()
 	_generation_progress_bar.value = 0
 	_set_generation_phase_text("GEN_STATUS_PREPARING")
@@ -188,7 +561,7 @@ func _on_generation_cancelled(reason: String) -> void:
 	_set_generation_memory_text("GEN_STATUS_CANCELLED_REASON", {"reason": reason})
 	_cancel_generation_button.disabled = true
 	_set_buttons_enabled(true)
-	$"ImageFrame/LabelNomMap".text = "Generation cancelled (%s)" % reason
+	_legacy_map_status_label.text = "Generation cancelled (%s)" % reason
 
 func _setup_project_loader_ui() -> void:
 	_load_planet_button = $"ImageFrame/Control General/btnLoadPlanetProject"
@@ -222,12 +595,15 @@ func _load_planet_project(path: String) -> void:
 	_loaded_project = project
 	maps = project.get("maps", [])
 	map_index = 0
+	_viewer_image_cache.clear()
+	_update_viewer_sources()
 	if maps.is_empty():
 		push_warning("[Master] Project contains no displayable PNG maps")
 		return
 	_show_map_path(maps[0])
 	var manifest: Dictionary = project.get("manifest", {})
-	$"ImageFrame/LabelNomMap".text = "%s — loaded project" % manifest.get("planet_name", "Planet")
+	_legacy_map_status_label.text = "%s — loaded project" % manifest.get("planet_name", "Planet")
+	_show_viewer_workspace()
 
 
 func _show_map_path(path: String) -> bool:
@@ -235,7 +611,7 @@ func _show_map_path(path: String) -> bool:
 	if image.load(path) != OK:
 		push_warning("[Master] Cannot load map: " + path)
 		return false
-	$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = ImageTexture.create_from_image(image)
+	_set_map_texture(ImageTexture.create_from_image(image))
 	update_map_label()
 	return true
 
@@ -248,13 +624,14 @@ func _on_btn_comfirme_pressed() -> void:
 	_loaded_project = {}
 	# UI Gather Data
 	var nom          = get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Name_Param/HBoxContainer/LineEdit")
-	var lblMapStatus = $"ImageFrame/LabelNomMap"
+	var lblMapStatus := _legacy_map_status_label
 	var generation_params = _compile_generation_params()
 
 	# Reset state
 	maps      = []
 	map_index = 0
 	$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = load("res://data/img/UI/no_data.png")
+	_sync_reference_map()
 
 	# Le constructeur du nouveau générateur acquiert immédiatement le device
 	# partagé et alloue ses textures. Libérer l'ancienne planète AVANT d'évaluer
@@ -322,6 +699,8 @@ func _on_planetGenerator_finished_main(generation_epoch: int) -> void:
 	# 1. Update 2D Maps (Standard Logic)
 	maps = planetGenerator.getMaps()
 	map_index = 0
+	_viewer_image_cache.clear()
+	_update_viewer_sources()
 	if maps.is_empty():
 		push_warning("[Master] Generation completed without exportable maps")
 		_set_buttons_enabled(true)
@@ -331,7 +710,7 @@ func _on_planetGenerator_finished_main(generation_epoch: int) -> void:
 	var err = img.load(maps[map_index])
 	if err == OK:
 		var tex = ImageTexture.create_from_image(img)
-		$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = tex
+		_set_map_texture(tex)
 		update_map_label()
 	else:
 		print("Erreur lors du chargement de l'image: ", maps[map_index])
@@ -352,11 +731,28 @@ func _on_planetGenerator_finished_main(generation_epoch: int) -> void:
 	_set_buttons_enabled(true)
 
 func _set_buttons_enabled(enabled: bool) -> void:
-	$"ImageFrame/Control General/btnGenerer".disabled = !enabled
-	$"ImageFrame/Control General/btnSauvegarder".disabled = !enabled
-	$"ImageFrame/Control General/btnRandomiser".disabled  = !enabled
-	$"ImageFrame/btnSuivant".disabled   = !enabled
-	$"ImageFrame/btnPrecedent".disabled = !enabled
+	for node_path in [
+		"ImageFrame/Control General/btnGenerer",
+		"ImageFrame/Control General/btnSauvegarder",
+		"ImageFrame/Control General/btnRandomiser",
+		"ImageFrame/btnSuivant",
+		"ImageFrame/btnPrecedent",
+	]:
+		var button := get_node_or_null(node_path) as BaseButton
+		if button != null:
+			button.disabled = not enabled
+	if _viewer_load_action != null:
+		_viewer_load_action.disabled = not enabled
+	if _viewer_parameters_button != null:
+		_viewer_parameters_button.disabled = not enabled
+	if _viewer_save_action != null:
+		_viewer_save_action.disabled = not enabled or maps.is_empty()
+	if _parameter_workspace != null:
+		_parameter_workspace.generate_button.disabled = not enabled
+		_parameter_workspace.random_button.disabled = not enabled
+		_parameter_workspace.load_preset_button.disabled = not enabled
+		_parameter_workspace.save_preset_button.disabled = not enabled
+		_parameter_workspace.save_planet_button.disabled = not enabled or maps.is_empty()
 
 ## Compile et normalise les paramètres de génération pour le GPU.
 ##
@@ -537,8 +933,7 @@ func _resource_map_translation_key(file_path: String) -> String:
 func update_map_label() -> void:
 	if maps.is_empty():
 		return
-	var lbl = $"ImageFrame/LabelNomMap"
-	lbl.text = get_map_display_name(maps[map_index])
+	_legacy_map_status_label.text = get_map_display_name(maps[map_index])
 
 func _on_btn_suivant_pressed() -> void:
 	if maps.is_empty(): return 
@@ -555,8 +950,10 @@ func _load_current_map() -> void:
 	var img = Image.new()
 	if img.load(maps[map_index]) == OK:
 		var tex = ImageTexture.create_from_image(img)
-		$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = tex
+		_set_map_texture(tex)
 		update_map_label()
+		if _viewer_base_select != null and _viewer_base_select.item_count == maps.size():
+			_viewer_base_select.select(map_index)
 
 func _on_fold_button_pressed(cible : String) -> void:
 	print("Node : ", get_node(cible))
@@ -757,6 +1154,8 @@ func _change_lang(code: String) -> void:
 	TranslationServer.set_locale(langue)
 	maj_labels()
 	_refresh_generation_status_translation()
+	_refresh_advanced_viewer_translation()
+	_refresh_parameter_workspace_translation()
 	update_map_label()
 
 func _on_btn_quitter_pressed() -> void:
