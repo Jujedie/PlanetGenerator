@@ -46,14 +46,85 @@ content_margin_right = 8.0
 content_margin_bottom = 5.0
 texture = ExtResource("6_gihwl")
 
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_wim0k"]
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_wim0k"]
+content_margin_right = 3.0
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_7eaih"]
 texture = ExtResource("29_iijg3")
+expand_margin_left = 4.0
+expand_margin_top = 4.0
+expand_margin_right = 4.0
+expand_margin_bottom = 4.0
 
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_xtfv3"]
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_o3yh3"]
+texture = ExtResource("29_iijg3")
+texture_margin_left = 4.0
+texture_margin_top = 4.0
+texture_margin_right = 4.0
+texture_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_k8o41"]
 texture = ExtResource("30_a0y5r")
+texture_margin_left = 4.0
+texture_margin_top = 4.0
+texture_margin_right = 4.0
+texture_margin_bottom = 4.0
 
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_4smu3"]
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_dwnsg"]
+texture = ExtResource("30_a0y5r")
+texture_margin_left = 4.0
+texture_margin_top = 4.0
+texture_margin_right = 4.0
+texture_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_d5fn3"]
 texture = ExtResource("31_syvc8")
+texture_margin_left = 4.0
+texture_margin_top = 4.0
+texture_margin_right = 4.0
+texture_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_co8su"]
+texture = ExtResource("31_syvc8")
+texture_margin_left = 4.0
+texture_margin_top = 4.0
+texture_margin_right = 4.0
+texture_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_w8r2j"]
+texture = ExtResource("30_a0y5r")
+texture_margin_left = 4.0
+texture_margin_top = 4.0
+texture_margin_right = 4.0
+texture_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_g676q"]
+texture = ExtResource("30_a0y5r")
+texture_margin_left = 4.0
+texture_margin_top = 4.0
+texture_margin_right = 4.0
+texture_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_mi6x6"]
+texture = ExtResource("30_a0y5r")
+texture_margin_left = 4.0
+texture_margin_top = 4.0
+texture_margin_right = 4.0
+texture_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_78fdv"]
+texture = ExtResource("30_a0y5r")
+texture_margin_left = 4.0
+texture_margin_top = 4.0
+texture_margin_right = 4.0
+texture_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_1erd6"]
+texture = ExtResource("29_iijg3")
+texture_margin_left = 4.0
+texture_margin_top = 4.0
+texture_margin_right = 4.0
+texture_margin_bottom = 4.0
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_dbnah"]
 
@@ -93,6 +164,15 @@ default_font_size = 25
 content_margin_left = 6.0
 texture = ExtResource("15_dbnah")
 
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_wim0k"]
+texture = ExtResource("29_iijg3")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_xtfv3"]
+texture = ExtResource("30_a0y5r")
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_4smu3"]
+texture = ExtResource("31_syvc8")
+
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_7eaih"]
 
 [node name="Master" type="Node2D" unique_id=1847100083]
@@ -104,6 +184,7 @@ anchor_mode = 0
 zoom = Vector2(0.72, 0.72)
 
 [node name="ImageFrame" type="Sprite2D" parent="." unique_id=734937168]
+position = Vector2(-3, 0)
 scale = Vector2(1.389, 1.389)
 texture = ExtResource("1_krsn2")
 centered = false
@@ -203,10 +284,10 @@ metadata/_edit_lock_ = true
 
 [node name="GenerationStatusPanel" type="PanelContainer" parent="ImageFrame/ImageMenu/Control Images" unique_id=1749739835]
 layout_mode = 0
-offset_left = 61.09782
-offset_top = -60.797504
-offset_right = 583.0561
-offset_bottom = -7.7975044
+offset_left = 59.65793
+offset_top = -70.8767
+offset_right = 581.6162
+offset_bottom = -2.8767014
 mouse_filter = 1
 theme_override_styles/panel = SubResource("StyleBoxTexture_statuspanel")
 
@@ -217,6 +298,7 @@ metadata/_edit_lock_ = true
 
 [node name="Header" type="HBoxContainer" parent="ImageFrame/ImageMenu/Control Images/GenerationStatusPanel/VBoxContainer" unique_id=1649739835]
 layout_mode = 2
+theme_override_constants/separation = 4
 metadata/_edit_lock_ = true
 
 [node name="PhaseLabel" type="Label" parent="ImageFrame/ImageMenu/Control Images/GenerationStatusPanel/VBoxContainer/Header" unique_id=1149739835]
@@ -224,15 +306,17 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 23
 text = "GEN_STATUS_READY"
+clip_text = true
 metadata/_edit_lock_ = true
 
 [node name="MemoryLabel" type="Label" parent="ImageFrame/ImageMenu/Control Images/GenerationStatusPanel/VBoxContainer/Header" unique_id=1449739835]
 layout_mode = 2
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.85, 0.85, 0.85, 1)
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 23
+theme_override_styles/normal = SubResource("StyleBoxEmpty_wim0k")
 text = "GEN_STATUS_IDLE"
 metadata/_edit_lock_ = true
 
@@ -247,18 +331,18 @@ theme_override_colors/font_pressed_color = Color(0.1764706, 0.18039216, 0.184313
 theme_override_colors/font_hover_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
 theme_override_colors/font_hover_pressed_color = Color(0.9254902, 0.61960787, 0, 1)
 theme_override_colors/font_disabled_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
-theme_override_font_sizes/font_size = 14
-theme_override_styles/normal = SubResource("StyleBoxTexture_wim0k")
-theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_wim0k")
-theme_override_styles/pressed = SubResource("StyleBoxTexture_xtfv3")
-theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
-theme_override_styles/hover = SubResource("StyleBoxTexture_4smu3")
-theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_4smu3")
-theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_xtfv3")
-theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_xtfv3")
-theme_override_styles/disabled = SubResource("StyleBoxTexture_xtfv3")
-theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_xtfv3")
-theme_override_styles/focus = SubResource("StyleBoxTexture_wim0k")
+theme_override_font_sizes/font_size = 23
+theme_override_styles/normal = SubResource("StyleBoxTexture_7eaih")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_o3yh3")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_k8o41")
+theme_override_styles/pressed_mirrored = SubResource("StyleBoxTexture_dwnsg")
+theme_override_styles/hover = SubResource("StyleBoxTexture_d5fn3")
+theme_override_styles/hover_mirrored = SubResource("StyleBoxTexture_co8su")
+theme_override_styles/hover_pressed = SubResource("StyleBoxTexture_w8r2j")
+theme_override_styles/hover_pressed_mirrored = SubResource("StyleBoxTexture_g676q")
+theme_override_styles/disabled = SubResource("StyleBoxTexture_mi6x6")
+theme_override_styles/disabled_mirrored = SubResource("StyleBoxTexture_78fdv")
+theme_override_styles/focus = SubResource("StyleBoxTexture_1erd6")
 disabled = true
 text = "GEN_CANCEL"
 metadata/_edit_lock_ = true
@@ -2104,10 +2188,10 @@ metadata/_edit_lock_ = true
 
 [node name="btnGenerer" type="Button" parent="ImageFrame/Control General" unique_id=1429739835]
 layout_mode = 0
-offset_left = 983.4413
-offset_top = 588.19293
-offset_right = 1252.4414
-offset_bottom = 635.19293
+offset_left = 1020.1583
+offset_top = 586.0331
+offset_right = 1289.1583
+offset_bottom = 636.429
 focus_mode = 0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
@@ -2132,10 +2216,10 @@ metadata/_edit_lock_ = true
 
 [node name="btnSauvegarder" type="Button" parent="ImageFrame/Control General" unique_id=1585738532]
 layout_mode = 0
-offset_left = 982.7214
-offset_top = 640.0288
-offset_right = 1251.7214
-offset_bottom = 687.0288
+offset_left = 1020.1584
+offset_top = 637.86896
+offset_right = 1289.1583
+offset_bottom = 689.18866
 focus_mode = 0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
@@ -2230,10 +2314,10 @@ metadata/_edit_lock_ = true
 
 [node name="btnLoadPlanetProject" type="Button" parent="ImageFrame/Control General" unique_id=1469739835]
 layout_mode = 0
-offset_left = 1257.0194
-offset_top = 640.0288
-offset_right = 1390.3024
-offset_bottom = 678.0288
+offset_left = 149.02808
+offset_top = 587.47296
+offset_right = 321.0943
+offset_bottom = 623.4701
 focus_mode = 0
 theme = ExtResource("5_e2i44")
 theme_override_colors/font_color = Color(0.9254902, 0.61960787, 0, 1)
@@ -2241,7 +2325,7 @@ theme_override_colors/font_focus_color = Color(0.9254902, 0.61960787, 0, 1)
 theme_override_colors/font_pressed_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
 theme_override_colors/font_hover_color = Color(0.1764706, 0.18039216, 0.18431373, 1)
 theme_override_colors/font_hover_pressed_color = Color(0.9254902, 0.61960787, 0, 1)
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 26
 theme_override_styles/normal = SubResource("StyleBoxTexture_wim0k")
 theme_override_styles/normal_mirrored = SubResource("StyleBoxTexture_wim0k")
 theme_override_styles/pressed = SubResource("StyleBoxTexture_xtfv3")
