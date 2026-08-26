@@ -271,7 +271,15 @@ func _build_interface() -> void:
 	action_row.add_child(generate_button)
 	random_button = Button.new()
 	random_button.name = "RandomButton"
-	style_button(random_button)
+	random_button.focus_mode = Control.FOCUS_NONE
+	random_button.text = ""
+	random_button.tooltip_text = tr("RANDOMISE")
+	random_button.custom_minimum_size = Vector2(42, 30)
+	random_button.add_theme_stylebox_override("normal", _flag_style("res://data/img/UI/button/random_btn.png"))
+	random_button.add_theme_stylebox_override("hover", _flag_style("res://data/img/UI/button/random_btn_hover.png"))
+	random_button.add_theme_stylebox_override("pressed", _flag_style("res://data/img/UI/button/random_btn_pressed.png"))
+	random_button.add_theme_stylebox_override("disabled", _flag_style("res://data/img/UI/button/random_btn.png"))
+	random_button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	action_row.add_child(random_button)
 	template_select = OptionButton.new()
 	template_select.name = "PlanetTemplateSelect"
@@ -617,7 +625,8 @@ func refresh_translations() -> void:
 	viewer_button.text = tr("MAP_VIEWER_TITLE").to_upper()
 	quit_button.text = tr("LEAVE")
 	generate_button.text = tr("GENERER")
-	random_button.text = tr("RANDOMISE")
+	random_button.text = ""
+	random_button.tooltip_text = tr("RANDOMISE")
 	template_apply_button.text = tr("TEMPLATE_APPLY")
 	smart_random_button.text = tr("TEMPLATE_SMART_RANDOM")
 	template_select.tooltip_text = tr("TEMPLATE_TOOLTIP")
