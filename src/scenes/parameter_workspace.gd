@@ -18,6 +18,7 @@ const UI_PANEL := Color(0.065, 0.078, 0.082, 0.98)
 const UI_PANEL_ALT := Color(0.09, 0.105, 0.11, 0.98)
 const UI_BORDER := Color(0.19, 0.23, 0.24, 1.0)
 const UI_TEXT := Color(0.78, 0.81, 0.82, 1.0)
+const UI_TEXT_BRIGHT := Color(0.92, 0.94, 0.94, 1.0)
 const UI_MUTED := Color(0.39, 0.43, 0.44, 1.0)
 const PARAMETER_SCHEMA := preload("res://src/scenes/planet_parameter_schema.gd")
 const PLANET_TEMPLATES := preload("res://src/classes/classes_io/planet_templates.gd")
@@ -137,8 +138,11 @@ func _flag_style(texture_path: String) -> StyleBoxTexture:
 
 
 func _style_line_edit(edit: LineEdit) -> void:
-	edit.add_theme_color_override("font_color", UI_TEXT)
-	edit.add_theme_font_size_override("font_size", 18)
+	edit.custom_minimum_size.y = 40
+	edit.add_theme_color_override("font_color", UI_TEXT_BRIGHT)
+	edit.add_theme_color_override("caret_color", UI_AMBER_BRIGHT)
+	edit.add_theme_color_override("selection_color", Color(0.42, 0.28, 0.0, 1.0))
+	edit.add_theme_font_size_override("font_size", 20)
 	var style := load("res://data/styles/lineEdit.tres") as StyleBox
 	if style != null:
 		edit.add_theme_stylebox_override("normal", style)
@@ -147,14 +151,51 @@ func _style_line_edit(edit: LineEdit) -> void:
 
 func _style_option(option: OptionButton) -> void:
 	option.focus_mode = Control.FOCUS_NONE
-	option.custom_minimum_size.y = 34
-	option.add_theme_color_override("font_color", UI_TEXT)
+	option.custom_minimum_size.y = 44
+	option.add_theme_color_override("font_color", UI_TEXT_BRIGHT)
 	option.add_theme_color_override("font_hover_color", UI_AMBER_BRIGHT)
-	option.add_theme_font_size_override("font_size", 18)
-	var field_style := _panel_style(Color(0.045, 0.055, 0.06, 1.0), UI_BORDER, 1, 6.0)
+	option.add_theme_color_override("font_pressed_color", UI_AMBER_BRIGHT)
+	option.add_theme_font_size_override("font_size", 21)
+	var field_style := _panel_style(Color(0.035, 0.045, 0.05, 1.0), UI_BORDER, 1, 9.0)
 	for style_name in ["normal", "normal_mirrored", "pressed", "pressed_mirrored", "hover", "hover_mirrored", "hover_pressed", "hover_pressed_mirrored", "disabled", "disabled_mirrored"]:
 		option.add_theme_stylebox_override(style_name, field_style)
 	option.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	_style_popup_menu(option.get_popup(), 420)
+
+
+func _style_popup_menu(popup: PopupMenu, minimum_width: int) -> void:
+	popup.min_size = Vector2i(minimum_width, 0)
+	popup.max_size = Vector2i(720, 620)
+	popup.add_theme_font_size_override("font_size", 21)
+	popup.add_theme_color_override("font_color", UI_TEXT_BRIGHT)
+	popup.add_theme_color_override("font_hover_color", UI_DARK)
+	popup.add_theme_color_override("font_pressed_color", UI_DARK)
+	popup.add_theme_color_override("font_checked_color", UI_AMBER_BRIGHT)
+	popup.add_theme_color_override("font_disabled_color", UI_MUTED)
+	popup.add_theme_color_override("font_separator_color", UI_AMBER)
+	popup.add_theme_constant_override("v_separation", 8)
+	popup.add_theme_constant_override("h_separation", 12)
+	popup.add_theme_constant_override("item_start_padding", 14)
+	popup.add_theme_constant_override("item_end_padding", 14)
+	popup.add_theme_stylebox_override("panel", _panel_style(Color(0.035, 0.045, 0.05, 0.99), UI_AMBER, 2, 8.0))
+	popup.add_theme_stylebox_override("hover", _panel_style(UI_AMBER_BRIGHT, UI_AMBER_BRIGHT, 0, 5.0))
+	var unchecked_icon := load("res://data/img/UI/Range/Grabber.png") as Texture2D
+	var checked_icon := load("res://data/img/UI/Range/Grabber_grabbed.png") as Texture2D
+	popup.add_theme_icon_override("radio_unchecked", unchecked_icon)
+	popup.add_theme_icon_override("radio_checked", checked_icon)
+	popup.add_theme_icon_override("unchecked", unchecked_icon)
+	popup.add_theme_icon_override("checked", checked_icon)
+	_style_popup_scrollbars(popup)
+
+
+func _style_popup_scrollbars(popup: PopupMenu) -> void:
+	for node in popup.find_children("*", "VScrollBar", true, false):
+		var scrollbar := node as VScrollBar
+		scrollbar.custom_minimum_size.x = 16
+		scrollbar.add_theme_stylebox_override("scroll", _panel_style(Color(0.055, 0.065, 0.07, 1.0), UI_BORDER, 1, 4.0))
+		scrollbar.add_theme_stylebox_override("grabber", _panel_style(UI_AMBER, UI_AMBER, 0, 4.0))
+		scrollbar.add_theme_stylebox_override("grabber_highlight", _panel_style(UI_AMBER_BRIGHT, UI_AMBER_BRIGHT, 0, 4.0))
+		scrollbar.add_theme_stylebox_override("grabber_pressed", _panel_style(UI_AMBER_BRIGHT, UI_AMBER_BRIGHT, 0, 4.0))
 
 
 func _style_slider(slider: HSlider) -> void:
@@ -168,7 +209,9 @@ func _style_slider(slider: HSlider) -> void:
 func _build_interface() -> void:
 	root = Control.new()
 	root.name = "ParameterWorkspace"
-	root.theme = load("res://data/font/font.tres")
+	var workspace_theme := (load("res://data/font/font.tres") as Theme).duplicate()
+	workspace_theme.default_font_size = 16
+	root.theme = workspace_theme
 	add_child(root)
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
@@ -378,8 +421,8 @@ func _build_batch_panel() -> void:
 	seed_row.add_child(batch_seed_spin)
 
 	batch_status_label = Label.new()
-	batch_status_label.add_theme_color_override("font_color", UI_MUTED)
-	batch_status_label.add_theme_font_size_override("font_size", 16)
+	batch_status_label.add_theme_color_override("font_color", Color(0.58, 0.62, 0.63, 1.0))
+	batch_status_label.add_theme_font_size_override("font_size", 18)
 	batch_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	batch_status_label.custom_minimum_size.y = 42.0
 	box.add_child(batch_status_label)
@@ -450,8 +493,8 @@ func _create_parameter(definition: Dictionary) -> void:
 
 	var label := Label.new()
 	label.name = "Label"
-	label.add_theme_color_override("font_color", UI_TEXT)
-	label.add_theme_font_size_override("font_size", 16)
+	label.add_theme_color_override("font_color", UI_TEXT_BRIGHT)
+	label.add_theme_font_size_override("font_size", 18)
 	row.add_child(label)
 	_value_labels[key] = label
 
@@ -486,6 +529,7 @@ func _create_parameter(definition: Dictionary) -> void:
 			spin.max_value = float(definition.get("max", 100.0))
 			spin.step = float(definition.get("step", 1.0))
 			spin.value = float(definition.get("default", 0.0))
+			_style_line_edit(spin.get_line_edit())
 			hbox.add_child(spin)
 			var random_seed_button := Button.new()
 			random_seed_button.text = "↻"

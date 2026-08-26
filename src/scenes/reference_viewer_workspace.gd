@@ -8,6 +8,7 @@ const UI_PANEL := Color(0.065, 0.078, 0.082, 0.98)
 const UI_PANEL_ALT := Color(0.09, 0.105, 0.11, 0.98)
 const UI_BORDER := Color(0.19, 0.23, 0.24, 1.0)
 const UI_TEXT := Color(0.78, 0.81, 0.82, 1.0)
+const UI_TEXT_BRIGHT := Color(0.92, 0.94, 0.94, 1.0)
 const UI_MUTED := Color(0.39, 0.43, 0.44, 1.0)
 
 var root: Control
@@ -82,17 +83,52 @@ func style_button(button: Button, compact: bool = false) -> void:
 
 func _style_option(option: OptionButton) -> void:
 	option.focus_mode = Control.FOCUS_NONE
-	option.custom_minimum_size = Vector2(360, 38)
+	option.custom_minimum_size = Vector2(360, 44)
 	option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	option.add_theme_color_override("font_color", UI_TEXT)
+	option.add_theme_color_override("font_color", UI_TEXT_BRIGHT)
 	option.add_theme_color_override("font_hover_color", UI_AMBER_BRIGHT)
-	option.add_theme_font_size_override("font_size", 19)
-	var field_style := _panel_style(Color(0.045, 0.055, 0.06, 1.0), UI_BORDER, 1, 6.0)
+	option.add_theme_color_override("font_pressed_color", UI_AMBER_BRIGHT)
+	option.add_theme_font_size_override("font_size", 21)
+	var field_style := _panel_style(Color(0.035, 0.045, 0.05, 1.0), UI_BORDER, 1, 9.0)
 	for style_name in ["normal", "normal_mirrored", "pressed", "pressed_mirrored", "hover", "hover_mirrored", "hover_pressed", "hover_pressed_mirrored", "disabled", "disabled_mirrored"]:
 		option.add_theme_stylebox_override(style_name, field_style)
 	option.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	var popup: PopupMenu = option.get_popup()
-	popup.min_size = Vector2i(560, 0)
+	_style_popup_menu(option.get_popup(), 600)
+
+
+func _style_popup_menu(popup: PopupMenu, minimum_width: int) -> void:
+	popup.min_size = Vector2i(minimum_width, 0)
+	popup.max_size = Vector2i(760, 620)
+	popup.add_theme_font_size_override("font_size", 21)
+	popup.add_theme_color_override("font_color", UI_TEXT_BRIGHT)
+	popup.add_theme_color_override("font_hover_color", UI_DARK)
+	popup.add_theme_color_override("font_pressed_color", UI_DARK)
+	popup.add_theme_color_override("font_checked_color", UI_AMBER_BRIGHT)
+	popup.add_theme_color_override("font_disabled_color", UI_MUTED)
+	popup.add_theme_color_override("font_separator_color", UI_AMBER)
+	popup.add_theme_constant_override("v_separation", 8)
+	popup.add_theme_constant_override("h_separation", 12)
+	popup.add_theme_constant_override("item_start_padding", 14)
+	popup.add_theme_constant_override("item_end_padding", 14)
+	popup.add_theme_stylebox_override("panel", _panel_style(Color(0.035, 0.045, 0.05, 0.99), UI_AMBER, 2, 8.0))
+	popup.add_theme_stylebox_override("hover", _panel_style(UI_AMBER_BRIGHT, UI_AMBER_BRIGHT, 0, 5.0))
+	var unchecked_icon := load("res://data/img/UI/Range/Grabber.png") as Texture2D
+	var checked_icon := load("res://data/img/UI/Range/Grabber_grabbed.png") as Texture2D
+	popup.add_theme_icon_override("radio_unchecked", unchecked_icon)
+	popup.add_theme_icon_override("radio_checked", checked_icon)
+	popup.add_theme_icon_override("unchecked", unchecked_icon)
+	popup.add_theme_icon_override("checked", checked_icon)
+	_style_popup_scrollbars(popup)
+
+
+func _style_popup_scrollbars(popup: PopupMenu) -> void:
+	for node in popup.find_children("*", "VScrollBar", true, false):
+		var scrollbar := node as VScrollBar
+		scrollbar.custom_minimum_size.x = 16
+		scrollbar.add_theme_stylebox_override("scroll", _panel_style(Color(0.055, 0.065, 0.07, 1.0), UI_BORDER, 1, 4.0))
+		scrollbar.add_theme_stylebox_override("grabber", _panel_style(UI_AMBER, UI_AMBER, 0, 4.0))
+		scrollbar.add_theme_stylebox_override("grabber_highlight", _panel_style(UI_AMBER_BRIGHT, UI_AMBER_BRIGHT, 0, 4.0))
+		scrollbar.add_theme_stylebox_override("grabber_pressed", _panel_style(UI_AMBER_BRIGHT, UI_AMBER_BRIGHT, 0, 4.0))
 
 
 func _make_group(parent: Container, min_width: float) -> VBoxContainer:
@@ -106,7 +142,7 @@ func _make_group(parent: Container, min_width: float) -> VBoxContainer:
 	panel.add_child(content)
 	var title := Label.new()
 	title.add_theme_color_override("font_color", UI_AMBER)
-	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_font_size_override("font_size", 18)
 	content.add_child(title)
 	return content
 
@@ -114,7 +150,9 @@ func _make_group(parent: Container, min_width: float) -> VBoxContainer:
 func _build_interface() -> void:
 	root = Control.new()
 	root.name = "ReferenceViewer"
-	root.theme = load("res://data/font/font.tres")
+	var workspace_theme := (load("res://data/font/font.tres") as Theme).duplicate()
+	workspace_theme.default_font_size = 16
+	root.theme = workspace_theme
 	add_child(root)
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
@@ -169,7 +207,7 @@ func _build_interface() -> void:
 	progress_bar.max_value = 100.0
 	progress_bar.show_percentage = true
 	progress_bar.add_theme_color_override("font_color", UI_DARK)
-	progress_bar.add_theme_font_size_override("font_size", 13)
+	progress_bar.add_theme_font_size_override("font_size", 16)
 	progress_bar.add_theme_stylebox_override("background", _panel_style(Color(0.11, 0.13, 0.14, 1.0), UI_BORDER, 1, 0.0))
 	progress_bar.add_theme_stylebox_override("fill", _panel_style(UI_AMBER, UI_AMBER, 0, 0.0))
 	header_box.add_child(progress_bar)
@@ -320,12 +358,13 @@ func _build_interface() -> void:
 	inspector_label.name = "InspectorLabel"
 	inspector_label.custom_minimum_size.y = 40
 	inspector_label.add_theme_color_override("font_color", UI_TEXT)
-	inspector_label.add_theme_font_size_override("font_size", 16)
+	inspector_label.add_theme_font_size_override("font_size", 18)
 	inspector_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	inspector_panel.add_child(inspector_label)
 	help_label = Label.new()
 	help_label.add_theme_color_override("font_color", UI_MUTED)
-	help_label.add_theme_font_size_override("font_size", 14)
+	help_label.add_theme_color_override("font_color", Color(0.58, 0.62, 0.63, 1.0))
+	help_label.add_theme_font_size_override("font_size", 16)
 	viewer_box.add_child(help_label)
 
 
@@ -350,4 +389,3 @@ func _layout_interface() -> void:
 	actions.size = Vector2(viewport_size.x - margin * 2.0, action_height)
 	viewer_panel.position = Vector2(margin, viewer_top)
 	viewer_panel.size = Vector2(viewport_size.x - margin * 2.0, viewer_height)
-

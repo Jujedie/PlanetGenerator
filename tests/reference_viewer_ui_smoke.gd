@@ -22,12 +22,19 @@ func _ready() -> void:
 	var controls := viewer_root.get_node_or_null("MapViewerControls") as Control
 	assert(map_viewport != null and map_viewport.size.x > 1000.0)
 	assert(controls != null and controls.position.y > map_viewport.position.y + map_viewport.size.y)
+	var base_select := master.get("_viewer_base_select") as OptionButton
+	assert(base_select != null and base_select.custom_minimum_size.y >= 44.0)
+	assert(base_select.get_theme_font_size("font_size") >= 21)
+	assert(base_select.get_popup().get_theme_font_size("font_size") >= 21)
+	assert(base_select.get_popup().max_size.y <= 620)
 	master.call("_show_parameters_workspace")
 	assert(not viewer_layer.visible)
-	var return_layer := master.get_node_or_null("ViewerReturnLayer") as CanvasLayer
-	assert(return_layer != null and return_layer.visible)
+	var parameter_layer := master.get_node_or_null("ParameterWorkspaceLayer") as ParameterWorkspace
+	assert(parameter_layer != null and parameter_layer.visible)
+	assert(parameter_layer.template_select.custom_minimum_size.y >= 44.0)
+	assert(parameter_layer.template_select.get_popup().get_theme_font_size("font_size") >= 21)
 	master.call("_show_viewer_workspace")
-	assert(viewer_layer.visible and not return_layer.visible)
+	assert(viewer_layer.visible and not parameter_layer.visible)
 
 	DirAccess.make_dir_recursive_absolute("user://temp")
 	var capture_path := "user://temp/reference_viewer_smoke.png"
@@ -35,10 +42,23 @@ func _ready() -> void:
 		var capture := get_viewport().get_texture().get_image()
 		var capture_error := capture.save_png(capture_path)
 		assert(capture_error == OK)
+		base_select.show_popup()
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var popup_capture := get_viewport().get_texture().get_image()
+		var popup_capture_error := popup_capture.save_png("user://temp/selection_menu_smoke.png")
+		assert(popup_capture_error == OK)
+		base_select.get_popup().hide()
 		master.call("_show_parameters_workspace")
 		await get_tree().process_frame
 		var parameter_capture := get_viewport().get_texture().get_image()
 		var parameter_capture_error := parameter_capture.save_png("user://temp/parameter_workspace_smoke.png")
 		assert(parameter_capture_error == OK)
+		parameter_layer.template_select.show_popup()
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var parameter_popup_capture := get_viewport().get_texture().get_image()
+		var parameter_popup_capture_error := parameter_popup_capture.save_png("user://temp/parameter_selection_menu_smoke.png")
+		assert(parameter_popup_capture_error == OK)
 	print("Reference viewer UI smoke: PASS — ", ProjectSettings.globalize_path(capture_path))
 	get_tree().quit()
