@@ -3,6 +3,8 @@ extends RefCounted
 class_name PlanetGenerator
 
 signal finished
+signal generation_progress(phase: String, completed: int, total: int)
+signal generation_cancelled(reason: String)
 
 ## ============================================================================
 ## PLANET GENERATOR
@@ -94,6 +96,7 @@ func _init_gpu_system() -> void:
 		use_gpu_acceleration = false
 		return
 	gpu_orchestrator = GPUOrchestrator.new(gpu_context, generation_params["resolution"], generation_params)
+	gpu_orchestrator.phase_started.connect(_on_monolithic_phase_started)
 	print("[PlanetGenerator] GPU acceleration enabled: ", generation_params["resolution"])
 
 ## Met à jour le label de statut dans l'interface utilisateur.
@@ -133,6 +136,8 @@ func generate_planet() -> bool:
 			return false
 		print("[PlanetGenerator] Starting tiled global generation...")
 		tiled_pipeline = TiledGlobalSimulationPipeline.new(generation_params, _tiled_output_root)
+		tiled_pipeline.phase_started.connect(_on_tiled_phase_started)
+		tiled_pipeline.tile_progress.connect(_on_tiled_tile_progress)
 		_tiled_thread = Thread.new()
 		var err := _tiled_thread.start(_run_tiled_generation_worker.bind(_generation_request_id))
 		if err != OK:
@@ -161,8 +166,22 @@ func _complete_tiled_generation(request_id: int, report: Dictionary) -> void:
 	if bool(report.get("ok", false)):
 		print("[PlanetGenerator] Tiled global generation complete: ", report.get("manifest", ""))
 		emit_signal("finished")
+	elif bool(report.get("cancelled", false)):
+		emit_signal("generation_cancelled", str(report.get("reason", "user")))
 	else:
 		push_error("[PlanetGenerator] Tiled generation failed: %s" % report.get("reason", "unknown"))
+
+func _on_monolithic_phase_started(phase: String, index: int, total: int) -> void:
+	emit_signal("generation_progress", phase, index - 1, total)
+
+func _on_tiled_phase_started(phase: String) -> void:
+	call_deferred("_emit_tiled_progress", phase, 0, 1)
+
+func _on_tiled_tile_progress(phase: String, _tile: Vector2i, completed: int, total: int) -> void:
+	call_deferred("_emit_tiled_progress", phase, completed, total)
+
+func _emit_tiled_progress(phase: String, completed: int, total: int) -> void:
+	emit_signal("generation_progress", phase, completed, maxi(total, 1))
 
 func cancel_generation(reason: String = "user") -> void:
 	if tiled_pipeline != null:
@@ -204,6 +223,9 @@ func _generate_planet_gpu_deferred(request_id: int) -> void:
 
 	# A cancelled/replaced request must not notify the UI as completed.
 	if request_id != _generation_request_id or _cleaned_up:
+		return
+	if orchestrator.was_cancelled:
+		emit_signal("generation_cancelled", orchestrator.cancellation_reason())
 		return
 	
 	# === EXPORT ===

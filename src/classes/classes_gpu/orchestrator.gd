@@ -10,6 +10,9 @@ extends RefCounted
 ## 4. La gestion des données globales (Uniform Buffers) partagées entre les shaders.
 class_name GPUOrchestrator
 
+signal phase_started(name: String, index: int, total: int)
+signal phase_finished(name: String, index: int, total: int, elapsed_ms: float)
+
 var gpu: GPUContext
 var rd: RenderingDevice
 
@@ -20,6 +23,10 @@ var last_phase_timings_ms: Dictionary = {}
 var last_hydrology_stats: Dictionary = {}
 var last_administrative_stats: Dictionary = {}
 var last_performance_report: Dictionary = {}
+var was_cancelled: bool = false
+var _cancel_reason: String = ""
+var _phase_counter: int = 0
+var _phase_total: int = 0
 
 # SSBO pour comptage de pixels par composante (water classification)
 var water_counter_buffer: RID = RID()
@@ -654,6 +661,10 @@ func run_simulation() -> void:
 	var h = resolution.y
 	last_phase_timings_ms.clear()
 	last_performance_report.clear()
+	was_cancelled = false
+	_cancel_reason = ""
+	_phase_counter = 0
+	_phase_total = 1 if int(generation_params.get("planet_type", 0)) == Enum.TYPE_GAZEUZE else 13
 	var simulation_started_usec = Time.get_ticks_usec()
 	
 	print("  Résolution de la simulation : ", w, "x", h)
@@ -746,12 +757,28 @@ func run_simulation() -> void:
 
 ## Exécute une phase et conserve sa durée pour les benchmarks déterministes.
 func _run_timed_phase(phase_name: String, phase_callable: Callable) -> void:
+	if was_cancelled:
+		return
+	_phase_counter += 1
+	emit_signal("phase_started", phase_name, _phase_counter, _phase_total)
 	var started_usec = Time.get_ticks_usec()
 	phase_callable.call()
 	var elapsed_ms = float(Time.get_ticks_usec() - started_usec) / 1000.0
 	last_phase_timings_ms[phase_name] = elapsed_ms
 	print("[Timing] ", phase_name, ": ", snappedf(elapsed_ms, 0.01), " ms")
 	gpu._sample_memory_peaks()
+	emit_signal("phase_finished", phase_name, _phase_counter, _phase_total, elapsed_ms)
+
+func request_cancel(reason: String = "user") -> void:
+	# Monolithic compute dispatches cannot be interrupted halfway safely. The
+	# request is honored at the next phase boundary, which keeps the shared RD
+	# in a valid state.
+	was_cancelled = true
+	_cancel_reason = reason
+	print("[Orchestrator] Cancellation requested: ", reason)
+
+func cancellation_reason() -> String:
+	return _cancel_reason
 
 func _record_total_simulation_time(started_usec: int) -> void:
 	last_phase_timings_ms["total_simulation"] = float(Time.get_ticks_usec() - started_usec) / 1000.0
