@@ -17,8 +17,8 @@ const PRESET_CUSTOM := "custom"
 
 const ALWAYS_METADATA := ["integrity_report", "manifest", "project", "catalog"]
 const MINIMAL_KEYS := ["final_map", "cartographic", "water_colored", "river_map", "biome"]
-const STANDARD_EXCLUDE := ["plates", "plates_borders", "river_type"]
-const DEBUG_KEYS := ["plates", "plates_borders", "river_type"]
+const STANDARD_EXCLUDE := ["plates_borders"]
+const DEBUG_KEYS := ["plates_borders"]
 const OVERLAY_KEYS := ["grid_overlay", "topology"]
 const RESOURCE_KEYS := ["petrole", "resources", "resource", "ressource"]
 

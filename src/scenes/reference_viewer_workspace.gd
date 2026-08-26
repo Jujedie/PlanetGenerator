@@ -292,7 +292,7 @@ func _build_interface() -> void:
 	# Map selectors get a dedicated full-width row. The exported map catalogue
 	# can contain dozens of layers/resources, so keeping them in narrow 290 px
 	# columns made the PopupMenu unnecessarily difficult to use.
-	var selectors_row := HBoxContainer.new()
+	var selectors_row := HFlowContainer.new()
 	selectors_row.add_theme_constant_override("separation", 10)
 	viewer_box.add_child(selectors_row)
 	var base_group := _make_group(selectors_row, 520)
@@ -308,7 +308,7 @@ func _build_interface() -> void:
 	_style_option(overlay_select)
 	overlay_group.add_child(overlay_select)
 
-	var tools_row := HBoxContainer.new()
+	var tools_row := HFlowContainer.new()
 	tools_row.add_theme_constant_override("separation", 10)
 	viewer_box.add_child(tools_row)
 	var opacity_group := _make_group(tools_row, 620)
@@ -374,7 +374,8 @@ func _layout_interface() -> void:
 	var viewport_size := get_viewport().get_visible_rect().size
 	var margin := 22.0
 	var header_height := 88.0
-	var viewer_height := clampf(viewport_size.y * 0.34, 295.0, 345.0)
+	var narrow_layout: bool = viewport_size.x < 1180.0
+	var viewer_height := clampf(viewport_size.y * (0.46 if narrow_layout else 0.34), 420.0 if narrow_layout else 295.0, 500.0 if narrow_layout else 345.0)
 	var viewer_top := viewport_size.y - viewer_height - margin
 	var action_height := 52.0
 	var action_top := viewer_top - action_height - 10.0

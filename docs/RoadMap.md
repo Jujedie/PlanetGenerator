@@ -1,3 +1,5 @@
+> **Roadmap v2 is now authoritative.** See [`RoadMap_v2.md`](RoadMap_v2.md) for Milestones 7–8.1 and the path to Planet Generator 1.0. The older M7 local-zone/M8 text below is retained only as historical planning material and must not be used for current implementation.
+
 # PlanetGenerator — Final Development Roadmap
 
 This document is the authoritative implementation roadmap for PlanetGenerator.

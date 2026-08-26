@@ -358,27 +358,25 @@ static func save_image_temp(image: Image, file_name: String, temp_dir: String) -
 ## Supprime tous les fichiers présents dans "user://temp/" pour éviter l'accumulation
 ## de données inutiles entre deux générations.
 static func deleteImagesTemps():
-	"""Clear temporary directory"""
-	var dir = DirAccess.open("user://temp/")
-	if dir == null:
-		DirAccess.make_dir_absolute("user://temp/")
-		return
-	
-	dir.list_dir_begin()
-	var file_name = dir.get_next()
-	while file_name != "":
-		dir.remove(file_name)
-		file_name = dir.get_next()
-	dir.list_dir_end()
+	"""Clear the temporary export tree, including nested M7.2 folders."""
+	var root := "user://temp/"
+	DirAccess.make_dir_recursive_absolute(root)
+	_clear_directory_contents(root)
 
-	dir = DirAccess.open("user://temp/ressource/")
+
+static func _clear_directory_contents(path: String) -> void:
+	var dir := DirAccess.open(path)
 	if dir == null:
-		DirAccess.make_dir_absolute("user://temp/ressource/")
 		return
-	
 	dir.list_dir_begin()
-	file_name = dir.get_next()
-	while file_name != "":
-		dir.remove(file_name)
-		file_name = dir.get_next()
+	var entry := dir.get_next()
+	while entry != "":
+		if entry != "." and entry != "..":
+			var child := path.path_join(entry)
+			if dir.current_is_dir():
+				_clear_directory_contents(child)
+				DirAccess.remove_absolute(child)
+			else:
+				DirAccess.remove_absolute(child)
+		entry = dir.get_next()
 	dir.list_dir_end()

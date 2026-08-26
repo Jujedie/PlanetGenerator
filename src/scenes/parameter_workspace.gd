@@ -22,6 +22,7 @@ const UI_TEXT_BRIGHT := Color(0.92, 0.94, 0.94, 1.0)
 const UI_MUTED := Color(0.39, 0.43, 0.44, 1.0)
 const PARAMETER_SCHEMA := preload("res://src/scenes/planet_parameter_schema.gd")
 const PLANET_TEMPLATES := preload("res://src/classes/classes_io/planet_templates.gd")
+const EXPORT_CATALOG := preload("res://src/classes/classes_io/export_catalog.gd")
 
 var root: Control
 var title_label: Label
@@ -40,6 +41,8 @@ var english_button: Button
 var german_button: Button
 var generate_button: Button
 var random_button: Button
+var random_name_button: Button
+var random_seed_button: Button
 var save_planet_button: Button
 var template_select: OptionButton
 var template_apply_button: Button
@@ -53,12 +56,14 @@ var batch_count_spin: SpinBox
 var batch_seed_spin: SpinBox
 var batch_status_label: Label
 var batch_start_button: Button
+var export_preset_select: OptionButton
 
 var _parameter_tree: VBoxContainer
 var _controls: Dictionary = {}
 var _value_labels: Dictionary = {}
 var _category_buttons: Dictionary = {}
 var _category_bodies: Dictionary = {}
+var _category_panels: Dictionary = {}
 var _option_definitions: Dictionary = {}
 var _spinbox_arrows_icon: Texture2D
 var _refresh_icon: Texture2D
@@ -421,6 +426,11 @@ func _build_interface() -> void:
 	style_button(batch_toggle_button, true)
 	batch_toggle_button.custom_minimum_size.x = 110
 	action_row.add_child(batch_toggle_button)
+	export_preset_select = OptionButton.new()
+	export_preset_select.name = "ExportPresetSelect"
+	_style_option(export_preset_select)
+	export_preset_select.custom_minimum_size = Vector2(165, 46)
+	action_row.add_child(export_preset_select)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	action_row.add_child(spacer)
@@ -512,6 +522,12 @@ func _build_parameters_from_schema() -> void:
 		_create_category(str(category))
 	for definition in PARAMETER_SCHEMA.DEFINITIONS:
 		_create_parameter(definition)
+	var planet_type_control: OptionButton = _controls.get("planet_type") as OptionButton
+	if planet_type_control != null:
+		planet_type_control.item_selected.connect(func(_index: int) -> void:
+			_apply_planet_type_ui_state()
+		)
+	_apply_planet_type_ui_state()
 
 
 func _create_category(category: String) -> void:
@@ -539,6 +555,7 @@ func _create_category(category: String) -> void:
 	)
 	_category_buttons[category] = header
 	_category_bodies[category] = body
+	_category_panels[category] = panel
 
 
 func _create_parameter(definition: Dictionary) -> void:
@@ -573,9 +590,9 @@ func _create_parameter(definition: Dictionary) -> void:
 			edit.text = str(definition.get("default", ""))
 			_style_line_edit(edit)
 			hbox.add_child(edit)
-			var random_name_button := Button.new()
+			random_name_button = Button.new()
 			random_name_button.name = "RandomNameButton"
-			_style_refresh_button(random_name_button, "Random name")
+			_style_refresh_button(random_name_button, tr("UI_TOOLTIP_RANDOM_NAME"))
 			random_name_button.pressed.connect(randomize_name)
 			hbox.add_child(random_name_button)
 			_controls[key] = edit
@@ -592,9 +609,9 @@ func _create_parameter(definition: Dictionary) -> void:
 			spin.value = float(definition.get("default", 0.0))
 			_style_spinbox(spin)
 			hbox.add_child(spin)
-			var random_seed_button := Button.new()
+			random_seed_button = Button.new()
 			random_seed_button.name = "RandomSeedButton"
-			_style_refresh_button(random_seed_button, "Random seed")
+			_style_refresh_button(random_seed_button, tr("UI_TOOLTIP_RANDOM_SEED"))
 			random_seed_button.pressed.connect(randomize_seed)
 			hbox.add_child(random_seed_button)
 			_controls[key] = spin
@@ -641,12 +658,23 @@ func _connect_actions() -> void:
 	french_button.pressed.connect(func() -> void: language_requested.emit("fr"))
 	english_button.pressed.connect(func() -> void: language_requested.emit("en"))
 	german_button.pressed.connect(func() -> void: language_requested.emit("de"))
-	batch_toggle_button.pressed.connect(_toggle_batch_panel)
+	batch_toggle_button.pressed.connect(toggle_batch_panel)
 	batch_start_button.pressed.connect(_on_batch_start_pressed)
 
 
-func _toggle_batch_panel() -> void:
+func toggle_batch_panel() -> void:
+	if batch_panel == null:
+		return
 	batch_panel.visible = not batch_panel.visible
+
+
+func close_batch_panel() -> void:
+	if batch_panel != null and not _batch_running:
+		batch_panel.visible = false
+
+
+func is_batch_panel_visible() -> bool:
+	return batch_panel != null and batch_panel.visible
 
 
 func _on_batch_start_pressed() -> void:
@@ -684,7 +712,7 @@ func _layout_interface() -> void:
 	actions.position = Vector2(margin, action_top)
 	actions.size = Vector2(viewport_size.x - margin * 2.0, action_height)
 	if batch_panel != null:
-		var batch_size := Vector2(430.0, 218.0)
+		var batch_size := Vector2(minf(430.0, viewport_size.x - margin * 2.0), 218.0)
 		batch_panel.size = batch_size
 		batch_panel.position = Vector2(
 			maxf(margin, (viewport_size.x - batch_size.x) * 0.5),
@@ -726,6 +754,8 @@ func set_value(key: String, value: Variant) -> bool:
 	else:
 		return false
 	_refresh_parameter_label(key)
+	if key == "planet_type":
+		_apply_planet_type_ui_state()
 	return true
 
 
@@ -807,6 +837,7 @@ func randomize_parameters() -> void:
 			var option := control as OptionButton
 			if option.item_count > 0:
 				option.select(randi_range(0, option.item_count - 1))
+	_apply_planet_type_ui_state()
 	refresh_translations()
 
 
@@ -848,6 +879,20 @@ func refresh_translations() -> void:
 	_refresh_batch_status()
 	save_planet_button.text = tr("SAUVEGARDER")
 	_refresh_template_items()
+	_refresh_export_preset_items()
+	generate_button.tooltip_text = tr("UI_TOOLTIP_GENERATE")
+	random_button.tooltip_text = tr("UI_TOOLTIP_RANDOM")
+	if random_name_button != null:
+		random_name_button.tooltip_text = tr("UI_TOOLTIP_RANDOM_NAME")
+	if random_seed_button != null:
+		random_seed_button.tooltip_text = tr("UI_TOOLTIP_RANDOM_SEED")
+	load_preset_button.tooltip_text = tr("UI_TOOLTIP_LOAD_PRESET")
+	save_preset_button.tooltip_text = tr("UI_TOOLTIP_SAVE_PRESET")
+	viewer_button.tooltip_text = tr("UI_TOOLTIP_VIEWER")
+	batch_toggle_button.tooltip_text = tr("UI_TOOLTIP_BATCH")
+	save_planet_button.tooltip_text = tr("UI_TOOLTIP_SAVE_PLANET")
+	if export_preset_select != null:
+		export_preset_select.tooltip_text = tr("UI_TOOLTIP_EXPORT_PRESET")
 
 	for category in PARAMETER_SCHEMA.CATEGORY_ORDER:
 		var category_key := str(category)
@@ -874,6 +919,62 @@ func set_actions_enabled(enabled: bool) -> void:
 	batch_count_spin.editable = enabled and not _batch_running
 	batch_seed_spin.editable = enabled and not _batch_running
 	batch_start_button.disabled = not enabled and not _batch_running
+	if export_preset_select != null:
+		export_preset_select.disabled = not enabled
+
+
+func get_export_preset() -> String:
+	if export_preset_select == null or export_preset_select.selected < 0:
+		return EXPORT_CATALOG.PRESET_STANDARD
+	return str(export_preset_select.get_item_metadata(export_preset_select.selected))
+
+
+func set_export_preset(preset: String) -> void:
+	if export_preset_select == null:
+		return
+	var normalized: String = EXPORT_CATALOG.normalize_preset(preset)
+	for index in range(export_preset_select.item_count):
+		if str(export_preset_select.get_item_metadata(index)) == normalized:
+			export_preset_select.select(index)
+			return
+
+
+func _refresh_export_preset_items() -> void:
+	if export_preset_select == null:
+		return
+	var selected_preset: String = get_export_preset()
+	export_preset_select.clear()
+	var presets: Array[Dictionary] = [
+		{"label": "EXPORT_PRESET_STANDARD", "value": EXPORT_CATALOG.PRESET_STANDARD},
+		{"label": "EXPORT_PRESET_COMPLETE", "value": EXPORT_CATALOG.PRESET_COMPLETE},
+		{"label": "EXPORT_PRESET_MINIMAL", "value": EXPORT_CATALOG.PRESET_MINIMAL},
+		{"label": "EXPORT_PRESET_DEVELOPMENT", "value": EXPORT_CATALOG.PRESET_DEVELOPMENT},
+	]
+	for definition in presets:
+		export_preset_select.add_item(tr(str(definition["label"])))
+		export_preset_select.set_item_metadata(export_preset_select.item_count - 1, str(definition["value"]))
+	set_export_preset(selected_preset)
+
+
+func _set_category_visible(category: String, visible: bool) -> void:
+	var panel: PanelContainer = _category_panels.get(category) as PanelContainer
+	if panel != null:
+		panel.visible = visible
+
+
+func _apply_planet_type_ui_state() -> void:
+	var type_control: OptionButton = _controls.get("planet_type") as OptionButton
+	if type_control == null or type_control.selected < 0:
+		return
+	var planet_type: int = type_control.get_selected_id()
+	var no_surface_water: bool = planet_type in [Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE]
+	var gas: bool = planet_type == Enum.TYPE_GAZEUZE
+	_set_category_visible("EAU", not no_surface_water and not gas)
+	_set_category_visible("NUAGE", not no_surface_water and not gas)
+	_set_category_visible("REGION", not gas)
+	_set_category_visible("OCEAN", not no_surface_water and not gas)
+	_set_category_visible("CRATER", not gas)
+	_set_category_visible("EROSION", not gas)
 
 
 func set_batch_running(running: bool) -> void:

@@ -55,6 +55,7 @@ const PRESETS_DIR = "user://presets/"
 const SFX_GENERATION_DONE = "res://data/sound/Foley UI E.wav"
 const PARAMETER_WORKSPACE_SCENE := preload("res://data/scn/parameter_workspace.tscn")
 const REFERENCE_VIEWER_WORKSPACE_SCENE := preload("res://data/scn/reference_viewer_workspace.tscn")
+const UI_POLISH := preload("res://src/classes/classes_io/ui_polish.gd")
 const UI_AMBER := Color(0.92549, 0.619608, 0.0, 1.0)
 const UI_MUTED := Color(0.39, 0.43, 0.44, 1.0)
 
@@ -218,6 +219,7 @@ func _show_parameters_workspace() -> void:
 
 func _show_viewer_workspace() -> void:
 	if _parameter_workspace != null:
+		_parameter_workspace.close_batch_panel()
 		_parameter_workspace.visible = false
 	if _viewer_workspace != null:
 		_viewer_workspace.visible = true
@@ -274,6 +276,14 @@ func _refresh_advanced_viewer_translation() -> void:
 		_viewer_load_action.text = "▰  " + tr("LOAD_PLANET").to_upper()
 	if _viewer_save_action != null:
 		_viewer_save_action.text = tr("SAUVEGARDER").to_upper()
+	if _viewer_parameters_button != null:
+		_viewer_parameters_button.tooltip_text = tr("UI_TOOLTIP_PARAMETERS")
+	if _viewer_load_action != null:
+		_viewer_load_action.tooltip_text = tr("UI_TOOLTIP_LOAD_PLANET")
+	if _viewer_save_action != null:
+		_viewer_save_action.tooltip_text = tr("UI_TOOLTIP_SAVE_PLANET")
+	if _viewer_reset_button != null:
+		_viewer_reset_button.tooltip_text = tr("UI_TOOLTIP_RESET_VIEW")
 	if _cancel_generation_button != null:
 		_cancel_generation_button.text = tr("GEN_CANCEL").to_upper()
 	if not _viewer_crosshair.has_point:
@@ -475,7 +485,7 @@ func _show_generation_status(params: Dictionary) -> void:
 	# Deliberately conservative UI estimate: several authoritative fields plus
 	# working textures coexist in the monolithic path.
 	var estimate := int(dims.x) * int(dims.y) * 64
-	_set_generation_memory_text("GEN_STATUS_MEMORY", {"width": dims.x, "height": dims.y, "gib": "%.2f" % (float(estimate) / 1073741824.0)})
+	_set_generation_memory_text("GEN_STATUS_MEMORY", {"width": dims.x, "height": dims.y, "memory": UI_POLISH.human_bytes(estimate)})
 	_cancel_generation_button.disabled = false
 
 func _on_generation_progress(phase: String, completed: int, total: int) -> void:
@@ -753,7 +763,7 @@ func _compile_generation_params() -> Dictionary:
 		"cartography_view": CartographicRenderer.VIEW_PLANET,
 		"cartography_grid_alpha": 166,
 		"run_integrity_checks": true,
-		"export_preset": ExportCatalog.PRESET_STANDARD,
+		"export_preset": _parameter_workspace.get_export_preset() if _parameter_workspace != null else ExportCatalog.PRESET_STANDARD,
 		"avg_temperature": ui["avg_temperature"],
 
 		"terrain_scale": ui["terrain_scale"],
@@ -876,6 +886,48 @@ func maj_labels() -> void:
 	_refresh_advanced_viewer_translation()
 
 
+func _unhandled_key_input(event: InputEvent) -> void:
+	var key_event: InputEventKey = event as InputEventKey
+	if key_event == null or not key_event.pressed or key_event.echo:
+		return
+	match key_event.keycode:
+		KEY_V:
+			if _viewer_workspace != null and _viewer_workspace.visible:
+				_show_parameters_workspace()
+			else:
+				_show_viewer_workspace()
+			get_viewport().set_input_as_handled()
+		KEY_B:
+			if _parameter_workspace != null and _parameter_workspace.visible:
+				_parameter_workspace.toggle_batch_panel()
+				get_viewport().set_input_as_handled()
+		KEY_LEFT:
+			if _viewer_workspace != null and _viewer_workspace.visible:
+				_cycle_viewer_base(-1)
+				get_viewport().set_input_as_handled()
+		KEY_RIGHT:
+			if _viewer_workspace != null and _viewer_workspace.visible:
+				_cycle_viewer_base(1)
+				get_viewport().set_input_as_handled()
+		KEY_0:
+			if key_event.ctrl_pressed and _viewer_workspace != null and _viewer_workspace.visible:
+				_reset_viewer_transform()
+				get_viewport().set_input_as_handled()
+		KEY_ESCAPE:
+			if _parameter_workspace != null and _parameter_workspace.visible and _parameter_workspace.is_batch_panel_visible():
+				_parameter_workspace.close_batch_panel()
+				get_viewport().set_input_as_handled()
+
+
+func _cycle_viewer_base(direction: int) -> void:
+	if _viewer_base_select == null or _viewer_base_select.item_count <= 0:
+		return
+	var current_index: int = maxi(_viewer_base_select.selected, 0)
+	var next_index: int = posmod(current_index + direction, _viewer_base_select.item_count)
+	_viewer_base_select.select(next_index)
+	_on_viewer_base_selected(next_index)
+
+
 # ============================================================================
 # LANGUAGE & SYSTEM
 # ============================================================================
@@ -942,6 +994,8 @@ func _collect_preset_data() -> Dictionary:
 		"version": 2,
 		"date": Time.get_datetime_string_from_system(),
 	}
+	if _parameter_workspace != null:
+		data["_ui"] = {"export_preset": _parameter_workspace.get_export_preset()}
 	return data
 
 
@@ -1020,6 +1074,11 @@ func _load_preset_from_path(file_path: String) -> bool:
 
 	if _parameter_workspace != null:
 		_parameter_workspace.apply_values(data)
+		var raw_ui_settings: Variant = data.get("_ui", {})
+		if raw_ui_settings is Dictionary:
+			var ui_settings: Dictionary = raw_ui_settings
+			if ui_settings.has("export_preset"):
+				_parameter_workspace.set_export_preset(str(ui_settings["export_preset"]))
 	maj_labels()
 	print("[Preset] ✅ Chargé: ", file_path.get_file())
 	return true

@@ -246,7 +246,7 @@ GEN_STATUS_CANCELLING,Cancelling at the next safe boundary…,Annulation à la p
 GEN_STATUS_CANCELLED,Cancelled,Annulée,Abgebrochen
 GEN_STATUS_CANCELLED_REASON,Cancelled: {reason},Annulée : {reason},Abgebrochen: {reason}
 GEN_STATUS_IDLE,Idle • no active generation,Inactif • aucune génération en cours,Leerlauf • keine aktive Generierung
-GEN_STATUS_MEMORY,Raster {width}×{height} • est. active ~{gib} GiB,Raster {width}×{height} • actif estimé ~{gib} Gio,Raster {width}×{height} • geschätzt aktiv ~{gib} GiB
+GEN_STATUS_MEMORY,Raster {width}×{height} • est. active ~{memory},Raster {width}×{height} • actif estimé ~{memory},Raster {width}×{height} • geschätzt aktiv ~{memory}
 GEN_STATUS_MEMORY_TOOLTIP,Estimated active generation memory and elapsed time,Mémoire active estimée et temps écoulé,Geschätzter aktiver Generierungsspeicher und verstrichene Zeit
 GEN_STATUS_COMPLETE,Complete,Terminée,Abgeschlossen
 GEN_STATUS_COMPLETED_IN,Completed in {seconds} s,Terminée en {seconds} s,Abgeschlossen in {seconds} s
@@ -286,7 +286,7 @@ MAP_VIEWER_ZOOM,Zoom {percent}%,Zoom {percent} %,Zoom {percent} %
 MAP_VIEWER_RESET,Reset view,Réinitialiser la vue,Ansicht zurücksetzen
 VIEWER_EMPTY_TITLE,NO PLANET LOADED,AUCUNE PLANÈTE CHARGÉE,KEIN PLANET GELADEN
 VIEWER_EMPTY_HINT,Open a planet project or configure a new generation.,Chargez un projet de planète ou configurez une nouvelle génération.,Öffnen Sie ein Planetenprojekt oder konfigurieren Sie eine neue Generierung.
-VIEWER_HELP,Wheel: zoom   •   Middle click + drag: pan   •   Left click: inspect,Molette : zoom   •   Clic milieu + glisser : déplacer   •   Clic gauche : inspecter,Mausrad: Zoom   •   Mittelklick + Ziehen: Verschieben   •   Linksklick: Prüfen
+VIEWER_HELP,Wheel: zoom • Middle drag: pan • Left click: inspect • Left/Right: map • Ctrl+0: reset,Molette : zoom • Clic milieu : déplacer • Clic gauche : inspecter • Gauche/Droite : carte • Ctrl+0 : réinitialiser,Mausrad: Zoom • Mittlere Taste: Verschieben • Linksklick: Prüfen • Links/Rechts: Karte • Strg+0: Zurücksetzen
 MAP_VIEWER_INSPECT_HINT,Click the map to inspect a coordinate.,Cliquer sur la carte pour inspecter une coordonnée.,Auf die Karte klicken um eine Koordinate zu prüfen.
 MAP_VIEWER_INSPECT_VALUE,"Cell {x},{y} • Lon {lon}° Lat {lat}°
 RGBA {r} / {g} / {b} / {a}","Cellule {x},{y} • Lon {lon}° Lat {lat}°
@@ -323,3 +323,20 @@ BATCH_PROGRESS_COMPLETE,{completed}/{total} • seed {seed} • complete,{comple
 BATCH_PROGRESS_INTEGRITY_FAIL,{completed}/{total} • seed {seed} • integrity failed,{completed}/{total} • graine {seed} • intégrité échouée,{completed}/{total} • Seed {seed} • Integrität fehlgeschlagen
 BATCH_PROGRESS_FAILED,{completed}/{total} • seed {seed} • failed,{completed}/{total} • graine {seed} • échec,{completed}/{total} • Seed {seed} • fehlgeschlagen
 BATCH_RESULT,{successful}/{completed} successful • report: {report},{successful}/{completed} réussies • rapport : {report},{successful}/{completed} erfolgreich • Bericht: {report}
+EXPORT_PRESET_STANDARD,Export: Standard,Export : Standard,Export: Standard
+EXPORT_PRESET_COMPLETE,Export: Complete,Export : Complet,Export: Vollständig
+EXPORT_PRESET_MINIMAL,Export: Minimal,Export : Minimal,Export: Minimal
+EXPORT_PRESET_DEVELOPMENT,Export: Development,Export : Développement,Export: Entwicklung
+UI_TOOLTIP_GENERATE,Generate with the current parameters.,Générer avec les paramètres actuels.,Mit den aktuellen Parametern generieren.
+UI_TOOLTIP_RANDOM,Unrestricted randomization of parameters.,Randomisation libre des paramètres.,Uneingeschränkte Zufallswerte für Parameter.
+UI_TOOLTIP_LOAD_PRESET,Load a saved parameter preset.,Charger un preset de paramètres.,Ein gespeichertes Parameter-Preset laden.
+UI_TOOLTIP_SAVE_PRESET,Save the current parameters as a preset.,Sauvegarder les paramètres actuels comme preset.,Die aktuellen Parameter als Preset speichern.
+UI_TOOLTIP_VIEWER,Open the map viewer. Shortcut: V.,Ouvrir la visionneuse de carte. Raccourci : V.,Kartenansicht öffnen. Tastenkürzel: V.
+UI_TOOLTIP_BATCH,Open Batch / Benchmark. Shortcut: B.,Ouvrir Batch / Benchmark. Raccourci : B.,Batch / Benchmark öffnen. Tastenkürzel: B.
+UI_TOOLTIP_SAVE_PLANET,Save/export the current planet.,Sauvegarder/exporter la planète actuelle.,Den aktuellen Planeten speichern/exportieren.
+UI_TOOLTIP_EXPORT_PRESET,Choose which generated files are kept in the export.,Choisir quels fichiers générés sont conservés dans l’export.,"Auswählen, welche erzeugten Dateien im Export behalten werden."
+UI_TOOLTIP_PARAMETERS,Return to generation parameters. Shortcut: V.,Revenir aux paramètres de génération. Raccourci : V.,Zu den Generierungsparametern zurückkehren. Tastenkürzel: V.
+UI_TOOLTIP_LOAD_PLANET,Load an existing planet project.,Charger un projet de planète existant.,Ein vorhandenes Planetenprojekt laden.
+UI_TOOLTIP_RESET_VIEW,Reset zoom and pan. Shortcut: Ctrl+0.,Réinitialiser le zoom et le déplacement. Raccourci : Ctrl+0.,Zoom und Verschiebung zurücksetzen. Tastenkürzel: Strg+0.
+UI_TOOLTIP_RANDOM_NAME,Generate a random planet name.,Générer un nom de planète aléatoire.,Einen zufälligen Planetennamen erzeugen.
+UI_TOOLTIP_RANDOM_SEED,Generate a random seed.,Générer une graine aléatoire.,Einen zufälligen Seed erzeugen.
