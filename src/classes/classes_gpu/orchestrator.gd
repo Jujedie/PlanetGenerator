@@ -25,6 +25,7 @@ var last_administrative_stats: Dictionary = {}
 var last_performance_report: Dictionary = {}
 var was_cancelled: bool = false
 var _cancel_reason: String = ""
+var cancellation_probe: Callable = Callable()
 var _phase_counter: int = 0
 var _phase_total: int = 0
 
@@ -757,12 +758,14 @@ func run_simulation() -> void:
 
 ## Exécute une phase et conserve sa durée pour les benchmarks déterministes.
 func _run_timed_phase(phase_name: String, phase_callable: Callable) -> void:
+	_poll_external_cancel()
 	if was_cancelled:
 		return
 	_phase_counter += 1
 	emit_signal("phase_started", phase_name, _phase_counter, _phase_total)
 	var started_usec = Time.get_ticks_usec()
 	phase_callable.call()
+	_poll_external_cancel()
 	var elapsed_ms = float(Time.get_ticks_usec() - started_usec) / 1000.0
 	last_phase_timings_ms[phase_name] = elapsed_ms
 	print("[Timing] ", phase_name, ": ", snappedf(elapsed_ms, 0.01), " ms")
@@ -776,6 +779,13 @@ func request_cancel(reason: String = "user") -> void:
 	was_cancelled = true
 	_cancel_reason = reason
 	print("[Orchestrator] Cancellation requested: ", reason)
+
+func _poll_external_cancel() -> void:
+	if was_cancelled or not cancellation_probe.is_valid():
+		return
+	var request = cancellation_probe.call()
+	if request is Dictionary and bool(request.get("cancelled", false)):
+		request_cancel(str(request.get("reason", "user")))
 
 func cancellation_reason() -> String:
 	return _cancel_reason

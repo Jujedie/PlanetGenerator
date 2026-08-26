@@ -14,6 +14,7 @@ var nom             : String
 var circonference   : int
 var mapStatusLabel  : Label
 var cheminSauvegarde: String
+var _generation_output_root: String
 
 
 # GPU acceleration components
@@ -23,6 +24,12 @@ var use_tiled_global_generation: bool     = false
 var tiled_pipeline: TiledGlobalSimulationPipeline = null
 var _tiled_thread: Thread = null
 var _tiled_output_root: String = ""
+var _monolithic_job_active: bool = false
+var _cached_display_maps: Array[String] = []
+var _cached_export_files: Dictionary = {}
+var _cancel_mutex: Mutex = Mutex.new()
+var _cancel_requested: bool = false
+var _cancel_reason: String = ""
 
 # Generation parameters (compiled from UI)
 var generation_params: Dictionary = {}
@@ -62,6 +69,7 @@ func _init(nom_param: String, generation_param : Dictionary, cheminSauvegarde_pa
 
 	self.mapStatusLabel       = mapStatusLabel_param
 	self.cheminSauvegarde     = cheminSauvegarde_param
+	self._generation_output_root = cheminSauvegarde_param
 	
 	# Initialize GPU system
 	_init_gpu_system()
@@ -74,7 +82,7 @@ func _init(nom_param: String, generation_param : Dictionary, cheminSauvegarde_pa
 ##
 ## @return bool: `true` si l'initialisation Vulkan/RenderingDevice a réussi, `false` sinon.
 func _init_gpu_system() -> void:
-	"""Initialize the monolithic preview path or the maximum-scale tiled path."""
+	"""Configure the backend without touching Vulkan on the main/UI thread."""
 	var global_dimensions: Vector2i = generation_params.get(
 		"global_dimensions", generation_params.get("resolution", Vector2i(1024, 512))
 	)
@@ -84,20 +92,12 @@ func _init_gpu_system() -> void:
 	# tiled contract applies to solid-surface planets.
 	if int(generation_params.get("planet_type", 0)) == 6:
 		use_tiled_global_generation = false
+	use_gpu_acceleration = true
 	if use_tiled_global_generation:
-		use_gpu_acceleration = true
 		_tiled_output_root = cheminSauvegarde.path_join("tiled_dataset")
 		print("[PlanetGenerator] Maximum-scale tiled generation enabled: ", global_dimensions)
-		return
-
-	var gpu_context = GPUContext.new(generation_params["resolution"])
-	if not gpu_context or not gpu_context.rd:
-		push_warning("[PlanetGenerator] GPUContext or RD not available")
-		use_gpu_acceleration = false
-		return
-	gpu_orchestrator = GPUOrchestrator.new(gpu_context, generation_params["resolution"], generation_params)
-	gpu_orchestrator.phase_started.connect(_on_monolithic_phase_started)
-	print("[PlanetGenerator] GPU acceleration enabled: ", generation_params["resolution"])
+	else:
+		print("[PlanetGenerator] Monolithic GPU backend configured for background execution: ", generation_params["resolution"])
 
 ## Met à jour le label de statut dans l'interface utilisateur.
 ##
@@ -131,25 +131,31 @@ func generate_planet() -> bool:
 		return false
 	_generation_request_id += 1
 	if use_tiled_global_generation:
-		if _tiled_thread != null and _tiled_thread.is_started():
-			push_warning("[PlanetGenerator] Tiled generation is already running")
-			return false
-		print("[PlanetGenerator] Starting tiled global generation...")
+		print("[PlanetGenerator] Queuing tiled global generation on background GPU worker...")
 		tiled_pipeline = TiledGlobalSimulationPipeline.new(generation_params, _tiled_output_root)
 		tiled_pipeline.phase_started.connect(_on_tiled_phase_started)
 		tiled_pipeline.tile_progress.connect(_on_tiled_tile_progress)
-		_tiled_thread = Thread.new()
-		var err := _tiled_thread.start(_run_tiled_generation_worker.bind(_generation_request_id))
-		if err != OK:
-			push_error("[PlanetGenerator] Unable to start tiled generation worker: %s" % err)
-			_tiled_thread = null
+		if not GPUGenerationWorker.submit(_run_tiled_generation_worker.bind(_generation_request_id)):
+			push_error("[PlanetGenerator] Unable to queue tiled generation worker")
+			tiled_pipeline = null
 			return false
 		return true
-	if gpu_orchestrator:
-		print("[PlanetGenerator] Starting GPU generation (render thread)...")
-		call_deferred("_generate_planet_gpu_deferred", _generation_request_id)
-		return true
-	return false
+	if _monolithic_job_active:
+		push_warning("[PlanetGenerator] Monolithic generation is already running")
+		return false
+	_cancel_mutex.lock()
+	_cancel_requested = false
+	_cancel_reason = ""
+	_cancel_mutex.unlock()
+	_cached_display_maps.clear()
+	_cached_export_files.clear()
+	_monolithic_job_active = true
+	print("[PlanetGenerator] Queuing monolithic GPU generation on background worker...")
+	if not GPUGenerationWorker.submit(_run_monolithic_generation_worker.bind(_generation_request_id)):
+		_monolithic_job_active = false
+		push_error("[PlanetGenerator] Unable to queue background GPU generation")
+		return false
+	return true
 
 func _run_tiled_generation_worker(request_id: int) -> void:
 	var report: Dictionary = {}
@@ -158,9 +164,6 @@ func _run_tiled_generation_worker(request_id: int) -> void:
 	call_deferred("_complete_tiled_generation", request_id, report)
 
 func _complete_tiled_generation(request_id: int, report: Dictionary) -> void:
-	if _tiled_thread != null and _tiled_thread.is_started():
-		_tiled_thread.wait_to_finish()
-	_tiled_thread = null
 	if request_id != _generation_request_id or _cleaned_up:
 		return
 	if bool(report.get("ok", false)):
@@ -172,7 +175,14 @@ func _complete_tiled_generation(request_id: int, report: Dictionary) -> void:
 		push_error("[PlanetGenerator] Tiled generation failed: %s" % report.get("reason", "unknown"))
 
 func _on_monolithic_phase_started(phase: String, index: int, total: int) -> void:
-	emit_signal("generation_progress", phase, index - 1, total)
+	# Orchestrator signals are emitted on the GPU worker. Bounce UI-facing
+	# progress to the main loop instead of emitting into the scene tree here.
+	call_deferred("_emit_monolithic_progress", phase, index - 1, total)
+
+func _emit_monolithic_progress(phase: String, completed: int, total: int) -> void:
+	if _cleaned_up:
+		return
+	emit_signal("generation_progress", phase, completed, maxi(total, 1))
 
 func _on_tiled_phase_started(phase: String) -> void:
 	call_deferred("_emit_tiled_progress", phase, 0, 1)
@@ -184,56 +194,105 @@ func _emit_tiled_progress(phase: String, completed: int, total: int) -> void:
 	emit_signal("generation_progress", phase, completed, maxi(total, 1))
 
 func cancel_generation(reason: String = "user") -> void:
+	_cancel_mutex.lock()
+	_cancel_requested = true
+	_cancel_reason = reason
+	_cancel_mutex.unlock()
 	if tiled_pipeline != null:
 		tiled_pipeline.cancel(reason)
-	elif gpu_orchestrator != null and gpu_orchestrator.has_method("request_cancel"):
-		gpu_orchestrator.request_cancel(reason)
 
-## Wrapper pour l'exécution différée de la génération GPU.
-##
-## Permet d'appeler [method generate_planet_gpu] via [method call_deferred]
-## pour s'assurer que certaines initialisations contextuelles se font sur le thread principal
-## avant de basculer sur le RenderingDevice.
-func _generate_planet_gpu_deferred(request_id: int) -> void:
-	"""
-	GPU generation executed on render thread
-	Called via call_deferred from generate_planet()
-	"""
-	
-	if (
-		request_id != _generation_request_id
-		or _cleaned_up
-		or not use_gpu_acceleration
-		or not is_instance_valid(gpu_orchestrator)
-	):
-		print("[PlanetGenerator] Ignoring cancelled deferred GPU generation")
+func _worker_cancel_probe() -> Dictionary:
+	_cancel_mutex.lock()
+	var result := {
+		"cancelled": _cancel_requested or _cleaned_up,
+		"reason": "cleanup" if _cleaned_up else _cancel_reason,
+	}
+	_cancel_mutex.unlock()
+	return result
+
+func _run_monolithic_generation_worker(request_id: int) -> void:
+	# This entire method executes on GPUGenerationWorker's persistent thread.
+	# The local RenderingDevice is therefore initialized, used, read back and
+	# exported without blocking Godot's scene-tree/main thread.
+	if request_id != _generation_request_id or _cleaned_up:
+		call_deferred("_complete_monolithic_generation", request_id, false, [], "cancelled")
 		return
 
-	# Keep the validated orchestrator alive for the synchronous simulation.
-	var orchestrator := gpu_orchestrator
+	call_deferred("_emit_monolithic_progress", "gpu_initialization", 0, 1)
+	var gpu_context := GPUContext.new(generation_params["resolution"])
+	if not gpu_context or not gpu_context.rd:
+		call_deferred("_complete_monolithic_generation", request_id, false, [], "gpu_unavailable")
+		return
 
-	# === INITIAL LOGGING ===
+	var orchestrator := GPUOrchestrator.new(
+		gpu_context, generation_params["resolution"], generation_params
+	)
+	if not orchestrator or not orchestrator.rd:
+		if orchestrator:
+			orchestrator.cleanup()
+		call_deferred("_complete_monolithic_generation", request_id, false, [], "orchestrator_unavailable")
+		return
+	gpu_orchestrator = orchestrator
+	orchestrator.cancellation_probe = _worker_cancel_probe
+	orchestrator.phase_started.connect(_on_monolithic_phase_started)
+
 	print("\n" + "=".repeat(60))
-	print("GPU-ACCELERATED PLANET GENERATION (RENDER THREAD)")
+	print("GPU-ACCELERATED PLANET GENERATION (BACKGROUND WORKER)")
 	print("=".repeat(60))
-	
-	# === FULL SIMULATION ===
-	# Execute simulation synchronously on render thread
 	orchestrator.run_simulation()
 
-	# A cancelled/replaced request must not notify the UI as completed.
-	if request_id != _generation_request_id or _cleaned_up:
+	var cancel_state := _worker_cancel_probe()
+	if orchestrator.was_cancelled or bool(cancel_state.get("cancelled", false)):
+		var reason := orchestrator.cancellation_reason()
+		if reason.is_empty():
+			reason = str(cancel_state.get("reason", "user"))
+		orchestrator.cleanup()
+		if gpu_orchestrator == orchestrator:
+			gpu_orchestrator = null
+		call_deferred("_complete_monolithic_generation", request_id, false, [], reason)
 		return
-	if orchestrator.was_cancelled:
-		emit_signal("generation_cancelled", orchestrator.cancellation_reason())
+
+	# Export is part of generation from the user's perspective and used to block
+	# the UI for several additional seconds in getMaps(). Keep it on the worker.
+	call_deferred("_emit_monolithic_progress", "export", 13, 14)
+	deleteImagesTemps()
+	var exported_files := orchestrator.export_all_maps(cheminSauvegarde)
+	cancel_state = _worker_cancel_probe()
+	if bool(cancel_state.get("cancelled", false)):
+		var export_cancel_reason := str(cancel_state.get("reason", "user"))
+		orchestrator.cleanup()
+		if gpu_orchestrator == orchestrator:
+			gpu_orchestrator = null
+		call_deferred("_complete_monolithic_generation", request_id, false, [], export_cancel_reason)
 		return
-	
-	# === EXPORT ===
-	print("=".repeat(60))
-	print("GENERATION COMPLETE")
-	print("=".repeat(60) + "\n")
-	
-	emit_signal("finished")
+	var display_maps: Array[String] = PlanetProject.display_maps_from_layers(exported_files)
+	_cached_export_files = exported_files.duplicate(true)
+	_cached_display_maps = display_maps.duplicate()
+	# The UI consumes exported CPU files, not live GPU RIDs. Release per-planet
+	# resources here, on the worker that owns the local RenderingDevice, while
+	# keeping GPUContext's shared device alive for the next generation.
+	orchestrator.cleanup()
+	if gpu_orchestrator == orchestrator:
+		gpu_orchestrator = null
+	call_deferred("_complete_monolithic_generation", request_id, true, display_maps, "")
+
+func _complete_monolithic_generation(request_id: int, ok: bool, display_maps: Array, reason: String) -> void:
+	if request_id != _generation_request_id:
+		return
+	_monolithic_job_active = false
+	if _cleaned_up:
+		return
+	if ok:
+		_cached_display_maps.clear()
+		for path in display_maps:
+			_cached_display_maps.append(str(path))
+		emit_signal("generation_progress", "complete", 1, 1)
+		emit_signal("finished")
+	elif reason == "cancelled" or reason == "cleanup" or reason == "user":
+		emit_signal("generation_cancelled", reason)
+	else:
+		push_error("[PlanetGenerator] Background generation failed: %s" % reason)
+		emit_signal("generation_cancelled", reason)
 
 # ============================================================================
 # GPU GENERATION PIPELINE
@@ -369,12 +428,20 @@ func export_to_directory(output_dir: String) -> void:
 	if use_tiled_global_generation and tiled_pipeline != null:
 		if not tiled_pipeline.export_dataset(output_dir):
 			push_warning("[PlanetGenerator] Tiled export skipped: dataset is incomplete")
-	elif use_gpu_acceleration and gpu_orchestrator:
-		var exporter = PlanetExporter.new()
-		exporter.export_maps(gpu_orchestrator.gpu, output_dir, generation_params)
+	elif use_gpu_acceleration and not _cached_export_files.is_empty():
+		_copy_cached_exports(output_dir)
 	else:
 		push_warning("[PlanetGenerator] Export skipped: generation resources are unavailable")
 	print("[PlanetGenerator] Export complete")
+
+func _copy_cached_exports(output_dir: String) -> void:
+	# Preserve the complete M7.2 project layout (maps/, overlays/, debug/,
+	# manifests, integrity report, resources) instead of flattening file names.
+	if not PlanetTileStore.copy_tree(_generation_output_root, output_dir):
+		push_warning("[PlanetGenerator] Failed to copy generated project %s -> %s" % [
+			_generation_output_root, output_dir
+		])
+
 
 ## Sauvegarde les cartes générées dans le dossier temporaire par défaut.
 func save_maps():
@@ -389,18 +456,19 @@ func cleanup() -> void:
 	if _cleaned_up:
 		return
 	_generation_request_id += 1
+	_cancel_mutex.lock()
+	_cancel_requested = true
+	_cancel_reason = "cleanup"
 	_cleaned_up = true
+	_cancel_mutex.unlock()
 	if tiled_pipeline != null:
 		tiled_pipeline.cancel("cleanup")
-	if _tiled_thread != null and _tiled_thread.is_started():
-		_tiled_thread.wait_to_finish()
-	_tiled_thread = null
 	if tiled_pipeline != null:
 		tiled_pipeline.cleanup()
 		tiled_pipeline = null
-	if gpu_orchestrator:
-		gpu_orchestrator.cleanup()
-		gpu_orchestrator = null
+	# A running monolithic job observes _cleaned_up through its cancellation
+	# probe and releases its GPU resources on the worker at the next safe phase
+	# boundary. Completed jobs have already released their per-planet RIDs.
 	use_gpu_acceleration = false
 
 ## Retourne la liste des chemins de fichiers des cartes générées.
@@ -410,22 +478,10 @@ func cleanup() -> void:
 ##
 ## @return Array[String]: Liste des chemins complets vers les fichiers PNG générés.
 func getMaps() -> Array[String]:
-	"""Get temporary display maps. Raw tiled datasets are rendered by Milestone 6."""
-	if _cleaned_up:
+	"""Return maps already exported by the background generation worker."""
+	if _cleaned_up or use_tiled_global_generation:
 		return []
-	if use_tiled_global_generation:
-		# M5 deliberately stores raw physical tiles only; returning the manifest
-		# as an image path would make the legacy UI attempt to decode JSON as PNG.
-		return []
-	if not is_instance_valid(gpu_orchestrator):
-		push_warning("[PlanetGenerator] Cannot retrieve maps after cleanup")
-		return []
-	deleteImagesTemps()
-	var temp_dir = "user://temp/"
-	var exported_files = gpu_orchestrator.export_all_maps(temp_dir)
-	# Metadata files (manifest, integrity report, project manifest) are part of
-	# the export set but must never be sent to Image.load() by the map viewer.
-	return PlanetProject.display_maps_from_layers(exported_files)
+	return _cached_display_maps.duplicate()
 
 ## Sauvegarde une image unique dans le dossier temporaire.
 ##

@@ -290,7 +290,9 @@ func _release_planet_generator() -> void:
 func _exit_tree() -> void:
 	_is_exiting = true
 	_release_planet_generator()
-	GPUContext.shutdown_shared_device()
+	# Drain all GPU cleanup jobs and destroy the shared local RenderingDevice on
+	# its owning background thread. Blocking here is safe because the app exits.
+	GPUGenerationWorker.shutdown()
 
 func _on_planetGenerator_finished(generation_epoch: int) -> void:
 	call_deferred("_on_planetGenerator_finished_main", generation_epoch)
