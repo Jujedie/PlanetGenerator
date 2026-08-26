@@ -353,11 +353,11 @@ func _on_map_viewer_input(event: InputEvent) -> void:
 	var frame := _viewer_map_frame
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
-			_set_viewer_zoom(_viewer_zoom * 1.15)
+			_set_viewer_zoom(_viewer_zoom * 1.15, event.position)
 			get_viewport().set_input_as_handled()
 			return
 		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
-			_set_viewer_zoom(_viewer_zoom / 1.15)
+			_set_viewer_zoom(_viewer_zoom / 1.15, event.position)
 			get_viewport().set_input_as_handled()
 			return
 		if event.button_index == MOUSE_BUTTON_MIDDLE:
@@ -374,11 +374,21 @@ func _on_map_viewer_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-func _set_viewer_zoom(value: float) -> void:
-	_viewer_zoom = clampf(value, 1.0, 8.0)
+func _set_viewer_zoom(value: float, anchor_position: Vector2) -> void:
+	var new_zoom: float = clampf(value, 1.0, 8.0)
 	var frame := _viewer_map_frame
-	frame.pivot_offset = frame.size * 0.5
+	var old_zoom: float = _viewer_zoom
+	if old_zoom <= 0.0:
+		old_zoom = 1.0
+
+	# Keep the map point currently below the cursor at the same screen
+	# position while scaling. Using a zero pivot also keeps panning and
+	# pixel inspection in the same coordinate system.
+	var local_anchor: Vector2 = (anchor_position - frame.position) / old_zoom
+	_viewer_zoom = new_zoom
+	frame.pivot_offset = Vector2.ZERO
 	frame.scale = Vector2.ONE * _viewer_zoom
+	frame.position = anchor_position - local_anchor * _viewer_zoom
 	_viewer_zoom_label.text = tr("MAP_VIEWER_ZOOM").format({"percent": int(round(_viewer_zoom * 100.0))})
 
 
