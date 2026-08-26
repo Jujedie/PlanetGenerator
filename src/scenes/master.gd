@@ -92,34 +92,50 @@ func _ready() -> void:
 
 
 func _setup_generation_status_ui() -> void:
-	var layer := CanvasLayer.new()
-	layer.layer = 40
-	layer.name = "GenerationStatusLayer"
-	add_child(layer)
+	# M7.3 status is a permanent part of the right-hand control column. Keeping
+	# it visible while idle makes the feature discoverable and avoids a floating
+	# overlay covering the header/map.
+	var parent := $"ImageFrame/Control General"
+	var parameters_panel := $"ImageFrame/Control General/Control_Parameters"
+	# Reserve a compact strip between the parameter scroller and action buttons.
+	parameters_panel.offset_bottom = 510.0
+
 	_generation_status_panel = PanelContainer.new()
-	_generation_status_panel.visible = false
-	_generation_status_panel.position = Vector2(24, 24)
-	_generation_status_panel.size = Vector2(390, 118)
-	layer.add_child(_generation_status_panel)
+	_generation_status_panel.name = "GenerationStatusPanel"
+	_generation_status_panel.position = Vector2(977.0, 515.0)
+	_generation_status_panel.size = Vector2(363.0, 66.0)
+	_generation_status_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	parent.add_child(_generation_status_panel)
+
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 6)
+	box.add_theme_constant_override("separation", 2)
 	_generation_status_panel.add_child(box)
+
+	var header := HBoxContainer.new()
+	box.add_child(header)
 	_generation_phase_label = Label.new()
-	_generation_phase_label.text = "Preparing generation…"
-	box.add_child(_generation_phase_label)
+	_generation_phase_label.text = "READY"
+	_generation_phase_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(_generation_phase_label)
+	_cancel_generation_button = Button.new()
+	_cancel_generation_button.text = "CANCEL"
+	_cancel_generation_button.disabled = true
+	_cancel_generation_button.focus_mode = Control.FOCUS_NONE
+	_cancel_generation_button.pressed.connect(_on_cancel_generation_pressed)
+	header.add_child(_cancel_generation_button)
+
 	_generation_progress_bar = ProgressBar.new()
 	_generation_progress_bar.min_value = 0
 	_generation_progress_bar.max_value = 100
+	_generation_progress_bar.value = 0
 	_generation_progress_bar.show_percentage = true
 	box.add_child(_generation_progress_bar)
-	var row := HBoxContainer.new(); box.add_child(row)
+
 	_generation_memory_label = Label.new()
-	_generation_memory_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(_generation_memory_label)
-	_cancel_generation_button = Button.new()
-	_cancel_generation_button.text = "CANCEL"
-	_cancel_generation_button.pressed.connect(_on_cancel_generation_pressed)
-	row.add_child(_cancel_generation_button)
+	_generation_memory_label.text = "Idle • no active generation"
+	_generation_memory_label.clip_text = true
+	_generation_memory_label.tooltip_text = "Estimated active generation memory and elapsed time"
+	box.add_child(_generation_memory_label)
 
 func _show_generation_status(params: Dictionary) -> void:
 	_generation_started_usec = Time.get_ticks_usec()
@@ -129,8 +145,8 @@ func _show_generation_status(params: Dictionary) -> void:
 	# Deliberately conservative UI estimate: several authoritative fields plus
 	# working textures coexist in the monolithic path.
 	var estimate := int(dims.x) * int(dims.y) * 64
-	_generation_memory_label.text = "Raster %dx%d • estimated active data ~%.2f GiB" % [dims.x, dims.y, float(estimate) / 1073741824.0]
-	_generation_status_panel.visible = true
+	_generation_memory_label.text = "Raster %dx%d • est. active ~%.2f GiB" % [dims.x, dims.y, float(estimate) / 1073741824.0]
+	_cancel_generation_button.disabled = false
 
 func _on_generation_progress(phase: String, completed: int, total: int) -> void:
 	var safe_total := maxi(total, 1)
@@ -144,8 +160,10 @@ func _on_cancel_generation_pressed() -> void:
 		planetGenerator.cancel_generation("user")
 
 func _on_generation_cancelled(reason: String) -> void:
-	_generation_status_panel.visible = false
-	_cancel_generation_button.disabled = false
+	_generation_phase_label.text = "CANCELLED"
+	_generation_progress_bar.value = 0
+	_generation_memory_label.text = "Cancelled: %s" % reason
+	_cancel_generation_button.disabled = true
 	_set_buttons_enabled(true)
 	$"ImageFrame/LabelNomMap".text = "Generation cancelled (%s)" % reason
 
@@ -155,8 +173,11 @@ func _setup_project_loader_ui() -> void:
 	_load_planet_button.name = "btnLoadPlanetProject"
 	_load_planet_button.text = "LOAD PLANET"
 	_load_planet_button.theme = $"ImageFrame/Control General/btnSauvegarder".theme
-	_load_planet_button.position = Vector2(1028.8, 691.0)
-	_load_planet_button.size = Vector2(269.0, 42.0)
+	# Previous M7.1 coordinates placed this below the 700 px viewport.
+	_load_planet_button.position = Vector2(843.0, 88.0)
+	_load_planet_button.size = Vector2(126.0, 42.0)
+	_load_planet_button.text = "LOAD PLANET"
+	_load_planet_button.add_theme_font_size_override("font_size", 20)
 	_load_planet_button.focus_mode = Control.FOCUS_NONE
 	_load_planet_button.pressed.connect(_on_load_planet_project_pressed)
 	parent.add_child(_load_planet_button)
@@ -252,7 +273,9 @@ func _on_btn_comfirme_pressed() -> void:
 	# Ne pas bloquer l'interface si l'initialisation GPU a tout de même échoué.
 	_set_buttons_enabled(not generation_started)
 	if not generation_started:
-		_generation_status_panel.visible = false
+		_generation_phase_label.text = "UNAVAILABLE"
+		_generation_memory_label.text = "GPU generation could not start"
+		_cancel_generation_button.disabled = true
 
 
 func _release_planet_generator() -> void:
@@ -298,9 +321,10 @@ func _on_planetGenerator_finished_main(generation_epoch: int) -> void:
 		print("Erreur lors du chargement de l'image: ", maps[map_index])
 
 	_generation_progress_bar.value = 100
-	_generation_phase_label.text = "Complete"
-	_generation_status_panel.visible = false
-	_cancel_generation_button.disabled = false
+	_generation_phase_label.text = "COMPLETE"
+	var elapsed_s := float(Time.get_ticks_usec() - _generation_started_usec) / 1000000.0
+	_generation_memory_label.text = "Completed in %.2f s" % elapsed_s
+	_cancel_generation_button.disabled = true
 
 	# 2. Play completion sound
 	var sfx = load(SFX_GENERATION_DONE)
