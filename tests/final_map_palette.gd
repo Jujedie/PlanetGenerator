@@ -116,6 +116,7 @@ func _run() -> void:
 	gpu.initialize_final_map_textures()
 	var inputs := _build_inputs(terran_biomes, resolution)
 	gpu.rd.texture_update(gpu.textures["geo"], 0, inputs["geo"])
+	gpu.rd.texture_update(gpu.textures["climate"], 0, inputs["climate"])
 	gpu.rd.texture_update(gpu.textures["biome_colored"], 0, inputs["biome_color"])
 	gpu.rd.texture_update(gpu.textures["biome_id"], 0, inputs["biome_id"])
 	gpu.rd.texture_update(gpu.textures["river_flux"], 0, inputs["river_flux"])
@@ -147,6 +148,7 @@ func _run() -> void:
 func _build_inputs(biomes: Array, resolution: Vector2i) -> Dictionary:
 	var pixel_count := resolution.x * resolution.y
 	var geo := PackedByteArray()
+	var climate := PackedByteArray()
 	var biome_color := PackedByteArray()
 	var biome_id := PackedByteArray()
 	var river_flux := PackedByteArray()
@@ -154,6 +156,7 @@ func _build_inputs(biomes: Array, resolution: Vector2i) -> Dictionary:
 	var water := PackedByteArray()
 	var ice := PackedByteArray()
 	geo.resize(pixel_count * 16)
+	climate.resize(pixel_count * 16)
 	biome_color.resize(pixel_count * 4)
 	biome_id.resize(pixel_count * 4)
 	river_flux.resize(pixel_count * 4)
@@ -171,10 +174,27 @@ func _build_inputs(biomes: Array, resolution: Vector2i) -> Dictionary:
 			var float_offset := pixel_index * 16
 			var byte_offset := pixel_index * 4
 			var water_pixel := biome.get_water_need()
+			var temperature_range := biome.get_interval_temp()
+			var humidity_range := biome.get_interval_precipitation()
+			var sea_temperature := clampf(
+				(float(temperature_range[0]) + float(temperature_range[1])) * 0.5,
+				-20.0,
+				40.0
+			)
+			var local_temperature := sea_temperature - maxf(elevation, 0.0) * 0.0065
+			var humidity := clampf(
+				(float(humidity_range[0]) + float(humidity_range[1])) * 0.5,
+				0.0,
+				1.0
+			)
 			geo.encode_float(float_offset, -1200.0 if water_pixel else elevation)
 			geo.encode_float(float_offset + 4, 0.0)
 			geo.encode_float(float_offset + 8, 0.0)
 			geo.encode_float(float_offset + 12, 1200.0 if water_pixel else 0.0)
+			climate.encode_float(float_offset, local_temperature)
+			climate.encode_float(float_offset + 4, humidity)
+			climate.encode_float(float_offset + 8, 0.0)
+			climate.encode_float(float_offset + 12, 0.0)
 			_encode_color(biome_color, byte_offset, biome.get_couleur())
 			biome_id.encode_u32(byte_offset, biome_index)
 			river_flux.encode_float(byte_offset, 0.0)
@@ -186,6 +206,7 @@ func _build_inputs(biomes: Array, resolution: Vector2i) -> Dictionary:
 			)
 	return {
 		"geo": geo,
+		"climate": climate,
 		"biome_color": biome_color,
 		"biome_id": biome_id,
 		"river_flux": river_flux,
@@ -228,7 +249,26 @@ func _validate_palette(biomes: Array, final_data: PackedByteArray, resolution: V
 			final_data[offset + 3]
 		)
 		rendered_colors[rendered.to_html(false)] = true
+	print("[FinalMapPalette] rendered_midpoint_colors=", rendered_colors.size())
 	if rendered_colors.size() < 24:
+		return false
+	var temperate_index := _biome_index(biomes, "Forêt Tempérée (Décidue)")
+	if temperate_index < 0:
+		return false
+	var sample_x := (
+		temperate_index * PREVIEW_WIDTH_PER_BIOME + PREVIEW_WIDTH_PER_BIOME / 2
+	)
+	var lowland := _rendered_color(final_data, resolution, sample_x, 10)
+	var summit := _rendered_color(
+		final_data,
+		resolution,
+		sample_x,
+		PREVIEW_HEIGHT - 5
+	)
+	print("[FinalMapPalette] temperate_lowland=", lowland, " summit=", summit)
+	if minf(summit.r, minf(summit.g, summit.b)) < 0.78:
+		return false
+	if _luminance(summit) < _luminance(lowland) + 0.24:
 		return false
 	var sand := _biome_color("Désert de Sable")
 	var badlands := _biome_color("Désert Rocheux (Badlands)")
@@ -259,6 +299,10 @@ func _validate_final_map_shader() -> bool:
 	var shader := FileAccess.get_file_as_string("res://shader/compute/final_map.glsl")
 	return (
 		shader.contains("calculateTopoShading")
+		and shader.contains("climate_texture")
+		and shader.contains("smoothedBiomeMaterial")
+		and shader.contains("BIOME_TINT_STRENGTH = 0.16")
+		and shader.contains("mountain_snow")
 		and not shader.contains("contourKind")
 		and not shader.contains("MINOR_INTERVAL")
 		and not shader.contains("MAJOR_INTERVAL")
@@ -267,6 +311,23 @@ func _validate_final_map_shader() -> bool:
 
 func _luminance(color: Color) -> float:
 	return color.r * 0.2126 + color.g * 0.7152 + color.b * 0.0722
+
+
+func _biome_index(biomes: Array, name: String) -> int:
+	for index in range(biomes.size()):
+		if (biomes[index] as Biome).get_nom() == name:
+			return index
+	return -1
+
+
+func _rendered_color(
+	data: PackedByteArray,
+	resolution: Vector2i,
+	x: int,
+	y: int
+) -> Color:
+	var offset := (y * resolution.x + x) * 4
+	return Color8(data[offset], data[offset + 1], data[offset + 2], data[offset + 3])
 
 
 func _biome_color(name: String) -> Color:

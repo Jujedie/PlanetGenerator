@@ -18,6 +18,7 @@
 // - biome_colored (RGBA8) : Couleur distinctive des biomes (modulation)
 // - river_flux (R32F) : Intensité du flux des rivières
 // - geo_texture (RGBA32F) : R=height pour calcul ombrage
+// - climate_texture (RGBA32F) : R=température, G=humidité continues
 // - ice_caps (RGBA8) : Banquise (blanc/transparent)
 // - BiomeLUT (SSBO) : Couleurs végétation des biomes
 //
@@ -36,6 +37,7 @@ layout(set = 0, binding = 4, rgba8) uniform readonly image2D water_colored;
 layout(set = 0, binding = 5, rgba8) uniform writeonly image2D final_map;
 layout(set = 0, binding = 6, r32ui) uniform readonly uimage2D biome_id;
 layout(set = 0, binding = 7, r32ui) uniform readonly uimage2D river_biome_id;
+layout(set = 0, binding = 8, rgba32f) uniform readonly image2D climate_texture;
 
 // === SET 1: PARAMETERS UBO ===
 layout(set = 1, binding = 0, std140) uniform FinalMapParams {
@@ -209,41 +211,87 @@ vec3 terranLandHypsometry(float relative_height) {
     return mix(color, SUMMIT, smoothstep(3800.0, 6200.0, relative_height));
 }
 
-// Donne au relief une géologie cohérente avec le climat du biome. L'ancienne
-// version appliquait la même base olive à toutes les terres, ce qui transformait
-// notamment les déserts et les régions polaires en variantes désaturées d'une
-// même couleur. Les intervalles du biome permettent de corriger cela sans
-// dépendre de son index ni de son nom.
-vec3 terranBiomeSurface(BiomeData biome_data, vec3 classified_color, float relative_height) {
-    vec3 physical = terranLandHypsometry(relative_height);
+// Les biomes sont des catégories utiles pour l'analyse, mais leurs frontières
+// ne sont pas des frontières de couleur dans la nature. Cette moyenne spatiale
+// construit une nuance écologique douce, sans mélanger la terre avec l'eau.
+vec3 smoothedBiomeMaterial(ivec2 pos, int w, int h, vec3 fallback) {
+    vec3 accumulated = vec3(0.0);
+    float total_weight = 0.0;
+    for (int oy = -3; oy <= 3; ++oy) {
+        for (int ox = -3; ox <= 3; ++ox) {
+            ivec2 sample_pos = wrappedPosition(pos + ivec2(ox, oy), w, h);
+            if (imageLoad(water_colored, sample_pos).a > 0.0) {
+                continue;
+            }
+            uint sample_id = imageLoad(biome_id, sample_pos).r;
+            if (sample_id >= biome_count) {
+                continue;
+            }
+            float distance_sq = float(ox * ox + oy * oy);
+            float weight = 1.0 / (1.0 + distance_sq * 0.72);
+            accumulated += biomes[sample_id].color.rgb * weight;
+            total_weight += weight;
+        }
+    }
+    return total_weight > 0.0 ? accumulated / total_weight : fallback;
+}
 
-    float dry = 1.0 - smoothstep(0.18, 0.52, biome_data.humid_max);
-    float cold = 1.0 - smoothstep(-10.0, 7.0, biome_data.temp_max);
+// Surface terrestre pilotée par des valeurs physiques continues. Le biome
+// n'apporte plus qu'une faible nuance, ce qui transforme ses frontières nettes
+// en écotones. L'altitude expose progressivement la roche puis la neige.
+vec3 terranClimateSurface(
+    vec3 biome_material,
+    float temperature,
+    float humidity,
+    float relative_height
+) {
+    const float BIOME_TINT_STRENGTH = 0.16;
+    float moisture = clamp(humidity, 0.0, 1.0);
+    float sea_level_temperature = temperature + max(relative_height, 0.0) * 0.0065;
+    float heat = smoothstep(7.0, 34.0, sea_level_temperature);
+    float dryness = 1.0 - smoothstep(0.12, 0.58, moisture);
 
-    const vec3 DRY_LOWLAND = vec3(0.76, 0.62, 0.39);
-    const vec3 DRY_UPLAND = vec3(0.67, 0.42, 0.27);
-    const vec3 DRY_SUMMIT = vec3(0.86, 0.70, 0.54);
-    vec3 dry_physical = mix(DRY_LOWLAND, DRY_UPLAND, smoothstep(250.0, 2100.0, relative_height));
-    dry_physical = mix(dry_physical, DRY_SUMMIT, smoothstep(3000.0, 5900.0, relative_height));
+    const vec3 COOL_SOIL = vec3(0.48, 0.45, 0.36);
+    const vec3 WARM_SOIL = vec3(0.64, 0.47, 0.30);
+    const vec3 SAND = vec3(0.78, 0.62, 0.38);
+    vec3 soil = mix(COOL_SOIL, WARM_SOIL, heat);
+    soil = mix(soil, SAND, dryness * (0.48 + heat * 0.38));
 
-    const vec3 COLD_LOWLAND = vec3(0.60, 0.64, 0.62);
-    const vec3 COLD_UPLAND = vec3(0.73, 0.78, 0.79);
-    const vec3 COLD_SUMMIT = vec3(0.90, 0.94, 0.95);
-    vec3 cold_physical = mix(COLD_LOWLAND, COLD_UPLAND, smoothstep(200.0, 1900.0, relative_height));
-    cold_physical = mix(cold_physical, COLD_SUMMIT, smoothstep(2100.0, 5000.0, relative_height));
+    const vec3 BOREAL = vec3(0.27, 0.35, 0.25);
+    const vec3 GRASSLAND = vec3(0.43, 0.51, 0.29);
+    const vec3 TEMPERATE_FOREST = vec3(0.25, 0.40, 0.24);
+    const vec3 TROPICAL_FOREST = vec3(0.16, 0.34, 0.19);
+    vec3 open_vegetation = mix(BOREAL, GRASSLAND, smoothstep(-4.0, 16.0, sea_level_temperature));
+    vec3 forest = mix(TEMPERATE_FOREST, TROPICAL_FOREST, heat);
+    vec3 vegetation_color = mix(open_vegetation, forest, smoothstep(0.48, 0.86, moisture));
+    float growing_temperature = smoothstep(-9.0, 5.0, temperature);
+    float vegetation_cover = smoothstep(0.16, 0.68, moisture) * growing_temperature;
+    vegetation_cover *= 1.0 - dryness * 0.55;
 
-    physical = mix(physical, dry_physical, dry);
-    // Le froid prévaut sur l'aridité pour qu'un désert polaire reste minéral
-    // et glacé plutôt que de devenir ocre.
-    physical = mix(physical, cold_physical, cold);
+    vec3 surface = mix(soil, vegetation_color, vegetation_cover * 0.84);
+    surface = mix(surface, biome_material, BIOME_TINT_STRENGTH);
 
-    // La seconde couleur du biome est une couleur de matériau conçue pour la
-    // carte finale. La couleur d'identification ne sert que de légère nuance :
-    // elle ne peut plus transformer le rendu en copie délavée de biome_map.
-    vec3 material = mix(biome_data.color.rgb, classified_color, 0.06);
-    float identity_strength = 0.70 + 0.10 * max(dry, cold);
-    identity_strength -= 0.06 * smoothstep(2600.0, 6000.0, relative_height);
-    return mix(physical, material, identity_strength);
+    const vec3 COOL_ROCK = vec3(0.47, 0.47, 0.44);
+    const vec3 WARM_ROCK = vec3(0.55, 0.44, 0.36);
+    vec3 exposed_rock = mix(COOL_ROCK, WARM_ROCK, heat);
+    float rock_cover = smoothstep(1450.0, 3500.0, relative_height) * 0.64;
+    surface = mix(surface, exposed_rock, rock_cover);
+
+    // La limite des neiges varie d'environ 1 200 m sous climat froid à plus
+    // de 5 000 m sous les tropiques. Les sommets convergent donc toujours vers
+    // un blanc froid, sans former une bande d'altitude fixe mondiale.
+    float snow_line = mix(
+        1200.0,
+        5200.0,
+        smoothstep(-12.0, 34.0, sea_level_temperature)
+    );
+    float mountain_snow = smoothstep(snow_line - 350.0, snow_line + 700.0, relative_height);
+    float permanent_ice = (
+        1.0 - smoothstep(-16.0, -6.0, temperature)
+    ) * smoothstep(0.22, 0.58, moisture);
+    float snow_cover = max(mountain_snow, permanent_ice);
+    const vec3 SNOW = vec3(0.89, 0.93, 0.93);
+    return mix(surface, SNOW, snow_cover * 0.96);
 }
 
 vec3 terranWaterHypsometry(float depth, vec3 source_water) {
@@ -278,6 +326,7 @@ void main() {
     vec4 ice = imageLoad(ice_caps, pos);
     uint biome_index = imageLoad(biome_id, pos).r;
     uint river_bid = imageLoad(river_biome_id, pos).r;
+    vec2 climate = imageLoad(climate_texture, pos).rg;
     float elevation = imageLoad(geo_texture, pos).r;
     float relative_height = elevation - params.sea_level;
     
@@ -298,9 +347,10 @@ void main() {
             color = terranWaterHypsometry(max(-relative_height, 0.0), water.rgb);
         } else {
             if (biome_count > 0u && biome_index < biome_count) {
-                color = terranBiomeSurface(
-                    biomes[biome_index],
-                    biome.rgb,
+                color = terranClimateSurface(
+                    smoothedBiomeMaterial(pos, w, h, vegetation_color),
+                    climate.r,
+                    climate.g,
                     max(relative_height, 0.0)
                 );
             } else {
@@ -324,8 +374,10 @@ void main() {
         effective_strength *= params.water_relief_factor;  // Relief très atténué sur l'eau
     }
     
-    float shade_factor = 1.0 + (shading - 0.5) * 2.0 * effective_strength;
-    color *= shade_factor;
+    // Une variation additive reste perceptible avec la même intensité sur une
+    // forêt sombre, un désert clair ou de la roche grise.
+    float relief_light = (shading - 0.5) * 2.0 * effective_strength;
+    color = clamp(color + vec3(relief_light), vec3(0.0), vec3(1.0));
     
     // === STEP 3: Rivers overlay ===
     // Si un biome rivière est assigné, appliquer la colorisation dynamique

@@ -4374,6 +4374,14 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 	u_river_biome_id.binding = 7
 	u_river_biome_id.add_id(gpu.textures["river_biome_id"])
 	tex_uniforms.append(u_river_biome_id)
+
+	# Binding 8: climate (RGBA32F) - température et humidité continues. La
+	# final map les utilise afin d'éviter les aplats séparés par biome.
+	var u_climate = RDUniform.new()
+	u_climate.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	u_climate.binding = 8
+	u_climate.add_id(gpu.textures["climate"])
+	tex_uniforms.append(u_climate)
 	
 	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["final_map"], 0)
 	
