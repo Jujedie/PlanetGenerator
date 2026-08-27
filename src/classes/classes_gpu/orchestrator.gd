@@ -3131,7 +3131,7 @@ func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int,
 	if not tex_set.is_valid():
 		return
 
-	Push constants (48 bytes): avoid a transient UBO + uniform set per growth pass.
+	# Push constants (48 bytes): avoid a transient UBO + uniform set per growth pass.
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(48)
 	buffer_bytes.encode_u32(0, w)
@@ -3212,7 +3212,7 @@ func _dispatch_region_cleanup(w: int, h: int, groups_x: int,
 	if not tex_set.is_valid():
 		return
 
-	Push constants (16 bytes): avoid per-pass parameter RIDs.
+	# Push constants (16 bytes): avoid per-pass parameter RIDs.
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(16)
 	buffer_bytes.encode_u32(0, w)

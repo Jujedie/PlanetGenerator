@@ -35,8 +35,18 @@ jobs:
       # needs one import pass before scenes that reference global `class_name`
       # scripts can be executed reliably.
       - name: Import Godot project
+        shell: bash
         run: |
+          set -o pipefail
           godot --headless --verbose --path . --import 2>&1 | tee godot_import.log
+
+          # Godot can return 0 after an editor import even when a project script
+          # failed to parse. Treat script/compiler diagnostics as a hard CI error.
+          if grep -Eqi 'SCRIPT ERROR:|Parse Error:|Compile Error:|ERROR: Failed to load script' godot_import.log; then
+            echo 'Godot project import reported script errors:'
+            grep -Ein 'SCRIPT ERROR:|Parse Error:|Compile Error:|ERROR: Failed to load script' godot_import.log | tail -80
+            exit 1
+          fi
 
       - name: Verify Godot class cache
         shell: bash
@@ -47,11 +57,24 @@ jobs:
       # M4 is intentionally small but depends on a global class. Fail quickly
       # here instead of letting every regression scene spend its full timeout.
       - name: Quick class-name smoke test
+        shell: bash
         run: |
+          set -o pipefail
           timeout 30s godot --headless --path . res://tests/milestone_4_coordinates.tscn 2>&1 | tee m4_class_smoke.log
 
-      - name: Run M8/M8.1 regression suite
+      # M1 is the smallest regression that initializes the local RenderingDevice.
+      # Run it once up front so a Vulkan/compute problem is reported immediately
+      # rather than consuming the timeout of every GPU-dependent milestone.
+      - name: Quick RenderingDevice smoke test
+        shell: bash
         run: |
+          set -o pipefail
+          timeout 90s godot --headless --path . res://tests/milestone_1_smoke.tscn 2>&1 | tee m1_gpu_smoke.log
+
+      - name: Run M8/M8.1 regression suite
+        shell: bash
+        run: |
+          set -o pipefail
           python tools/run_m8_regression_suite.py "$(which godot)" --headless --timeout 180 2>&1 | tee m8_regression_console.log
 
       - name: Upload regression report
@@ -63,6 +86,7 @@ jobs:
             m8_regression_report.json
             godot_import.log
             m4_class_smoke.log
+            m1_gpu_smoke.log
             m8_regression_console.log
             *.log
           if-no-files-found: ignore

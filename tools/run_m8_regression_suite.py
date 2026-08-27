@@ -49,6 +49,18 @@ def _output_text(value: object) -> str:
     return str(value)
 
 
+def _write_report(path: pathlib.Path, results: list[dict[str, object]]) -> None:
+    completed = len(results)
+    report = {
+        "regression_report_version": 1,
+        "result": "PASS" if completed == len(SCENES) and all(bool(r.get("ok", False)) for r in results) else "FAIL",
+        "completed_tests": completed,
+        "expected_tests": len(SCENES),
+        "tests": results,
+    }
+    path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("godot", help="Godot 4 executable")
@@ -58,7 +70,10 @@ def main() -> int:
     args = parser.parse_args()
 
     project = pathlib.Path(__file__).resolve().parents[1]
-    results = []
+    out = pathlib.Path(args.output)
+    if not out.is_absolute():
+        out = project / out
+    results: list[dict[str, object]] = []
     for index, scene in enumerate(SCENES, 1):
         cmd = [args.godot, "--path", str(project)]
         if args.headless:
@@ -78,7 +93,14 @@ def main() -> int:
                 timeout=args.timeout,
             )
             output = _output_text(proc.stdout)
-            fatal_markers = ("SCRIPT ERROR", "Assertion failed", "Parse Error", "FATAL")
+            fatal_markers = (
+                "SCRIPT ERROR",
+                "Assertion failed",
+                "Parse Error",
+                "Compile Error",
+                "ERROR: Failed to load script",
+                "FATAL",
+            )
             # M1-M6 predate the explicit "...: PASS" convention and signal
             # success through get_tree().quit(0). Requiring a literal PASS in
             # stdout therefore creates false failures for valid legacy tests.
@@ -110,20 +132,17 @@ def main() -> int:
             print(f"[{index:02d}/{len(SCENES)}] INTERRUPTED {scene}", flush=True)
             break
         results.append(result)
+        _write_report(out, results)
         print(f"[{index:02d}/{len(SCENES)}] {'PASS' if result['ok'] else 'FAIL'} {scene}", flush=True)
+        if not bool(result.get("ok", False)):
+            tail = str(result.get("output_tail", "")).strip()
+            if tail:
+                print("--- Godot output tail ---", flush=True)
+                print(tail, flush=True)
+                print("--- end output tail ---", flush=True)
 
-    completed = len(results)
-    report = {
-        "regression_report_version": 1,
-        "result": "PASS" if completed == len(SCENES) and all(r["ok"] for r in results) else "FAIL",
-        "completed_tests": completed,
-        "expected_tests": len(SCENES),
-        "tests": results,
-    }
-    out = pathlib.Path(args.output)
-    if not out.is_absolute():
-        out = project / out
-    out.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    _write_report(out, results)
+    report = json.loads(out.read_text(encoding="utf-8"))
     print(f"Report: {out}")
     return 0 if report["result"] == "PASS" else 1
 
