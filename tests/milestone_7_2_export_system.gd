@@ -1,46 +1,89 @@
 extends Node
 
-func _ready() -> void:
-	var root := "user://m72_export_test"
+const RESOURCE_KEYS: Array[String] = ["aluminium_map", "or_map", "petrole_map"]
+
+
+func _write_png(path: String, color: Color) -> void:
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+	var img := Image.create(4, 2, false, Image.FORMAT_RGBA8)
+	img.fill(color)
+	assert(img.save_png(path) == OK)
+
+
+func _build_fixture(root: String) -> Dictionary:
 	DirAccess.make_dir_recursive_absolute(root)
-	var paths := {}
-	for pair in [["final_map", "final_map.png"], ["grid_overlay", "grid_overlay.png"], ["plates", "plaques_map.png"]]:
-		var img := Image.create(4, 2, false, Image.FORMAT_RGBA8)
-		img.fill(Color(0.1, 0.2, 0.3, 1.0))
-		var path := root.path_join(pair[1])
-		assert(img.save_png(path) == OK)
-		paths[pair[0]] = path
+	var paths: Dictionary = {}
+	for pair in [
+		["final_map", "final_map.png"],
+		["grid_overlay", "grid_overlay.png"],
+		["plaques_map", "plaques_map.png"],
+		["plaques_bordures_map", "plaques_bordures_map.png"],
+	]:
+		var path := root.path_join(str(pair[1]))
+		_write_png(path, Color(0.1, 0.2, 0.3, 1.0))
+		paths[str(pair[0])] = path
 
-	# Legacy resource exporter uses `ressource/` and resource names do not carry
-	# a generic "resource" prefix, e.g. aluminium_map / fer_map / or_map.
+	# Resource dictionary keys are dynamic and do not contain the word
+	# "resource". The path must therefore drive preset classification.
 	var legacy_resources := root.path_join("ressource")
-	DirAccess.make_dir_recursive_absolute(legacy_resources)
-	for pair in [["aluminium_map", "aluminium_map.png"], ["or_map", "or_map.png"], ["petrole_map", "petrole_map.png"]]:
-		var img := Image.create(4, 2, false, Image.FORMAT_RGBA8)
-		img.fill(Color(0.4, 0.3, 0.2, 1.0))
-		var path := legacy_resources.path_join(pair[1])
-		assert(img.save_png(path) == OK)
-		paths[pair[0]] = path
-	# Simulate stale copies left in maps/ by an older M7.2 generation. They
-	# must disappear once the same resources have canonical outputs.
-	var stale_maps := root.path_join("maps")
-	DirAccess.make_dir_recursive_absolute(stale_maps)
-	for filename in ["aluminium_map.png", "or_map.png", "petrole_map.png"]:
-		var stale := Image.create(4, 2, false, Image.FORMAT_RGBA8)
-		stale.fill(Color(1.0, 0.0, 1.0, 1.0))
-		assert(stale.save_png(stale_maps.path_join(filename)) == OK)
+	for resource_key in RESOURCE_KEYS:
+		var resource_path := legacy_resources.path_join(resource_key + ".png")
+		_write_png(resource_path, Color(0.4, 0.3, 0.2, 1.0))
+		paths[resource_key] = resource_path
 
-	var result := ExportCatalog.finalize_outputs(root, paths, {"export_preset": "standard"})
-	assert(result.has("final_map"))
-	assert(str(result["final_map"]).contains("/maps/"))
-	assert(result.has("grid_overlay"))
-	assert(str(result["grid_overlay"]).contains("/overlays/"))
-	assert(not result.has("plates"))
-	for resource_key in ["aluminium_map", "or_map", "petrole_map"]:
-		assert(result.has(resource_key))
-		assert(str(result[resource_key]).contains("/maps/resources/"))
-		assert(not FileAccess.file_exists(stale_maps.path_join(resource_key + ".png")))
-	assert(not DirAccess.dir_exists_absolute(legacy_resources))
-	assert(result.has("catalog"))
+	# Simulate stale copies from older catalog layouts.
+	for resource_key in RESOURCE_KEYS:
+		_write_png(
+			root.path_join("maps").path_join(resource_key + ".png"),
+			Color(1.0, 0.0, 1.0, 1.0)
+		)
+	return paths
+
+
+func _ready() -> void:
+	var standard_root := "user://m72_export_standard"
+	var standard := ExportCatalog.finalize_outputs(
+		standard_root,
+		_build_fixture(standard_root),
+		{"export_preset": ExportCatalog.PRESET_STANDARD}
+	)
+	assert(standard.has("final_map"))
+	assert(standard.has("grid_overlay"))
+	assert(str(standard["grid_overlay"]).contains("/overlays/"))
+	assert(standard.has("plaques_map"))
+	assert(not standard.has("plaques_bordures_map"))
+	for resource_key in RESOURCE_KEYS:
+		assert(not standard.has(resource_key))
+		assert(not FileAccess.file_exists(
+			standard_root.path_join("maps").path_join(resource_key + ".png")
+		))
+		assert(not FileAccess.file_exists(
+			standard_root.path_join("maps/resources").path_join(resource_key + ".png")
+		))
+	assert(standard.has("catalog"))
+
+	var complete_root := "user://m72_export_complete"
+	var complete := ExportCatalog.finalize_outputs(
+		complete_root,
+		_build_fixture(complete_root),
+		{"export_preset": ExportCatalog.PRESET_COMPLETE}
+	)
+	assert(complete.has("plaques_map"))
+	assert(not complete.has("plaques_bordures_map"))
+	for resource_key in RESOURCE_KEYS:
+		assert(complete.has(resource_key))
+		assert(str(complete[resource_key]).contains("/maps/resources/"))
+
+	var development_root := "user://m72_export_development"
+	var development := ExportCatalog.finalize_outputs(
+		development_root,
+		_build_fixture(development_root),
+		{"export_preset": ExportCatalog.PRESET_DEVELOPMENT}
+	)
+	assert(development.has("plaques_bordures_map"))
+	assert(str(development["plaques_bordures_map"]).contains("/debug/"))
+	for resource_key in RESOURCE_KEYS:
+		assert(development.has(resource_key))
+
 	print("Milestone 7.2 export system regression: PASS")
 	get_tree().quit()

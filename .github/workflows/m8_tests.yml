@@ -10,7 +10,7 @@ on:
 jobs:
   regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
 
     steps:
       - name: Checkout
@@ -31,9 +31,28 @@ jobs:
       - name: Godot version
         run: godot --version
 
+      # .godot/ is intentionally ignored by Git. A clean CI checkout therefore
+      # needs one import pass before scenes that reference global `class_name`
+      # scripts can be executed reliably.
+      - name: Import Godot project
+        run: |
+          godot --headless --verbose --path . --import 2>&1 | tee godot_import.log
+
+      - name: Verify Godot class cache
+        shell: bash
+        run: |
+          test -f .godot/global_script_class_cache.cfg
+          grep -q "PlanetGridContract" .godot/global_script_class_cache.cfg
+
+      # M4 is intentionally small but depends on a global class. Fail quickly
+      # here instead of letting every regression scene spend its full timeout.
+      - name: Quick class-name smoke test
+        run: |
+          timeout 30s godot --headless --path . res://tests/milestone_4_coordinates.tscn 2>&1 | tee m4_class_smoke.log
+
       - name: Run M8/M8.1 regression suite
         run: |
-          python tools/run_m8_regression_suite.py "$(which godot)" --headless
+          python tools/run_m8_regression_suite.py "$(which godot)" --headless --timeout 180 2>&1 | tee m8_regression_console.log
 
       - name: Upload regression report
         if: always()
@@ -42,5 +61,8 @@ jobs:
           name: m8-regression-report
           path: |
             m8_regression_report.json
+            godot_import.log
+            m4_class_smoke.log
+            m8_regression_console.log
             *.log
           if-no-files-found: ignore

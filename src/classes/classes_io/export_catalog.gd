@@ -8,7 +8,7 @@ extends RefCounted
 ## maps first; this catalog stage only filters/organizes finished files, so it
 ## cannot change simulation results.
 
-const CATALOG_VERSION := 3
+const CATALOG_VERSION := 4
 const PRESET_MINIMAL := "minimal"
 const PRESET_STANDARD := "standard"
 const PRESET_COMPLETE := "complete"
@@ -16,10 +16,11 @@ const PRESET_DEVELOPMENT := "development"
 const PRESET_CUSTOM := "custom"
 
 const ALWAYS_METADATA := ["integrity_report", "manifest", "project", "catalog"]
-const MINIMAL_KEYS := ["final_map", "cartographic", "water_colored", "river_map", "biome"]
-const STANDARD_EXCLUDE := ["plates_borders"]
-const DEBUG_KEYS := ["plates_borders"]
-const OVERLAY_KEYS := ["grid_overlay", "topology"]
+# Canonical keys emitted by exporter.gd. Legacy aliases are retained only
+# where they improve compatibility with older projects/tests.
+const MINIMAL_KEYS := ["final_map", "cartographic", "eaux_map", "river_map", "biome_colored"]
+const DEBUG_KEYS := ["plaques_bordures_map", "plates_borders"]
+const OVERLAY_KEYS := ["grid_overlay", "topology_map", "topology"]
 const RESOURCE_KEYS := ["petrole", "resources", "resource", "ressource"]
 
 static func normalize_preset(value) -> String:
@@ -28,16 +29,23 @@ static func normalize_preset(value) -> String:
 		return preset
 	return PRESET_STANDARD
 
-static func should_keep(key: String, params: Dictionary) -> bool:
+static func should_keep(key: String, params: Dictionary, path: String = "") -> bool:
 	if key in ALWAYS_METADATA:
 		return true
 	var preset := normalize_preset(params.get("export_preset", PRESET_STANDARD))
+	var is_resource := _is_resource_output(key, path)
+	var is_debug := key in DEBUG_KEYS
 	match preset:
 		PRESET_MINIMAL:
 			return key in MINIMAL_KEYS
 		PRESET_STANDARD:
-			return key not in STANDARD_EXCLUDE
-		PRESET_COMPLETE, PRESET_DEVELOPMENT:
+			# Normal user-facing maps, without resources or debug-only layers.
+			return not is_resource and not is_debug
+		PRESET_COMPLETE:
+			# Full gameplay/data export: resources included, debug excluded.
+			return not is_debug
+		PRESET_DEVELOPMENT:
+			# Development is the only preset that keeps diagnostic/debug layers too.
 			return true
 		PRESET_CUSTOM:
 			var enabled = params.get("export_enabled_keys", [])
@@ -49,53 +57,58 @@ static func category_for(key: String, path: String) -> String:
 		return "overlays"
 	if key in DEBUG_KEYS:
 		return "debug"
-
-	# Resource maps are produced by the legacy exporter inside a `ressource/`
-	# directory, while their dictionary keys are simply names such as
-	# `aluminium_map`, `fer_map` or `or_map`. Looking only for the word
-	# "resource" in the key therefore misclassified almost every resource PNG
-	# as a normal map. The source directory is the authoritative category hint.
-	var normalized_path := path.replace("\\", "/").to_lower()
-	var parent_dir := normalized_path.get_base_dir().get_file()
-	if parent_dir in ["ressource", "resources"]:
+	if _is_resource_output(key, path):
 		return "maps/resources"
-	if "/ressource/" in normalized_path or "/resources/" in normalized_path:
-		return "maps/resources"
-
-	# Keep key-based detection as a compatibility fallback for callers that
-	# already provide flattened paths.
-	var normalized_key := key.to_lower()
-	for needle in RESOURCE_KEYS:
-		if normalized_key.contains(needle):
-			return "maps/resources"
 	if path.get_extension().to_lower() == "png":
 		return "maps"
 	return "raw"
+
+
+static func _is_resource_output(key: String, path: String) -> bool:
+	# Resource keys are dynamic (`aluminium_map`, `fer_map`, ...), so the
+	# directory is the authoritative signal. This recognizes both legacy
+	# `ressource/` staging and canonical `maps/resources/` output paths.
+	var normalized_path := path.replace("\\", "/").to_lower()
+	var parent_dir := normalized_path.get_base_dir().get_file()
+	if parent_dir in ["ressource", "resources"]:
+		return true
+	if "/ressource/" in normalized_path or "/resources/" in normalized_path:
+		return true
+
+	# Compatibility fallback for callers that only know the dictionary key.
+	var normalized_key := key.to_lower()
+	for needle in RESOURCE_KEYS:
+		if normalized_key.contains(needle):
+			return true
+	return false
 
 static func finalize_outputs(output_root: String, exported_files: Dictionary,
 		params: Dictionary) -> Dictionary:
 	DirAccess.make_dir_recursive_absolute(output_root)
 	var result: Dictionary = {}
 	var catalog_entries: Dictionary = {}
-	# filename -> canonical final path. Used after organization to remove stale
-	# copies left by older M7.2 exports in maps/, ressource/ or resources/.
-	var canonical_resource_files: Dictionary = {}
+	# Resource filenames seen in this generation. An empty canonical path means
+	# the selected preset filtered that resource and every stale copy must go.
+	var resource_cleanup_targets: Dictionary = {}
 	var keys := exported_files.keys(); keys.sort()
 	for key_value in keys:
 		var key := str(key_value)
 		var source := str(exported_files[key_value])
 		if source.is_empty() or not FileAccess.file_exists(source):
 			continue
-		if not should_keep(key, params):
+		var category := category_for(key, source)
+		if category == "maps/resources":
+			resource_cleanup_targets[source.get_file()] = ""
+		if not should_keep(key, params, source):
 			# Presets control exported presentation files only. Never delete an
 			# unknown non-PNG authoritative/raw file.
 			if source.get_extension().to_lower() == "png":
+				FileChecksumCache.invalidate(source)
 				DirAccess.remove_absolute(source)
 			continue
 		if key in ALWAYS_METADATA or source.get_extension().to_lower() != "png":
 			result[key] = source
 			continue
-		var category := category_for(key, source)
 		var destination_dir := output_root.path_join(category)
 		DirAccess.make_dir_recursive_absolute(destination_dir)
 		var destination := destination_dir.path_join(source.get_file())
@@ -118,13 +131,12 @@ static func finalize_outputs(output_root: String, exported_files: Dictionary,
 			"sha256": FileChecksumCache.sha256(destination),
 		}
 		if category == "maps/resources":
-			canonical_resource_files[source.get_file()] = destination
+			resource_cleanup_targets[source.get_file()] = destination
 
-	# `user://temp` is deliberately reused between generations. Before this
-	# fix, a successful newer export could coexist with old resource PNGs in
-	# maps/, making it look as if the organizer had failed. Remove only files
-	# for which this generation produced a canonical resource counterpart.
-	_remove_stale_resource_duplicates(output_root, canonical_resource_files)
+	# `user://temp` is deliberately reused between generations. Remove stale
+	# resource copies whether this preset retained the canonical resource or
+	# deliberately filtered it out.
+	_remove_stale_resource_duplicates(output_root, resource_cleanup_targets)
 	_remove_empty_legacy_resource_dirs(output_root)
 	var catalog_path := _write_catalog(output_root, params, catalog_entries)
 	if not catalog_path.is_empty():
@@ -141,6 +153,7 @@ static func _remove_stale_resource_duplicates(output_root: String,
 		output_root.path_join("maps"),
 		output_root.path_join("ressource"),
 		output_root.path_join("resources"),
+		output_root.path_join("maps").path_join("resources"),
 	]
 	for filename_value in canonical_files.keys():
 		var filename := str(filename_value)
@@ -150,6 +163,7 @@ static func _remove_stale_resource_duplicates(output_root: String,
 			if candidate.simplify_path() == canonical:
 				continue
 			if FileAccess.file_exists(candidate):
+				FileChecksumCache.invalidate(candidate)
 				var err := DirAccess.remove_absolute(candidate)
 				if err != OK:
 					push_warning("[ExportCatalog] Cannot remove stale resource copy: " + candidate)
