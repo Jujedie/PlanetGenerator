@@ -70,7 +70,7 @@ func _build_fields_from_store(params: Dictionary, store: PlanetTileStore, tile_s
 				tile_cache[key] = payload
 				tile_cache_order.append(key)
 				if tile_cache_order.size() > 16:
-					var oldest := tile_cache_order.pop_front()
+					var oldest: String = tile_cache_order.pop_front()
 					tile_cache.erase(oldest)
 			var rect := PlanetGridContract.tile_rect(tile, global_dimensions, tile_size)
 			var local: Vector2i = address["local"]

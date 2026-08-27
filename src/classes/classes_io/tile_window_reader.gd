@@ -70,6 +70,6 @@ func _tile_payload(layer: String, lod: int, tile: Vector2i) -> PackedByteArray:
 	# in system RAM if a phase scans hundreds of tiles. Keep a tiny FIFO alongside
 	# the dictionary instead of allocating Dictionary.keys() on every eviction.
 	if _cache_order.size() > 16:
-		var oldest := _cache_order.pop_front()
+		var oldest: String = _cache_order.pop_front()
 		_cache.erase(oldest)
 	return payload
