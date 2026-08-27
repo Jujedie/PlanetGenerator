@@ -3,6 +3,9 @@ extends Node
 func _ready() -> void:
 	assert(int(ProjectSettings.get_setting("display/window/size/viewport_width", 0)) >= 1600)
 	assert(not bool(ProjectSettings.get_setting("display/window/size/maximize_disabled", true)))
+	# A resizable 1600x900 canvas must support sub-1.0 scaling. Integer-only
+	# scaling clips the logical UI whenever the OS window is smaller than 1600x900.
+	assert(str(ProjectSettings.get_setting("display/window/stretch/scale_mode", "")) == "fractional")
 	assert(UIPolish.human_bytes(1024) == "1.00 KiB")
 	assert(UIPolish.human_bytes(1024 * 1024).ends_with("MiB"))
 	assert(ExportCatalog.should_keep("plaques_map", {"export_preset": ExportCatalog.PRESET_STANDARD}))

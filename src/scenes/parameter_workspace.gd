@@ -708,6 +708,9 @@ func _on_theme_selected(index: int) -> void:
 func _on_theme_changed(_theme_id: StringName) -> void:
 	UITheme.apply_to_tree(root)
 	theme_select.select(UITheme.get_theme_index())
+	# Theme font scaling can change the minimum size of controls. Re-layout on
+	# the next frame after Godot has recomputed those minimum sizes.
+	call_deferred("_layout_interface")
 
 
 func toggle_batch_panel() -> void:
@@ -956,6 +959,10 @@ func refresh_translations() -> void:
 		_refresh_parameter_label(key)
 		if str(definition.get("kind", "slider")) == "option":
 			_refresh_option_items(key)
+
+	# Translated labels have different minimum widths. Let the containers settle
+	# before applying the absolute workspace geometry again.
+	call_deferred("_layout_interface")
 
 
 func set_actions_enabled(enabled: bool) -> void:

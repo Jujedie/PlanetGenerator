@@ -408,6 +408,7 @@ func _populate_theme_selector() -> void:
 func refresh_translations() -> void:
 	if theme_select != null:
 		_populate_theme_selector()
+	call_deferred("_layout_interface")
 
 
 func _on_theme_selected(index: int) -> void:
@@ -419,6 +420,9 @@ func _on_theme_selected(index: int) -> void:
 func _on_theme_changed(_theme_id: StringName) -> void:
 	UITheme.apply_to_tree(root)
 	theme_select.select(UITheme.get_theme_index())
+	# High-contrast mode changes font metrics; refresh geometry after the new
+	# minimum sizes are known instead of leaving controls outside their panels.
+	call_deferred("_layout_interface")
 
 
 func _layout_interface() -> void:

@@ -903,6 +903,12 @@ func maj_labels() -> void:
 		_viewer_workspace.refresh_translations()
 	_refresh_generation_status_translation()
 	_refresh_advanced_viewer_translation()
+	# The master updates additional viewer labels after the workspace translation
+	# pass, so schedule one final geometry refresh once all translated text is set.
+	if _parameter_workspace != null:
+		_parameter_workspace.call_deferred("_layout_interface")
+	if _viewer_workspace != null:
+		_viewer_workspace.call_deferred("_layout_interface")
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
