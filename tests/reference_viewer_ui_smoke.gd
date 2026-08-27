@@ -11,6 +11,7 @@ func _ready() -> void:
 		master.call("_set_generation_memory_text", "GEN_STATUS_COMPLETED_IN", {"seconds": "13.36"})
 		var progress := master.get("_generation_progress_bar") as ProgressBar
 		progress.value = 100.0
+		master.call("_show_parameters_workspace")
 	await get_tree().process_frame
 	await get_tree().process_frame
 

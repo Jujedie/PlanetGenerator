@@ -29,6 +29,7 @@ config/windows_native_icon="res://icon.ico"
 
 [autoload]
 
+UITheme="*res://src/classes/classes_io/ui_theme_manager.gd"
 Enum="*uid://d4mf37hohkuh4"
 
 [display]

@@ -1,15 +1,24 @@
 class_name ReferenceViewerWorkspace
 extends CanvasLayer
 
-const UI_AMBER := Color(0.92549, 0.619608, 0.0, 1.0)
-const UI_AMBER_BRIGHT := Color(1.0, 0.72, 0.04, 1.0)
-const UI_DARK := Color(0.035, 0.045, 0.05, 1.0)
-const UI_PANEL := Color(0.065, 0.078, 0.082, 0.98)
-const UI_PANEL_ALT := Color(0.09, 0.105, 0.11, 0.98)
-const UI_BORDER := Color(0.19, 0.23, 0.24, 1.0)
-const UI_TEXT := Color(0.78, 0.81, 0.82, 1.0)
-const UI_TEXT_BRIGHT := Color(0.92, 0.94, 0.94, 1.0)
-const UI_MUTED := Color(0.39, 0.43, 0.44, 1.0)
+var UI_AMBER: Color:
+	get: return UITheme.color(&"accent")
+var UI_AMBER_BRIGHT: Color:
+	get: return UITheme.color(&"accent_bright")
+var UI_DARK: Color:
+	get: return UITheme.color(&"background")
+var UI_PANEL: Color:
+	get: return UITheme.color(&"panel")
+var UI_PANEL_ALT: Color:
+	get: return UITheme.color(&"panel_alt")
+var UI_BORDER: Color:
+	get: return UITheme.color(&"border")
+var UI_TEXT: Color:
+	get: return UITheme.color(&"text")
+var UI_TEXT_BRIGHT: Color:
+	get: return UITheme.color(&"text_bright")
+var UI_MUTED: Color:
+	get: return UITheme.color(&"muted")
 
 var root: Control
 var header_panel: PanelContainer
@@ -19,6 +28,7 @@ var status_dot: Label
 var progress_bar: ProgressBar
 var parameters_button: Button
 var cancel_button: Button
+var theme_select: OptionButton
 var map_viewport: PanelContainer
 var map_canvas: Control
 var map_texture: TextureRect
@@ -46,13 +56,16 @@ var help_label: Label
 func _ready() -> void:
 	layer = 40
 	_build_interface()
+	UITheme.apply_to_tree(root)
+	if not UITheme.theme_changed.is_connected(_on_theme_changed):
+		UITheme.theme_changed.connect(_on_theme_changed)
 	get_viewport().size_changed.connect(_layout_interface)
 	_layout_interface()
 
 
 func _panel_style(
-	background: Color = UI_PANEL,
-	border: Color = UI_BORDER,
+	background: Color = Color(0.065, 0.078, 0.082, 0.98),
+	border: Color = Color(0.19, 0.23, 0.24, 1.0),
 	border_width: int = 1,
 	content_margin: float = 10.0
 ) -> StyleBoxFlat:
@@ -151,13 +164,12 @@ func _make_group(parent: Container, min_width: float) -> VBoxContainer:
 func _build_interface() -> void:
 	root = Control.new()
 	root.name = "ReferenceViewer"
-	var workspace_theme := (load("res://data/font/font.tres") as Theme).duplicate()
-	workspace_theme.default_font_size = 16
-	root.theme = workspace_theme
+	root.theme = UITheme.create_theme()
 	add_child(root)
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	var background := ColorRect.new()
+	background.name = "Background"
 	background.color = UI_DARK
 	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(background)
@@ -196,6 +208,15 @@ func _build_interface() -> void:
 	parameters_button.name = "ParametersButton"
 	style_button(parameters_button, true)
 	header_row.add_child(parameters_button)
+	theme_select = OptionButton.new()
+	theme_select.name = "ThemeSelect"
+	_style_option(theme_select)
+	theme_select.custom_minimum_size = Vector2(165, 38)
+	theme_select.get_popup().min_size = Vector2i(260, 0)
+	theme_select.get_popup().max_size = Vector2i(360, 360)
+	_populate_theme_selector()
+	theme_select.item_selected.connect(_on_theme_selected)
+	header_row.add_child(theme_select)
 	cancel_button = Button.new()
 	cancel_button.name = "CancelButton"
 	style_button(cancel_button, true)
@@ -373,6 +394,26 @@ func _build_interface() -> void:
 	help_label.add_theme_color_override("font_color", Color(0.58, 0.62, 0.63, 1.0))
 	help_label.add_theme_font_size_override("font_size", 16)
 	viewer_box.add_child(help_label)
+
+
+func _populate_theme_selector() -> void:
+	theme_select.clear()
+	for theme_id in UITheme.get_theme_ids():
+		theme_select.add_item(UITheme.get_theme_name(theme_id))
+		theme_select.set_item_metadata(theme_select.item_count - 1, theme_id)
+	theme_select.select(UITheme.get_theme_index())
+	theme_select.tooltip_text = "Thème / Theme"
+
+
+func _on_theme_selected(index: int) -> void:
+	if index < 0 or index >= theme_select.item_count:
+		return
+	UITheme.set_theme(StringName(theme_select.get_item_metadata(index)))
+
+
+func _on_theme_changed(_theme_id: StringName) -> void:
+	UITheme.apply_to_tree(root)
+	theme_select.select(UITheme.get_theme_index())
 
 
 func _layout_interface() -> void:

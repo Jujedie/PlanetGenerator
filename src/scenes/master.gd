@@ -57,8 +57,6 @@ const SFX_GENERATION_DONE = "res://data/sound/Foley UI E.wav"
 const PARAMETER_WORKSPACE_SCENE := preload("res://data/scn/parameter_workspace.tscn")
 const REFERENCE_VIEWER_WORKSPACE_SCENE := preload("res://data/scn/reference_viewer_workspace.tscn")
 const UI_POLISH := preload("res://src/classes/classes_io/ui_polish.gd")
-const UI_AMBER := Color(0.92549, 0.619608, 0.0, 1.0)
-const UI_MUTED := Color(0.39, 0.43, 0.44, 1.0)
 
 const GENERATION_PHASE_TRANSLATION_KEYS := {
 	"gpu_initialization": "GEN_PHASE_GPU_INITIALIZATION",
@@ -134,8 +132,16 @@ func _ready() -> void:
 	_setup_parameter_workspace()
 	_setup_batch_runner()
 	_setup_reference_viewer_workspace()
+	if not UITheme.theme_changed.is_connected(_on_ui_theme_changed):
+		UITheme.theme_changed.connect(_on_ui_theme_changed)
 	maj_labels()
 	_show_parameters_workspace()
+
+
+func _on_ui_theme_changed(_theme_id: StringName) -> void:
+	# Workspace styling is applied by each layer. Reapply status semantics after
+	# that pass so a completed/error dot keeps its role in the new palette.
+	_refresh_generation_status_translation()
 
 
 func _setup_parameter_workspace() -> void:
@@ -456,13 +462,13 @@ func _set_generation_phase_text(key: String, fallback: String = "") -> void:
 		_generation_phase_label.text = fallback if translated == key and not fallback.is_empty() else translated
 	if _viewer_status_dot != null:
 		if key == "GEN_STATUS_COMPLETE":
-			_viewer_status_dot.add_theme_color_override("font_color", Color(0.16, 0.75, 0.2, 1.0))
+			_viewer_status_dot.add_theme_color_override("font_color", UITheme.color(&"success"))
 		elif key in ["GEN_STATUS_CANCELLED", "GEN_STATUS_UNAVAILABLE"]:
-			_viewer_status_dot.add_theme_color_override("font_color", Color(0.82, 0.18, 0.16, 1.0))
+			_viewer_status_dot.add_theme_color_override("font_color", UITheme.color(&"danger"))
 		elif key == "GEN_STATUS_READY":
-			_viewer_status_dot.add_theme_color_override("font_color", UI_MUTED)
+			_viewer_status_dot.add_theme_color_override("font_color", UITheme.color(&"muted"))
 		else:
-			_viewer_status_dot.add_theme_color_override("font_color", UI_AMBER)
+			_viewer_status_dot.add_theme_color_override("font_color", UITheme.color(&"accent"))
 
 
 func _set_generation_memory_text(key: String, args: Dictionary = {}) -> void:
