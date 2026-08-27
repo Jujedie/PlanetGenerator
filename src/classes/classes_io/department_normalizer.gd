@@ -63,7 +63,6 @@ static func normalize(region_data: PackedByteArray,
 	var region_ids := PackedInt64Array()
 	region_ids.resize(pixel_count)
 	region_ids.fill(-1)
-	var used_ids: Dictionary = {}
 	var next_id := pixel_count
 	var removed_non_land := 0
 	# One packed queue is reused by all flood-fills. This removes repeated
@@ -79,7 +78,6 @@ static func normalize(region_data: PackedByteArray,
 			continue
 		if region_id != INVALID_ID:
 			region_ids[index] = region_id
-			used_ids[region_id] = true
 			next_id = maxi(next_id, region_id + 1)
 			queue[assigned_tail] = index
 			assigned_tail += 1
@@ -120,11 +118,8 @@ static func normalize(region_data: PackedByteArray,
 	for start in range(pixel_count):
 		if land_mask[start] == 0 or region_ids[start] >= 0:
 			continue
-		while used_ids.has(next_id):
-			next_id += 1
 		var component_id := next_id
 		next_id += 1
-		used_ids[component_id] = true
 		seedless_components += 1
 		head = 0
 		var tail := 1
@@ -168,6 +163,18 @@ static func normalize(region_data: PackedByteArray,
 	var component_sum_sin: Array[float] = []
 	var completed_ids: Dictionary = {}
 	var split_fragments := 0
+	# Longitude depends only on X. Trigonometric calls inside the component flood
+	# were therefore repeated once per active pixel even though every column uses
+	# exactly the same pair of values.
+	var longitude_cos := PackedFloat64Array()
+	var longitude_sin := PackedFloat64Array()
+	longitude_cos.resize(w)
+	longitude_sin.resize(w)
+	var longitude_denominator := float(maxi(w, 1))
+	for x in range(w):
+		var angle := TAU * (float(x) + 0.5) / longitude_denominator
+		longitude_cos[x] = cos(angle)
+		longitude_sin[x] = sin(angle)
 
 	for start in range(pixel_count):
 		if land_mask[start] == 0 or pixel_component[start] != -1:
@@ -177,11 +184,8 @@ static func normalize(region_data: PackedByteArray,
 			continue
 		var effective_id := raw_id
 		if completed_ids.has(raw_id):
-			while used_ids.has(next_id):
-				next_id += 1
 			effective_id = next_id
 			next_id += 1
-			used_ids[effective_id] = true
 			split_fragments += 1
 		else:
 			completed_ids[raw_id] = true
@@ -206,9 +210,8 @@ static func normalize(region_data: PackedByteArray,
 			min_y = mini(min_y, y)
 			max_y = maxi(max_y, y)
 			sum_y += float(y)
-			var angle := TAU * (float(x) + 0.5) / float(maxi(w, 1))
-			sum_cos += cos(angle)
-			sum_sin += sin(angle)
+			sum_cos += longitude_cos[x]
+			sum_sin += longitude_sin[x]
 			for direction in range(4):
 				var ny := y + CARDINAL_DY[direction]
 				if ny < 0 or ny >= h:
@@ -243,6 +246,8 @@ static func normalize(region_data: PackedByteArray,
 			empty_output.encode_u32(index * 4, INVALID_ID)
 		return {
 			"data": empty_output,
+			"partition_sizes": [],
+			"unassigned_active_cells": 0,
 			"removed_non_land": removed_non_land,
 			"filled_land": filled_land,
 			"seedless_components": seedless_components,
@@ -279,15 +284,20 @@ static func normalize(region_data: PackedByteArray,
 
 	# Every undirected contact is counted once, including X=w-1 <-> X=0.
 	for y in range(h):
+		var row := y * w
 		for x in range(w):
-			var index := y * w + x
+			var index := row + x
 			var component := pixel_component[index]
 			if component < 0:
 				continue
-			var right := y * w + ((x + 1) % w)
-			_add_contact(component, pixel_component[right], adjacency)
+			var right := row + (x + 1 if x + 1 < w else 0)
+			var right_component := pixel_component[right]
+			if right_component >= 0 and right_component != component:
+				_add_contact(component, right_component, adjacency)
 			if y + 1 < h:
-				_add_contact(component, pixel_component[index + w], adjacency)
+				var down_component := pixel_component[index + w]
+				if down_component >= 0 and down_component != component:
+					_add_contact(component, down_component, adjacency)
 
 	var minimum_cells := maxi(int(ceil(target_cells * clampf(minimum_ratio, 0.0, 1.0))), 2)
 	var maximum_cells := maxi(
@@ -382,12 +392,23 @@ static func normalize(region_data: PackedByteArray,
 				discarded_roots[component] = true
 				discarded_cells += areas[component]
 
+	# The orchestrator previously decoded the complete R32UI map again and built
+	# a Dictionary solely for timing/statistics. We already own the final root
+	# areas here, so expose the retained sizes directly and avoid that extra
+	# full-map administrative pass.
+	var retained_partition_sizes: Array[int] = []
+	for component in range(component_count):
+		if parent[component] != component or discarded_roots.has(component):
+			continue
+		retained_partition_sizes.append(areas[component])
+
 	# The decoded raw IDs and flood queue are no longer needed. Release them
 	# before allocating the encoded R32UI result to keep the peak bounded.
 	region_ids = PackedInt64Array()
 	queue = PackedInt32Array()
 	var output := PackedByteArray()
 	output.resize(pixel_count * 4)
+	var unassigned_active_cells := 0
 
 	# Retain the target root's stable ID. All cells in a merged department are
 	# encoded once, so subsequent adjacency and hierarchy scans see one component.
@@ -398,15 +419,19 @@ static func normalize(region_data: PackedByteArray,
 		var component := pixel_component[index]
 		if component < 0:
 			output.encode_u32(index * 4, INVALID_ID)
+			unassigned_active_cells += 1
 			continue
 		var root := _find_root(parent, component)
 		if discarded_roots.has(root):
 			output.encode_u32(index * 4, INVALID_ID)
+			unassigned_active_cells += 1
 		else:
 			output.encode_u32(index * 4, component_ids[root])
 
 	return {
 		"data": output,
+		"partition_sizes": retained_partition_sizes,
+		"unassigned_active_cells": unassigned_active_cells,
 		"removed_non_land": removed_non_land,
 		"filled_land": filled_land,
 		"seedless_components": seedless_components,
@@ -422,7 +447,7 @@ static func normalize(region_data: PackedByteArray,
 		"extreme_oversized": extreme_oversized,
 		"discarded_isolated_undersized": discarded_roots.size(),
 		"discarded_isolated_cells": discarded_cells,
-		"final_count": final_sizes.size() - discarded_roots.size(),
+		"final_count": retained_partition_sizes.size(),
 	}
 
 

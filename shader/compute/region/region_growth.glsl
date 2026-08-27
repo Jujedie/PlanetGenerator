@@ -32,6 +32,17 @@ layout(set = 0, binding = 4, r32f) uniform readonly image2D region_cost_in;
 layout(set = 0, binding = 5, r32ui) uniform writeonly uimage2D region_map_out;
 layout(set = 0, binding = 6, r32f) uniform writeonly image2D region_cost_out;
 
+// One uvec2 per workgroup: x=changed, y=unassigned active cells. Every pass
+// overwrites the same compact array, so the CPU only inspects the final pass of
+// a submitted batch. This avoids globally contended atomics while giving an
+// exact convergence + coverage test.
+layout(set = 1, binding = 0, std430) buffer GrowthConvergence {
+    uvec2 group_stats[];
+} convergence;
+
+shared uint workgroup_changed;
+shared uint workgroup_unassigned;
+
 // === PUSH CONSTANTS : PARAMÈTRES ===
 layout(push_constant, std430) uniform GrowthParams {
     uint width;
@@ -116,22 +127,17 @@ vec3 organicNoisePoint(ivec2 pixel, int w, int h) {
     return vec3(cos(angle), latitude, sin(angle)) * featureCount;
 }
 
-float traversalCost(ivec2 pixel, ivec2 neighbor, int w, int h) {
-    float cost = max(params.cost_flat, 0.05);
-
-    // Champ lisse de résistance du terrain : les fronts de croissance ondulent
-    // sans bruit blanc, triangle de Voronoï ou segment rectiligne prolongé.
-    vec3 grainPoint = organicNoisePoint(pixel, w, h) * 1.75;
-    float grain = valueNoise3D(grainPoint, params.seed + 911u);
-    float grainStrength = clamp(params.noise_strength, 0.0, 1.0) * 0.38;
-    cost *= mix(1.0 - grainStrength, 1.0 + grainStrength, grain);
-
-    float hereHeight = imageLoad(geo_texture, pixel).r;
+float traversalCostCached(
+        ivec2 neighbor,
+        float baseCost,
+        float hereHeight,
+        float hereRiverFlux) {
+    float cost = baseCost;
     float neighborHeight = imageLoad(geo_texture, neighbor).r;
     float reliefBarrier = min(abs(hereHeight - neighborHeight) / 450.0, 3.0);
     cost += reliefBarrier * max(params.cost_uphill - params.cost_flat, 0.0);
 
-    float riverFlux = max(imageLoad(river_flux, pixel).r, imageLoad(river_flux, neighbor).r);
+    float riverFlux = max(hereRiverFlux, imageLoad(river_flux, neighbor).r);
     if (riverFlux > params.river_threshold) {
         cost += max(params.cost_river, 0.0);
     }
@@ -162,55 +168,90 @@ const ivec2 CARDINAL[4] = ivec2[4](
 
 // === MAIN ===
 void main() {
+    if (gl_LocalInvocationIndex == 0u) {
+        workgroup_changed = 0u;
+        workgroup_unassigned = 0u;
+    }
+    barrier();
+
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
-    
     int w = int(params.width);
     int h = int(params.height);
-    
-    if (pixel.x >= w || pixel.y >= h) {
-        return;
-    }
-    
-    // Eau : infranchissable, ne participe pas aux régions
-    uint water_type = imageLoad(water_mask, pixel).r;
-    if (water_type > 0u) {
-        imageStore(region_map_out, pixel, uvec4(0xFFFFFFFFu, 0u, 0u, 0u));
-        imageStore(region_cost_out, pixel, vec4(1e30, 0.0, 0.0, 0.0));
-        return;
-    }
-    
-    // Lire l'état actuel de ce pixel
-    uint current_region = imageLoad(region_map_in, pixel).r;
-    float current_cost = imageLoad(region_cost_in, pixel).r;
-    
-    // Meilleur candidat trouvé
-    uint best_region = current_region;
-    float best_cost = current_cost;
-    
-    // Une propagation cardinale locale garantit que l'ID reste connexe et ne
-    // peut jamais traverser une mer ou couper diagonalement un masque côtier.
-    for (int i = 0; i < 4; i++) {
-        int nx = wrapX(pixel.x + CARDINAL[i].x, w);
-        int ny = clampY(pixel.y + CARDINAL[i].y, h);
-        ivec2 neighbor = ivec2(nx, ny);
-        uint neighborWater = imageLoad(water_mask, neighbor).r;
-        if (neighborWater > 0u) continue;
 
-        uint n_region = imageLoad(region_map_in, neighbor).r;
-        if (n_region == 0xFFFFFFFFu) continue;
+    if (pixel.x < w && pixel.y < h) {
+        // Eau : infranchissable, ne participe pas aux régions.
+        uint water_type = imageLoad(water_mask, pixel).r;
+        if (water_type > 0u) {
+            imageStore(region_map_out, pixel, uvec4(0xFFFFFFFFu, 0u, 0u, 0u));
+            imageStore(region_cost_out, pixel, vec4(1e30, 0.0, 0.0, 0.0));
+        } else {
+            // Lire l'état actuel de ce pixel.
+            uint current_region = imageLoad(region_map_in, pixel).r;
+            float current_cost = imageLoad(region_cost_in, pixel).r;
+            uint best_region = current_region;
+            float best_cost = current_cost;
 
-        float neighbor_cost = imageLoad(region_cost_in, neighbor).r;
-        float candidate_cost = neighbor_cost + traversalCost(pixel, neighbor, w, h);
-        candidate_cost += seedShapePenalty(pixel, n_region, w, h);
+            // These terms depend only on the destination pixel. The previous
+            // shader recomputed the full 3-D value noise and reloaded the same
+            // height/river value once for every cardinal neighbor.
+            float base_cost = max(params.cost_flat, 0.05);
+            vec3 grainPoint = organicNoisePoint(pixel, w, h) * 1.75;
+            float grain = valueNoise3D(grainPoint, params.seed + 911u);
+            float grainStrength = clamp(params.noise_strength, 0.0, 1.0) * 0.38;
+            base_cost *= mix(1.0 - grainStrength, 1.0 + grainStrength, grain);
+            float hereHeight = imageLoad(geo_texture, pixel).r;
+            float hereRiverFlux = imageLoad(river_flux, pixel).r;
 
-        if (candidate_cost < best_cost ||
-                (candidate_cost == best_cost && n_region < best_region)) {
-            best_cost = candidate_cost;
-            best_region = n_region;
+            // Une propagation cardinale locale garantit que l'ID reste connexe
+            // et ne peut jamais traverser une mer ou couper diagonalement un
+            // masque côtier.
+            for (int i = 0; i < 4; i++) {
+                int nx = wrapX(pixel.x + CARDINAL[i].x, w);
+                int ny = clampY(pixel.y + CARDINAL[i].y, h);
+                ivec2 neighbor = ivec2(nx, ny);
+                uint neighborWater = imageLoad(water_mask, neighbor).r;
+                if (neighborWater > 0u) continue;
+
+                uint n_region = imageLoad(region_map_in, neighbor).r;
+                if (n_region == 0xFFFFFFFFu) continue;
+
+                float neighbor_cost = imageLoad(region_cost_in, neighbor).r;
+                float candidate_cost = neighbor_cost + traversalCostCached(
+                    neighbor, base_cost, hereHeight, hereRiverFlux
+                );
+
+                // seedShapePenalty is always non-negative. If the path cost is
+                // already strictly worse than the incumbent it cannot win, so
+                // avoid its sqrt/cosine work. Equality still evaluates the
+                // penalty to preserve the existing deterministic ID tie-break.
+                if (candidate_cost <= best_cost) {
+                    candidate_cost += seedShapePenalty(pixel, n_region, w, h);
+                    if (candidate_cost < best_cost ||
+                            (candidate_cost == best_cost && n_region < best_region)) {
+                        best_cost = candidate_cost;
+                        best_region = n_region;
+                    }
+                }
+            }
+
+            if (best_region != current_region || best_cost < current_cost) {
+                atomicOr(workgroup_changed, 1u);
+            }
+            if (best_region == 0xFFFFFFFFu) {
+                atomicAdd(workgroup_unassigned, 1u);
+            }
+
+            // Écrire le résultat et son coût de chemin monotone.
+            imageStore(region_map_out, pixel, uvec4(best_region, 0u, 0u, 0u));
+            imageStore(region_cost_out, pixel, vec4(best_cost, 0.0, 0.0, 0.0));
         }
     }
-    
-    // Écrire le résultat et son coût de chemin monotone.
-    imageStore(region_map_out, pixel, uvec4(best_region, 0u, 0u, 0u));
-    imageStore(region_cost_out, pixel, vec4(best_cost, 0.0, 0.0, 0.0));
+
+    barrier();
+    if (gl_LocalInvocationIndex == 0u) {
+        uint groupIndex = gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x;
+        convergence.group_stats[groupIndex] = uvec2(
+            workgroup_changed, workgroup_unassigned
+        );
+    }
 }

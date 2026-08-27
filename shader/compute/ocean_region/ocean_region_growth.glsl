@@ -34,6 +34,15 @@ layout(set = 0, binding = 3, r32f) uniform readonly image2D ocean_region_cost_in
 layout(set = 0, binding = 4, r32ui) uniform writeonly uimage2D ocean_region_map_out;
 layout(set = 0, binding = 5, r32f) uniform writeonly image2D ocean_region_cost_out;
 
+// Compact exact convergence tracker: changed flag + unassigned active count per
+// workgroup, overwritten on every pass. The CPU reads only the final pass.
+layout(set = 1, binding = 0, std430) buffer GrowthConvergence {
+    uvec2 group_stats[];
+} convergence;
+
+shared uint workgroup_changed;
+shared uint workgroup_unassigned;
+
 // === PUSH CONSTANTS : PARAMÈTRES ===
 layout(push_constant, std430) uniform GrowthParams {
     uint width;
@@ -129,89 +138,95 @@ const ivec2 NEIGHBORS[4] = ivec2[4](
 
 // === MAIN ===
 void main() {
+    if (gl_LocalInvocationIndex == 0u) {
+        workgroup_changed = 0u;
+        workgroup_unassigned = 0u;
+    }
+    barrier();
+
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
-    
     int w = int(params.width);
     int h = int(params.height);
-    
-    if (pixel.x >= w || pixel.y >= h) {
-        return;
-    }
-    
-    uint current_region = imageLoad(ocean_region_map_in, pixel).r;
-    float current_cost = imageLoad(ocean_region_cost_in, pixel).r;
-    
-    // Vérifier si c'est de la terre (infranchissable pour océans)
-    uint water_type = imageLoad(water_mask, pixel).r;
-    if (water_type == 0u) {
-        // Terre : copier tel quel (reste infranchissable)
-        imageStore(ocean_region_map_out, pixel, uvec4(0xFFFFFFFFu, 0u, 0u, 0u));
-        imageStore(ocean_region_cost_out, pixel, vec4(1e30, 0.0, 0.0, 0.0));
-        return;
-    }
-    
-    // Lire la profondeur de ce pixel
-    vec4 geo = imageLoad(geo_texture, pixel);
-    float my_depth = abs(geo.r - params.sea_level);
-    
-    // Chercher le meilleur voisin (coût minimal)
-    // Si le pixel est déjà assigné, il garde sa région (stable)
-    // Si le pixel n'est PAS assigné, on cherche le voisin avec le meilleur coût
-    bool is_assigned = (current_region != 0xFFFFFFFFu);
-    uint best_region = current_region;
-    float best_cost = current_cost;
-    
-    // Si PAS assigné, on accepte n'importe quel voisin valide
-    if (!is_assigned) {
-        best_region = 0xFFFFFFFFu;  // Reset pour trouver le meilleur voisin
-        best_cost = 1e30;  // Reset pour trouver le minimum
-    }
-    
-    for (int i = 0; i < 4; i++) {
-        ivec2 neighbor_offset = NEIGHBORS[i];
-        int nx = wrapX(pixel.x + neighbor_offset.x, w);
-        int ny = clampY(pixel.y + neighbor_offset.y, h);
-        
-        if (nx == pixel.x && ny == pixel.y) continue;
-        
-        ivec2 neighbor_pos = ivec2(nx, ny);
-        
-        // Vérifier que le voisin est de l'eau
-        uint neighbor_water = imageLoad(water_mask, neighbor_pos).r;
-        if (neighbor_water == 0u) continue;
-        
-        uint neighbor_region = imageLoad(ocean_region_map_in, neighbor_pos).r;
-        float neighbor_cost = imageLoad(ocean_region_cost_in, neighbor_pos).r;
-        
-        if (neighbor_region == 0xFFFFFFFFu) continue;
-        
-        // Calculer le coût de traversée
-        vec4 neighbor_geo = imageLoad(geo_texture, neighbor_pos);
-        float neighbor_depth = abs(neighbor_geo.r - params.sea_level);
-        
-        float edge_cost = params.cost_flat;
-        
-        // Pénalité si on descend (plus profond)
-        if (my_depth > neighbor_depth) {
-            edge_cost = params.cost_deeper;
+
+    if (pixel.x < w && pixel.y < h) {
+        uint current_region = imageLoad(ocean_region_map_in, pixel).r;
+        float current_cost = imageLoad(ocean_region_cost_in, pixel).r;
+
+        // Vérifier si c'est de la terre (infranchissable pour océans).
+        uint water_type = imageLoad(water_mask, pixel).r;
+        if (water_type == 0u) {
+            imageStore(ocean_region_map_out, pixel, uvec4(0xFFFFFFFFu, 0u, 0u, 0u));
+            imageStore(ocean_region_cost_out, pixel, vec4(1e30, 0.0, 0.0, 0.0));
+        } else {
+            float my_depth = abs(imageLoad(geo_texture, pixel).r - params.sea_level);
+
+            bool is_assigned = (current_region != 0xFFFFFFFFu);
+            uint best_region = current_region;
+            float best_cost = current_cost;
+            if (!is_assigned) {
+                best_region = 0xFFFFFFFFu;
+                best_cost = 1e30;
+            }
+
+            // organicBoundaryNoise only depends on the destination pixel, yet
+            // the previous shader evaluated its two 3-D noise octaves for every
+            // valid neighbor. Compute it once without changing the formula.
+            float noise = organicBoundaryNoise(pixel, w, h);
+            float organicStrength = clamp(params.noise_strength, 0.0, 1.0) * 0.32;
+            float organicFactor = mix(
+                1.0 - organicStrength,
+                1.0 + organicStrength,
+                noise
+            );
+
+            for (int i = 0; i < 4; i++) {
+                ivec2 neighbor_offset = NEIGHBORS[i];
+                int nx = wrapX(pixel.x + neighbor_offset.x, w);
+                int ny = clampY(pixel.y + neighbor_offset.y, h);
+
+                if (nx == pixel.x && ny == pixel.y) continue;
+
+                ivec2 neighbor_pos = ivec2(nx, ny);
+                uint neighbor_water = imageLoad(water_mask, neighbor_pos).r;
+                if (neighbor_water == 0u) continue;
+
+                uint neighbor_region = imageLoad(ocean_region_map_in, neighbor_pos).r;
+                if (neighbor_region == 0xFFFFFFFFu) continue;
+
+                float neighbor_cost = imageLoad(ocean_region_cost_in, neighbor_pos).r;
+                float neighbor_depth = abs(
+                    imageLoad(geo_texture, neighbor_pos).r - params.sea_level
+                );
+
+                float edge_cost = params.cost_flat;
+                if (my_depth > neighbor_depth) {
+                    edge_cost = params.cost_deeper;
+                }
+
+                float total_cost = neighbor_cost + edge_cost * organicFactor;
+                if (total_cost < best_cost) {
+                    best_cost = total_cost;
+                    best_region = neighbor_region;
+                }
+            }
+
+            if (best_region != current_region || best_cost < current_cost) {
+                atomicOr(workgroup_changed, 1u);
+            }
+            if (best_region == 0xFFFFFFFFu) {
+                atomicAdd(workgroup_unassigned, 1u);
+            }
+
+            imageStore(ocean_region_map_out, pixel, uvec4(best_region, 0u, 0u, 0u));
+            imageStore(ocean_region_cost_out, pixel, vec4(best_cost, 0.0, 0.0, 0.0));
         }
-        
-        // Bruit lisse et cylindrique : les frontières restent organiques et
-        // seamless sans le damier produit par un hash indépendant par pixel.
-        float noise = organicBoundaryNoise(pixel, w, h);
-        float organicFactor = mix(
-            1.0 - clamp(params.noise_strength, 0.0, 1.0) * 0.32,
-            1.0 + clamp(params.noise_strength, 0.0, 1.0) * 0.32,
-            noise
+    }
+
+    barrier();
+    if (gl_LocalInvocationIndex == 0u) {
+        uint groupIndex = gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x;
+        convergence.group_stats[groupIndex] = uvec2(
+            workgroup_changed, workgroup_unassigned
         );
-        float total_cost = neighbor_cost + edge_cost * organicFactor;
-        
-        if (total_cost < best_cost) {
-            best_cost = total_cost;
-            best_region = neighbor_region;
-        }
     }
-    
-    imageStore(ocean_region_map_out, pixel, uvec4(best_region, 0u, 0u, 0u));
-    imageStore(ocean_region_cost_out, pixel, vec4(best_cost, 0.0, 0.0, 0.0));
 }

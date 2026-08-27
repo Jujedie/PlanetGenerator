@@ -100,30 +100,62 @@ func solve_surface_and_water(
 	var heap := PackedInt32Array()
 	heap.resize(pixel_count)
 	var heap_size := 0
-	for y in range(height):
-		var row := y * width
-		for x in range(width):
-			var index := row + x
-			if visited[index] == 0:
-				continue
-			var is_frontier := false
-			for direction in range(8):
-				var nx := x + NEIGHBOR_DX[direction]
-				if nx < 0:
-					nx += width
-				elif nx >= width:
-					nx -= width
-				var ny := y + NEIGHBOR_DY[direction]
-				if ny < 0:
-					ny = 0
-				elif ny >= height:
-					ny = height - 1
-				if visited[ny * width + nx] == 0:
-					is_frontier = true
-					break
-			if is_frontier:
-				_heap_push_fixed(heap, heap_size, filled, index)
-				heap_size += 1
+	# Scan whichever side of the visited/unvisited boundary is smaller. Both
+	# branches produce exactly the same set of outlet frontier pixels. On
+	# ocean-heavy planets this avoids probing eight neighbors for every ocean
+	# pixel just to recover a shoreline-sized frontier.
+	if visited_count * 2 > pixel_count:
+		var frontier_added := PackedByteArray()
+		frontier_added.resize(pixel_count)
+		frontier_added.fill(0)
+		for y in range(height):
+			var row := y * width
+			for x in range(width):
+				var index := row + x
+				if visited[index] != 0:
+					continue
+				for direction in range(8):
+					var nx := x + NEIGHBOR_DX[direction]
+					if nx < 0:
+						nx += width
+					elif nx >= width:
+						nx -= width
+					var ny := y + NEIGHBOR_DY[direction]
+					if ny < 0:
+						ny = 0
+					elif ny >= height:
+						ny = height - 1
+					var outlet := ny * width + nx
+					if visited[outlet] == 0 or frontier_added[outlet] != 0:
+						continue
+					frontier_added[outlet] = 1
+					_heap_push_fixed(heap, heap_size, filled, outlet)
+					heap_size += 1
+	else:
+		for y in range(height):
+			var row := y * width
+			for x in range(width):
+				var index := row + x
+				if visited[index] == 0:
+					continue
+				var is_frontier := false
+				for direction in range(8):
+					var nx := x + NEIGHBOR_DX[direction]
+					if nx < 0:
+						nx += width
+					elif nx >= width:
+						nx -= width
+					var ny := y + NEIGHBOR_DY[direction]
+					if ny < 0:
+						ny = 0
+					elif ny >= height:
+						ny = height - 1
+					if visited[ny * width + nx] == 0:
+						is_frontier = true
+						break
+				if is_frontier:
+					_heap_push_fixed(heap, heap_size, filled, index)
+					heap_size += 1
 
 	var outlet_frontier_cells := heap_size
 
@@ -317,13 +349,26 @@ func accumulate_flow(
 				nonpolar_land_sinks += 1
 			continue
 
-		var target := _neighbor_index(index, direction, width, height)
+		# Inline the only _neighbor_index() hot-path call. This loop runs once for
+		# every land pixel and the helper previously repeated modulo/division plus a
+		# GDScript function call for each one.
+		var x := index % width
+		var y := int(index / width)
+		var target_x := x + NEIGHBOR_DX[direction]
+		if target_x < 0:
+			target_x += width
+		elif target_x >= width:
+			target_x -= width
+		var target_y := y + NEIGHBOR_DY[direction]
+		if target_y < 0:
+			target_y = 0
+		elif target_y >= height:
+			target_y = height - 1
+		var target := target_y * width + target_x
 		downstream[index] = target
 		if water_mask[target] == WATER_NONE:
 			indegree[target] += 1
 
-		var x := index % width
-		var target_x := target % width
 		if abs(target_x - x) > 1:
 			seam_flow_links += 1
 
@@ -569,7 +614,7 @@ func _build_flow_directions(
 	for index in range(routing_parent.size()):
 		if water_mask[index] != WATER_NONE:
 			continue
-		var y := index / width
+		var y := int(index / width)
 		if y < 2 or y >= height - 2:
 			continue
 
@@ -578,13 +623,33 @@ func _build_flow_directions(
 			invalid_parents += 1
 			continue
 
-		var direction := _direction_between_neighbors(index, parent, width)
+		# Inline direction decoding so X/Y modulo/division is performed once per
+		# land pixel instead of once in the helper and again for seam statistics.
+		var x := index % width
+		var parent_x := parent % width
+		var parent_y := int(parent / width)
+		var dx := parent_x - x
+		if dx > 1:
+			dx = -1
+		elif dx < -1:
+			dx = 1
+		var dy := parent_y - y
+		var direction := -1
+		if dy == -1 and dx >= -1 and dx <= 1:
+			direction = dx + 1
+		elif dy == 0:
+			if dx == -1:
+				direction = 3
+			elif dx == 1:
+				direction = 4
+		elif dy == 1 and dx >= -1 and dx <= 1:
+			direction = dx + 6
 		if direction < 0:
 			invalid_parents += 1
 			continue
 
 		flow_direction[index] = direction
-		if abs((parent % width) - (index % width)) > 1:
+		if abs(parent_x - x) > 1:
 			seam_links += 1
 
 	return {
@@ -653,19 +718,22 @@ func _heap_push_fixed(
 	priorities: PackedFloat32Array,
 	index: int,
 ) -> void:
-	heap[heap_size] = index
+	# 4-ary heap: half the tree depth of the old binary heap. Keep the inserted
+	# value in registers and move parents down, instead of swapping/reloading the
+	# child at every level. Ordering remains exactly (priority, pixel index).
 	var position := heap_size
+	var insert_level := priorities[index]
 	while position > 0:
-		var parent := (position - 1) / 2
-		var child_index := heap[position]
+		var parent := int((position - 1) / 4)
 		var parent_index := heap[parent]
-		var child_level := priorities[child_index]
 		var parent_level := priorities[parent_index]
-		if child_level > parent_level or (child_level == parent_level and child_index >= parent_index):
+		if insert_level > parent_level or (
+			insert_level == parent_level and index >= parent_index
+		):
 			break
-		heap[parent] = child_index
 		heap[position] = parent_index
 		position = parent
+	heap[position] = index
 
 func _heap_pop_fixed(
 	heap: PackedInt32Array,
@@ -677,30 +745,33 @@ func _heap_pop_fixed(
 		return result
 
 	var effective_size := heap_size - 1
-	heap[0] = heap[effective_size]
+	var replacement := heap[effective_size]
+	var replacement_level := priorities[replacement]
 	var position := 0
 	while true:
-		var left := position * 2 + 1
-		if left >= effective_size:
+		var first_child := position * 4 + 1
+		if first_child >= effective_size:
 			break
-		var right := left + 1
-		var best := left
-		if right < effective_size:
-			var right_index := heap[right]
-			var left_index := heap[left]
-			var right_level := priorities[right_index]
-			var left_level := priorities[left_index]
-			if right_level < left_level or (right_level == left_level and right_index < left_index):
-				best = right
-
+		var best := first_child
 		var best_index := heap[best]
-		var position_index := heap[position]
 		var best_level := priorities[best_index]
-		var position_level := priorities[position_index]
-		if best_level > position_level or (best_level == position_level and best_index >= position_index):
+		var child_end := mini(first_child + 4, effective_size)
+		for child in range(first_child + 1, child_end):
+			var child_index := heap[child]
+			var child_level := priorities[child_index]
+			if child_level < best_level or (
+				child_level == best_level and child_index < best_index
+			):
+				best = child
+				best_index = child_index
+				best_level = child_level
+
+		if best_level > replacement_level or (
+			best_level == replacement_level and best_index >= replacement
+		):
 			break
 		heap[position] = best_index
-		heap[best] = position_index
 		position = best
+	heap[position] = replacement
 
 	return result
