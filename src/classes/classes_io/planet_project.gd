@@ -63,7 +63,7 @@ static func save(output_dir: String, generation_params: Dictionary,
 			continue
 		layers[str(key)] = {
 			"path": _relative_path(output_dir, path),
-			"sha256": FileAccess.get_sha256(path),
+			"sha256": FileChecksumCache.sha256(path),
 			"kind": _kind_for_path(path),
 		}
 	var manifest := {
@@ -84,6 +84,7 @@ static func save(output_dir: String, generation_params: Dictionary,
 		return ""
 	file.store_string(JSON.stringify(manifest, "  ", true))
 	file.close()
+	FileChecksumCache.invalidate(path)
 	return path
 
 

@@ -107,6 +107,10 @@ func start(base_params: Dictionary, output_root: String, options: Dictionary = {
 	_memory_after_cleanup.clear()
 	_determinism_hashes.clear()
 	_cancel_requested = false
+	# Start release measurements with a cold, bounded checksum cache so results
+	# are reproducible and no previous UI/export session retains memory here.
+	FileChecksumCache.clear()
+	FileChecksumCache.reset_metrics()
 	running = true
 	call_deferred("_launch_next")
 	return true
@@ -427,6 +431,9 @@ func _finish(cancelled: bool) -> void:
 		"hardware_gate_pending": hardware_gate_required,
 		"regression_gate_pending": regression_gate_required,
 		"runs": _results,
+		"optimization_metrics": {
+			"checksum_cache": FileChecksumCache.metrics(),
+		},
 		"environment": {
 			"godot_version": Engine.get_version_info(),
 			"os": OS.get_name(),

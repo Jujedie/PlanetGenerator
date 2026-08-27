@@ -5,6 +5,7 @@ class_name GPUContext
 # pilotes imposent une limite pratique au nombre de créations/destructions
 # successives, même quand tous les RIDs ont été correctement libérés.
 static var _shared_rd: RenderingDevice = null
+static var _shared_rd_validated: bool = false
 
 # === CONSTANTES DE CONFIGURATION ===
 const FORMAT_STATE = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
@@ -121,6 +122,7 @@ var _cleaned_up: bool = false
 var _gpu_commands_pending: bool = false
 var _gpu_work_in_flight: bool = false
 var _deferred_free_rids: Array[RID] = []
+var _texture_byte_size_cache: Dictionary = {}
 var metrics: Dictionary = {}
 
 func _init(resolution_param: Vector2i) -> void:
@@ -143,28 +145,34 @@ func _init(resolution_param: Vector2i) -> void:
 		push_error("    - Godot lancé en mode headless sans GPU")
 		return
 	
-	# ✅ VALIDATION: Tester que le RD fonctionne
-	var test_format = RDTextureFormat.new()
-	test_format.width = 16
-	test_format.height = 16
-	test_format.format = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
-	test_format.usage_bits = RenderingDevice.TEXTURE_USAGE_STORAGE_BIT
-	
-	var test_data = PackedByteArray()
-	test_data.resize(16 * 16 * 16)
-	test_data.fill(0)
-	
-	var test_texture = rd.texture_create(test_format, RDTextureView.new(), [test_data])
-	if not test_texture.is_valid():
-		push_error("❌ FATAL: RenderingDevice créé mais incapable de créer des textures")
-		rd = null
-		return
-	
-	# Nettoyer la texture de test
-	rd.free_rid(test_texture)
-	
-	print("✅ RenderingDevice validé et fonctionnel")
-	
+	# Validate the shared local device only once. Creating a throw-away texture
+	# for every PlanetGenerator was measurable overhead in 50-run release tests
+	# and did not add safety after the device had already passed validation.
+	if not _shared_rd_validated:
+		var test_format = RDTextureFormat.new()
+		test_format.width = 16
+		test_format.height = 16
+		test_format.format = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
+		test_format.usage_bits = RenderingDevice.TEXTURE_USAGE_STORAGE_BIT
+
+		var test_data = PackedByteArray()
+		test_data.resize(16 * 16 * 16)
+		test_data.fill(0)
+
+		var test_texture = rd.texture_create(test_format, RDTextureView.new(), [test_data])
+		if not test_texture.is_valid():
+			push_error("❌ FATAL: RenderingDevice créé mais incapable de créer des textures")
+			if _shared_rd == rd:
+				_shared_rd = null
+			rd.free()
+			rd = null
+			return
+		rd.free_rid(test_texture)
+		_shared_rd_validated = true
+		print("✅ RenderingDevice validé et fonctionnel")
+	else:
+		print("✅ RenderingDevice partagé déjà validé")
+
 	# Créer les textures de travail
 	_initialize_textures()
 	_sample_memory_peaks()
@@ -181,6 +189,8 @@ func reset_metrics() -> void:
 		"peak_vram_bytes": 0,
 		"peak_system_ram_bytes": 0,
 		"released_texture_bytes": 0,
+		"texture_size_cache_hits": 0,
+		"texture_size_cache_misses": 0,
 	}
 
 func submit_gpu_work() -> void:
@@ -194,6 +204,7 @@ func submit_gpu_work() -> void:
 func release_rid(rid: RID) -> void:
 	if not rd or not rid.is_valid():
 		return
+	_forget_rid_metrics(rid)
 	if _gpu_commands_pending or _gpu_work_in_flight:
 		_deferred_free_rids.append(rid)
 	else:
@@ -216,6 +227,7 @@ func _free_unique_rids(rids: Array) -> void:
 		var rid_id: int = rid.get_id()
 		if freed_ids.has(rid_id):
 			continue
+		_forget_rid_metrics(rid)
 		rd.free_rid(rid)
 		freed_ids[rid_id] = true
 
@@ -254,12 +266,23 @@ func get_vram_usage_bytes() -> int:
 	for texture_rid in textures.values():
 		if not texture_rid or not texture_rid.is_valid():
 			continue
-		var texture_format := rd.texture_get_format(texture_rid)
-		total_bytes += (
-			texture_format.width * texture_format.height
-			* _bytes_per_pixel(texture_format.format)
-		)
+		total_bytes += _texture_size_bytes(texture_rid)
 	return total_bytes
+
+func _texture_size_bytes(texture_rid: RID) -> int:
+	var rid_id := texture_rid.get_id()
+	if _texture_byte_size_cache.has(rid_id):
+		metrics["texture_size_cache_hits"] = int(metrics.get("texture_size_cache_hits", 0)) + 1
+		return int(_texture_byte_size_cache[rid_id])
+	metrics["texture_size_cache_misses"] = int(metrics.get("texture_size_cache_misses", 0)) + 1
+	var texture_format := rd.texture_get_format(texture_rid)
+	var byte_size := texture_format.width * texture_format.height * _bytes_per_pixel(texture_format.format)
+	_texture_byte_size_cache[rid_id] = byte_size
+	return byte_size
+
+func _forget_rid_metrics(rid: RID) -> void:
+	if rid.is_valid():
+		_texture_byte_size_cache.erase(rid.get_id())
 
 func get_vram_usage() -> String:
 	return "VRAM: %.2f MB" % (get_vram_usage_bytes() / 1024.0 / 1024.0)
@@ -324,6 +347,7 @@ func prepare_for_export(gas_giant: bool = false) -> Dictionary:
 			continue
 		var texture_rid: RID = textures[texture_name]
 		if texture_rid.is_valid():
+			_forget_rid_metrics(texture_rid)
 			rd.free_rid(texture_rid)
 		textures.erase(texture_name)
 		released_names.append(str(texture_name))
@@ -1224,6 +1248,7 @@ func cleanup() -> void:
 	# 4. Textures (indépendantes)
 	_free_unique_rids(textures.values())
 	textures.clear()
+	_texture_byte_size_cache.clear()
 	metrics["current_vram_bytes"] = 0
 
 	# Le device partagé reste vivant pour la prochaine génération ; seule la
@@ -1248,4 +1273,5 @@ static func shutdown_shared_device() -> void:
 	# leaves the device and its internal worker objects alive until process exit.
 	var device_to_free := _shared_rd
 	_shared_rd = null
+	_shared_rd_validated = false
 	device_to_free.free()

@@ -52,6 +52,7 @@ func _build_fields_from_store(params: Dictionary, store: PlanetTileStore, tile_s
 	var count := macro_dimensions.x * macro_dimensions.y
 	elevation.resize(count)
 	var tile_cache: Dictionary = {}
+	var tile_cache_order: Array[String] = []
 	for y in range(macro_dimensions.y):
 		for x in range(macro_dimensions.x):
 			var cell := Vector2i(
@@ -67,9 +68,10 @@ func _build_fields_from_store(params: Dictionary, store: PlanetTileStore, tile_s
 			else:
 				payload = store.read_tile("height", 0, tile)
 				tile_cache[key] = payload
-				if tile_cache.size() > 16:
-					var keys := tile_cache.keys()
-					tile_cache.erase(keys[0])
+				tile_cache_order.append(key)
+				if tile_cache_order.size() > 16:
+					var oldest := tile_cache_order.pop_front()
+					tile_cache.erase(oldest)
 			var rect := PlanetGridContract.tile_rect(tile, global_dimensions, tile_size)
 			var local: Vector2i = address["local"]
 			var offset := (local.y * rect.size.x + local.x) * 4

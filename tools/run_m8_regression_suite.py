@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run Planet Generator's M1–M7.7 regression scenes as isolated Godot processes.
+"""Run Planet Generator's M1–M8.1 regression scenes as isolated Godot processes.
 
 Usage:
     python tools/run_m8_regression_suite.py /path/to/godot
@@ -33,6 +33,8 @@ SCENES = [
     "res://tests/milestone_7_5_templates.tscn",
     "res://tests/milestone_7_6_batch.tscn",
     "res://tests/milestone_7_7_ui_polish.tscn",
+    "res://tests/milestone_8_release_stabilization.tscn",
+    "res://tests/milestone_8_1_optimization.tscn",
 ]
 
 

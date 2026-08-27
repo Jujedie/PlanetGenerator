@@ -20,7 +20,7 @@ static func build(generation_params: Dictionary, exported_files: Dictionary, out
 			continue
 		layers[str(layer_name)] = {
 			"path": _relative_path(output_dir, path) if not output_dir.is_empty() else path.get_file(),
-			"sha256": FileAccess.get_sha256(path),
+			"sha256": FileChecksumCache.sha256(path),
 		}
 
 	return {
@@ -51,6 +51,7 @@ static func save(output_dir: String, generation_params: Dictionary,
 		return ""
 	file.store_string(JSON.stringify(manifest, "  ", true))
 	file.close()
+	FileChecksumCache.invalidate(path)
 	return path
 
 static func _stable_parameters(generation_params: Dictionary) -> Dictionary:

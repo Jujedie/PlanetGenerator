@@ -32,7 +32,7 @@ func has_complete_tile(layer: String, lod: int, tile: Vector2i) -> bool:
 	meta_file.close()
 	if not parsed is Dictionary:
 		return false
-	return str(parsed.get("sha256", "")) == FileAccess.get_sha256(payload)
+	return str(parsed.get("sha256", "")) == FileChecksumCache.sha256(payload)
 
 func write_tile(layer: String, lod: int, tile: Vector2i, payload: PackedByteArray,
 		metadata: Dictionary = {}) -> Dictionary:
@@ -47,7 +47,7 @@ func write_tile(layer: String, lod: int, tile: Vector2i, payload: PackedByteArra
 		return {"ok": false, "error": "payload_open_failed"}
 	file.store_buffer(payload)
 	file.close()
-	var checksum := FileAccess.get_sha256(temp_path)
+	var checksum := FileChecksumCache.sha256(temp_path)
 
 	var complete_meta := metadata.duplicate(true)
 	complete_meta["store_version"] = STORE_VERSION
@@ -66,6 +66,7 @@ func write_tile(layer: String, lod: int, tile: Vector2i, payload: PackedByteArra
 	# Rename metadata last: a crash can leave a harmless orphan payload, but never
 	# a metadata file that claims an incomplete payload is valid.
 	if FileAccess.file_exists(final_path):
+		FileChecksumCache.invalidate(final_path)
 		DirAccess.remove_absolute(final_path)
 	if FileAccess.file_exists(final_meta):
 		DirAccess.remove_absolute(final_meta)
@@ -78,7 +79,10 @@ func write_tile(layer: String, lod: int, tile: Vector2i, payload: PackedByteArra
 	if meta_error != OK:
 		DirAccess.remove_absolute(final_path)
 		DirAccess.remove_absolute(temp_meta)
+		FileChecksumCache.invalidate(final_path)
 		return {"ok": false, "error": "metadata_rename_failed", "code": meta_error}
+	FileChecksumCache.invalidate(temp_path)
+	FileChecksumCache.remember(final_path, checksum)
 	return {"ok": true, "path": final_path, "sha256": checksum}
 
 func read_tile(layer: String, lod: int, tile: Vector2i) -> PackedByteArray:

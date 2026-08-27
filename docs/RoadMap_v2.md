@@ -38,6 +38,6 @@ Responsive utility panels, non-obstructive layout, tooltips, shortcuts, planet-t
 **Implemented acceptance harness; target-hardware execution required before release.** No new simulation features. Full regression inventory, 50 consecutive generations, all planet types, deterministic layer hashes, cancellation/cleanup/recovery tests, export/project validation, memory-drift analysis, package-resource validation and an opt-in maximum Venus-like tiled hardware gate. Writes `release_candidate_report.json`.
 
 ### M8.1 — Final General Optimization
-Only after M8 establishes a correct baseline. Profile CPU/GPU synchronization, allocations, readbacks, PNG conversion, startup and UI overhead; remove redundant work and reduce peak RAM/VRAM. Optimization is accepted only when authoritative hashes/integrity results remain unchanged and no visual/functional regression is introduced.
+**Implemented; benchmark comparison still requires target-hardware execution.** Reuses the M8 baseline to optimize repeated RenderingDevice validation, VRAM telemetry, file hashing and tiled resume/write verification without changing simulation algorithms. `FinalOptimizationGuard` requires identical deterministic layer hashes and rejects measured performance regressions beyond tolerance.
 
 Planet Generator 1.0 is cut only after M8.1 passes its regression and performance gates.

@@ -68,6 +68,7 @@ static func save_report(output_dir: String, report: Dictionary) -> String:
 		return ""
 	file.store_string(JSON.stringify(report, "  ", true))
 	file.close()
+	FileChecksumCache.invalidate(path)
 	_print_summary(report)
 	return path
 

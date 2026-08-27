@@ -9,6 +9,7 @@ var store: PlanetTileStore
 var dimensions: Vector2i
 var tile_size: int
 var _cache: Dictionary = {}
+var _cache_order: Array[String] = []
 
 func _init(tile_store: PlanetTileStore, global_dimensions: Vector2i,
 		configured_tile_size: int = PlanetGridContract.DEFAULT_TILE_SIZE) -> void:
@@ -18,6 +19,7 @@ func _init(tile_store: PlanetTileStore, global_dimensions: Vector2i,
 
 func clear_cache() -> void:
 	_cache.clear()
+	_cache_order.clear()
 
 func read_window(layer: String, lod: int, origin: Vector2i, size: Vector2i,
 		bytes_per_pixel: int) -> PackedByteArray:
@@ -63,9 +65,11 @@ func _tile_payload(layer: String, lod: int, tile: Vector2i) -> PackedByteArray:
 		return _cache[key]
 	var payload := store.read_tile(layer, lod, tile)
 	_cache[key] = payload
+	_cache_order.append(key)
 	# A halo touches at most a handful of tiles. Avoid retaining an entire planet
-	# in system RAM if a phase scans hundreds of tiles.
-	if _cache.size() > 16:
-		var keys := _cache.keys()
-		_cache.erase(keys[0])
+	# in system RAM if a phase scans hundreds of tiles. Keep a tiny FIFO alongside
+	# the dictionary instead of allocating Dictionary.keys() on every eviction.
+	if _cache_order.size() > 16:
+		var oldest := _cache_order.pop_front()
+		_cache.erase(oldest)
 	return payload

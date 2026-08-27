@@ -353,7 +353,12 @@ func _read_texture(gpu: GPUContext, texture_name: String) -> PackedByteArray:
 
 func _save_png(image: Image, filepath: String) -> Error:
 	var started_usec := Time.get_ticks_usec()
+	# The same export directory may be reused across generations. Invalidate the
+	# checksum cache before/after writing so second-resolution mtimes can never
+	# make a rewritten same-size PNG look unchanged.
+	FileChecksumCache.invalidate(filepath)
 	var error := image.save_png(filepath)
+	FileChecksumCache.invalidate(filepath)
 	last_metrics["png_compression_ms"] = (
 		float(last_metrics.get("png_compression_ms", 0.0))
 		+ float(Time.get_ticks_usec() - started_usec) / 1000.0

@@ -99,6 +99,7 @@ static func finalize_outputs(output_root: String, exported_files: Dictionary,
 		var destination_dir := output_root.path_join(category)
 		DirAccess.make_dir_recursive_absolute(destination_dir)
 		var destination := destination_dir.path_join(source.get_file())
+		FileChecksumCache.invalidate(destination)
 		if source.simplify_path() != destination.simplify_path():
 			var move_error := DirAccess.rename_absolute(source, destination)
 			if move_error != OK:
@@ -114,7 +115,7 @@ static func finalize_outputs(output_root: String, exported_files: Dictionary,
 		catalog_entries[key] = {
 			"path": _relative_path(output_root, destination),
 			"category": category,
-			"sha256": FileAccess.get_sha256(destination),
+			"sha256": FileChecksumCache.sha256(destination),
 		}
 		if category == "maps/resources":
 			canonical_resource_files[source.get_file()] = destination
@@ -194,6 +195,7 @@ static func _write_catalog(output_root: String, params: Dictionary, entries: Dic
 		"entries": entries,
 	}, "  ", true))
 	file.close()
+	FileChecksumCache.invalidate(path)
 	return path
 
 static func _relative_path(root: String, path: String) -> String:

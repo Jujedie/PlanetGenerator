@@ -99,6 +99,7 @@ func run_phase(phase_name: String, output_dir: String, halo: int,
 		var generated = generator.call(descriptor, cancel_token)
 		if not generated is Dictionary:
 			return {"ok": false, "reason": "invalid_generator_result", "tile": tile}
+		var written_layers: Dictionary = {}
 		for layer_name in generated.keys():
 			var payload = generated[layer_name]
 			if not payload is PackedByteArray:
@@ -112,10 +113,14 @@ func run_phase(phase_name: String, output_dir: String, halo: int,
 			if not bool(write_result.get("ok", false)):
 				return {"ok": false, "reason": "tile_write", "detail": write_result, "tile": tile}
 			layer_checksums["%s:%d:%d" % [str(layer_name), tile.x, tile.y]] = write_result["sha256"]
+			written_layers[str(layer_name)] = true
 		# A generator returning an empty/partial dictionary must never advance the
 		# resume checkpoint as though the tile were complete.
 		for expected_layer in expected_layers:
-			if not store.has_complete_tile(str(expected_layer), lod, tile):
+			var expected_name := str(expected_layer)
+			# A successful atomic write already proved checksum + metadata creation.
+			# Only resumed/pre-existing layers need an on-disk verification here.
+			if not written_layers.has(expected_name) and not store.has_complete_tile(expected_name, lod, tile):
 				return {
 					"ok": false, "reason": "missing_expected_layer",
 					"phase": phase_name, "layer": str(expected_layer), "tile": tile,

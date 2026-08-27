@@ -36,6 +36,8 @@ const REQUIRED_REGRESSION_SCENES := [
 	"res://tests/milestone_7_5_templates.tscn",
 	"res://tests/milestone_7_6_batch.tscn",
 	"res://tests/milestone_7_7_ui_polish.tscn",
+	"res://tests/milestone_8_release_stabilization.tscn",
+	"res://tests/milestone_8_1_optimization.tscn",
 ]
 
 const NON_DETERMINISTIC_LAYER_KEYS := {
@@ -89,8 +91,14 @@ static func validate_export_tree(project_directory: String) -> Dictionary:
 		if project_layer_entries.has(key):
 			var entry: Dictionary = project_layer_entries[key]
 			var expected_hash := str(entry.get("sha256", ""))
-			if not expected_hash.is_empty() and FileAccess.get_sha256(path) != expected_hash:
-				checksum_mismatches.append(str(key))
+			if not expected_hash.is_empty():
+				# Release acceptance must always verify current on-disk bytes. Other
+				# call sites may reuse the bounded checksum cache, but this gate
+				# deliberately invalidates first so a coarse filesystem mtime can
+				# never turn a same-size rewrite into a false PASS.
+				FileChecksumCache.invalidate(path)
+				if FileChecksumCache.sha256(path) != expected_hash:
+					checksum_mismatches.append(str(key))
 		if path.get_extension().to_lower() != "png":
 			continue
 		var image := Image.new()
