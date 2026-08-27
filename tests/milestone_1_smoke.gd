@@ -57,8 +57,26 @@ func _run() -> void:
 	var physical_scale_safe := _validate_physical_scale_contract()
 	var topology_export_safe := _validate_topology_export_contract()
 	var gas_deterministic: bool = first_gas["final_hash"] == second_gas["final_hash"]
+	# Since M7/M8, every export may also contain integrity/catalog/manifest/project
+	# metadata.  The atmospheric-only contract is about generated map layers: a
+	# gas giant must export final_map and no terrestrial map outputs.
+	var gas_allowed_export_keys: Array[String] = [
+		"final_map",
+		"integrity_report",
+		"catalog",
+		"manifest",
+		"project",
+	]
+	var gas_exported_keys: Array = first_gas["exported_keys"] as Array
+	var gas_has_only_allowed_outputs := true
+	for exported_key_value in gas_exported_keys:
+		var exported_key: String = str(exported_key_value)
+		if not gas_allowed_export_keys.has(exported_key):
+			gas_has_only_allowed_outputs = false
+			break
 	var gas_export_contract: bool = (
-		first_gas["exported_keys"] == ["final_map"]
+		gas_exported_keys.has("final_map")
+		and gas_has_only_allowed_outputs
 		and first_gas["phase_names"].has("gas_giant")
 		and first_gas["phase_names"].has("total_simulation")
 		and first_gas["phase_names"].size() == 2

@@ -1,0 +1,127 @@
+{
+  "regression_report_version": 1,
+  "result": "FAIL",
+  "completed_tests": 17,
+  "expected_tests": 17,
+  "tests": [
+    {
+      "scene": "res://tests/milestone_1_smoke.tscn",
+      "ok": false,
+      "returncode": 1,
+      "elapsed_ms": 31198.884199999953,
+      "output_tail": "Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org\n\nSCRIPT ERROR: Parse Error: Identifier \"FileChecksumCache\" not declared in the current scope.\n   at: GDScript::reload (res://src/classes/classes_io/exporter.gd:359)\nSCRIPT ERROR: Parse Error: Identifier \"FileChecksumCache\" not declared in the current scope.\n   at: GDScript::reload (res://src/classes/classes_io/exporter.gd:361)\nSCRIPT ERROR: Compile Error: Failed to compile depended scripts.\n   at: GDScript::reload (res://src/classes/classes_gpu/orchestrator.gd:0)\nSCRIPT ERROR: Compile Error: Failed to compile depended scripts.\n   at: GDScript::reload (res://tests/milestone_1_smoke.gd:0)\nERROR: Failed to load script \"res://tests/milestone_1_smoke.gd\" with error \"Compilation failed\".\n   at: load (modules/gdscript/gdscript_resource_format.cpp:46)\nERROR: \u274c FATAL: Impossible de cr\u00e9er le RenderingDevice local\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:140)\n       [1] _generate_snapshot (res://tests/milestone_1_smoke.gd:162)\n       [2] _run (res://tests/milestone_1_smoke.gd:15)\nERROR:   Causes possibles:\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:141)\n       [1] _generate_snapshot (res://tests/milestone_1_smoke.gd:162)\n       [2] _run (res://tests/milestone_1_smoke.gd:15)\nERROR:     - GPU ne supporte pas Vulkan/Metal\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:142)\n       [1] _generate_snapshot (res://tests/milestone_1_smoke.gd:162)\n       [2] _run (res://tests/milestone_1_smoke.gd:15)\nERROR:     - Drivers graphiques obsol\u00e8tes\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:144)\n       [1] _generate_snapshot (res://tests/milestone_1_smoke.gd:162)\n       [2] _run (res://tests/milestone_1_smoke.gd:15)\nERROR:     - Godot lanc\u00e9 en mode headless sans GPU\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:145)\n       [1] _generate_snapshot (res://tests/milestone_1_smoke.gd:162)\n       [2] _run (res://tests/milestone_1_smoke.gd:15)\nERROR: Milestone 1 smoke test could not create a RenderingDevice\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _generate_snapshot (res://tests/milestone_1_smoke.gd:164)\n       [1] _run (res://tests/milestone_1_smoke.gd:15)\n"
+    },
+    {
+      "scene": "res://tests/milestone_2_hydrology.tscn",
+      "ok": false,
+      "returncode": 1,
+      "elapsed_ms": 491.26430000001164,
+      "output_tail": "Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org\n\nSCRIPT ERROR: Parse Error: Identifier \"FileChecksumCache\" not declared in the current scope.\n   at: GDScript::reload (res://src/classes/classes_io/exporter.gd:359)\nSCRIPT ERROR: Parse Error: Identifier \"FileChecksumCache\" not declared in the current scope.\n   at: GDScript::reload (res://src/classes/classes_io/exporter.gd:361)\nSCRIPT ERROR: Compile Error: Failed to compile depended scripts.\n   at: GDScript::reload (res://src/classes/classes_gpu/orchestrator.gd:0)\nSCRIPT ERROR: Compile Error: Failed to compile depended scripts.\n   at: GDScript::reload (res://tests/milestone_2_hydrology.gd:0)\nERROR: Failed to load script \"res://tests/milestone_2_hydrology.gd\" with error \"Compilation failed\".\n   at: load (modules/gdscript/gdscript_resource_format.cpp:46)\nERROR: \u274c FATAL: Impossible de cr\u00e9er le RenderingDevice local\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:140)\n       [1] _generate_snapshot (res://tests/milestone_2_hydrology.gd:179)\n       [2] _run (res://tests/milestone_2_hydrology.gd:28)\nERROR:   Causes possibles:\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:141)\n       [1] _generate_snapshot (res://tests/milestone_2_hydrology.gd:179)\n       [2] _run (res://tests/milestone_2_hydrology.gd:28)\nERROR:     - GPU ne supporte pas Vulkan/Metal\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:142)\n       [1] _generate_snapshot (res://tests/milestone_2_hydrology.gd:179)\n       [2] _run (res://tests/milestone_2_hydrology.gd:28)\nERROR:     - Drivers graphiques obsol\u00e8tes\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:144)\n       [1] _generate_snapshot (res://tests/milestone_2_hydrology.gd:179)\n       [2] _run (res://tests/milestone_2_hydrology.gd:28)\nERROR:     - Godot lanc\u00e9 en mode headless sans GPU\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:145)\n       [1] _generate_snapshot (res://tests/milestone_2_hydrology.gd:179)\n       [2] _run (res://tests/milestone_2_hydrology.gd:28)\nERROR: Milestone 2 test could not create a RenderingDevice\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _generate_snapshot (res://tests/milestone_2_hydrology.gd:181)\n       [1] _run (res://tests/milestone_2_hydrology.gd:28)\n"
+    },
+    {
+      "scene": "res://tests/milestone_3_optimization.tscn",
+      "ok": false,
+      "returncode": 1,
+      "elapsed_ms": 448.3810999998923,
+      "output_tail": "Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org\n\nSCRIPT ERROR: Parse Error: Identifier \"FileChecksumCache\" not declared in the current scope.\n   at: GDScript::reload (res://src/classes/classes_io/exporter.gd:359)\nSCRIPT ERROR: Parse Error: Identifier \"FileChecksumCache\" not declared in the current scope.\n   at: GDScript::reload (res://src/classes/classes_io/exporter.gd:361)\nSCRIPT ERROR: Compile Error: Failed to compile depended scripts.\n   at: GDScript::reload (res://src/classes/classes_gpu/orchestrator.gd:0)\nSCRIPT ERROR: Compile Error: Failed to compile depended scripts.\n   at: GDScript::reload (res://tests/milestone_3_optimization.gd:0)\nERROR: Failed to load script \"res://tests/milestone_3_optimization.gd\" with error \"Compilation failed\".\n   at: load (modules/gdscript/gdscript_resource_format.cpp:46)\nERROR: \u274c FATAL: Impossible de cr\u00e9er le RenderingDevice local\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:140)\n       [1] _run (res://tests/milestone_3_optimization.gd:29)\nERROR:   Causes possibles:\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:141)\n       [1] _run (res://tests/milestone_3_optimization.gd:29)\nERROR:     - GPU ne supporte pas Vulkan/Metal\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:142)\n       [1] _run (res://tests/milestone_3_optimization.gd:29)\nERROR:     - Drivers graphiques obsol\u00e8tes\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:144)\n       [1] _run (res://tests/milestone_3_optimization.gd:29)\nERROR:     - Godot lanc\u00e9 en mode headless sans GPU\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:145)\n       [1] _run (res://tests/milestone_3_optimization.gd:29)\nERROR: Milestone 3 could not create a RenderingDevice\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _run (res://tests/milestone_3_optimization.gd:31)\n"
+    },
+    {
+      "scene": "res://tests/milestone_4_coordinates.tscn",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_ms": 443.268699999976,
+      "output_tail": "Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org\n\n[Milestone4] dimensions=(30339, 15170) tile_grid=(15, 8) cell_area=0.99998193709067 roundtrip=true exact_coverage=true cropped_edge=true deterministic_lod=true\n"
+    },
+    {
+      "scene": "res://tests/milestone_5_tiling.tscn",
+      "ok": false,
+      "timeout": true,
+      "elapsed_ms": 300022.2659,
+      "output_tail": "Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org\n\nSCRIPT ERROR: Parse Error: Identifier \"FileChecksumCache\" not declared in the current scope.\n   at: GDScript::reload (res://src/classes/classes_io/tile_store.gd:35)\nSCRIPT ERROR: Parse Error: Identifier \"FileChecksumCache\" not declared in the current scope.\n   at: GDScript::reload (res://src/classes/classes_io/tile_store.gd:50)\nSCRIPT ERROR: Parse Error: Cannot infer the type of \"checksum\" variable because the value doesn't have a set type.\n   at: GDScript::reload (res://src/classes/classes_io/tile_store.gd:50)\nSCRIPT ERROR: Parse Error: Identifier \"FileChecksumCache\" not declared in the current scope.\n   at: GDScript::reload (res://src/classes/classes_io/tile_store.gd:69)\nSCRIPT ERROR: Parse Error: Identifier \"FileChecksumCache\" not declared in the current scope.\n   at: GDScript::reload (res://src/classes/classes_io/tile_store.gd:82)\nSCRIPT ERROR: Parse Error: Identifier \"FileChecksumCache\" not declared in the current scope.\n   at: GDScript::reload (res://src/classes/classes_io/tile_store.gd:84)\nSCRIPT ERROR: Parse Error: Identifier \"FileChecksumCache\" not declared in the current scope.\n   at: GDScript::reload (res://src/classes/classes_io/tile_store.gd:85)\nSCRIPT ERROR: Compile Error: Failed to compile depended scripts.\n   at: GDScript::reload (res://src/classes/classes_io/tiled_global_generator.gd:0)\nSCRIPT ERROR: Compile Error: Failed to compile depended scripts.\n   at: GDScript::reload (res://tests/milestone_5_tiling.gd:0)\nERROR: Failed to load script \"res://tests/milestone_5_tiling.gd\" with error \"Compilation failed\".\n   at: load (modules/gdscript/gdscript_resource_format.cpp:46)\nSCRIPT ERROR: Out of bounds get index '1' (on base: 'Array')\n   at: _run (res://tests/milestone_5_tiling.gd:19)\n   GDScript backtrace (most recent call first):\n       [0] _run (res://tests/milestone_5_tiling.gd:19)\n"
+    },
+    {
+      "scene": "res://tests/milestone_5_full_tiling.tscn",
+      "ok": false,
+      "returncode": 1,
+      "elapsed_ms": 409.5350000000053,
+      "output_tail": "Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org\n\nERROR: \u274c FATAL: Impossible de cr\u00e9er le RenderingDevice local\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:140)\n       [1] _init (res://src/classes/classes_io/tiled_phase_gpu_runner.gd:29)\n       [2] generate (res://src/classes/classes_io/tiled_global_simulation_pipeline.gd:46)\n       [3] _run (res://tests/milestone_5_full_tiling.gd:40)\nERROR:   Causes possibles:\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:141)\n       [1] _init (res://src/classes/classes_io/tiled_phase_gpu_runner.gd:29)\n       [2] generate (res://src/classes/classes_io/tiled_global_simulation_pipeline.gd:46)\n       [3] _run (res://tests/milestone_5_full_tiling.gd:40)\nERROR:     - GPU ne supporte pas Vulkan/Metal\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:142)\n       [1] _init (res://src/classes/classes_io/tiled_phase_gpu_runner.gd:29)\n       [2] generate (res://src/classes/classes_io/tiled_global_simulation_pipeline.gd:46)\n       [3] _run (res://tests/milestone_5_full_tiling.gd:40)\nERROR:     - Drivers graphiques obsol\u00e8tes\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:144)\n       [1] _init (res://src/classes/classes_io/tiled_phase_gpu_runner.gd:29)\n       [2] generate (res://src/classes/classes_io/tiled_global_simulation_pipeline.gd:46)\n       [3] _run (res://tests/milestone_5_full_tiling.gd:40)\nERROR:     - Godot lanc\u00e9 en mode headless sans GPU\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:145)\n       [1] _init (res://src/classes/classes_io/tiled_phase_gpu_runner.gd:29)\n       [2] generate (res://src/classes/classes_io/tiled_global_simulation_pipeline.gd:46)\n       [3] _run (res://tests/milestone_5_full_tiling.gd:40)\n\u26a0\ufe0f RenderingDevice d\u00e9j\u00e0 lib\u00e9r\u00e9, nettoyage ignor\u00e9\nERROR: \u274c FATAL: Impossible de cr\u00e9er le RenderingDevice local\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:140)\n       [1] _init (res://src/classes/classes_io/tiled_phase_gpu_runner.gd:29)\n       [2] generate (res://src/classes/classes_io/tiled_global_simulation_pipeline.gd:46)\n       [3] _run (res://tests/milestone_5_full_tiling.gd:43)\nERROR:   Causes possibles:\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:141)\n       [1] _init (res://src/classes/classes_io/tiled_phase_gpu_runner.gd:29)\n       [2] generate (res://src/classes/classes_io/tiled_global_simulation_pipeline.gd:46)\n       [3] _run (res://tests/milestone_5_full_tiling.gd:43)\nERROR:     - GPU ne supporte pas Vulkan/Metal\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:142)\n       [1] _init (res://src/classes/classes_io/tiled_phase_gpu_runner.gd:29)\n       [2] generate (res://src/classes/classes_io/tiled_global_simulation_pipeline.gd:46)\n       [3] _run (res://tests/milestone_5_full_tiling.gd:43)\nERROR:     - Drivers graphiques obsol\u00e8tes\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:144)\n       [1] _init (res://src/classes/classes_io/tiled_phase_gpu_runner.gd:29)\n       [2] generate (res://src/classes/classes_io/tiled_global_simulation_pipeline.gd:46)\n       [3] _run (res://tests/milestone_5_full_tiling.gd:43)\nERROR:     - Godot lanc\u00e9 en mode headless sans GPU\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:145)\n       [1] _init (res://src/classes/classes_io/tiled_phase_gpu_runner.gd:29)\n       [2] generate (res://src/classes/classes_io/tiled_global_simulation_pipeline.gd:46)\n       [3] _run (res://tests/milestone_5_full_tiling.gd:43)\n\u26a0\ufe0f RenderingDevice d\u00e9j\u00e0 lib\u00e9r\u00e9, nettoyage ignor\u00e9\nERROR: \u274c FATAL: Impossible de cr\u00e9er le RenderingDevice local\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:140)\n       [1] _init (res://src/classes/classes_io/tiled_phase_gpu_runner.gd:29)\n       [2] generate (res://src/classes/classes_io/tiled_global_simulation_pipeline.gd:46)\n       [3] _run (res://tests/milestone_5_full_tiling.gd:61)\nERROR:   Causes possibles:\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:141)\n       [1] _init (res://src/classes/classes_io/tiled_phase_gpu_runner.gd:29)\n       [2] generate (res://src/classes/classes_io/tiled_global_simulation_pipeline.gd:46)\n       [3] _run (res://tests/milestone_5_full_tiling.gd:61)\nERROR:     - GPU ne supporte pas Vulkan/Metal\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:142)\n       [1] _init (res://src/classes/classes_io/tiled_phase_gpu_runner.gd:29)\n       [2] generate (res://src/classes/classes_io/tiled_global_simulation_pipeline.gd:46)\n       [3] _run (res://tests/milestone_5_full_tiling.gd:61)\nERROR:     - Drivers graphiques obsol\u00e8tes\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:144)\n       [1] _init (res://src/classes/classes_io/tiled_phase_gpu_runner.gd:29)\n       [2] generate (res://src/classes/classes_io/tiled_global_simulation_pipeline.gd:46)\n       [3] _run (res://tests/milestone_5_full_tiling.gd:61)\nERROR:     - Godot lanc\u00e9 en mode headless sans GPU\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):\n       [0] _init (res://src/classes/classes_gpu/gpu_context.gd:145)\n       [1] _init (res://src/classes/classes_io/tiled_phase_gpu_runner.gd:29)\n       [2] generate (res://src/classes/classes_io/tiled_global_simulation_pipeline.gd:46)\n       [3] _run (res://tests/milestone_5_full_tiling.gd:61)\n\u26a0\ufe0f RenderingDevice d\u00e9j\u00e0 lib\u00e9r\u00e9, nettoyage ignor\u00e9\n[Milestone5-Full] max_tiles=120 budget={ \"estimated_bytes\": 175177728, \"sample_edge\": 2304, \"within_texture_limit\": true, \"hard_budget_bytes\": 5368709120, \"preferred_budget_bytes\": 4294967296, \"within_hard_budget\": true, \"within_preferred_budget\": true } generated=false tile_boundary_invariant=false cancellation=false\n"
+    },
+    {
+      "scene": "res://tests/milestone_6_cartography.tscn",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_ms": 264.2121999999745,
+      "output_tail": "Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org\n\n[Milestone6] raw_unchanged=true deterministic=true palette_only_changes_render=true contours=true overlay=true\n"
+    },
+    {
+      "scene": "res://tests/milestone_7_integrity.tscn",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_ms": 263.158599999997,
+      "output_tail": "Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org\n\nMilestone 7 integrity regression: PASS\n"
+    },
+    {
+      "scene": "res://tests/milestone_7_1_planet_project.tscn",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_ms": 259.80839999999716,
+      "output_tail": "Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org\n\nMilestone 7.1 reloadable project regression: PASS\n"
+    },
+    {
+      "scene": "res://tests/milestone_7_2_export_system.tscn",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_ms": 266.1116999998967,
+      "output_tail": "Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org\n\nMilestone 7.2 export system regression: PASS\n"
+    },
+    {
+      "scene": "res://tests/milestone_7_3_ui_progress.tscn",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_ms": 258.5215999999946,
+      "output_tail": "Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org\n\nMilestone 7.3 non-blocking UI/progress regression: PASS\n"
+    },
+    {
+      "scene": "res://tests/milestone_7_4_map_viewer.tscn",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_ms": 259.84840000000986,
+      "output_tail": "Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org\n\nWARNING: Nodes with non-equal opposite anchors will have their size overridden after _ready(). \nIf you want to set size, change the anchors or consider using set_deferred().\n   at: _set_size (scene/gui/control.cpp:1519)\n   GDScript backtrace (most recent call first):\n       [0] _ready (res://tests/milestone_7_4_map_viewer.gd:6)\nMilestone 7.4 advanced viewer regression: PASS\n"
+    },
+    {
+      "scene": "res://tests/milestone_7_5_templates.tscn",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_ms": 262.29829999999765,
+      "output_tail": "Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org\n\nMilestone 7.5 templates regression: PASS\n"
+    },
+    {
+      "scene": "res://tests/milestone_7_6_batch.tscn",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_ms": 627.9726999999866,
+      "output_tail": "Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org\n\nMilestone 7.6 batch harness regression: PASS\n"
+    },
+    {
+      "scene": "res://tests/milestone_7_7_ui_polish.tscn",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_ms": 263.16700000006676,
+      "output_tail": "Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org\n\nMilestone 7.7 UI polish regression: PASS\n"
+    },
+    {
+      "scene": "res://tests/milestone_8_release_stabilization.tscn",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_ms": 626.8093999999564,
+      "output_tail": "Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org\n\nMilestone 8 release stabilization contract: PASS\n"
+    },
+    {
+      "scene": "res://tests/milestone_8_1_optimization.tscn",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_ms": 272.8307999999515,
+      "output_tail": "Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org\n\nMilestone 8.1 final optimization contract: PASS\n"
+    }
+  ]
+}
