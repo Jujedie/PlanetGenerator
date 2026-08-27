@@ -305,6 +305,63 @@ vec3 terranWaterHypsometry(float depth, vec3 source_water) {
     return mix(color, source_water, 0.03);
 }
 
+// Tous les types de planète rocheuse utilisent désormais la même chaîne de
+// rendu physique que le type Terran : matériau de biome lissé, variation
+// continue avec le climat/l'altitude, bathymétrie, relief, rivières et glace.
+// Les poids ci-dessous ne changent que l'identité chromatique du matériau :
+// ils évitent qu'une planète toxique, volcanique ou stérile devienne une copie
+// verte de la Terre tout en supprimant l'ancien rendu plat "biome direct".
+float planetaryMaterialIdentity(uint atmosphere_type) {
+    if (atmosphere_type == 1u) return 0.62; // Toxique
+    if (atmosphere_type == 2u) return 0.72; // Volcanique
+    if (atmosphere_type == 3u) return 0.78; // Sans atmosphère
+    if (atmosphere_type == 4u) return 0.68; // Morte
+    if (atmosphere_type == 5u) return 0.74; // Stérile
+    return 0.0;
+}
+
+vec3 planetaryLandSurface(
+    vec3 biome_material,
+    float temperature,
+    float humidity,
+    float relative_height,
+    uint atmosphere_type
+) {
+    // Le type par défaut reste bit-for-bit sur son chemin historique.
+    vec3 physical_surface = terranClimateSurface(
+        biome_material,
+        temperature,
+        humidity,
+        relative_height
+    );
+    if (atmosphere_type == 0u) {
+        return physical_surface;
+    }
+
+    // Les autres planètes profitent du même modelé continu. Leur palette de
+    // biome reste dominante afin de préserver soufre, basalte, régolithe,
+    // wasteland, roche stérile, etc. biome_material est déjà lissé spatialement
+    // par smoothedBiomeMaterial(), donc ce mélange ne réintroduit pas de
+    // frontières de biome dures.
+    float identity = planetaryMaterialIdentity(atmosphere_type);
+    return mix(physical_surface, biome_material, identity);
+}
+
+vec3 planetaryWaterSurface(float depth, vec3 source_water, uint atmosphere_type) {
+    vec3 physical_water = terranWaterHypsometry(depth, source_water);
+    if (atmosphere_type == 0u) {
+        return physical_water;
+    }
+
+    // Même bathymétrie que la planète par défaut, mais en conservant une part
+    // forte de la couleur physique propre au fluide (acide, lave, eau morte).
+    float source_identity = 0.58;
+    if (atmosphere_type == 2u) source_identity = 0.78;
+    else if (atmosphere_type == 1u) source_identity = 0.66;
+    else if (atmosphere_type == 4u) source_identity = 0.62;
+    return mix(physical_water, source_water, source_identity);
+}
+
 // ============================================================================
 // MAIN
 // ============================================================================
@@ -342,27 +399,37 @@ void main() {
         vegetation_color = biomes[biome_index].color.rgb;
     }
 
-    if (params.atmosphere_type == 0u) {
-        if (is_water) {
-            color = terranWaterHypsometry(max(-relative_height, 0.0), water.rgb);
-        } else {
-            if (biome_count > 0u && biome_index < biome_count) {
-                color = terranClimateSurface(
-                    smoothedBiomeMaterial(pos, w, h, vegetation_color),
-                    climate.r,
-                    climate.g,
-                    max(relative_height, 0.0)
-                );
-            } else {
-                color = mix(
-                    terranLandHypsometry(max(relative_height, 0.0)),
-                    biome.rgb,
-                    0.55
-                );
-            }
-        }
+    if (is_water) {
+        color = planetaryWaterSurface(
+            max(-relative_height, 0.0),
+            water.rgb,
+            params.atmosphere_type
+        );
+    } else if (biome_count > 0u && biome_index < biome_count) {
+        color = planetaryLandSurface(
+            smoothedBiomeMaterial(pos, w, h, vegetation_color),
+            climate.r,
+            climate.g,
+            max(relative_height, 0.0),
+            params.atmosphere_type
+        );
+    } else if (params.atmosphere_type == 0u) {
+        // Conserver exactement le fallback historique du type par défaut.
+        color = mix(
+            terranLandHypsometry(max(relative_height, 0.0)),
+            biome.rgb,
+            0.55
+        );
     } else {
-        color = vegetation_color;
+        // Même fallback physique pour les autres types si aucun biome n'est
+        // disponible : pas de retour au rendu plat par couleur brute.
+        color = planetaryLandSurface(
+            biome.rgb,
+            climate.r,
+            climate.g,
+            max(relative_height, 0.0),
+            params.atmosphere_type
+        );
     }
     
     // === STEP 2: Apply subtle, continuous terrain lighting ===
