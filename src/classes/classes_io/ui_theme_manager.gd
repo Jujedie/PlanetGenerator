@@ -8,10 +8,10 @@ const SETTINGS_KEY := "theme"
 const DEFAULT_THEME: StringName = &"amber"
 
 const THEME_ORDER: Array[StringName] = [&"amber", &"ocean", &"contrast"]
-const THEME_NAMES := {
-	&"amber": "Ambre",
-	&"ocean": "Océan",
-	&"contrast": "Contraste élevé",
+const THEME_NAME_KEYS := {
+	&"amber": "UI_THEME_AMBER",
+	&"ocean": "UI_THEME_OCEAN",
+	&"contrast": "UI_THEME_HIGH_CONTRAST",
 }
 
 const PALETTES := {
@@ -103,7 +103,7 @@ func get_theme_ids() -> Array[StringName]:
 
 
 func get_theme_name(theme_id: StringName) -> String:
-	return str(THEME_NAMES.get(theme_id, theme_id))
+	return tr(str(THEME_NAME_KEYS.get(theme_id, theme_id)))
 
 
 func get_theme_index(theme_id: StringName = current_theme_id) -> int:

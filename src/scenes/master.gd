@@ -892,6 +892,8 @@ func _load_current_map() -> void:
 func maj_labels() -> void:
 	if _parameter_workspace != null:
 		_parameter_workspace.refresh_translations()
+	if _viewer_workspace != null:
+		_viewer_workspace.refresh_translations()
 	_refresh_generation_status_translation()
 	_refresh_advanced_viewer_translation()
 

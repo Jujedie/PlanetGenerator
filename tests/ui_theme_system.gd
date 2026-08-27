@@ -3,6 +3,7 @@ extends Node
 
 func _ready() -> void:
 	var previous_theme: StringName = UITheme.current_theme_id
+	var previous_locale := TranslationServer.get_locale()
 	UITheme.set_theme(&"amber", false)
 	var master := (load("res://data/scn/master.tscn") as PackedScene).instantiate()
 	add_child(master)
@@ -14,6 +15,7 @@ func _ready() -> void:
 	assert(parameters != null and viewer != null)
 	assert(parameters.theme_select.item_count == UITheme.get_theme_ids().size())
 	assert(viewer.theme_select.item_count == UITheme.get_theme_ids().size())
+	_assert_theme_translations(parameters, viewer)
 	var parameter_background := parameters.root.get_node("Background") as ColorRect
 	var viewer_background := viewer.root.get_node("Background") as ColorRect
 	var amber_title_size := parameters.title_label.get_theme_font_size("font_size")
@@ -61,8 +63,30 @@ func _ready() -> void:
 		assert(capture.save_png("user://temp/theme_contrast_smoke.png") == OK)
 
 	UITheme.set_theme(previous_theme, false)
+	TranslationServer.set_locale(previous_locale)
 	print("UI theme system regression: PASS")
 	get_tree().quit(0)
+
+
+func _assert_theme_translations(
+	parameters: ParameterWorkspace,
+	viewer: ReferenceViewerWorkspace
+) -> void:
+	var expected := {
+		"en": ["Amber", "Ocean", "High contrast", "UI theme"],
+		"fr": ["Ambre", "Océan", "Contraste élevé", "Thème de l’interface"],
+		"de": ["Bernstein", "Ozean", "Hoher Kontrast", "UI-Theme"],
+	}
+	for locale in expected:
+		TranslationServer.set_locale(str(locale))
+		parameters.refresh_translations()
+		viewer.refresh_translations()
+		var translated: Array = expected[locale]
+		for index in range(3):
+			assert(parameters.theme_select.get_item_text(index) == translated[index])
+			assert(viewer.theme_select.get_item_text(index) == translated[index])
+		assert(parameters.theme_select.tooltip_text == translated[3])
+		assert(viewer.theme_select.tooltip_text == translated[3])
 
 
 func _same_color(left: Color, right: Color) -> bool:

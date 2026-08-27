@@ -402,7 +402,12 @@ func _populate_theme_selector() -> void:
 		theme_select.add_item(UITheme.get_theme_name(theme_id))
 		theme_select.set_item_metadata(theme_select.item_count - 1, theme_id)
 	theme_select.select(UITheme.get_theme_index())
-	theme_select.tooltip_text = "Thème / Theme"
+	theme_select.tooltip_text = tr("UI_THEME_TOOLTIP")
+
+
+func refresh_translations() -> void:
+	if theme_select != null:
+		_populate_theme_selector()
 
 
 func _on_theme_selected(index: int) -> void:

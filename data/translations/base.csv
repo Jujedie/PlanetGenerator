@@ -342,3 +342,7 @@ UI_TOOLTIP_LOAD_PLANET,Load an existing planet project.,Charger un projet de pla
 UI_TOOLTIP_RESET_VIEW,Reset zoom and pan. Shortcut: Ctrl+0.,Réinitialiser le zoom et le déplacement. Raccourci : Ctrl+0.,Zoom und Verschiebung zurücksetzen. Tastenkürzel: Strg+0.
 UI_TOOLTIP_RANDOM_NAME,Generate a random planet name.,Générer un nom de planète aléatoire.,Einen zufälligen Planetennamen erzeugen.
 UI_TOOLTIP_RANDOM_SEED,Generate a random seed.,Générer une graine aléatoire.,Einen zufälligen Seed erzeugen.
+UI_THEME_AMBER,Amber,Ambre,Bernstein
+UI_THEME_OCEAN,Ocean,Océan,Ozean
+UI_THEME_HIGH_CONTRAST,High contrast,Contraste élevé,Hoher Kontrast
+UI_THEME_TOOLTIP,UI theme,Thème de l’interface,UI-Theme

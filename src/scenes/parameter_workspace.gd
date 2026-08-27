@@ -696,7 +696,7 @@ func _populate_theme_selector() -> void:
 		theme_select.add_item(UITheme.get_theme_name(theme_id))
 		theme_select.set_item_metadata(theme_select.item_count - 1, theme_id)
 	theme_select.select(UITheme.get_theme_index())
-	theme_select.tooltip_text = "Thème / Theme"
+	theme_select.tooltip_text = tr("UI_THEME_TOOLTIP")
 
 
 func _on_theme_selected(index: int) -> void:
@@ -907,6 +907,7 @@ func randomize_name() -> void:
 func refresh_translations() -> void:
 	if root == null:
 		return
+	_populate_theme_selector()
 	preview_title_label.text = tr("VIEWER_PREVIEW")
 	preview_shortcuts_label.text = tr("PARAMETER_PREVIEW_SHORTCUTS")
 	parameter_title_label.text = tr("PARAMETRES")
