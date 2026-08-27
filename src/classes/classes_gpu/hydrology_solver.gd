@@ -81,62 +81,75 @@ func solve_surface_and_water(
 	# and the polar rows deliberately remain open. Unlike the old implementation,
 	# we do NOT insert every ocean pixel into the heap: an interior water pixel
 	# can never discover land because all water pixels are already marked visited.
-	for index in range(pixel_count):
-		var y := index / width
-		if initial_water_mask[index] > WATER_NONE or y < 2 or y >= height - 2:
-			visited[index] = 1
-			visited_count += 1
+	for y in range(height):
+		var row := y * width
+		var polar_outlet := y < 2 or y >= height - 2
+		for x in range(width):
+			var index := row + x
+			if initial_water_mask[index] > WATER_NONE or polar_outlet:
+				visited[index] = 1
+				visited_count += 1
 
 	# Only outlet cells touching an unvisited cell need to enter the priority
 	# queue. On an Earth-like planet this changes the initial heap from tens or
 	# hundreds of thousands of ocean pixels to roughly the shoreline length.
-	var heap: Array[int] = []
-	for index in range(pixel_count):
-		if visited[index] == 0:
-			continue
-		var x := index % width
-		var y := index / width
-		var is_frontier := false
-		for direction in range(8):
-			var nx := x + NEIGHBOR_DX[direction]
-			if nx < 0:
-				nx += width
-			elif nx >= width:
-				nx -= width
-			var ny := y + NEIGHBOR_DY[direction]
-			if ny < 0:
-				ny = 0
-			elif ny >= height:
-				ny = height - 1
-			if visited[ny * width + nx] == 0:
-				is_frontier = true
-				break
-		if is_frontier:
-			_heap_push(heap, filled, index)
+	# Fixed-size packed storage removes the Variant-heavy Array[int] churn from
+	# the hottest Priority-Flood path. The effective heap size is tracked
+	# separately, so no resize/pop allocation occurs while preserving exactly the
+	# same (elevation, pixel-index) ordering as the previous binary heap.
+	var heap := PackedInt32Array()
+	heap.resize(pixel_count)
+	var heap_size := 0
+	for y in range(height):
+		var row := y * width
+		for x in range(width):
+			var index := row + x
+			if visited[index] == 0:
+				continue
+			var is_frontier := false
+			for direction in range(8):
+				var nx := x + NEIGHBOR_DX[direction]
+				if nx < 0:
+					nx += width
+				elif nx >= width:
+					nx -= width
+				var ny := y + NEIGHBOR_DY[direction]
+				if ny < 0:
+					ny = 0
+				elif ny >= height:
+					ny = height - 1
+				if visited[ny * width + nx] == 0:
+					is_frontier = true
+					break
+			if is_frontier:
+				_heap_push_fixed(heap, heap_size, filled, index)
+				heap_size += 1
 
-	var outlet_frontier_cells := heap.size()
+	var outlet_frontier_cells := heap_size
 
 	# Optimized Priority-Flood (Barnes-style pit queue): cells lying at or below
 	# the current spill elevation belong to the same depression and can be
-	# processed FIFO. Only terrain rising above the spill level needs O(log N)
+	# processed FIFO. A preallocated PackedInt32Array keeps this queue numeric and
+	# allocation-free. Only terrain rising above the spill level needs O(log N)
 	# heap work. The resulting filled surface is still exact and deterministic.
-	var pit_queue: Array[int] = []
+	var pit_queue := PackedInt32Array()
+	pit_queue.resize(pixel_count)
 	var pit_head := 0
+	var pit_tail := 0
 	var heap_pop_count := 0
 	var pit_pop_count := 0
-	while not heap.is_empty() or pit_head < pit_queue.size():
+	while heap_size > 0 or pit_head < pit_tail:
 		var current: int
-		if pit_head < pit_queue.size():
+		if pit_head < pit_tail:
 			current = pit_queue[pit_head]
 			pit_head += 1
 			pit_pop_count += 1
 		else:
-			# Drop already-consumed pit entries before returning to the heap so a
-			# huge depression does not remain referenced for the rest of the solve.
-			if not pit_queue.is_empty():
-				pit_queue.clear()
-				pit_head = 0
-			current = _heap_pop(heap, filled)
+			# The queue storage is reused rather than cleared/reallocated.
+			pit_head = 0
+			pit_tail = 0
+			current = _heap_pop_fixed(heap, heap_size, filled)
+			heap_size -= 1
 			heap_pop_count += 1
 
 		var current_level := filled[current]
@@ -163,10 +176,12 @@ func solve_surface_and_water(
 			var neighbor_level := original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
-				pit_queue.append(neighbor)
+				pit_queue[pit_tail] = neighbor
+				pit_tail += 1
 			else:
 				filled[neighbor] = neighbor_level
-				_heap_push(heap, filled, neighbor)
+				_heap_push_fixed(heap, heap_size, filled, neighbor)
+				heap_size += 1
 
 	if visited_count != pixel_count:
 		push_error("[Hydrology] Priority flood did not visit the complete map")
@@ -185,15 +200,13 @@ func solve_surface_and_water(
 		if fill_depth > MIN_ROUTING_EPSILON_M:
 			filled_cell_count += 1
 
-		# Decode temperature only here instead of storing a second full-size float
-		# array during the initial surface pass.
+		# Ocean cells can never become lake candidates. Skip their climate decode;
+		# on ocean-heavy planets this avoids decoding most climate pixels here.
+		if initial_water_mask[index] != WATER_NONE:
+			continue
 		var temperature := climate_data.decode_float(index * 16)
 		var liquid_temperature := temperature >= WATER_MIN_TEMP and temperature <= WATER_MAX_TEMP
-		if (
-			initial_water_mask[index] == WATER_NONE
-			and liquid_temperature
-			and fill_depth >= lake_depth_threshold
-		):
+		if liquid_temperature and fill_depth >= lake_depth_threshold:
 			candidate_mask[index] = 1
 			lake_candidate_cells += 1
 	var candidate_ms: float = float(Time.get_ticks_usec() - candidate_start_usec) / 1000.0
@@ -314,14 +327,17 @@ func accumulate_flow(
 		if abs(target_x - x) > 1:
 			seam_flow_links += 1
 
-	var queue: Array[int] = []
+	var queue := PackedInt32Array()
+	queue.resize(pixel_count)
+	var queue_tail := 0
 	for index in range(pixel_count):
 		if water_mask[index] == WATER_NONE and indegree[index] == 0:
-			queue.append(index)
+			queue[queue_tail] = index
+			queue_tail += 1
 
 	var queue_head := 0
 	var processed_land_cells := 0
-	while queue_head < queue.size():
+	while queue_head < queue_tail:
 		var current := queue[queue_head]
 		queue_head += 1
 		processed_land_cells += 1
@@ -334,7 +350,8 @@ func accumulate_flow(
 		if water_mask[target] == WATER_NONE:
 			indegree[target] -= 1
 			if indegree[target] == 0:
-				queue.append(target)
+				queue[queue_tail] = target
+				queue_tail += 1
 
 	var terminal_flux := 0.0
 	var max_land_flux := 0.0
@@ -381,6 +398,8 @@ func _retain_lake_components(
 	var visited := PackedByteArray()
 	visited.resize(candidates.size())
 	visited.fill(0)
+	var queue := PackedInt32Array()
+	queue.resize(candidates.size())
 	var candidate_components := 0
 	var retained_components := 0
 	var retained_cells := 0
@@ -391,26 +410,40 @@ func _retain_lake_components(
 			continue
 
 		candidate_components += 1
-		var component: Array[int] = [start]
-		visited[start] = 1
 		var head := 0
-		while head < component.size():
-			var current := component[head]
+		var tail := 1
+		queue[0] = start
+		visited[start] = 1
+		while head < tail:
+			var current := queue[head]
 			head += 1
-			for direction in range(NEIGHBORS.size()):
-				var neighbor := _neighbor_index(current, direction, width, height)
+			var current_x := current % width
+			var current_y := current / width
+			for direction in range(8):
+				var nx := current_x + NEIGHBOR_DX[direction]
+				if nx < 0:
+					nx += width
+				elif nx >= width:
+					nx -= width
+				var ny := current_y + NEIGHBOR_DY[direction]
+				if ny < 0:
+					ny = 0
+				elif ny >= height:
+					ny = height - 1
+				var neighbor := ny * width + nx
 				if candidates[neighbor] == 0 or visited[neighbor] != 0:
 					continue
 				visited[neighbor] = 1
-				component.append(neighbor)
+				queue[tail] = neighbor
+				tail += 1
 
-		if component.size() >= minimum_size:
+		if tail >= minimum_size:
 			retained_components += 1
-			retained_cells += component.size()
-			for index in component:
-				water_mask[index] = WATER_FRESH
+			retained_cells += tail
+			for queue_index in range(tail):
+				water_mask[queue[queue_index]] = WATER_FRESH
 		else:
-			removed_cells += component.size()
+			removed_cells += tail
 
 	return {
 		"lake_candidate_components": candidate_components,
@@ -430,6 +463,8 @@ func _classify_water_components(
 	var visited := PackedByteArray()
 	visited.resize(water_mask.size())
 	visited.fill(0)
+	var queue := PackedInt32Array()
+	queue.resize(water_mask.size())
 	var salt_components := 0
 	var fresh_components := 0
 	var total_water_cells := 0
@@ -439,32 +474,47 @@ func _classify_water_components(
 		if water_mask[start] == WATER_NONE or visited[start] != 0:
 			continue
 
-		var component: Array[int] = [start]
+		var head := 0
+		var tail := 1
+		queue[0] = start
 		visited[start] = 1
 		var touches_subsea := original_height[start] < sea_level
-		var head := 0
-		while head < component.size():
-			var current := component[head]
+		while head < tail:
+			var current := queue[head]
 			head += 1
-			for direction in range(NEIGHBORS.size()):
-				var neighbor := _neighbor_index(current, direction, width, height)
+			var current_x := current % width
+			var current_y := current / width
+			for direction in range(8):
+				var nx := current_x + NEIGHBOR_DX[direction]
+				if nx < 0:
+					nx += width
+				elif nx >= width:
+					nx -= width
+				var ny := current_y + NEIGHBOR_DY[direction]
+				if ny < 0:
+					ny = 0
+				elif ny >= height:
+					ny = height - 1
+				var neighbor := ny * width + nx
 				if water_mask[neighbor] == WATER_NONE or visited[neighbor] != 0:
 					continue
 				visited[neighbor] = 1
-				touches_subsea = touches_subsea or original_height[neighbor] < sea_level
-				component.append(neighbor)
+				if original_height[neighbor] < sea_level:
+					touches_subsea = true
+				queue[tail] = neighbor
+				tail += 1
 
 		var water_type := WATER_FRESH
-		if touches_subsea and component.size() >= saltwater_min_cells:
+		if touches_subsea and tail >= saltwater_min_cells:
 			water_type = WATER_SALT
 			salt_components += 1
 		else:
 			fresh_components += 1
 
-		total_water_cells += component.size()
-		largest_component = max(largest_component, component.size())
-		for index in component:
-			water_mask[index] = water_type
+		total_water_cells += tail
+		largest_component = max(largest_component, tail)
+		for queue_index in range(tail):
+			water_mask[queue[queue_index]] = water_type
 
 	return {
 		"water_components": salt_components + fresh_components,
@@ -477,23 +527,29 @@ func _classify_water_components(
 func _build_water_colors(water_mask: PackedByteArray, atmosphere_type: int) -> PackedByteArray:
 	var salt_color := _saltwater_color(atmosphere_type)
 	var fresh_color := _freshwater_color(atmosphere_type)
+	var salt_r := int(salt_color[0])
+	var salt_g := int(salt_color[1])
+	var salt_b := int(salt_color[2])
+	var fresh_r := int(fresh_color[0])
+	var fresh_g := int(fresh_color[1])
+	var fresh_b := int(fresh_color[2])
 	var output := PackedByteArray()
 	output.resize(water_mask.size() * 4)
 	output.fill(0)
 
 	for index in range(water_mask.size()):
-		var color: Array[int]
-		if water_mask[index] == WATER_SALT:
-			color = salt_color
-		elif water_mask[index] == WATER_FRESH:
-			color = fresh_color
-		else:
+		var water_type := int(water_mask[index])
+		if water_type == WATER_NONE:
 			continue
-
 		var offset := index * 4
-		output[offset] = color[0]
-		output[offset + 1] = color[1]
-		output[offset + 2] = color[2]
+		if water_type == WATER_SALT:
+			output[offset] = salt_r
+			output[offset + 1] = salt_g
+			output[offset + 2] = salt_b
+		else:
+			output[offset] = fresh_r
+			output[offset + 1] = fresh_g
+			output[offset + 2] = fresh_b
 		output[offset + 3] = 255
 
 	return output
@@ -591,9 +647,14 @@ func _neighbor_index(index: int, direction: int, width: int, height: int) -> int
 		ny = height - 1
 	return ny * width + nx
 
-func _heap_push(heap: Array[int], priorities: PackedFloat32Array, index: int) -> void:
-	heap.append(index)
-	var position := heap.size() - 1
+func _heap_push_fixed(
+	heap: PackedInt32Array,
+	heap_size: int,
+	priorities: PackedFloat32Array,
+	index: int,
+) -> void:
+	heap[heap_size] = index
+	var position := heap_size
 	while position > 0:
 		var parent := (position - 1) / 2
 		var child_index := heap[position]
@@ -606,21 +667,25 @@ func _heap_push(heap: Array[int], priorities: PackedFloat32Array, index: int) ->
 		heap[position] = parent_index
 		position = parent
 
-func _heap_pop(heap: Array[int], priorities: PackedFloat32Array) -> int:
+func _heap_pop_fixed(
+	heap: PackedInt32Array,
+	heap_size: int,
+	priorities: PackedFloat32Array,
+) -> int:
 	var result := heap[0]
-	var last: int = heap.pop_back()
-	if heap.is_empty():
+	if heap_size <= 1:
 		return result
 
-	heap[0] = last
+	var effective_size := heap_size - 1
+	heap[0] = heap[effective_size]
 	var position := 0
 	while true:
 		var left := position * 2 + 1
-		if left >= heap.size():
+		if left >= effective_size:
 			break
 		var right := left + 1
 		var best := left
-		if right < heap.size():
+		if right < effective_size:
 			var right_index := heap[right]
 			var left_index := heap[left]
 			var right_level := priorities[right_index]

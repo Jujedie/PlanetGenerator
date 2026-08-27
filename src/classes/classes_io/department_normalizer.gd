@@ -10,25 +10,40 @@ extends RefCounted
 ## respecting a soft maximum size.
 
 const INVALID_ID: int = 0xFFFFFFFF
-const CARDINAL: Array[Vector2i] = [
-	Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1),
-]
+const CARDINAL_DX: Array[int] = [-1, 1, 0, 0]
+const CARDINAL_DY: Array[int] = [0, 0, -1, 1]
+
+
+static func build_surface_mask(
+	water_data: PackedByteArray,
+	w: int,
+	h: int,
+	select_water: bool = false,
+) -> Dictionary:
+	# Build the authoritative administrative mask and count active cells in one
+	# pass. This avoids a second full-map count in both land and maritime phases.
+	var pixel_count := w * h
+	var result := PackedByteArray()
+	if water_data.size() != pixel_count:
+		return {"mask": result, "active_cells": 0}
+	result.resize(pixel_count)
+	result.fill(0)
+	var active_cells := 0
+	for index in range(pixel_count):
+		var active: bool = water_data[index] > 0 if select_water else water_data[index] == 0
+		if active:
+			result[index] = 1
+			active_cells += 1
+	return {"mask": result, "active_cells": active_cells}
 
 
 static func build_land_mask(water_data: PackedByteArray,
 		_geo_data: PackedByteArray, w: int, h: int,
 		_sea_level: float) -> PackedByteArray:
-	# The hydrology result is the authoritative surface mask. A dry depression
-	# below sea_level is still solid land and must receive an administrative ID.
-	# Altitude can shape borders/costs, but it must never override water_mask.
-	var pixel_count := w * h
-	var result := PackedByteArray()
-	if water_data.size() != pixel_count:
-		return result
-	result.resize(pixel_count)
-	for index in range(pixel_count):
-		result[index] = 1 if water_data[index] == 0 else 0
-	return result
+	# Compatibility wrapper retained for existing tests/callers. The hydrology
+	# result is the authoritative surface mask; altitude is intentionally ignored.
+	var result: Dictionary = build_surface_mask(water_data, w, h, false)
+	return PackedByteArray(result["mask"])
 
 
 static func normalize(region_data: PackedByteArray,
@@ -41,53 +56,69 @@ static func normalize(region_data: PackedByteArray,
 	if region_data.size() != pixel_count * 4 or land_mask.size() != pixel_count:
 		return {}
 
-	var output := region_data.duplicate()
+	# Decode R32UI once. Repeated PackedByteArray.decode_u32()/encode_u32() in
+	# every flood-fill neighbor was a major CPU tax. PackedInt64Array preserves the
+	# complete uint32 ID domain (except the explicit INVALID_ID sentinel) while
+	# keeping all hot-loop accesses numeric.
+	var region_ids := PackedInt64Array()
+	region_ids.resize(pixel_count)
+	region_ids.fill(-1)
 	var used_ids: Dictionary = {}
 	var next_id := pixel_count
 	var removed_non_land := 0
-	var assigned_queue: Array[int] = []
+	# One packed queue is reused by all flood-fills. This removes repeated
+	# Array[int] allocations and Variant boxing from administrative hot paths.
+	var queue := PackedInt32Array()
+	queue.resize(pixel_count)
+	var assigned_tail := 0
 	for index in range(pixel_count):
-		var region_id := int(output.decode_u32(index * 4))
+		var region_id := int(region_data.decode_u32(index * 4))
 		if land_mask[index] == 0:
 			if region_id != INVALID_ID:
 				removed_non_land += 1
-			output.encode_u32(index * 4, INVALID_ID)
 			continue
 		if region_id != INVALID_ID:
+			region_ids[index] = region_id
 			used_ids[region_id] = true
 			next_id = maxi(next_id, region_id + 1)
-			assigned_queue.append(index)
+			queue[assigned_tail] = index
+			assigned_tail += 1
 
 	# Extend existing departments only into genuinely unassigned land.  This is
 	# a multi-source, four-connected flood: it cannot jump water and its X
 	# neighbors cross the equirectangular seam.
 	var filled_land := 0
 	var head := 0
-	while head < assigned_queue.size():
-		var current := assigned_queue[head]
+	while head < assigned_tail:
+		var current := queue[head]
 		head += 1
-		var current_id := int(output.decode_u32(current * 4))
+		var current_id := int(region_ids[current])
 		var x := current % w
 		var y := int(current / w)
-		for offset in CARDINAL:
-			var ny := y + offset.y
+		for direction in range(4):
+			var ny := y + CARDINAL_DY[direction]
 			if ny < 0 or ny >= h:
 				continue
-			var nx := posmod(x + offset.x, w)
+			var nx := x + CARDINAL_DX[direction]
+			if nx < 0:
+				nx += w
+			elif nx >= w:
+				nx -= w
 			var neighbor := ny * w + nx
 			if land_mask[neighbor] == 0:
 				continue
-			if int(output.decode_u32(neighbor * 4)) != INVALID_ID:
+			if region_ids[neighbor] >= 0:
 				continue
-			output.encode_u32(neighbor * 4, current_id)
+			region_ids[neighbor] = current_id
 			filled_land += 1
-			assigned_queue.append(neighbor)
+			queue[assigned_tail] = neighbor
+			assigned_tail += 1
 
 	# A connected island with no seed becomes one department, rather than a
 	# field of unrelated local-minimum seeds.
 	var seedless_components := 0
 	for start in range(pixel_count):
-		if land_mask[start] == 0 or int(output.decode_u32(start * 4)) != INVALID_ID:
+		if land_mask[start] == 0 or region_ids[start] >= 0:
 			continue
 		while used_ids.has(next_id):
 			next_id += 1
@@ -95,27 +126,33 @@ static func normalize(region_data: PackedByteArray,
 		next_id += 1
 		used_ids[component_id] = true
 		seedless_components += 1
-		var frontier: Array[int] = [start]
-		output.encode_u32(start * 4, component_id)
 		head = 0
-		while head < frontier.size():
-			var current := frontier[head]
+		var tail := 1
+		queue[0] = start
+		region_ids[start] = component_id
+		while head < tail:
+			var current := queue[head]
 			head += 1
 			var x := current % w
 			var y := int(current / w)
-			for offset in CARDINAL:
-				var ny := y + offset.y
+			for direction in range(4):
+				var ny := y + CARDINAL_DY[direction]
 				if ny < 0 or ny >= h:
 					continue
-				var nx := posmod(x + offset.x, w)
+				var nx := x + CARDINAL_DX[direction]
+				if nx < 0:
+					nx += w
+				elif nx >= w:
+					nx -= w
 				var neighbor := ny * w + nx
 				if land_mask[neighbor] == 0:
 					continue
-				if int(output.decode_u32(neighbor * 4)) != INVALID_ID:
+				if region_ids[neighbor] >= 0:
 					continue
-				output.encode_u32(neighbor * 4, component_id)
+				region_ids[neighbor] = component_id
 				filled_land += 1
-				frontier.append(neighbor)
+				queue[tail] = neighbor
+				tail += 1
 
 	# Label each connected use of an ID separately.  This both recognizes
 	# seamless departments crossing X=0 and splits accidental disconnected IDs.
@@ -135,8 +172,8 @@ static func normalize(region_data: PackedByteArray,
 	for start in range(pixel_count):
 		if land_mask[start] == 0 or pixel_component[start] != -1:
 			continue
-		var raw_id := int(output.decode_u32(start * 4))
-		if raw_id == INVALID_ID:
+		var raw_id := int(region_ids[start])
+		if raw_id < 0:
 			continue
 		var effective_id := raw_id
 		if completed_ids.has(raw_id):
@@ -150,17 +187,18 @@ static func normalize(region_data: PackedByteArray,
 			completed_ids[raw_id] = true
 
 		var component_index := component_ids.size()
-		var frontier: Array[int] = [start]
-		pixel_component[start] = component_index
 		head = 0
+		var tail := 1
+		queue[0] = start
+		pixel_component[start] = component_index
 		var area := 0
 		var min_y := h
 		var max_y := -1
 		var sum_y := 0.0
 		var sum_cos := 0.0
 		var sum_sin := 0.0
-		while head < frontier.size():
-			var current := frontier[head]
+		while head < tail:
+			var current := queue[head]
 			head += 1
 			var x := current % w
 			var y := int(current / w)
@@ -171,18 +209,23 @@ static func normalize(region_data: PackedByteArray,
 			var angle := TAU * (float(x) + 0.5) / float(maxi(w, 1))
 			sum_cos += cos(angle)
 			sum_sin += sin(angle)
-			for offset in CARDINAL:
-				var ny := y + offset.y
+			for direction in range(4):
+				var ny := y + CARDINAL_DY[direction]
 				if ny < 0 or ny >= h:
 					continue
-				var nx := posmod(x + offset.x, w)
+				var nx := x + CARDINAL_DX[direction]
+				if nx < 0:
+					nx += w
+				elif nx >= w:
+					nx -= w
 				var neighbor := ny * w + nx
 				if pixel_component[neighbor] != -1:
 					continue
-				if int(output.decode_u32(neighbor * 4)) != raw_id:
+				if int(region_ids[neighbor]) != raw_id:
 					continue
 				pixel_component[neighbor] = component_index
-				frontier.append(neighbor)
+				queue[tail] = neighbor
+				tail += 1
 
 		component_ids.append(effective_id)
 		component_areas.append(area)
@@ -194,8 +237,12 @@ static func normalize(region_data: PackedByteArray,
 
 	var component_count := component_ids.size()
 	if component_count == 0:
+		var empty_output := PackedByteArray()
+		empty_output.resize(pixel_count * 4)
+		for index in range(pixel_count):
+			empty_output.encode_u32(index * 4, INVALID_ID)
 		return {
-			"data": output,
+			"data": empty_output,
 			"removed_non_land": removed_non_land,
 			"filled_land": filled_land,
 			"seedless_components": seedless_components,
@@ -335,8 +382,15 @@ static func normalize(region_data: PackedByteArray,
 				discarded_roots[component] = true
 				discarded_cells += areas[component]
 
-	# Retain the target root's stable ID.  All cells in a merged department are
-	# rewritten, so subsequent adjacency and hierarchy scans see one component.
+	# The decoded raw IDs and flood queue are no longer needed. Release them
+	# before allocating the encoded R32UI result to keep the peak bounded.
+	region_ids = PackedInt64Array()
+	queue = PackedInt32Array()
+	var output := PackedByteArray()
+	output.resize(pixel_count * 4)
+
+	# Retain the target root's stable ID. All cells in a merged department are
+	# encoded once, so subsequent adjacency and hierarchy scans see one component.
 	for index in range(pixel_count):
 		if land_mask[index] == 0:
 			output.encode_u32(index * 4, INVALID_ID)

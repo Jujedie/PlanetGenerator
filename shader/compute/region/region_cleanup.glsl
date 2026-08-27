@@ -24,8 +24,8 @@ layout(set = 0, binding = 1, r32ui) uniform readonly uimage2D region_map_in;
 layout(set = 0, binding = 2, r32ui) uniform writeonly uimage2D region_map_out;
 layout(set = 0, binding = 3, r32f) uniform writeonly image2D region_cost_out;
 
-// === SET 1 : PARAMÈTRES ===
-layout(set = 1, binding = 0, std140) uniform CleanupParams {
+// === PUSH CONSTANTS : PARAMÈTRES ===
+layout(push_constant, std430) uniform CleanupParams {
     uint width;
     uint height;
     uint seed;

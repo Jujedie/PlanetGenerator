@@ -2781,14 +2781,15 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	# couverture topologique de la projection.
 	var max_dim = max(w, h)
 	var water_mask_data := gpu.readback_texture_raw("water_mask")
-	var geo_data := gpu.readback_texture_raw("geo")
 	# Un même prédicat de terre pilote le comptage, les shaders et la
-	# normalisation : le masque hydrologique final fait foi. Une dépression sèche
-	# reste administrative même si son altitude est sous sea_level.
-	var land_mask := DepartmentNormalizer.build_land_mask(
-		water_mask_data, geo_data, w, h, sea_level
+	# normalisation : le masque hydrologique final fait foi. `geo` n'est plus lu
+	# ici : build_land_mask ignorait déjà l'altitude, donc ce readback RGBA32F
+	# (16 octets/pixel) était entièrement inutile.
+	var land_mask_result: Dictionary = DepartmentNormalizer.build_surface_mask(
+		water_mask_data, w, h, false
 	)
-	var actual_land_cells := _count_mask_value(land_mask, 1)
+	var land_mask: PackedByteArray = PackedByteArray(land_mask_result["mask"])
+	var actual_land_cells := int(land_mask_result["active_cells"])
 	# "nb_cases_regions" contrôle la surface locale visible d'un département.
 	# Il ne doit pas être réinterprété comme un nombre global de graines : avec
 	# une valeur de 15, une zone doit couvrir environ 15 cases de terre, quelle
@@ -2858,11 +2859,20 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# === PASSE 2 : CROISSANCE LOCALE MASQUÉE ===
 	print("  • Croissance organique connexe (", region_iterations, " passes)...")
+	# Only two texture layouts exist (ping/pong). Reuse both uniform sets for all
+	# passes instead of allocating one RenderingDevice set per iteration.
+	var region_growth_sets: Array[RID] = [
+		_create_region_growth_texture_set(false),
+		_create_region_growth_texture_set(true),
+	]
 	for pass_idx in range(region_iterations):
 		var use_swap = (pass_idx % 2 == 1)
+		var growth_set: RID = region_growth_sets[1 if use_swap else 0]
 		_dispatch_region_growth(w, h, groups_x, groups_y, 1, seed_val,
 			sea_level, river_threshold, cost_flat, cost_uphill, cost_river,
-			noise_strength, mean_department_spacing_px, use_swap)
+			noise_strength, mean_department_spacing_px, growth_set)
+	for growth_uniform_set in region_growth_sets:
+		gpu.release_rid(growth_uniform_set)
 	
 	# Si nombre impair de passes, copier le résultat vers la texture principale
 	if region_iterations % 2 == 1:
@@ -2872,11 +2882,18 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  • Nettoyage final (sécurité)...")
 	# Propagation strictement 4-connexe : aucun saut au-dessus du masque.
 	var cleanup_passes = maxi(4, ceili(mean_department_spacing_px))
+	var region_cleanup_sets: Array[RID] = [
+		_create_region_cleanup_texture_set(false),
+		_create_region_cleanup_texture_set(true),
+	]
 	for cleanup_pass in range(cleanup_passes):
 		var use_swap = ((region_iterations + cleanup_pass) % 2 == 1)
+		var cleanup_set: RID = region_cleanup_sets[1 if use_swap else 0]
 		_dispatch_region_cleanup(
-			w, h, groups_x, groups_y, seed_val, sea_level, use_swap
+			w, h, groups_x, groups_y, seed_val, sea_level, cleanup_set
 		)
+	for cleanup_uniform_set in region_cleanup_sets:
+		gpu.release_rid(cleanup_uniform_set)
 	
 	# Si nombre impair de passes totales, copier le résultat
 	if (region_iterations + cleanup_passes) % 2 == 1:
@@ -2884,13 +2901,18 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	# Une normalisation topologique absorbe les résidus trop petits dans leur
 	# meilleur voisin réel. Elle utilise la même couture X et ne fusionne jamais
 	# deux masses terrestres séparées par l'eau.
+	var region_readback_start_usec := Time.get_ticks_usec()
+	var region_map_data := gpu.readback_texture_raw("region_map")
+	var region_readback_ms := float(Time.get_ticks_usec() - region_readback_start_usec) / 1000.0
+	var normalization_start_usec := Time.get_ticks_usec()
 	var normalization := DepartmentNormalizer.normalize(
-		gpu.readback_texture_raw("region_map"), land_mask, w, h,
-		target_department_cells, minimum_department_ratio,
-		maximum_department_ratio
+		region_map_data, land_mask, w, h, target_department_cells,
+		minimum_department_ratio, maximum_department_ratio
 	)
+	var normalization_ms := float(Time.get_ticks_usec() - normalization_start_usec) / 1000.0
+	var normalized_data: PackedByteArray = region_map_data
 	if not normalization.is_empty():
-		var normalized_data: PackedByteArray = normalization["data"]
+		normalized_data = PackedByteArray(normalization["data"])
 		rd.texture_update(gpu.textures["region_map"], 0, normalized_data)
 		print(
 			"  • Normalisation départements : ", normalization["merged_components"],
@@ -2904,8 +2926,17 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	# === PASSE 3 : FINALISATION ET COLORATION ===
 	print("  • Finalisation et coloration...")
 	_dispatch_region_finalize(w, h, groups_x, groups_y, seed_val, sea_level)
-	var department_stats := _measure_partition_sizes(
-		"region_map", target_department_cells
+	# Keep phase timing honest without downloading region_map a second time. The
+	# normalized bytes above are already the authoritative IDs used by finalize.
+	gpu.sync_for_cpu("land_region_finalize")
+	var department_stats := _measure_partition_sizes_from_data(
+		normalized_data, target_department_cells
+	)
+	department_stats["region_readback_ms"] = region_readback_ms
+	department_stats["normalization_ms"] = normalization_ms
+	print(
+		"    [Administration timing] readback=", snappedf(region_readback_ms, 0.01),
+		" ms | normalization=", snappedf(normalization_ms, 0.01), " ms"
 	)
 	for key in normalization.keys():
 		if key != "data":
@@ -2915,15 +2946,10 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	print("[Orchestrator] ✅ Phase 4 : Régions terminées")
 
-func _count_mask_value(mask_data: PackedByteArray, expected: int) -> int:
-	var count := 0
-	for value in mask_data:
-		if value == expected:
-			count += 1
-	return count
-
-func _measure_partition_sizes(texture_name: String, target_cells: float) -> Dictionary:
-	var raw := gpu.readback_texture_raw(texture_name)
+func _measure_partition_sizes_from_data(
+	raw: PackedByteArray,
+	target_cells: float,
+) -> Dictionary:
 	var counts: Dictionary = {}
 	for offset in range(0, raw.size(), 4):
 		var region_id := raw.decode_u32(offset)
@@ -3047,14 +3073,9 @@ func _dispatch_region_seed_placement(w: int, h: int, groups_x: int,
 	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de croissance des régions (Dijkstra-like)
-func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int,
-		pass_idx: int, seed_val: int, sea_level: float, river_threshold: float,
-		cost_flat: float, cost_uphill: float, cost_river: float,
-		noise_strength: float, mean_spacing_px: float, use_swap: bool) -> void:
+func _create_region_growth_texture_set(use_swap: bool) -> RID:
 	if not gpu.shaders.has("region_growth") or not gpu.shaders["region_growth"].is_valid():
-		push_warning("[Orchestrator] ⚠️ region_growth shader non disponible")
-		return
-	
+		return RID()
 	# Textures ping-pong (comme pour les régions océaniques)
 	var map_in: RID = gpu.textures["region_map"] if not use_swap else gpu.textures["region_map_temp"]
 	var map_out: RID = gpu.textures["region_map_temp"] if not use_swap else gpu.textures["region_map"]
@@ -3097,9 +3118,20 @@ func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int,
 	# region_cost_out (binding 6) - écriture
 	tex_uniforms.append(gpu.create_texture_uniform(6, cost_out))
 	
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["region_growth"], 0)
-	
-	# UBO paramètres (48 bytes, std140)
+	return rd.uniform_set_create(tex_uniforms, gpu.shaders["region_growth"], 0)
+
+func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int,
+		pass_idx: int, seed_val: int, sea_level: float, river_threshold: float,
+		cost_flat: float, cost_uphill: float, cost_river: float,
+		noise_strength: float, mean_spacing_px: float, tex_set: RID) -> void:
+	if not gpu.shaders.has("region_growth") or not gpu.shaders["region_growth"].is_valid():
+		push_warning("[Orchestrator] ⚠️ region_growth shader non disponible")
+		return
+
+	if not tex_set.is_valid():
+		return
+
+	Push constants (48 bytes): avoid a transient UBO + uniform set per growth pass.
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(48)
 	buffer_bytes.encode_u32(0, w)
@@ -3115,25 +3147,15 @@ func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int,
 	buffer_bytes.encode_float(40, mean_spacing_px)
 	buffer_bytes.encode_float(44, 0.0)  # padding
 	
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["region_growth"], 1)
-	
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["region_growth"])
 	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_set_push_constant(compute_list, buffer_bytes, buffer_bytes.size())
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
 	gpu.submit_gpu_work()
 	
-	gpu.release_rid(param_set)
-	gpu.release_rid(param_buffer)
-	gpu.release_rid(tex_set)
 
 ## Copie les textures de région du buffer temp vers le buffer principal
 func _copy_region_textures(w: int, h: int) -> void:
@@ -3143,13 +3165,9 @@ func _copy_region_textures(w: int, h: int) -> void:
 	_copy_texture(gpu.textures["region_cost_temp"], gpu.textures["region_cost"], w, h)
 
 ## Dispatch le shader de nettoyage final des régions (assigne toute terre restante)
-func _dispatch_region_cleanup(w: int, h: int, groups_x: int,
-		groups_y: int, seed_val: int, sea_level: float,
-		use_swap: bool) -> void:
+func _create_region_cleanup_texture_set(use_swap: bool) -> RID:
 	if not gpu.shaders.has("region_cleanup") or not gpu.shaders["region_cleanup"].is_valid():
-		push_warning("[Orchestrator] ⚠️ region_cleanup shader non disponible")
-		return
-	
+		return RID()
 	# Choisir les textures source/destination selon le ping-pong
 	var src_map: RID = gpu.textures["region_map"] if not use_swap else gpu.textures["region_map_temp"]
 	var dst_map: RID = gpu.textures["region_map_temp"] if not use_swap else gpu.textures["region_map"]
@@ -3182,9 +3200,19 @@ func _dispatch_region_cleanup(w: int, h: int, groups_x: int,
 	# region_cost_out (R32F)
 	tex_uniforms.append(gpu.create_texture_uniform(3, dst_cost))
 	
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["region_cleanup"], 0)
-	
-	# UBO paramètres (16 bytes, std140)
+	return rd.uniform_set_create(tex_uniforms, gpu.shaders["region_cleanup"], 0)
+
+func _dispatch_region_cleanup(w: int, h: int, groups_x: int,
+		groups_y: int, seed_val: int, sea_level: float,
+		tex_set: RID) -> void:
+	if not gpu.shaders.has("region_cleanup") or not gpu.shaders["region_cleanup"].is_valid():
+		push_warning("[Orchestrator] ⚠️ region_cleanup shader non disponible")
+		return
+
+	if not tex_set.is_valid():
+		return
+
+	Push constants (16 bytes): avoid per-pass parameter RIDs.
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(16)
 	buffer_bytes.encode_u32(0, w)
@@ -3192,26 +3220,16 @@ func _dispatch_region_cleanup(w: int, h: int, groups_x: int,
 	buffer_bytes.encode_u32(8, seed_val)
 	buffer_bytes.encode_float(12, sea_level)
 	
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["region_cleanup"], 1)
-	
 	# Dispatch
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["region_cleanup"])
 	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_set_push_constant(compute_list, buffer_bytes, buffer_bytes.size())
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
 	gpu.submit_gpu_work()
 	
-	gpu.release_rid(param_set)
-	gpu.release_rid(param_buffer)
-	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de finalisation des régions (coloration)
 func _dispatch_region_finalize(w: int, h: int, groups_x: int,
@@ -3301,11 +3319,11 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	# la TAILLE MOYENNE CIBLE d'un département maritime en pixels, et non un
 	# nombre global de régions transformé ensuite selon la surface de la planète.
 	var water_mask_data := gpu.readback_texture_raw("water_mask")
-	var water_department_mask := PackedByteArray()
-	water_department_mask.resize(w * h)
-	for index in range(w * h):
-		water_department_mask[index] = 1 if water_mask_data[index] > 0 else 0
-	var actual_water_cells := _count_mask_value(water_department_mask, 1)
+	var water_mask_result: Dictionary = DepartmentNormalizer.build_surface_mask(
+		water_mask_data, w, h, true
+	)
+	var water_department_mask: PackedByteArray = PackedByteArray(water_mask_result["mask"])
+	var actual_water_cells := int(water_mask_result["active_cells"])
 	if actual_water_cells <= 0:
 		print("  • Aucune cellule d'eau : phase maritime ignorée")
 		return
@@ -3368,11 +3386,18 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# === PASSE 2 : CROISSANCE ITÉRATIVE ===
 	print("  • Croissance des départements maritimes (", ocean_iterations, " passes)...")
+	var ocean_growth_sets: Array[RID] = [
+		_create_ocean_region_growth_texture_set(false),
+		_create_ocean_region_growth_texture_set(true),
+	]
 	for pass_idx in range(ocean_iterations):
 		var use_swap = (pass_idx % 2 == 1)
+		var growth_set: RID = ocean_growth_sets[1 if use_swap else 0]
 		_dispatch_ocean_region_growth(w, h, groups_x, groups_y, pass_idx,
 			seed_val, sea_level, cost_flat, cost_deeper, noise_strength,
-			mean_department_spacing_px, use_swap)
+			mean_department_spacing_px, growth_set)
+	for growth_uniform_set in ocean_growth_sets:
+		gpu.release_rid(growth_uniform_set)
 	
 	if ocean_iterations % 2 == 1:
 		_copy_ocean_region_textures(w, h)
@@ -3380,9 +3405,16 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	# === PASSE 2.5 : NETTOYAGE FINAL ===
 	print("  • Nettoyage final (couverture complète)...")
 	var cleanup_passes = maxi(4, ceili(mean_department_spacing_px))
+	var ocean_cleanup_sets: Array[RID] = [
+		_create_ocean_region_cleanup_texture_set(false),
+		_create_ocean_region_cleanup_texture_set(true),
+	]
 	for cleanup_pass in range(cleanup_passes):
 		var use_swap = ((ocean_iterations + cleanup_pass) % 2 == 1)
-		_dispatch_ocean_region_cleanup(w, h, groups_x, groups_y, seed_val, use_swap)
+		var cleanup_set: RID = ocean_cleanup_sets[1 if use_swap else 0]
+		_dispatch_ocean_region_cleanup(w, h, groups_x, groups_y, seed_val, cleanup_set)
+	for cleanup_uniform_set in ocean_cleanup_sets:
+		gpu.release_rid(cleanup_uniform_set)
 	
 	if (ocean_iterations + cleanup_passes) % 2 == 1:
 		_copy_ocean_region_textures(w, h)
@@ -3390,14 +3422,18 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	# Appliquer le même contrôle de taille qu'aux départements terrestres.
 	# Important : on ne supprime plus les petites composantes isolées. Toutes les
 	# cellules d'eau doivent conserver une administration maritime.
+	var ocean_readback_start_usec := Time.get_ticks_usec()
+	var ocean_region_data := gpu.readback_texture_raw("ocean_region_map")
+	var ocean_readback_ms := float(Time.get_ticks_usec() - ocean_readback_start_usec) / 1000.0
+	var normalization_start_usec := Time.get_ticks_usec()
 	var normalization := DepartmentNormalizer.normalize(
-		gpu.readback_texture_raw("ocean_region_map"), water_department_mask, w, h,
-		target_department_cells, minimum_department_ratio,
-		maximum_department_ratio, false, true
+		ocean_region_data, water_department_mask, w, h, target_department_cells,
+		minimum_department_ratio, maximum_department_ratio, false, true
 	)
-	var normalized_data: PackedByteArray = gpu.readback_texture_raw("ocean_region_map")
+	var normalization_ms := float(Time.get_ticks_usec() - normalization_start_usec) / 1000.0
+	var normalized_data: PackedByteArray = ocean_region_data
 	if not normalization.is_empty():
-		normalized_data = normalization["data"]
+		normalized_data = PackedByteArray(normalization["data"])
 
 	# IMPORTANT : ne jamais regrouper à distance plusieurs composantes d'eau
 	# isolées sous un même ID. Le précédent correctif de couverture faisait cela
@@ -3428,8 +3464,17 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	# ne doit jamais représenter plusieurs composantes disjointes. Les seules zones
 	# autorisées sous le minimum sont les composantes aquatiques isolées qui sont
 	# elles-mêmes physiquement plus petites que ce minimum.
-	var department_stats := _measure_partition_sizes(
-		"ocean_region_map", target_department_cells
+	# Region IDs are already available in normalized_data; avoid another
+	# ocean_region_map download solely for statistics. Final coloration remains
+	# queued exactly as before and is synchronized by the next real dependency.
+	var department_stats := _measure_partition_sizes_from_data(
+		normalized_data, target_department_cells
+	)
+	department_stats["region_readback_ms"] = ocean_readback_ms
+	department_stats["normalization_ms"] = normalization_ms
+	print(
+		"    [Administration timing] readback=", snappedf(ocean_readback_ms, 0.01),
+		" ms | normalization=", snappedf(normalization_ms, 0.01), " ms"
 	)
 	for key in normalization.keys():
 		if key != "data":
@@ -3513,14 +3558,9 @@ func _dispatch_ocean_region_seed_placement(w: int, h: int, groups_x: int,
 	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de croissance des régions océaniques
-func _dispatch_ocean_region_growth(w: int, h: int, groups_x: int,
-		groups_y: int, pass_idx: int, seed_val: int, sea_level: float,
-		cost_flat: float, cost_deeper: float, noise_strength: float,
-		mean_spacing_px: float, use_swap: bool) -> void:
+func _create_ocean_region_growth_texture_set(use_swap: bool) -> RID:
 	if not gpu.shaders.has("ocean_region_growth") or not gpu.shaders["ocean_region_growth"].is_valid():
-		push_warning("[Orchestrator] ⚠️ ocean_region_growth shader non disponible")
-		return
-	
+		return RID()
 	var src_map: RID = gpu.textures["ocean_region_map"] if not use_swap else gpu.textures["ocean_region_map_temp"]
 	var src_cost: RID = gpu.textures["ocean_region_cost"] if not use_swap else gpu.textures["ocean_region_cost_temp"]
 	var dst_map: RID = gpu.textures["ocean_region_map_temp"] if not use_swap else gpu.textures["ocean_region_map"]
@@ -3551,8 +3591,20 @@ func _dispatch_ocean_region_growth(w: int, h: int, groups_x: int,
 	
 	tex_uniforms.append(gpu.create_texture_uniform(5, dst_cost))
 	
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["ocean_region_growth"], 0)
-	
+	return rd.uniform_set_create(tex_uniforms, gpu.shaders["ocean_region_growth"], 0)
+
+func _dispatch_ocean_region_growth(w: int, h: int, groups_x: int,
+		groups_y: int, pass_idx: int, seed_val: int, sea_level: float,
+		cost_flat: float, cost_deeper: float, noise_strength: float,
+		mean_spacing_px: float, tex_set: RID) -> void:
+	if not gpu.shaders.has("ocean_region_growth") or not gpu.shaders["ocean_region_growth"].is_valid():
+		push_warning("[Orchestrator] ⚠️ ocean_region_growth shader non disponible")
+		return
+
+	if not tex_set.is_valid():
+		return
+
+	# Push constants (48 bytes): avoid a transient UBO + uniform set per growth pass.
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(48)
 	buffer_bytes.encode_u32(0, w)
@@ -3568,25 +3620,15 @@ func _dispatch_ocean_region_growth(w: int, h: int, groups_x: int,
 	buffer_bytes.encode_float(40, 0.0)
 	buffer_bytes.encode_float(44, 0.0)
 	
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["ocean_region_growth"], 1)
-	
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["ocean_region_growth"])
 	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_set_push_constant(compute_list, buffer_bytes, buffer_bytes.size())
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
 	gpu.submit_gpu_work()
 	
-	gpu.release_rid(param_set)
-	gpu.release_rid(param_buffer)
-	gpu.release_rid(tex_set)
 
 ## Copie les textures océaniques du buffer temp vers le buffer principal
 func _copy_ocean_region_textures(w: int, h: int) -> void:
@@ -3594,11 +3636,9 @@ func _copy_ocean_region_textures(w: int, h: int) -> void:
 	_copy_texture(gpu.textures["ocean_region_cost_temp"], gpu.textures["ocean_region_cost"], w, h)
 
 ## Dispatch le shader de nettoyage des régions océaniques
-func _dispatch_ocean_region_cleanup(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, use_swap: bool) -> void:
+func _create_ocean_region_cleanup_texture_set(use_swap: bool) -> RID:
 	if not gpu.shaders.has("ocean_region_cleanup") or not gpu.shaders["ocean_region_cleanup"].is_valid():
-		push_warning("[Orchestrator] ⚠️ ocean_region_cleanup shader non disponible")
-		return
-	
+		return RID()
 	var src_map: RID = gpu.textures["ocean_region_map"] if not use_swap else gpu.textures["ocean_region_map_temp"]
 	var dst_map: RID = gpu.textures["ocean_region_map_temp"] if not use_swap else gpu.textures["ocean_region_map"]
 	var dst_cost: RID = gpu.textures["ocean_region_cost_temp"] if not use_swap else gpu.textures["ocean_region_cost"]
@@ -3625,8 +3665,17 @@ func _dispatch_ocean_region_cleanup(w: int, h: int, groups_x: int, groups_y: int
 	
 	tex_uniforms.append(gpu.create_texture_uniform(3, dst_cost))
 	
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["ocean_region_cleanup"], 0)
-	
+	return rd.uniform_set_create(tex_uniforms, gpu.shaders["ocean_region_cleanup"], 0)
+
+func _dispatch_ocean_region_cleanup(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, tex_set: RID) -> void:
+	if not gpu.shaders.has("ocean_region_cleanup") or not gpu.shaders["ocean_region_cleanup"].is_valid():
+		push_warning("[Orchestrator] ⚠️ ocean_region_cleanup shader non disponible")
+		return
+
+	if not tex_set.is_valid():
+		return
+
+	# Push constants (16 bytes): avoid per-pass parameter RIDs.
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(16)
 	buffer_bytes.encode_u32(0, w)
@@ -3634,25 +3683,15 @@ func _dispatch_ocean_region_cleanup(w: int, h: int, groups_x: int, groups_y: int
 	buffer_bytes.encode_u32(8, seed_val)
 	buffer_bytes.encode_u32(12, 0)
 	
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["ocean_region_cleanup"], 1)
-	
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["ocean_region_cleanup"])
 	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_set_push_constant(compute_list, buffer_bytes, buffer_bytes.size())
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
 	gpu.submit_gpu_work()
 	
-	gpu.release_rid(param_set)
-	gpu.release_rid(param_buffer)
-	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de finalisation des régions océaniques (coloration)
 func _dispatch_ocean_region_finalize(w: int, h: int, groups_x: int, groups_y: int, seed_val: int) -> void:

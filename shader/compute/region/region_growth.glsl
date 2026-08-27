@@ -32,8 +32,8 @@ layout(set = 0, binding = 4, r32f) uniform readonly image2D region_cost_in;
 layout(set = 0, binding = 5, r32ui) uniform writeonly uimage2D region_map_out;
 layout(set = 0, binding = 6, r32f) uniform writeonly image2D region_cost_out;
 
-// === SET 1 : PARAMÈTRES ===
-layout(set = 1, binding = 0, std140) uniform GrowthParams {
+// === PUSH CONSTANTS : PARAMÈTRES ===
+layout(push_constant, std430) uniform GrowthParams {
     uint width;
     uint height;
     uint step_size;            // Taille du pas JFA (commence grand, diminue par 2)
