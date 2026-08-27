@@ -1,0 +1,46 @@
+name: Planet Generator M8 Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Setup Godot
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.7.2
+          use-dotnet: false
+          include-templates: false
+
+      - name: Godot version
+        run: godot --version
+
+      - name: Run M8/M8.1 regression suite
+        run: |
+          python tools/run_m8_regression_suite.py "$(which godot)" --headless
+
+      - name: Upload regression report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m8-regression-report
+          path: |
+            m8_regression_report.json
+            *.log
+          if-no-files-found: ignore
