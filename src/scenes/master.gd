@@ -39,6 +39,7 @@ var _viewer_map_frame: Control
 var _viewer_map_texture: TextureRect
 var _viewer_empty_label: Label
 var _viewer_help_label: Label
+var _viewer_shortcut_label: Label
 var _viewer_base_title_label: Label
 var _viewer_overlay_title_label: Label
 var _viewer_overlay_percent_label: Label
@@ -134,7 +135,7 @@ func _ready() -> void:
 	_setup_batch_runner()
 	_setup_reference_viewer_workspace()
 	maj_labels()
-	_show_viewer_workspace()
+	_show_parameters_workspace()
 
 
 func _setup_parameter_workspace() -> void:
@@ -183,6 +184,7 @@ func _setup_reference_viewer_workspace() -> void:
 	_viewer_save_action = _viewer_workspace.save_button
 	_viewer_panel = _viewer_workspace.viewer_panel
 	_viewer_title_label = _viewer_workspace.viewer_title_label
+	_viewer_shortcut_label = _viewer_workspace.shortcut_label
 	_viewer_base_title_label = _viewer_workspace.base_title_label
 	_viewer_base_select = _viewer_workspace.base_select
 	_viewer_overlay_title_label = _viewer_workspace.overlay_title_label
@@ -268,6 +270,8 @@ func _refresh_advanced_viewer_translation() -> void:
 	_viewer_overlay_alpha.tooltip_text = "%s: %d%%" % [tr("MAP_VIEWER_OVERLAY_OPACITY"), int(round(_viewer_overlay_alpha.value * 100.0))]
 	if _viewer_empty_label != null:
 		_viewer_empty_label.text = "%s\n%s" % [tr("VIEWER_EMPTY_TITLE"), tr("VIEWER_EMPTY_HINT")]
+	if _viewer_shortcut_label != null:
+		_viewer_shortcut_label.text = tr("MAP_VIEWER_SHORTCUTS")
 	if _viewer_help_label != null:
 		_viewer_help_label.text = tr("VIEWER_HELP")
 	if _viewer_parameters_button != null:
@@ -890,6 +894,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	var key_event: InputEventKey = event as InputEventKey
 	if key_event == null or not key_event.pressed or key_event.echo:
 		return
+	var viewer_visible: bool = _viewer_workspace != null and _viewer_workspace.visible
+	var parameters_visible: bool = _parameter_workspace != null and _parameter_workspace.visible
 	match key_event.keycode:
 		KEY_V:
 			if _viewer_workspace != null and _viewer_workspace.visible:
@@ -901,12 +907,18 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			if _parameter_workspace != null and _parameter_workspace.visible:
 				_parameter_workspace.toggle_batch_panel()
 				get_viewport().set_input_as_handled()
-		KEY_LEFT:
-			if _viewer_workspace != null and _viewer_workspace.visible:
+		KEY_LEFT, KEY_Q, KEY_A:
+			if viewer_visible and key_event.shift_pressed:
+				_cycle_viewer_overlay(-1)
+				get_viewport().set_input_as_handled()
+			elif viewer_visible or parameters_visible:
 				_cycle_viewer_base(-1)
 				get_viewport().set_input_as_handled()
-		KEY_RIGHT:
-			if _viewer_workspace != null and _viewer_workspace.visible:
+		KEY_RIGHT, KEY_D:
+			if viewer_visible and key_event.shift_pressed:
+				_cycle_viewer_overlay(1)
+				get_viewport().set_input_as_handled()
+			elif viewer_visible or parameters_visible:
 				_cycle_viewer_base(1)
 				get_viewport().set_input_as_handled()
 		KEY_0:
@@ -926,6 +938,15 @@ func _cycle_viewer_base(direction: int) -> void:
 	var next_index: int = posmod(current_index + direction, _viewer_base_select.item_count)
 	_viewer_base_select.select(next_index)
 	_on_viewer_base_selected(next_index)
+
+
+func _cycle_viewer_overlay(direction: int) -> void:
+	if _viewer_overlay_select == null or _viewer_overlay_select.item_count <= 0:
+		return
+	var current_index: int = maxi(_viewer_overlay_select.selected, 0)
+	var next_index: int = posmod(current_index + direction, _viewer_overlay_select.item_count)
+	_viewer_overlay_select.select(next_index)
+	_on_viewer_overlay_selected(next_index)
 
 
 # ============================================================================

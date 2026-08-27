@@ -29,6 +29,7 @@ var load_button: Button
 var save_button: Button
 var viewer_panel: PanelContainer
 var viewer_title_label: Label
+var shortcut_label: Label
 var base_title_label: Label
 var base_select: OptionButton
 var overlay_title_label: Label
@@ -289,6 +290,12 @@ func _build_interface() -> void:
 	viewer_title_label.add_theme_color_override("font_color", UI_AMBER)
 	viewer_title_label.add_theme_font_size_override("font_size", 21)
 	viewer_box.add_child(viewer_title_label)
+	shortcut_label = Label.new()
+	shortcut_label.name = "ShortcutLabel"
+	shortcut_label.add_theme_color_override("font_color", UI_AMBER)
+	shortcut_label.add_theme_font_size_override("font_size", 16)
+	shortcut_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	viewer_box.add_child(shortcut_label)
 	# Map selectors get a dedicated full-width row. The exported map catalogue
 	# can contain dozens of layers/resources, so keeping them in narrow 290 px
 	# columns made the PopupMenu unnecessarily difficult to use.
@@ -375,7 +382,7 @@ func _layout_interface() -> void:
 	var margin := 22.0
 	var header_height := 88.0
 	var narrow_layout: bool = viewport_size.x < 1180.0
-	var viewer_height := clampf(viewport_size.y * (0.46 if narrow_layout else 0.34), 420.0 if narrow_layout else 295.0, 500.0 if narrow_layout else 345.0)
+	var viewer_height := clampf(viewport_size.y * (0.48 if narrow_layout else 0.36), 440.0 if narrow_layout else 315.0, 520.0 if narrow_layout else 370.0)
 	var viewer_top := viewport_size.y - viewer_height - margin
 	var action_height := 52.0
 	var action_top := viewer_top - action_height - 10.0

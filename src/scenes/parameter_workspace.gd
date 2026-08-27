@@ -27,6 +27,7 @@ const EXPORT_CATALOG := preload("res://src/classes/classes_io/export_catalog.gd"
 var root: Control
 var title_label: Label
 var preview_title_label: Label
+var preview_shortcuts_label: Label
 var parameter_title_label: Label
 var preview_panel: PanelContainer
 var preview_texture: TextureRect
@@ -345,7 +346,7 @@ func _build_interface() -> void:
 	preview_panel = PanelContainer.new()
 	preview_panel.name = "PreviewPanel"
 	var preview_style := _panel_style(Color(0.045, 0.055, 0.06, 1.0), UI_BORDER, 2, 2.0)
-	preview_style.content_margin_top = 38.0
+	preview_style.content_margin_top = 62.0
 	preview_panel.add_theme_stylebox_override("panel", preview_style)
 	preview_panel.clip_contents = true
 	root.add_child(preview_panel)
@@ -369,6 +370,12 @@ func _build_interface() -> void:
 	preview_title_label.add_theme_font_size_override("font_size", 20)
 	preview_title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(preview_title_label)
+	preview_shortcuts_label = Label.new()
+	preview_shortcuts_label.name = "PreviewShortcuts"
+	preview_shortcuts_label.add_theme_color_override("font_color", UI_MUTED)
+	preview_shortcuts_label.add_theme_font_size_override("font_size", 16)
+	preview_shortcuts_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(preview_shortcuts_label)
 
 	parameters_host = PanelContainer.new()
 	parameters_host.name = "ParametersHost"
@@ -704,6 +711,8 @@ func _layout_interface() -> void:
 	preview_panel.size = Vector2(left_width, body_height)
 	preview_title_label.position = Vector2(margin + 12.0, body_top + 8.0)
 	preview_title_label.size = Vector2(left_width - 24.0, 26.0)
+	preview_shortcuts_label.position = Vector2(margin + 12.0, body_top + 34.0)
+	preview_shortcuts_label.size = Vector2(left_width - 24.0, 22.0)
 	parameters_host.position = Vector2(margin + left_width + gap, body_top)
 	parameters_host.size = Vector2(right_width, body_height)
 	parameter_title_label.position = Vector2(parameters_host.position.x + 14.0, body_top + 8.0)
@@ -858,6 +867,7 @@ func refresh_translations() -> void:
 	if root == null:
 		return
 	preview_title_label.text = tr("VIEWER_PREVIEW")
+	preview_shortcuts_label.text = tr("PARAMETER_PREVIEW_SHORTCUTS")
 	parameter_title_label.text = tr("PARAMETRES")
 	preview_empty_label.text = "%s\n%s" % [tr("VIEWER_EMPTY_TITLE"), tr("VIEWER_EMPTY_HINT")]
 	load_preset_button.text = tr("LOAD_PRESET")

@@ -278,15 +278,17 @@ MAP_VIEWER_TITLE,Map viewer,Visionneuse de carte,Kartenansicht
 VIEWER_PREVIEW,Planet preview,Aperçu de la planète,Planetenvorschau
 MAP_VIEWER_BASE,Base map,Carte,Basiskarte
 MAP_VIEWER_OVERLAY,Overlay,Superposition,Überlagerung
-MAP_VIEWER_BASE_TOOLTIP,Choose the base map without regenerating the planet.,Choisir la carte de base sans régénérer la planète.,Basiskarte auswählen ohne den Planeten neu zu generieren.
-MAP_VIEWER_OVERLAY_TOOLTIP,Blend another exported map over the base layer.,Superposer une autre carte exportée à la carte de base.,Eine weitere exportierte Karte über die Basiskarte legen.
+MAP_VIEWER_BASE_TOOLTIP,Choose the base map without regenerating the planet. Shortcuts: Left/Right or A/Q/D.,Choisir la carte de base sans régénérer la planète. Raccourcis : Gauche/Droite ou A/Q/D.,Basiskarte auswählen ohne den Planeten neu zu generieren. Tastenkürzel: Links/Rechts oder A/Q/D.
+MAP_VIEWER_OVERLAY_TOOLTIP,Blend another exported map over the base layer. Shortcuts: Shift + Left/Right or Shift + A/Q/D.,Superposer une autre carte exportée à la carte de base. Raccourcis : Maj + Gauche/Droite ou Maj + A/Q/D.,Eine weitere exportierte Karte über die Basiskarte legen. Tastenkürzel: Umschalt + Links/Rechts oder Umschalt + A/Q/D.
 MAP_VIEWER_NO_OVERLAY,No overlay,Aucune superposition,Keine Überlagerung
 MAP_VIEWER_OVERLAY_OPACITY,Overlay opacity,Opacité de la superposition,Deckkraft der Überlagerung
 MAP_VIEWER_ZOOM,Zoom {percent}%,Zoom {percent} %,Zoom {percent} %
 MAP_VIEWER_RESET,Reset view,Réinitialiser la vue,Ansicht zurücksetzen
 VIEWER_EMPTY_TITLE,NO PLANET LOADED,AUCUNE PLANÈTE CHARGÉE,KEIN PLANET GELADEN
 VIEWER_EMPTY_HINT,Open a planet project or configure a new generation.,Chargez un projet de planète ou configurez une nouvelle génération.,Öffnen Sie ein Planetenprojekt oder konfigurieren Sie eine neue Generierung.
-VIEWER_HELP,Wheel: zoom • Middle drag: pan • Left click: inspect • Left/Right: map • Ctrl+0: reset,Molette : zoom • Clic milieu : déplacer • Clic gauche : inspecter • Gauche/Droite : carte • Ctrl+0 : réinitialiser,Mausrad: Zoom • Mittlere Taste: Verschieben • Linksklick: Prüfen • Links/Rechts: Karte • Strg+0: Zurücksetzen
+MAP_VIEWER_SHORTCUTS,Map: ← / → or A/Q/D • Overlay: Shift + same keys,Carte : ← / → ou A/Q/D • Superposition : Maj + mêmes touches,Karte: ← / → oder A/Q/D • Overlay: Umschalt + gleiche Tasten
+PARAMETER_PREVIEW_SHORTCUTS,Preview map: ← / → or A/Q/D,Aperçu : ← / → ou A/Q/D,Vorschau: ← / → oder A/Q/D
+VIEWER_HELP,Wheel: zoom • Middle drag: pan • Left click: inspect • Ctrl+0: reset,Molette : zoom • Clic milieu : déplacer • Clic gauche : inspecter • Ctrl+0 : réinitialiser,Mausrad: Zoom • Mittlere Taste: Verschieben • Linksklick: Prüfen • Strg+0: Zurücksetzen
 MAP_VIEWER_INSPECT_HINT,Click the map to inspect a coordinate.,Cliquer sur la carte pour inspecter une coordonnée.,Auf die Karte klicken um eine Koordinate zu prüfen.
 MAP_VIEWER_INSPECT_VALUE,"Cell {x},{y} • Lon {lon}° Lat {lat}°
 RGBA {r} / {g} / {b} / {a}","Cellule {x},{y} • Lon {lon}° Lat {lat}°
