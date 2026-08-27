@@ -124,6 +124,15 @@ float snoise(vec2 v) {
     return 130.0 * dot(m, g);
 }
 
+// Bruit 2D périodique sur la longitude. Deux projections du cylindre sont
+// combinées afin que les microclimats restent continus à la couture de carte.
+float periodicClimateNoise(float angle, float signed_latitude, float scale, vec2 offset) {
+    vec2 projected_cos = vec2(cos(angle), signed_latitude) * scale + offset;
+    vec2 projected_sin = vec2(sin(angle), signed_latitude) * scale
+        + vec2(offset.y + 17.3, offset.x - 9.7);
+    return (snoise(projected_cos) + snoise(projected_sin)) * 0.5;
+}
+
 // Calcule un score de correspondance pour un biome donné
 // Retourne 0.0 si incompatible, > 0 si compatible (plus haut = meilleur match)
 float compute_biome_score(
@@ -305,15 +314,29 @@ void main() {
         effective_elevation = elevation;  // Garder la profondeur réelle
     }
     
-    // Ajouter un peu de bruit pour les frontières naturelles
-    vec2 noise_pos = vec2(pixel) * 0.02 + vec2(float(seed) * 0.1);
-    float noise = snoise(noise_pos) * 5.0;  // ±5°C de variation
-    float temp_with_noise = temperature + noise * 0.1;
+    // Microclimats multi-échelles : suffisamment présents pour casser les
+    // seuils en bandes, sans renverser la tendance équateur-pôles.
+    float longitude_angle = ((float(pixel.x) + 0.5) / float(width)) * 6.28318530718;
+    float signed_latitude = ((float(pixel.y) + 0.5) / float(height) - 0.5) * 2.0;
+    vec2 seed_offset = vec2(float(seed % 4093u) * 0.071, float(seed % 6151u) * 0.053);
+    float broad_microclimate = periodicClimateNoise(
+        longitude_angle, signed_latitude, 2.8, seed_offset
+    );
+    float regional_microclimate = periodicClimateNoise(
+        longitude_angle, signed_latitude, 7.2, seed_offset + vec2(31.7, -18.2)
+    );
+    float microclimate = broad_microclimate * 0.68 + regional_microclimate * 0.32;
+    float temp_with_noise = temperature + microclimate * 4.2;
     
     // Pour les planètes sans atmosphère, pas de bruit d'humidité
     float humid_with_noise = humidity;
     if (!airless_planet) {
-        float humid_noise = snoise(noise_pos * 0.5 + vec2(100.0)) * 0.05;
+        float humid_noise = periodicClimateNoise(
+            longitude_angle,
+            signed_latitude,
+            4.6,
+            seed_offset + vec2(-47.0, 83.0)
+        ) * 0.13;
         humid_with_noise = clamp(humidity + humid_noise, 0.0, 1.0);
     }
     

@@ -202,6 +202,23 @@ vec3 getCylindricalCoords(ivec2 pixel, uint w, uint h, float radius) {
     );
 }
 
+ivec2 wrappedPixel(ivec2 pixel) {
+    int w = int(params.width);
+    int h = int(params.height);
+    int wrapped_x = ((pixel.x % w) + w) % w;
+    return ivec2(wrapped_x, clamp(pixel.y, 0, h - 1));
+}
+
+float terrainHeight(ivec2 pixel) {
+    return imageLoad(geo_texture, wrappedPixel(pixel)).r;
+}
+
+float oceanAvailability(float height) {
+    // Une transition douce autour du rivage évite que les échantillons du
+    // fetch reproduisent chaque pixel du masque terre/mer dans la pluie.
+    return 1.0 - smoothstep(params.sea_level - 260.0, params.sea_level + 140.0, height);
+}
+
 // ============================================================================
 // PALETTE COULEURS - Interpolation dynamique depuis SSBO
 // ============================================================================
@@ -217,11 +234,14 @@ vec4 getPrecipitationColor(float p) {
         return vec4(entries[0].r, entries[0].g, entries[0].b, 1.0);
     }
     
-    // Trouver le seuil précédent (pas d'interpolation, couleur fixe par palier)
+    // Interpolation continue pour une carte quantitative lisible.
     for (uint i = 0u; i < entry_count - 1u; i++) {
         if (p <= entries[i + 1u].threshold) {
-            // Retourner la couleur du seuil précédent (entries[i])
-            return vec4(entries[i].r, entries[i].g, entries[i].b, 1.0);
+            float span = max(entries[i + 1u].threshold - entries[i].threshold, 0.0001);
+            float blend = smoothstep(0.0, 1.0, (p - entries[i].threshold) / span);
+            vec3 dry = vec3(entries[i].r, entries[i].g, entries[i].b);
+            vec3 wet = vec3(entries[i + 1u].r, entries[i + 1u].g, entries[i + 1u].b);
+            return vec4(mix(dry, wet, blend), 1.0);
         }
     }
     
@@ -253,7 +273,8 @@ void main() {
     vec3 coords = getCylindricalCoords(pixel, params.width, params.height, params.cylinder_radius);
     
     // Latitude normalisée [0=équateur, 1=pôle]
-    float lat = abs((float(pixel.y) / float(params.height)) - 0.5) * 2.0;
+    float signed_lat = ((float(pixel.y) + 0.5) / float(params.height) - 0.5) * 2.0;
+    float lat = abs(signed_lat);
     
     // =========================================================================
     // DOMAIN WARPING - Distorsion des coordonnées pour briser les formes rondes
@@ -262,7 +283,7 @@ void main() {
     // frontières irrégulières et des formes étirées au lieu de blobs ronds.
     
     float noise_base = 1.0 / params.cylinder_radius;
-    float warp_scale = noise_base * 0.5;
+    float warp_scale = noise_base * 0.72;
     
     // Première passe de warping (grande échelle)
     float warp_x = fbm(coords * warp_scale, 4, 0.5, 2.0, params.seed + 5000u);
@@ -270,69 +291,108 @@ void main() {
     float warp_z = fbm(coords * warp_scale + vec3(2.7, 8.1, 4.3), 4, 0.5, 2.0, params.seed + 5200u);
     
     // Warp plus fort pour briser les bandes horizontales
-    float warp_strength = 0.6 * params.cylinder_radius;
+    float warp_strength = 0.28 * params.cylinder_radius;
     vec3 warped_coords = coords + vec3(warp_x, warp_y, warp_z) * warp_strength;
     
-    // Deuxième passe de warping (cascade) pour encore plus d'irrégularité
-    float warp2_x = fbm(warped_coords * warp_scale * 1.5, 3, 0.5, 2.0, params.seed + 6000u);
-    float warp2_y = fbm(warped_coords * warp_scale * 1.5 + vec3(3.1, 7.4, 1.9), 3, 0.5, 2.0, params.seed + 6100u);
-    float warp2_z = fbm(warped_coords * warp_scale * 1.5 + vec3(8.3, 2.6, 5.7), 3, 0.5, 2.0, params.seed + 6200u);
-    warped_coords += vec3(warp2_x, warp2_y, warp2_z) * warp_strength * 0.4;
-    
-    // =========================================================================
-    // BRUIT STRUCTURÉ - 4 COUCHES avec domain warping et ridge noise
-    // =========================================================================
-    
-    // --- COUCHE 1 : Continentale (grandes masses sec/humide, warpées) ---
-    float continental = fbm(warped_coords * noise_base * 0.3, 5, 0.5, 2.0, params.seed + 1000u);
-    
-    // --- COUCHE 2 : Régionale (modulation moyenne, warpée) ---
-    float regional = fbm(warped_coords * noise_base * 1.2, 4, 0.5, 2.0, params.seed + 2000u);
-    
-    // --- COUCHE 3 : Locale (détails fins, non warpée pour garder le detail) ---
-    float local_detail = fbm(coords * noise_base * 4.0, 3, 0.5, 2.0, params.seed + 3000u);
-    
-    // --- COUCHE 4 : Ridge noise (contours anguleux, brise la rondeur) ---
-    float ridge = ridgedFbm(warped_coords * noise_base * 1.5, 4, 0.5, 2.0, params.seed + 4000u);
-    
-    // Combinaison pondérée : continental domine pour créer de grandes zones sec/humide
-    // Le ridge noise crée des frontières anguleuses au lieu de transitions lisses
-    float noise = continental * 0.50 + regional * 0.18 + local_detail * 0.07 + ridge * 0.25;
+    float continental = fbm(warped_coords * noise_base * 0.75, 5, 0.52, 2.02, params.seed + 1000u);
+    float regional = fbm(warped_coords * noise_base * 2.4, 4, 0.52, 2.04, params.seed + 2000u);
+    float local_detail = fbm(coords * noise_base * 7.0, 3, 0.48, 2.08, params.seed + 3000u);
+    float noise = continental * 0.22 + regional * 0.14 + local_detail * 0.05;
     
     // =========================================================================
     // MODULATION LATITUDINALE - Cellules de Hadley modulées par du bruit
     // =========================================================================
     // Bruit de modulation : ondule les bandes latitudinales pour casser la rigidité
     // Ce bruit déplace la latitude "effective" de ±8° environ
-    float lat_warp = fbm(warped_coords * noise_base * 0.4, 3, 0.5, 2.0, params.seed + 7000u);
-    float warped_lat = clamp(lat + lat_warp * 0.15, 0.0, 1.0);
+    float lat_warp = fbm(warped_coords * noise_base * 0.8, 3, 0.5, 2.0, params.seed + 7000u);
+    float longitude_angle = ((float(pixel.x) + 0.5) / float(params.width)) * TAU;
+    float lat_taper = 1.0 - smoothstep(0.80, 1.0, lat);
+    float signed_warped_lat = clamp(
+        signed_lat
+        + (lat_warp * 0.24 + sin(longitude_angle * 2.0 + lat_warp * 2.2) * 0.065) * lat_taper,
+        -1.0,
+        1.0
+    );
+    float warped_lat = abs(signed_warped_lat);
     
     // Amplitude de modulation réduite pour laisser le bruit continental dominer
     // On veut des tendances latitudinales, pas des bandes dures
     float lat_moisture = 0.0;
     // ITCZ - Équateur : boost humidité (modéré)
-    lat_moisture += 0.08 * exp(-pow((warped_lat - 0.0) / 0.15, 2.0));
+    lat_moisture += 0.07 * exp(-pow((warped_lat - 0.0) / 0.19, 2.0));
     // Subtropicaux : réduction modérée (déserts à ~30°)
-    lat_moisture -= 0.10 * exp(-pow((warped_lat - 0.33) / 0.14, 2.0));
+    lat_moisture -= 0.06 * exp(-pow((warped_lat - 0.33) / 0.16, 2.0));
     // Latitudes moyennes : léger boost (~55°)
-    lat_moisture += 0.06 * exp(-pow((warped_lat - 0.61) / 0.14, 2.0));
+    lat_moisture += 0.04 * exp(-pow((warped_lat - 0.61) / 0.18, 2.0));
     // Pôles : plus sec
-    lat_moisture -= 0.15 * smoothstep(0.60, 0.90, warped_lat);
+    lat_moisture -= 0.10 * smoothstep(0.70, 0.98, warped_lat);
     
     // =========================================================================
     // INFLUENCE DE LA GÉOGRAPHIE
     // =========================================================================
     vec4 geo = imageLoad(geo_texture, pixel);
     float height = geo.r;
-    float water_height = geo.a;
-    bool is_ocean = (water_height > 0.0 && height <= params.sea_level);
-    
-    // Les océans ont une humidité de base plus élevée (évaporation)
-    float ocean_boost = is_ocean ? 0.10 : 0.0;
-    
-    // L'altitude réduit les précipitations (effet d'ombre pluviométrique simplifié)
+    // Vents dominants simplifiés : alizés, vents d'ouest, vents polaires.
+    // Les cellules se chevauchent sur une large bande. Une sélection abrupte
+    // de la direction créait des cassures horizontales visibles dans le fetch.
+    float tropical_to_mid = smoothstep(0.23, 0.43, warped_lat);
+    float mid_to_polar = smoothstep(0.56, 0.78, warped_lat);
+    float zonal_wind = mix(-1.0, 0.92, tropical_to_mid);
+    zonal_wind = mix(zonal_wind, -0.72, mid_to_polar);
+    float meridional_wind = mix(
+        -sign(signed_lat) * 0.24,
+        sign(signed_lat) * 0.10,
+        tropical_to_mid
+    );
+    meridional_wind = mix(meridional_wind, -sign(signed_lat) * 0.07, mid_to_polar);
+    vec2 wind = normalize(vec2(zonal_wind, meridional_wind));
+
+    // Fetch océanique en amont : une côte exposée reçoit davantage d'humidité
+    // qu'un intérieur continental, sans simulation itérative coûteuse. Les
+    // apports est et ouest sont calculés séparément puis mélangés pendant la
+    // transition entre cellules; ainsi le changement de vent ne découpe pas
+    // la carte en bandes.
+    float fetch_from_west = 0.0;
+    float fetch_from_east = 0.0;
+    float fetch_weight = 0.0;
+    float peak_from_west = height;
+    float peak_from_east = height;
+    for (int step_index = 1; step_index <= 8; step_index++) {
+        int distance_px = step_index * 3;
+        float west_height = terrainHeight(pixel - ivec2(distance_px, 0));
+        float east_height = terrainHeight(pixel + ivec2(distance_px, 0));
+        float weight = 1.0 / (1.0 + float(step_index) * 0.34);
+        fetch_from_west += oceanAvailability(west_height) * weight;
+        fetch_from_east += oceanAvailability(east_height) * weight;
+        fetch_weight += weight;
+        peak_from_west = max(peak_from_west, west_height);
+        peak_from_east = max(peak_from_east, east_height);
+    }
+    fetch_from_west /= max(fetch_weight, 0.0001);
+    fetch_from_east /= max(fetch_weight, 0.0001);
+    float eastward_share = smoothstep(-0.52, 0.52, zonal_wind);
+    float directional_fetch = mix(fetch_from_east, fetch_from_west, eastward_share);
+    float bilateral_fetch = (fetch_from_west + fetch_from_east) * 0.5;
+    float ocean_fetch = mix(bilateral_fetch, directional_fetch, 0.56);
+    float near_upwind_height = mix(
+        terrainHeight(pixel + ivec2(3, 0)),
+        terrainHeight(pixel - ivec2(3, 0)),
+        eastward_share
+    );
+    float upstream_peak = mix(peak_from_east, peak_from_west, eastward_share);
     float altitude_above_sea = max(0.0, height - params.sea_level);
-    float altitude_penalty = -0.12 * smoothstep(0.0, 4000.0, altitude_above_sea);
+    float orographic_lift = smoothstep(80.0, 1800.0, height - near_upwind_height);
+    float rain_shadow = smoothstep(250.0, 2800.0, upstream_peak - height);
+    float altitude_drying = smoothstep(2200.0, 7000.0, altitude_above_sea);
+    vec4 climate = imageLoad(climate_texture, pixel);
+    float warm_evaporation = smoothstep(-12.0, 28.0, climate.r);
+    float geographic_moisture = (
+        oceanAvailability(height) * 0.13
+        + ocean_fetch * mix(0.10, 0.23, warm_evaporation)
+        + orographic_lift * (0.12 + ocean_fetch * 0.16)
+        - rain_shadow * (1.0 - ocean_fetch * 0.35) * 0.20
+        - altitude_drying * 0.12
+    );
     
     // =========================================================================
     // ASSEMBLAGE ET NORMALISATION
@@ -341,30 +401,25 @@ void main() {
     // Le bruit brut est dans environ [-0.65, 0.65]
     // Normalisation douce : centrer autour de 0.5 sans amplification excessive
     // Cela préserve la diversité des valeurs intermédiaires
-    float base = clamp(noise + 0.5, 0.0, 1.0);
+    float base = 0.48 + noise;
     
     // Ajouter les modifications latitudinales et géographiques
     // Pas de smoothstep : on garde la distribution naturelle du bruit
     // pour éviter de pousser les valeurs vers les extrêmes 0.0 et 1.0
-    float modified = base + lat_moisture + ocean_boost + altitude_penalty;
+    float modified = base + lat_moisture + geographic_moisture;
     modified = clamp(modified, 0.0, 1.0);
     
     // =========================================================================
     // APPLICATION DE avg_precipitation
     // =========================================================================
-    // Amplification forte (5.0) pour que avg=0 soit vraiment sec
-    //   avg=0.0 → power = exp2(2.5) ≈ 5.66 → très sec (0.8^5.66 ≈ 0.26)
-    //   avg=0.2 → power = exp2(1.5) ≈ 2.83 → sec
-    //   avg=0.5 → power = 1.0         → distribution équilibrée
-    //   avg=0.7 → power ≈ 0.35        → majorité humide
-    //   avg=1.0 → power ≈ 0.18        → très humide
-    
-    float power = exp2((0.5 - params.avg_precipitation) * 5.0);
-    float humidity = pow(modified, power);
+    // Décalage global linéaire : le réglage conserve le relief climatique et
+    // la lisibilité des valeurs intermédiaires, même sur une planète sèche.
+    float global_shift = (params.avg_precipitation - 0.5) * 0.90;
+    float humidity = clamp(modified + global_shift, 0.0, 1.0);
     
     // Atténuation polaire multiplicative : réduit l'humidité aux hautes latitudes
     // indépendamment du bruit (empêche les bords de monter)
-    float polar_damping = 1.0 - 0.5 * smoothstep(0.60, 0.95, lat);
+    float polar_damping = mix(0.46, 1.0, smoothstep(-24.0, 2.0, climate.r));
     humidity *= polar_damping;
     
     // Clamp de sécurité final
@@ -374,7 +429,6 @@ void main() {
     // ÉCRITURE
     // =========================================================================
     
-    vec4 climate = imageLoad(climate_texture, pixel);
-    imageStore(climate_texture, pixel, vec4(climate.r, humidity, 0.0, 0.0));
+    imageStore(climate_texture, pixel, vec4(climate.r, humidity, wind.x, wind.y));
     imageStore(precipitation_colored, pixel, getPrecipitationColor(humidity));
 }

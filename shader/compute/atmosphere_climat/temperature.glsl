@@ -70,11 +70,10 @@ const float PI = 3.14159265359;
 const float TAU = 6.28318530718;
 
 // Constantes climatiques
-const float EQUATOR_OFFSET = 8.0;      // Bonus température équateur
-const float POLE_OFFSET = 35.0;        // Refroidissement pôles
-const float LAPSE_RATE = -6.5;         // °C par 1000m au-dessus mer
-const float DEPTH_RATE = 2.0;          // °C par 1000m sous mer
-const float OCEAN_DAMPING = 0.8;       // Atténuation thermique océan
+const float EQUATOR_OFFSET = 9.0;      // Bonus température équateur
+const float POLE_OFFSET = 37.0;        // Refroidissement pôles
+const float LAPSE_RATE = -6.2;         // °C par 1000m au-dessus mer
+const float DEPTH_RATE = 0.7;          // Faible correction des bassins océaniques
 
 // ============================================================================
 // FONCTIONS UTILITAIRES - Hash et Bruit
@@ -191,6 +190,33 @@ vec3 getCylindricalCoords(ivec2 pixel, uint w, uint h, float cylinder_radius) {
     return vec3(cx, cy, cz);
 }
 
+ivec2 wrappedPixel(ivec2 pixel) {
+    int w = int(params.width);
+    int h = int(params.height);
+    int wrapped_x = ((pixel.x % w) + w) % w;
+    return ivec2(wrapped_x, clamp(pixel.y, 0, h - 1));
+}
+
+bool isOceanAt(ivec2 pixel) {
+    return imageLoad(geo_texture, wrappedPixel(pixel)).r < params.sea_level;
+}
+
+// Mesure grossière de la continentalité à deux échelles. Elle permet de
+// réduire les anomalies sur l'océan et les littoraux sans exiger la texture
+// hydrologique, qui n'existe pas encore à cette étape du pipeline.
+float nearbyOceanFraction(ivec2 pixel) {
+    const ivec2 directions[8] = ivec2[8](
+        ivec2(1, 0), ivec2(-1, 0), ivec2(0, 1), ivec2(0, -1),
+        ivec2(1, 1), ivec2(-1, 1), ivec2(1, -1), ivec2(-1, -1)
+    );
+    float ocean_samples = 0.0;
+    for (int i = 0; i < 8; i++) {
+        int distance_px = i < 4 ? 4 : 11;
+        ocean_samples += isOceanAt(pixel + directions[i] * distance_px) ? 1.0 : 0.0;
+    }
+    return ocean_samples / 8.0;
+}
+
 // ============================================================================
 // PALETTE DE COULEURS TEMPÉRATURE (Dynamique via SSBO)
 // Interpolation linéaire entre les entrées de la palette
@@ -206,11 +232,14 @@ vec4 getTemperatureColor(float temp) {
         return vec4(entries[0].r, entries[0].g, entries[0].b, 1.0);
     }
     
-    // Trouver le seuil précédent (pas d'interpolation, couleur fixe par palier)
+    // Interpolation continue : évite les bandes de couleur par paliers.
     for (uint i = 0u; i < entry_count - 1u; i++) {
         if (temp <= entries[i + 1u].threshold) {
-            // Retourner la couleur du seuil précédent (entries[i])
-            return vec4(entries[i].r, entries[i].g, entries[i].b, 1.0);
+            float span = max(entries[i + 1u].threshold - entries[i].threshold, 0.0001);
+            float blend = smoothstep(0.0, 1.0, (temp - entries[i].threshold) / span);
+            vec3 cold = vec3(entries[i].r, entries[i].g, entries[i].b);
+            vec3 warm = vec3(entries[i + 1u].r, entries[i + 1u].g, entries[i + 1u].b);
+            return vec4(mix(cold, warm, blend), 1.0);
         }
     }
     
@@ -235,31 +264,39 @@ void main() {
     vec4 geo = imageLoad(geo_texture, pixel);
     float height = geo.r;           // Altitude en mètres
     
-    // Calculer la latitude normalisée [0, 1] : 0=équateur, 1=pôles
-    float lat_normalized = abs((float(pixel.y) / float(params.height)) - 0.5) * 2.0;
+    // Latitude géographique signée [-1, 1]. La latitude climatique sera
+    // déplacée plus bas par les anomalies planétaires afin d'éviter des
+    // frontières parfaitement horizontales.
+    float signed_latitude = (((float(pixel.y) + 0.5) / float(params.height)) - 0.5) * 2.0;
+    float lat_normalized = abs(signed_latitude);
     
     // Coordonnées cylindriques pour le bruit seamless
     vec3 coords = getCylindricalCoords(pixel, params.width, params.height, params.cylinder_radius);
     
-    // === 1. Température de base (latitude) ===
-    float lat_curve = pow(lat_normalized, 1.5);
-    float base_temp = params.avg_temperature + EQUATOR_OFFSET * (1.0 - lat_normalized) - POLE_OFFSET * lat_curve;
-    
-    // === 2. Variations régionales (bruit fBm) ===
-    // Bruit principal (zones climatiques) - fréquence 3.0/circonference
-    float noise_freq = 3.0 / params.cylinder_radius;
-    float climate_zone = fbm(coords * noise_freq, 6, 0.5, 2.0, params.seed);
-    float longitudinal_variation = climate_zone * 8.0;
-    
-    // Bruit secondaire (courants océaniques)
-    float noise_freq2 = 1.5 / params.cylinder_radius;
-    float secondary = fbm(coords * noise_freq2, 4, 0.6, 2.0, params.seed + 10000u);
-    float secondary_variation = secondary * 5.0;
-    
-    // Bruit cellulaire (anomalies thermiques locales)
-    float noise_freq3 = 6.0 / params.cylinder_radius;
-    float cellular = cellularNoise3D(coords * noise_freq3, params.seed + 20000u);
-    float local_variation = (cellular - 0.5) * 6.0;
+    // === 1. Circulation planétaire et variations régionales ===
+    vec3 domain = coords / max(params.cylinder_radius, 1.0);
+    float warp_a = fbm(domain * 1.15, 3, 0.55, 2.03, params.seed + 7001u);
+    float warp_b = fbm(domain * 1.15 + vec3(3.7, 1.9, 5.1), 3, 0.55, 2.03, params.seed + 9001u);
+    vec3 warped = domain + vec3(warp_a * 0.24, warp_b * 0.10, warp_b * 0.24);
+    float planetary = fbm(warped * 2.15, 5, 0.54, 2.02, params.seed + 11003u);
+    float regional = fbm(warped * 5.2, 4, 0.52, 2.04, params.seed + 17011u);
+    float local = fbm(domain * 12.0, 3, 0.50, 2.08, params.seed + 23003u);
+    float angle = (float(pixel.x) / float(params.width)) * TAU;
+    float latitude_taper = 1.0 - smoothstep(0.80, 1.0, lat_normalized);
+    float latitude_shift = (
+        warp_a * 0.30
+        + warp_b * 0.10
+        + sin(angle * 2.0 + warp_b * 2.6) * 0.06
+    ) * latitude_taper;
+    float effective_signed_latitude = clamp(signed_latitude + latitude_shift, -1.0, 1.0);
+    float effective_latitude = abs(effective_signed_latitude);
+    float planetary_wave = sin(angle * 2.0 + warp_a * 2.4 + effective_latitude * PI) * 2.4;
+
+    // === 2. Température de base (latitude climatique ondulée) ===
+    float lat_curve = pow(effective_latitude, 1.42);
+    float base_temp = params.avg_temperature
+        + EQUATOR_OFFSET * (1.0 - pow(effective_latitude, 0.72))
+        - POLE_OFFSET * lat_curve;
     
     // === 3. Gradient d'altitude ===
     float altitude_temp = 0.0;
@@ -268,25 +305,35 @@ void main() {
     // water_height (geo.a) est un indicateur brut de base_elevation,
     // mais la vraie classification eau se fait APRÈS en tenant compte de la température.
     bool is_below_sea = (height < params.sea_level);
+    float ocean_fraction = nearbyOceanFraction(pixel);
     
     if (!is_below_sea) {
         float altitude_above_sea = max(0.0, height - params.sea_level);
-        altitude_temp = LAPSE_RATE * (altitude_above_sea / 1000.0);
+        altitude_temp = max(LAPSE_RATE * (altitude_above_sea / 1000.0), -48.0);
     } else {
         // Sous le niveau de la mer : température plus stable (fond marin ou futur océan)
         float depth_below_sea = params.sea_level - height;
         // Gradient modéré sous la mer (l'eau profonde est froide mais stable)
-        altitude_temp = -DEPTH_RATE * (depth_below_sea / 1000.0);
+        altitude_temp = max(-DEPTH_RATE * (depth_below_sea / 1000.0), -4.0);
     }
     
     // === 4. Calcul final ===
-    float temp = base_temp + longitudinal_variation + secondary_variation + local_variation + altitude_temp;
-    
-    // Atténuation pour les zones sous le niveau de la mer (futur océan)
-    // L'eau modère les températures : attire vers la moyenne
-    if (is_below_sea) {
-        temp = temp * OCEAN_DAMPING + params.avg_temperature * (1.0 - OCEAN_DAMPING);
-    }
+    float continentality = 1.0 - ocean_fraction;
+    float anomaly_strength = is_below_sea
+        ? 0.42
+        : mix(0.58, 1.08, continentality);
+    float anomaly = (
+        planetary * 8.2
+        + regional * 4.0
+        + local * 1.0
+        + planetary_wave
+    ) * anomaly_strength;
+    // Les intérieurs continentaux connaissent des extrêmes un peu plus forts,
+    // surtout aux latitudes moyennes et hautes.
+    float inland_seasonality = (is_below_sea ? 0.0 : continentality)
+        * smoothstep(0.22, 0.82, effective_latitude)
+        * planetary * 3.6;
+    float temp = base_temp + anomaly + inland_seasonality + altitude_temp;
     
     temp = clamp(temp, -200.0, 200.0);
     
