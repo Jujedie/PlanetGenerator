@@ -27,6 +27,11 @@ var _monolithic_job_active: bool = false
 var _cached_display_maps: Array[String] = []
 var _cached_export_files: Dictionary = {}
 var last_performance_report: Dictionary = {}
+# M8 release instrumentation is cached before the background worker releases
+# the per-generation orchestrator. This keeps validation independent of live RIDs.
+var last_export_metrics: Dictionary = {}
+var last_exported_files: Dictionary = {}
+var last_cancel_reason: String = ""
 var _cancel_mutex: Mutex = Mutex.new()
 var _cancel_requested: bool = false
 var _cancel_reason: String = ""
@@ -100,6 +105,9 @@ func _init_gpu_system() -> void:
 func generate_planet() -> bool:
 	"""Entry point - routes to the bounded tiled path or legacy GPU path."""
 	last_performance_report.clear()
+	last_export_metrics.clear()
+	last_exported_files.clear()
+	last_cancel_reason = ""
 	if _cleaned_up or not use_gpu_acceleration:
 		print("[PlanetGenerator] Cancelling generation: GPU acceleration not available")
 		return false
@@ -140,11 +148,15 @@ func _run_tiled_generation_worker(request_id: int) -> void:
 func _complete_tiled_generation(request_id: int, report: Dictionary) -> void:
 	if request_id != _generation_request_id or _cleaned_up:
 		return
+	last_performance_report = report.duplicate(true)
+	last_export_metrics = report.duplicate(true)
 	if bool(report.get("ok", false)):
+		last_exported_files = {"tiled_dataset": _tiled_output_root}
 		print("[PlanetGenerator] Tiled global generation complete: ", report.get("manifest", ""))
 		emit_signal("finished")
 	elif bool(report.get("cancelled", false)):
-		emit_signal("generation_cancelled", str(report.get("reason", "user")))
+		last_cancel_reason = str(report.get("reason", "user"))
+		emit_signal("generation_cancelled", last_cancel_reason)
 	else:
 		push_error("[PlanetGenerator] Tiled generation failed: %s" % report.get("reason", "unknown"))
 
@@ -223,6 +235,13 @@ func _run_monolithic_generation_worker(request_id: int) -> void:
 		var reason := orchestrator.cancellation_reason()
 		if reason.is_empty():
 			reason = str(cancel_state.get("reason", "user"))
+		last_cancel_reason = reason
+		# run_simulation() exits before its normal final report when cancelled at a
+		# phase checkpoint. Preserve the useful partial timing data before cleanup.
+		last_performance_report = orchestrator.last_performance_report.duplicate(true)
+		last_performance_report["phase_enqueue_and_cpu_ms"] = orchestrator.last_phase_timings_ms.duplicate(true)
+		last_performance_report["cancelled"] = true
+		last_performance_report["cancel_reason"] = reason
 		orchestrator.cleanup()
 		if gpu_orchestrator == orchestrator:
 			gpu_orchestrator = null
@@ -237,6 +256,10 @@ func _run_monolithic_generation_worker(request_id: int) -> void:
 	cancel_state = _worker_cancel_probe()
 	if bool(cancel_state.get("cancelled", false)):
 		var export_cancel_reason := str(cancel_state.get("reason", "user"))
+		last_cancel_reason = export_cancel_reason
+		last_performance_report = orchestrator.last_performance_report.duplicate(true)
+		last_performance_report["cancelled"] = true
+		last_performance_report["cancel_reason"] = export_cancel_reason
 		orchestrator.cleanup()
 		if gpu_orchestrator == orchestrator:
 			gpu_orchestrator = null
@@ -244,6 +267,9 @@ func _run_monolithic_generation_worker(request_id: int) -> void:
 		return
 	var display_maps: Array[String] = PlanetProject.display_maps_from_layers(exported_files)
 	last_performance_report = orchestrator.last_performance_report.duplicate(true)
+	var export_metrics_value: Variant = last_performance_report.get("export", {})
+	last_export_metrics = export_metrics_value.duplicate(true) if export_metrics_value is Dictionary else {}
+	last_exported_files = exported_files.duplicate(true)
 	_cached_export_files = exported_files.duplicate(true)
 	_cached_display_maps = display_maps.duplicate()
 	# The UI consumes exported CPU files, not live GPU RIDs. Release per-planet
@@ -266,23 +292,33 @@ func _complete_monolithic_generation(request_id: int, ok: bool, display_maps: Ar
 			_cached_display_maps.append(str(path))
 		emit_signal("generation_progress", "complete", 1, 1)
 		emit_signal("finished")
-	elif reason == "cancelled" or reason == "cleanup" or reason == "user":
+	elif reason == "cancelled" or reason == "cleanup" or reason == "user" or reason.begins_with("release_test_after:"):
+		last_cancel_reason = reason
 		emit_signal("generation_cancelled", reason)
 	else:
 		push_error("[PlanetGenerator] Background generation failed: %s" % reason)
 		emit_signal("generation_cancelled", reason)
 
-func export_to_directory(output_dir: String) -> void:
-	"""Export monolithic PNGs or copy the completed raw tiled dataset."""
+func export_to_directory(output_dir: String) -> Dictionary:
+	"""Return/copy completed exports without requiring live GPU resources."""
 	print("[PlanetGenerator] Exporting to: ", output_dir)
 	if use_tiled_global_generation and tiled_pipeline != null:
-		if not tiled_pipeline.export_dataset(output_dir):
-			push_warning("[PlanetGenerator] Tiled export skipped: dataset is incomplete")
+		# Tiled generation already owns an authoritative dataset under its generation
+		# root. Avoid copying it onto itself during the M8 acceptance runner.
+		if output_dir.simplify_path() != cheminSauvegarde.simplify_path():
+			if not tiled_pipeline.export_dataset(output_dir):
+				push_warning("[PlanetGenerator] Tiled export skipped: dataset is incomplete")
+				return {}
+		last_exported_files = {"tiled_dataset": _tiled_output_root}
+		last_export_metrics = tiled_pipeline.last_report.duplicate(true)
 	elif use_gpu_acceleration and not _cached_export_files.is_empty():
-		_copy_cached_exports(output_dir)
+		if output_dir.simplify_path() != _generation_output_root.simplify_path():
+			_copy_cached_exports(output_dir)
+		last_exported_files = _cached_export_files.duplicate(true)
 	else:
 		push_warning("[PlanetGenerator] Export skipped: generation resources are unavailable")
 	print("[PlanetGenerator] Export complete")
+	return last_exported_files.duplicate(true)
 
 func _copy_cached_exports(output_dir: String) -> void:
 	# Preserve the complete M7.2 project layout (maps/, overlays/, debug/,

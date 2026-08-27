@@ -35,7 +35,7 @@ Responsive utility panels, non-obstructive layout, tooltips, shortcuts, planet-t
 ## Release milestones (not part of the current patch series)
 
 ### M8 — Release Stabilization
-No new features. Full regression suite, 50 consecutive generations, all planet types, deterministic hashes, cancellation/cleanup tests, export validation, large tiled planet validation and release-candidate packaging.
+**Implemented acceptance harness; target-hardware execution required before release.** No new simulation features. Full regression inventory, 50 consecutive generations, all planet types, deterministic layer hashes, cancellation/cleanup/recovery tests, export/project validation, memory-drift analysis, package-resource validation and an opt-in maximum Venus-like tiled hardware gate. Writes `release_candidate_report.json`.
 
 ### M8.1 — Final General Optimization
 Only after M8 establishes a correct baseline. Profile CPU/GPU synchronization, allocations, readbacks, PNG conversion, startup and UI overhead; remove redundant work and reduce peak RAM/VRAM. Optimization is accepted only when authoritative hashes/integrity results remain unchanged and no visual/functional regression is introduced.

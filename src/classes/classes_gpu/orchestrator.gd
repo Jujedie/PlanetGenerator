@@ -778,6 +778,11 @@ func _run_timed_phase(phase_name: String, phase_callable: Callable) -> bool:
 	print("[Timing] ", phase_name, ": ", snappedf(elapsed_ms, 0.01), " ms")
 	gpu._sample_memory_peaks()
 	emit_signal("phase_finished", phase_name, _phase_counter, _phase_total, elapsed_ms)
+	# M8 deterministic release-test checkpoint. Normal generations never set this
+	# parameter. Cancellation is requested only after a phase has completed, so
+	# no compute dispatch is interrupted while it is in flight.
+	if str(generation_params.get("release_test_cancel_after_phase", "")) == phase_name:
+		request_cancel("release_test_after:%s" % phase_name)
 	return not was_cancelled
 
 func request_cancel(reason: String = "user") -> void:
@@ -818,6 +823,8 @@ func _build_performance_report(started_usec: int, lifecycle_release: Dictionary)
 	last_performance_report["phase_enqueue_and_cpu_ms"] = last_phase_timings_ms.duplicate(true)
 	last_performance_report["texture_lifecycle"] = gpu.get_texture_lifecycle()
 	last_performance_report["lifecycle_release"] = lifecycle_release.duplicate(true)
+	last_performance_report["cancelled"] = was_cancelled
+	last_performance_report["cancel_reason"] = _cancel_reason
 
 # ============================================================================
 # ÉTAPE 0 : GÉNÉRATION TOPOGRAPHIQUE DE BASE
