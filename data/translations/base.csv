@@ -111,6 +111,14 @@ OCEAN_COST_FLAT,Ocean cost (flat) : {val},Coût océan (plat) : {val},Ozeankoste
 OCEAN_COST_DEEPER,Ocean cost (deeper) : {val},Coût océan (profond) : {val},Ozeankosten (tief) : {val}
 OCEAN_NOISE_STRENGTH,Ocean noise strength : {val},Force du bruit océan : {val},Ozeanrauschstärke : {val}
 
+GAS_GIANT_CATEGORIE,Gas giant atmosphere,Atmosphère de géante gazeuse,Gasriesenatmosphäre
+GAS_GIANT_NUM_BANDS,Atmospheric bands : {val},Bandes atmosphériques : {val},Atmosphärische Bänder : {val}
+GAS_GIANT_JET_STRENGTH,Jet strength : {val},Force des jets : {val},Jet-Stärke : {val}
+GAS_GIANT_EDDY_STRENGTH,Eddy strength : {val},Force des tourbillons : {val},Wirbelstärke : {val}
+GAS_GIANT_ADVECTION_DT,Advection step : {val},Pas d'advection : {val},Advektionsschritt : {val}
+GAS_GIANT_ADVECTION_ITERATIONS,Advection iterations : {val},Itérations d'advection : {val},Advektionsiterationen : {val}
+GAS_GIANT_TARGET_SHARPEN,Cloud contrast retention : {val},Conservation du contraste nuageux : {val},Wolkenkontrasterhalt : {val}
+
 RESSOURCES_CATEGORIE,Resources category,Catégorie ressources,Ressourcenkategorie
 PETROLE_PROBABILITY,Petroleum probability : {val},Probabilité de pétrole : {val},Ölwahrscheinlichkeit : {val}
 PETROLE_DEPOSIT_SIZE,Petroleum deposit size : {val},Taille du dépôt de pétrole : {val},Größe der Ölvorkommen : {val}
@@ -306,6 +314,14 @@ TEMPLATE_DRY_WORLD,Dry World,Monde aride,Trockene Welt
 TEMPLATE_FROZEN_WORLD,Frozen World,Monde gelé,Eiswelt
 TEMPLATE_MARS_LIKE,Mars-like,Type Mars,Marsähnlich
 TEMPLATE_VENUS_LIKE,Venus-like,Type Vénus,Venusähnlich
+TEMPLATE_VOLCANIC_WORLD,Volcanic World,Monde volcanique,Vulkanwelt
+TEMPLATE_LAVA_OCEAN,Lava Ocean,Océan de lave,Lavaozean
+TEMPLATE_DEAD_WORLD,Dead World,Monde mort,Tote Welt
+TEMPLATE_IRRADIATED_WASTELAND,Irradiated Wasteland,Désert irradié,Verstrahltes Ödland
+TEMPLATE_GAS_GIANT,Gas Giant,Géante gazeuse,Gasriese
+TEMPLATE_HOT_JUPITER,Hot Jupiter,Jupiter chaud,Heißer Jupiter
+TEMPLATE_ICE_GIANT,Ice Giant,Géante de glace,Eisriese
+TEMPLATE_STORM_GIANT,Storm Giant,Géante tempétueuse,Sturm-Gasriese
 TEMPLATE_HIGH_TECTONICS,High Tectonics,Forte tectonique,Starke Tektonik
 TEMPLATE_LOW_RELIEF,Low Relief,Faible relief,Geringes Relief
 TEMPLATE_MOUNTAIN_WORLD,Mountain World,Monde montagneux,Gebirgswelt

@@ -776,6 +776,13 @@ func _compile_generation_params() -> Dictionary:
 		"export_preset": _parameter_workspace.get_export_preset() if _parameter_workspace != null else ExportCatalog.PRESET_STANDARD,
 		"avg_temperature": ui["avg_temperature"],
 
+		"gas_giant_num_bands": int(ui["gas_giant_num_bands"]),
+		"gas_giant_jet_strength": ui["gas_giant_jet_strength"],
+		"gas_giant_eddy_strength": ui["gas_giant_eddy_strength"],
+		"gas_giant_advection_dt": ui["gas_giant_advection_dt"],
+		"gas_giant_advection_iterations": int(ui["gas_giant_advection_iterations"]),
+		"gas_giant_target_sharpen": ui["gas_giant_target_sharpen"],
+
 		"terrain_scale": ui["terrain_scale"],
 		"erosion_iterations": ui["erosion_iterations"],
 		"erosion_rate": ui["erosion_rate"],

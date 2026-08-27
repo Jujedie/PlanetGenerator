@@ -1027,6 +1027,8 @@ func _apply_planet_type_ui_state() -> void:
 	_set_category_visible("OCEAN", not no_surface_water and not gas)
 	_set_category_visible("CRATER", not gas)
 	_set_category_visible("EROSION", not gas)
+	_set_category_visible("GAS", gas)
+	_set_category_visible("RESSOURCES", not gas)
 
 
 func set_batch_running(running: bool) -> void:

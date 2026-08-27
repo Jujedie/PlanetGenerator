@@ -4,7 +4,7 @@ extends RefCounted
 ## Single source of truth for the standalone parameter editor.
 ## The UI is generated from this data at runtime; no slider is authored in a scene.
 
-const CATEGORY_ORDER := ["GENERAL", "EROSION", "CRATER", "EAU", "NUAGE", "REGION", "OCEAN", "RESSOURCES"]
+const CATEGORY_ORDER := ["GENERAL", "EROSION", "CRATER", "EAU", "NUAGE", "REGION", "OCEAN", "GAS", "RESSOURCES"]
 
 const CATEGORY_LABELS := {
 	"GENERAL": "GENERAL_PROPRIETE_CATEGORIE",
@@ -14,6 +14,7 @@ const CATEGORY_LABELS := {
 	"NUAGE": "NUAGE_CATEGORIE",
 	"REGION": "REGION_CATEGORIE",
 	"OCEAN": "REGION_OCEAN_CATEGORIE",
+	"GAS": "GAS_GIANT_CATEGORIE",
 	"RESSOURCES": "RESSOURCES_CATEGORIE",
 }
 
@@ -70,6 +71,13 @@ const DEFINITIONS := [
 	{"key":"ocean_cost_flat", "category":"OCEAN", "kind":"slider", "label":"OCEAN_COST_FLAT", "default":1.0, "min":1.0, "max":10.0, "step":1.0},
 	{"key":"ocean_cost_deeper", "category":"OCEAN", "kind":"slider", "label":"OCEAN_COST_DEEPER", "default":2.0, "min":1.0, "max":10.0, "step":1.0},
 	{"key":"ocean_noise_strength", "category":"OCEAN", "kind":"slider", "label":"OCEAN_NOISE_STRENGTH", "default":0.5, "min":0.1, "max":1.0, "step":0.1},
+
+	{"key":"gas_giant_num_bands", "category":"GAS", "kind":"slider", "label":"GAS_GIANT_NUM_BANDS", "default":12.0, "min":6.0, "max":24.0, "step":1.0},
+	{"key":"gas_giant_jet_strength", "category":"GAS", "kind":"slider", "label":"GAS_GIANT_JET_STRENGTH", "default":4.0, "min":0.5, "max":10.0, "step":0.1},
+	{"key":"gas_giant_eddy_strength", "category":"GAS", "kind":"slider", "label":"GAS_GIANT_EDDY_STRENGTH", "default":2.5, "min":0.5, "max":8.0, "step":0.1},
+	{"key":"gas_giant_advection_dt", "category":"GAS", "kind":"slider", "label":"GAS_GIANT_ADVECTION_DT", "default":1.4, "min":0.4, "max":2.5, "step":0.05},
+	{"key":"gas_giant_advection_iterations", "category":"GAS", "kind":"slider", "label":"GAS_GIANT_ADVECTION_ITERATIONS", "default":40.0, "min":12.0, "max":120.0, "step":4.0},
+	{"key":"gas_giant_target_sharpen", "category":"GAS", "kind":"slider", "label":"GAS_GIANT_TARGET_SHARPEN", "default":1.18, "min":1.0, "max":1.5, "step":0.01},
 
 	{"key":"petrole_probability", "category":"RESSOURCES", "kind":"slider", "label":"PETROLE_PROBABILITY", "unit":"%", "default":0.025, "min":0.001, "max":1.0, "step":0.001},
 	{"key":"petrole_deposit_size", "category":"RESSOURCES", "kind":"slider", "label":"PETROLE_DEPOSIT_SIZE", "unit":" km²", "default":200.0, "min":1.0, "max":400.0, "step":1.0},
