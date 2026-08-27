@@ -4284,7 +4284,10 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 		"river_riviere_threshold",
 		params.get("river_affluent_threshold", 5.0)
 	))
-	var relief_strength = 0.16
+	# La carte finale est un rendu physique, pas une carte topographique.
+	# Conserver seulement un modelé lumineux discret ; les isolignes vivent dans
+	# topology_map.png et topographie_map.png.
+	var relief_strength = 0.10
 	var water_relief_factor = 0.25
 	
 	# Calculer min/max élévation pour normalisation (approximatif)

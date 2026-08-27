@@ -209,6 +209,43 @@ vec3 terranLandHypsometry(float relative_height) {
     return mix(color, SUMMIT, smoothstep(3800.0, 6200.0, relative_height));
 }
 
+// Donne au relief une géologie cohérente avec le climat du biome. L'ancienne
+// version appliquait la même base olive à toutes les terres, ce qui transformait
+// notamment les déserts et les régions polaires en variantes désaturées d'une
+// même couleur. Les intervalles du biome permettent de corriger cela sans
+// dépendre de son index ni de son nom.
+vec3 terranBiomeSurface(BiomeData biome_data, vec3 classified_color, float relative_height) {
+    vec3 physical = terranLandHypsometry(relative_height);
+
+    float dry = 1.0 - smoothstep(0.18, 0.52, biome_data.humid_max);
+    float cold = 1.0 - smoothstep(-10.0, 7.0, biome_data.temp_max);
+
+    const vec3 DRY_LOWLAND = vec3(0.76, 0.62, 0.39);
+    const vec3 DRY_UPLAND = vec3(0.67, 0.42, 0.27);
+    const vec3 DRY_SUMMIT = vec3(0.86, 0.70, 0.54);
+    vec3 dry_physical = mix(DRY_LOWLAND, DRY_UPLAND, smoothstep(250.0, 2100.0, relative_height));
+    dry_physical = mix(dry_physical, DRY_SUMMIT, smoothstep(3000.0, 5900.0, relative_height));
+
+    const vec3 COLD_LOWLAND = vec3(0.60, 0.64, 0.62);
+    const vec3 COLD_UPLAND = vec3(0.73, 0.78, 0.79);
+    const vec3 COLD_SUMMIT = vec3(0.90, 0.94, 0.95);
+    vec3 cold_physical = mix(COLD_LOWLAND, COLD_UPLAND, smoothstep(200.0, 1900.0, relative_height));
+    cold_physical = mix(cold_physical, COLD_SUMMIT, smoothstep(2100.0, 5000.0, relative_height));
+
+    physical = mix(physical, dry_physical, dry);
+    // Le froid prévaut sur l'aridité pour qu'un désert polaire reste minéral
+    // et glacé plutôt que de devenir ocre.
+    physical = mix(physical, cold_physical, cold);
+
+    // La seconde couleur du biome est une couleur de matériau conçue pour la
+    // carte finale. La couleur d'identification ne sert que de légère nuance :
+    // elle ne peut plus transformer le rendu en copie délavée de biome_map.
+    vec3 material = mix(biome_data.color.rgb, classified_color, 0.06);
+    float identity_strength = 0.70 + 0.10 * max(dry, cold);
+    identity_strength -= 0.06 * smoothstep(2600.0, 6000.0, relative_height);
+    return mix(physical, material, identity_strength);
+}
+
 vec3 terranWaterHypsometry(float depth, vec3 source_water) {
     // Vue satellite stylisée : lacs, mers et océans partagent la même famille
     // bleu-vert. La profondeur ne crée plus un écart cyan/bleu artificiel.
@@ -218,34 +255,6 @@ vec3 terranWaterHypsometry(float depth, vec3 source_water) {
     vec3 color = mix(SHALLOW, MID, smoothstep(80.0, 1200.0, depth));
     color = mix(color, DEEP, smoothstep(1200.0, 5200.0, depth));
     return mix(color, source_water, 0.03);
-}
-
-bool waterAt(ivec2 pos, int w, int h) {
-    return imageLoad(water_colored, wrappedPosition(pos, w, h)).a > 0.0;
-}
-
-// Retourne 0 hors ligne, 1 pour une courbe secondaire et 2 pour une maîtresse.
-int contourKind(ivec2 pos, int w, int h, float center_height, bool is_water) {
-    if (is_water || center_height < 20.0) {
-        return 0;
-    }
-    float right_height = displayElevation(pos + ivec2(1, 0), w, h) - params.sea_level;
-    float down_height = displayElevation(pos + ivec2(0, 1), w, h) - params.sea_level;
-    bool right_land = !waterAt(pos + ivec2(1, 0), w, h);
-    bool down_land = !waterAt(pos + ivec2(0, 1), w, h);
-
-    const float MINOR_INTERVAL = 400.0;
-    const float MAJOR_INTERVAL = 1600.0;
-    bool major =
-        (right_land && floor(center_height / MAJOR_INTERVAL) != floor(right_height / MAJOR_INTERVAL)) ||
-        (down_land && floor(center_height / MAJOR_INTERVAL) != floor(down_height / MAJOR_INTERVAL));
-    if (major) {
-        return 2;
-    }
-    bool minor =
-        (right_land && floor(center_height / MINOR_INTERVAL) != floor(right_height / MINOR_INTERVAL)) ||
-        (down_land && floor(center_height / MINOR_INTERVAL) != floor(down_height / MINOR_INTERVAL));
-    return minor ? 1 : 0;
 }
 
 // ============================================================================
@@ -288,18 +297,25 @@ void main() {
         if (is_water) {
             color = terranWaterHypsometry(max(-relative_height, 0.0), water.rgb);
         } else {
-            vec3 physical_color = terranLandHypsometry(max(relative_height, 0.0));
-            // Le biome teinte la carte sans en devenir l'unique couche. Une
-            // forêt reste verte, un désert chaud reste ocre, mais le relief
-            // demeure immédiatement lisible.
-            vec3 ecology = mix(vegetation_color, biome.rgb, 0.18);
-            color = mix(physical_color, ecology, 0.43);
+            if (biome_count > 0u && biome_index < biome_count) {
+                color = terranBiomeSurface(
+                    biomes[biome_index],
+                    biome.rgb,
+                    max(relative_height, 0.0)
+                );
+            } else {
+                color = mix(
+                    terranLandHypsometry(max(relative_height, 0.0)),
+                    biome.rgb,
+                    0.55
+                );
+            }
         }
     } else {
         color = vegetation_color;
     }
     
-    // === STEP 2: Apply hillshade (topographic shading) ===
+    // === STEP 2: Apply subtle, continuous terrain lighting ===
     float shading = calculateTopoShading(pos, w, h);
     
     // Réduire l'intensité du relief sur l'eau
@@ -310,16 +326,6 @@ void main() {
     
     float shade_factor = 1.0 + (shading - 0.5) * 2.0 * effective_strength;
     color *= shade_factor;
-
-    // === STEP 2.5: courbes de niveau cartographiques ===
-    if (params.atmosphere_type == 0u) {
-        int contour = contourKind(pos, w, h, relative_height, is_water);
-        if (contour == 2) {
-            color = mix(color, vec3(0.64, 0.43, 0.34), 0.34);
-        } else if (contour == 1) {
-            color = mix(color, vec3(0.73, 0.50, 0.39), 0.20);
-        }
-    }
     
     // === STEP 3: Rivers overlay ===
     // Si un biome rivière est assigné, appliquer la colorisation dynamique

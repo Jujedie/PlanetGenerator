@@ -22,57 +22,57 @@ var BIOMES = [
 	# ==========================================================================
 
 	# --- OCÉANS & BATHYMÉTRIE (couleurs foncées réalistes) ---
-	Biome.new("Abysses", Color.hex(0x172252FF), Color.hex(0x405c60FF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, -6000], true, [TYPE_TERRAN]),
-	Biome.new("Plaine Abyssale", Color.hex(0x20366eFF), Color.hex(0x48696bFF), [-21, 100], [0.0, 1.0], [-6000, -2000], true, [TYPE_TERRAN]),
-	Biome.new("Océan Profond", Color.hex(0x28518aFF), Color.hex(0x527978FF), [-21, 100], [0.0, 1.0], [-2000, -200], true, [TYPE_TERRAN]),
-	Biome.new("Plateau Continental", Color.hex(0x3e79adFF), Color.hex(0x638b85FF), [-21, 100], [0.0, 1.0], [-200, 0], true, [TYPE_TERRAN]),
+	Biome.new("Abysses", Color.hex(0x172252FF), Color.hex(0x18384bFF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, -6000], true, [TYPE_TERRAN]),
+	Biome.new("Plaine Abyssale", Color.hex(0x20366eFF), Color.hex(0x204b5fFF), [-21, 100], [0.0, 1.0], [-6000, -2000], true, [TYPE_TERRAN]),
+	Biome.new("Océan Profond", Color.hex(0x28518aFF), Color.hex(0x2a6474FF), [-21, 100], [0.0, 1.0], [-2000, -200], true, [TYPE_TERRAN]),
+	Biome.new("Plateau Continental", Color.hex(0x3e79adFF), Color.hex(0x438693FF), [-21, 100], [0.0, 1.0], [-200, 0], true, [TYPE_TERRAN]),
 	
 	# --- CÔTES & EAUX PEU PROFONDES ---
-	Biome.new("Récif Corallien", Color.hex(0x2bc5b4FF), Color.hex(0x719a91FF), [24, 35], [0.0, 1.0], [-50, 0], true, [TYPE_TERRAN]),
-	Biome.new("Lagon Tropical", Color.hex(0x74d8ceFF), Color.hex(0x80a79cFF), [24, 35], [0.0, 1.0], [-20, 0], true, [TYPE_TERRAN]),
-	Biome.new("Fjord Glacé", Color.hex(0x527b86FF), Color.hex(0x6c8586FF), [-20, 5], [0.0, 1.0], [-200, 0], true, [TYPE_TERRAN]),
-	Biome.new("Littoral / Plage", Color.hex(0xe3cc8eFF), Color.hex(0xe2bc92FF), [8, 35], [0.0, 1.0], [-50, 8], false, [TYPE_TERRAN]),
-	Biome.new("Mangrove (Salée)", Color.hex(0x2f8055FF), Color.hex(0x6d7b62FF), [23, 40], [0.6, 1.0], [-20, 5], true, [TYPE_TERRAN], true),
-	Biome.new("Delta Fluvial", Color.hex(0x4c9ca7FF), Color.hex(0x6d8a80FF), [12, 35], [0.65, 1.0], [-50, 5], true, [TYPE_TERRAN], true),
+	Biome.new("Récif Corallien", Color.hex(0x2bc5b4FF), Color.hex(0x35aa9dFF), [24, 35], [0.0, 1.0], [-50, 0], true, [TYPE_TERRAN]),
+	Biome.new("Lagon Tropical", Color.hex(0x74d8ceFF), Color.hex(0x69c6bbFF), [24, 35], [0.0, 1.0], [-20, 0], true, [TYPE_TERRAN]),
+	Biome.new("Fjord Glacé", Color.hex(0x527b86FF), Color.hex(0x557a87FF), [-20, 5], [0.0, 1.0], [-200, 0], true, [TYPE_TERRAN]),
+	Biome.new("Littoral / Plage", Color.hex(0xe3cc8eFF), Color.hex(0xd9c18bFF), [8, 35], [0.0, 1.0], [-50, 8], false, [TYPE_TERRAN]),
+	Biome.new("Mangrove (Salée)", Color.hex(0x2f8055FF), Color.hex(0x3f654bFF), [23, 40], [0.6, 1.0], [-20, 5], true, [TYPE_TERRAN], true),
+	Biome.new("Delta Fluvial", Color.hex(0x4c9ca7FF), Color.hex(0x547c72FF), [12, 35], [0.65, 1.0], [-50, 5], true, [TYPE_TERRAN], true),
 
 	# --- TERRES : CLIMATS FROIDS (Polaires & Alpins) ---
-	Biome.new("Calotte Glaciaire", Color.hex(0xcbd1d1FF), Color.hex(0xe3e0d4FF), [-273, -15], [0.4, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Désert Polaire", Color.hex(0xa8cbc4FF), Color.hex(0xd3d0c4FF), [-273, -15], [0.0, 0.4], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Toundra", Color.hex(0x5f8c7bFF), Color.hex(0xa8a486FF), [-15, 2], [0.0, 0.3], [-ALTITUDE_MAX, 2500], false, [TYPE_TERRAN]),
-	Biome.new("Toundra Alpine", Color.hex(0x557d8cFF), Color.hex(0x9a9992FF), [-30, 5], [0.0, 0.35], [2200, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Taïga (Forêt Boréale)", Color.hex(0x075b52FF), Color.hex(0x66735fFF), [-15, 14], [0.25, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Prairie Alpine (Alpage)", Color.hex(0x80a344FF), Color.hex(0xa9a66cFF), [-5, 18], [0.0, 0.4], [1500, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Forêt de montagne", Color.hex(0x2f6650FF), Color.hex(0x5d6b55FF), [-12, 18], [0.3, 1.0], [800, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Calotte Glaciaire", Color.hex(0xcbd1d1FF), Color.hex(0xe8eef0FF), [-273, -15], [0.4, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Désert Polaire", Color.hex(0xa8cbc4FF), Color.hex(0xd3d9d7FF), [-273, -15], [0.0, 0.4], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Toundra", Color.hex(0x5f8c7bFF), Color.hex(0x8d9279FF), [-15, 2], [0.0, 0.3], [-ALTITUDE_MAX, 2500], false, [TYPE_TERRAN]),
+	Biome.new("Toundra Alpine", Color.hex(0x557d8cFF), Color.hex(0x858d91FF), [-30, 5], [0.0, 0.35], [2200, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Taïga (Forêt Boréale)", Color.hex(0x075b52FF), Color.hex(0x344f3eFF), [-15, 14], [0.25, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Prairie Alpine (Alpage)", Color.hex(0x80a344FF), Color.hex(0x81935aFF), [-5, 18], [0.0, 0.4], [1500, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Forêt de montagne", Color.hex(0x2f6650FF), Color.hex(0x405b47FF), [-12, 18], [0.3, 1.0], [800, ALTITUDE_MAX], false, [TYPE_TERRAN]),
 
 	# --- TERRES : CLIMATS TEMPÉRÉS ---
-	Biome.new("Forêt Tempérée (Décidue)", Color.hex(0x72a938FF), Color.hex(0x7c8157FF), [5, 25], [0.35, 0.78], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Forêt de Séquoias", Color.hex(0x3f813dFF), Color.hex(0x687459FF), [5, 24], [0.55, 0.85], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Forêt Humide (Rainforest)", Color.hex(0x1f6f3aFF), Color.hex(0x596f55FF), [5, 30], [0.68, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Prairie Verdoyante", Color.hex(0xd5df45FF), Color.hex(0xb3aa69FF), [8, 25], [0.3, 0.62], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Maquis Méditerranéen", Color.hex(0x7c647bFF), Color.hex(0xa58e73FF), [12, 32], [0.2, 0.5], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Steppes sèches", Color.hex(0xc5a934FF), Color.hex(0xc4aa7bFF), [-5, 22], [0.0, 0.28], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Steppes tempérées", Color.hex(0xa4ad39FF), Color.hex(0xb2a96fFF), [-5, 22], [0.28, 0.5], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Marécage Tempéré", Color.hex(0x397c65FF), Color.hex(0x687f70FF), [5, 100], [0.72, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
+	Biome.new("Forêt Tempérée (Décidue)", Color.hex(0x72a938FF), Color.hex(0x587447FF), [5, 25], [0.35, 0.78], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Forêt de Séquoias", Color.hex(0x3f813dFF), Color.hex(0x405e45FF), [5, 24], [0.55, 0.85], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Forêt Humide (Rainforest)", Color.hex(0x1f6f3aFF), Color.hex(0x31563bFF), [5, 30], [0.68, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Prairie Verdoyante", Color.hex(0xd5df45FF), Color.hex(0x83985bFF), [8, 25], [0.3, 0.62], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Maquis Méditerranéen", Color.hex(0x7c647bFF), Color.hex(0x8c825dFF), [12, 32], [0.2, 0.5], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Steppes sèches", Color.hex(0xc5a934FF), Color.hex(0xb59a61FF), [-5, 22], [0.0, 0.28], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Steppes tempérées", Color.hex(0xa4ad39FF), Color.hex(0x9d985dFF), [-5, 22], [0.28, 0.5], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Marécage Tempéré", Color.hex(0x397c65FF), Color.hex(0x425f50FF), [5, 100], [0.72, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
 
 	# --- TERRES : CLIMATS CHAUDS & ARIDES ---
-	Biome.new("Jungle Tropicale", Color.hex(0x006b28FF), Color.hex(0x526d50FF), [18, 45], [0.62, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Savane", Color.hex(0x9d9a25FF), Color.hex(0xae9d61FF), [18, 45], [0.18, 0.42], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Brousse (Bush)", Color.hex(0x7f8f32FF), Color.hex(0x928d60FF), [18, 45], [0.35, 0.62], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Désert semi-aride", Color.hex(0xc9954bFF), Color.hex(0xd0aa80FF), [8, 50], [0.08, 0.3], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Désert de Sable", Color.hex(0xd6af6aFF), Color.hex(0xe0bd91FF), [20, 55], [0.0, 0.14], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Désert Rocheux (Badlands)", Color.hex(0xa85f36FF), Color.hex(0xc58d73FF), [10, 70], [0.0, 0.20], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Désert Extrême", Color.hex(0x80442fFF), Color.hex(0xb97664FF), [45, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Jungle Tropicale", Color.hex(0x006b28FF), Color.hex(0x285236FF), [18, 45], [0.62, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Savane", Color.hex(0x9d9a25FF), Color.hex(0xa88c49FF), [18, 45], [0.18, 0.42], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Brousse (Bush)", Color.hex(0x7f8f32FF), Color.hex(0x717d4cFF), [18, 45], [0.35, 0.62], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Désert semi-aride", Color.hex(0xc9954bFF), Color.hex(0xc4935bFF), [8, 50], [0.08, 0.3], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Désert de Sable", Color.hex(0xd6af6aFF), Color.hex(0xd9b772FF), [20, 55], [0.0, 0.14], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Désert Rocheux (Badlands)", Color.hex(0xa85f36FF), Color.hex(0xa96746FF), [10, 70], [0.0, 0.20], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Désert Extrême", Color.hex(0x80442fFF), Color.hex(0x98523bFF), [45, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
 	
 	# --- EAUX DOUCES INTÉRIEURES (Surface) ---
-	Biome.new("Oasis", Color.hex(0x45a96dFF), Color.hex(0x728b74FF), [0, 100], [0.0, 0.3], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
-	Biome.new("Cénote (Gouffre)", Color.hex(0x287f91FF), Color.hex(0x5c7e78FF), [20, 100], [0.5, 0.8], [-ALTITUDE_MAX, 0], true, [TYPE_TERRAN], true),
-	Biome.new("Bayou (Marais Chaud)", Color.hex(0x4e6d38FF), Color.hex(0x69785eFF), [25, 100], [0.8, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
+	Biome.new("Oasis", Color.hex(0x45a96dFF), Color.hex(0x3f7955FF), [0, 100], [0.0, 0.3], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
+	Biome.new("Cénote (Gouffre)", Color.hex(0x287f91FF), Color.hex(0x357582FF), [20, 100], [0.5, 0.8], [-ALTITUDE_MAX, 0], true, [TYPE_TERRAN], true),
+	Biome.new("Bayou (Marais Chaud)", Color.hex(0x4e6d38FF), Color.hex(0x526346FF), [25, 100], [0.8, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
 
 	# --- RIVIÈRES & LACS (Type 0 - Requis pour river_map) ---
-	Biome.new("Rivière", Color.hex(0x3f8fb3FF), Color.hex(0x527673FF), [0, 100], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
-	Biome.new("Lac d'eau douce", Color.hex(0x4e9fb7FF), Color.hex(0x5b807dFF), [0, 100], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
-	Biome.new("Lac gelé", Color.hex(0x789db6FF), Color.hex(0x91a3a0FF), [-50, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
-	Biome.new("Rivière glaciaire", Color.hex(0xa8d8e0FF), Color.hex(0x789896FF), [-50, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
+	Biome.new("Rivière", Color.hex(0x3f8fb3FF), Color.hex(0x376f7bFF), [0, 100], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
+	Biome.new("Lac d'eau douce", Color.hex(0x4e9fb7FF), Color.hex(0x447f88FF), [0, 100], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
+	Biome.new("Lac gelé", Color.hex(0x789db6FF), Color.hex(0x9eb8c1FF), [-50, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
+	Biome.new("Rivière glaciaire", Color.hex(0xa8d8e0FF), Color.hex(0x78a9b4FF), [-50, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
 
 
 	# ==========================================================================
@@ -81,22 +81,22 @@ var BIOMES = [
 	# ==========================================================================
 	
 	# --- AQUATIQUE TOXIQUE (vert acide foncé réaliste) ---
-	Biome.new("Océan Acide", Color.hex(0x40c040FF), Color.hex(0x50645aFF), [10, 80], [0.0, 1.0], [-ALTITUDE_MAX, -500], true, [TYPE_TOXIC]),
-	Biome.new("Lagon de Boue Toxique", Color.hex(0x80d040FF), Color.hex(0x586a5eFF), [20, 60], [0.0, 1.0], [-500, 0], true, [TYPE_TOXIC]),
+	Biome.new("Océan Acide", Color.hex(0x40c040FF), Color.hex(0x536f43FF), [10, 80], [0.0, 1.0], [-ALTITUDE_MAX, -500], true, [TYPE_TOXIC]),
+	Biome.new("Lagon de Boue Toxique", Color.hex(0x80d040FF), Color.hex(0x707446FF), [20, 60], [0.0, 1.0], [-500, 0], true, [TYPE_TOXIC]),
 
 	# --- TERRESTRE TOXIQUE ---
-	Biome.new("Désert de Soufre", Color.hex(0xffff00FF), Color.hex(0xc4ad6bFF), [-50, 60], [0.0, 0.2], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
-	Biome.new("Désert Extrême de Soufre", Color.hex(0xffff00FF), Color.hex(0xaa9362FF), [50, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
-	Biome.new("Forêt Fongique (Champignons)", Color.hex(0x8040d0FF), Color.hex(0x827968FF), [20, 50], [0.5, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
-	Biome.new("Plaines de Spores", Color.hex(0x60c060FF), Color.hex(0x7b8066FF), [0, 20], [0.5, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
-	Biome.new("Marécages Acides", Color.hex(0x00ff00FF), Color.hex(0x73816aFF), [20, 60], [0.7, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TOXIC], true),
-	Biome.new("Glacier Vert (Méthane)", Color.hex(0x00ff80FF), Color.hex(0xb8c0aeFF), [-200, -50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
-	Biome.new("Plaines Venteuses Toxiques", Color.hex(0x90b060FF), Color.hex(0x9b976fFF), [0, 50], [0.0, 0.5], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
-	Biome.new("Cratères Acides", Color.hex(0x70a050FF), Color.hex(0x8f856dFF), [-50, 0], [0.2, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
+	Biome.new("Désert de Soufre", Color.hex(0xffff00FF), Color.hex(0xc5b74dFF), [-50, 60], [0.0, 0.2], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
+	Biome.new("Désert Extrême de Soufre", Color.hex(0xffff00FF), Color.hex(0xa98734FF), [50, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
+	Biome.new("Forêt Fongique (Champignons)", Color.hex(0x8040d0FF), Color.hex(0x6a536bFF), [20, 50], [0.5, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
+	Biome.new("Plaines de Spores", Color.hex(0x60c060FF), Color.hex(0x697b49FF), [0, 20], [0.5, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
+	Biome.new("Marécages Acides", Color.hex(0x00ff00FF), Color.hex(0x566e3fFF), [20, 60], [0.7, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TOXIC], true),
+	Biome.new("Glacier Vert (Méthane)", Color.hex(0x00ff80FF), Color.hex(0xb9d5c8FF), [-200, -50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
+	Biome.new("Plaines Venteuses Toxiques", Color.hex(0x90b060FF), Color.hex(0x8f8d59FF), [0, 50], [0.0, 0.5], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
+	Biome.new("Cratères Acides", Color.hex(0x70a050FF), Color.hex(0x776d42FF), [-50, 0], [0.2, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
 
 	# --- RIVIÈRES TOXIQUES ---
-	Biome.new("Rivière Acide", Color.hex(0x80ff00FF), Color.hex(0x5d7062FF), [-50, 80], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TOXIC], true, true),
-	Biome.new("Lac d'Acide", Color.hex(0x40ff40FF), Color.hex(0x607366FF), [-50, 90], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TOXIC], true, true),
+	Biome.new("Rivière Acide", Color.hex(0x80ff00FF), Color.hex(0x718c38FF), [-50, 80], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TOXIC], true, true),
+	Biome.new("Lac d'Acide", Color.hex(0x40ff40FF), Color.hex(0x7d9840FF), [-50, 90], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TOXIC], true, true),
 
 
 	# ==========================================================================
@@ -105,23 +105,23 @@ var BIOMES = [
 	# ==========================================================================
 
 	# --- AQUATIQUE (LAVE) - rouges/oranges ardents mais réalistes ---
-	Biome.new("Océan de Magma", Color.hex(0xff3000FF), Color.hex(0x70483dFF), [800, 2000], [0.0, 1.0], [-ALTITUDE_MAX, -1000], true, [TYPE_VOLCANIC]),
-	Biome.new("Mer de Lave en Fusion", Color.hex(0xff6000FF), Color.hex(0x835342FF), [600, 1500], [0.0, 1.0], [-1000, 0], true, [TYPE_VOLCANIC]),
-	Biome.new("Croûte Basaltique Refroidie", Color.hex(0x404040FF), Color.hex(0x4e4941FF), [100, 400], [0.0, 1.0], [-200, 100], false, [TYPE_VOLCANIC]),
+	Biome.new("Océan de Magma", Color.hex(0xff3000FF), Color.hex(0xad3e1dFF), [800, 2000], [0.0, 1.0], [-ALTITUDE_MAX, -1000], true, [TYPE_VOLCANIC]),
+	Biome.new("Mer de Lave en Fusion", Color.hex(0xff6000FF), Color.hex(0xcf5721FF), [600, 1500], [0.0, 1.0], [-1000, 0], true, [TYPE_VOLCANIC]),
+	Biome.new("Croûte Basaltique Refroidie", Color.hex(0x404040FF), Color.hex(0x303232FF), [100, 400], [0.0, 1.0], [-200, 100], false, [TYPE_VOLCANIC]),
 
 	# --- TERRESTRE VOLCANIQUE ---
-	Biome.new("Glace Volcanique", Color.hex(0xc0c0d0FF), Color.hex(0xb9b6adFF), [-200, 0], [0.0, 1.0], [0, ALTITUDE_MAX], false, [TYPE_VOLCANIC]),
-	Biome.new("Toundra Volcanique", Color.hex(0x606068FF), Color.hex(0x69635eFF), [0, 50], [0.3, 1.0], [0, ALTITUDE_MAX], false, [TYPE_VOLCANIC]),
-	Biome.new("Plaines de Cendres", Color.hex(0x808080FF), Color.hex(0x776f69FF), [20, 200], [0.0, 0.4], [0, 2000], false, [TYPE_VOLCANIC]),
-	Biome.new("Champs de Geysers", Color.hex(0xe0e0f0FF), Color.hex(0x998779FF), [100, 300], [0.4, 1.0], [500, 1500], true, [TYPE_VOLCANIC]),
-	Biome.new("Volcan Actif (Sommet)", Color.hex(0xff0000FF), Color.hex(0x8b5848FF), [200, 1000], [0.0, 1.0], [2000, ALTITUDE_MAX], false, [TYPE_VOLCANIC]),
-	Biome.new("Obsidienne (Verre Volcanique)", Color.hex(0x200040FF), Color.hex(0x403b3dFF), [50, 200], [0.0, 1.0], [1000, 3000], false, [TYPE_VOLCANIC]),
-	Biome.new("Désert de Soufre Jaune", Color.hex(0xf0e000FF), Color.hex(0xa39668FF), [50, 150], [0.0, 0.3], [500, 2500], false, [TYPE_VOLCANIC]),
-	Biome.new("Caldeira Fumante", Color.hex(0xa06050FF), Color.hex(0x70574dFF), [300, 800], [0.0, 0.5], [0, ALTITUDE_MAX], false, [TYPE_VOLCANIC]),
+	Biome.new("Glace Volcanique", Color.hex(0xc0c0d0FF), Color.hex(0xc5c9cdFF), [-200, 0], [0.0, 1.0], [0, ALTITUDE_MAX], false, [TYPE_VOLCANIC]),
+	Biome.new("Toundra Volcanique", Color.hex(0x606068FF), Color.hex(0x565153FF), [0, 50], [0.3, 1.0], [0, ALTITUDE_MAX], false, [TYPE_VOLCANIC]),
+	Biome.new("Plaines de Cendres", Color.hex(0x808080FF), Color.hex(0x6d6966FF), [20, 200], [0.0, 0.4], [0, 2000], false, [TYPE_VOLCANIC]),
+	Biome.new("Champs de Geysers", Color.hex(0xe0e0f0FF), Color.hex(0xaa8c70FF), [100, 300], [0.4, 1.0], [500, 1500], true, [TYPE_VOLCANIC]),
+	Biome.new("Volcan Actif (Sommet)", Color.hex(0xff0000FF), Color.hex(0xb54824FF), [200, 1000], [0.0, 1.0], [2000, ALTITUDE_MAX], false, [TYPE_VOLCANIC]),
+	Biome.new("Obsidienne (Verre Volcanique)", Color.hex(0x200040FF), Color.hex(0x24202aFF), [50, 200], [0.0, 1.0], [1000, 3000], false, [TYPE_VOLCANIC]),
+	Biome.new("Désert de Soufre Jaune", Color.hex(0xf0e000FF), Color.hex(0xb6a33cFF), [50, 150], [0.0, 0.3], [500, 2500], false, [TYPE_VOLCANIC]),
+	Biome.new("Caldeira Fumante", Color.hex(0xa06050FF), Color.hex(0x65483fFF), [300, 800], [0.0, 0.5], [0, ALTITUDE_MAX], false, [TYPE_VOLCANIC]),
 
 	# --- RIVIÈRES DE LAVE (Requis pour river_map) ---
-	Biome.new("Rivière de Lave", Color.hex(0xff4000FF), Color.hex(0x8b5542FF), [100, 1500], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_VOLCANIC], true, true),
-	Biome.new("Lac de Lave", Color.hex(0xe05020FF), Color.hex(0x7d5040FF), [100, 1200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_VOLCANIC], true),
+	Biome.new("Rivière de Lave", Color.hex(0xff4000FF), Color.hex(0xda4c1bFF), [100, 1500], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_VOLCANIC], true, true),
+	Biome.new("Lac de Lave", Color.hex(0xe05020FF), Color.hex(0xbf4018FF), [100, 1200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_VOLCANIC], true),
 
 
 	# ==========================================================================
@@ -129,11 +129,11 @@ var BIOMES = [
 	# Couleur 1 (vive) = identification carte | Couleur 2 (réaliste) = surface grise lunaire
 	# ==========================================================================
 
-	Biome.new("Mare (Mer Lunaire - Basalte)", Color.hex(0x303040FF), Color.hex(0x2e2e2eFF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, -1000], false, [TYPE_NO_ATMOS]),
-	Biome.new("Régolithe Gris", Color.hex(0x888890FF), Color.hex(0x303030FF), [-200, 200], [0.0, 1.0], [-1000, 1000], false, [TYPE_NO_ATMOS]),
-	Biome.new("Cratère d'Impact", Color.hex(0x505058FF), Color.hex(0x363636FF), [-200, 200], [0.0, 1.0], [-2000, -500], false, [TYPE_NO_ATMOS]),
-	Biome.new("Hauts Plateaux Lunaires", Color.hex(0xc0c0c8FF), Color.hex(0x3a3a3aFF), [-200, 200], [0.0, 1.0], [1000, ALTITUDE_MAX], false, [TYPE_NO_ATMOS]),
-	Biome.new("Glace de Cratère Polaire", Color.hex(0xd8f0ffFF), Color.hex(0x58585aFF), [-273, -150], [0.0, 1.0], [-2000, 0], false, [TYPE_NO_ATMOS]),
+	Biome.new("Mare (Mer Lunaire - Basalte)", Color.hex(0x303040FF), Color.hex(0x292d33FF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, -1000], false, [TYPE_NO_ATMOS]),
+	Biome.new("Régolithe Gris", Color.hex(0x888890FF), Color.hex(0x77736dFF), [-200, 200], [0.0, 1.0], [-1000, 1000], false, [TYPE_NO_ATMOS]),
+	Biome.new("Cratère d'Impact", Color.hex(0x505058FF), Color.hex(0x57595cFF), [-200, 200], [0.0, 1.0], [-2000, -500], false, [TYPE_NO_ATMOS]),
+	Biome.new("Hauts Plateaux Lunaires", Color.hex(0xc0c0c8FF), Color.hex(0x96938bFF), [-200, 200], [0.0, 1.0], [1000, ALTITUDE_MAX], false, [TYPE_NO_ATMOS]),
+	Biome.new("Glace de Cratère Polaire", Color.hex(0xd8f0ffFF), Color.hex(0xc8d8e0FF), [-273, -150], [0.0, 1.0], [-2000, 0], false, [TYPE_NO_ATMOS]),
 
 	# ==========================================================================
 	# TYPE 4 : MORT / POST-APOCALYPTIQUE (Fallout / Mars terraformé échoué)
@@ -141,36 +141,36 @@ var BIOMES = [
 	# ==========================================================================
 	
 	# --- AQUATIQUE MORT (eaux sombres et polluées) ---
-	Biome.new("Océan Mort (Gris)", Color.hex(0x505860FF), Color.hex(0x566261FF), [-21, 40], [0.0, 1.0], [-ALTITUDE_MAX, -200], true, [TYPE_DEAD]),
-	Biome.new("Marécage Luminescent", Color.hex(0x40ff80FF), Color.hex(0x68726bFF), [10, 30], [0.6, 1.0], [-200, 50], true, [TYPE_DEAD], true, true),
+	Biome.new("Océan Mort (Gris)", Color.hex(0x505860FF), Color.hex(0x465359FF), [-21, 40], [0.0, 1.0], [-ALTITUDE_MAX, -200], true, [TYPE_DEAD]),
+	Biome.new("Marécage Luminescent", Color.hex(0x40ff80FF), Color.hex(0x50785fFF), [10, 30], [0.6, 1.0], [-200, 50], true, [TYPE_DEAD], true, true),
 	
 	# --- TERRESTRE MORT ---
-	Biome.new("Terres Désolées (Wasteland)", Color.hex(0x706860FF), Color.hex(0x8d8175FF), [-20, 50], [0.0, 0.4], [0, 2000], false, [TYPE_DEAD]),
-	Biome.new("Désert de Sel", Color.hex(0xf8f0e8FF), Color.hex(0xd0c6b7FF), [0, 60], [0.0, 0.2], [-500, 500], false, [TYPE_DEAD]),
-	Biome.new("Forêt Morte (Arbres Noirs)", Color.hex(0x383030FF), Color.hex(0x665f57FF), [-10, 40], [0.3, 0.7], [0, 1500], false, [TYPE_DEAD]),
-	Biome.new("Cratère Nucléaire", Color.hex(0x00e000FF), Color.hex(0x8a7967FF), [-50, 100], [0.0, 1.0], [-500, 500], false, [TYPE_DEAD]),
-	Biome.new("Plaines de Cendres Grises", Color.hex(0x787878FF), Color.hex(0x7d7872FF), [-30, 30], [0.0, 0.3], [0, 3000], false, [TYPE_DEAD]),
-	Biome.new("Désert Radioactif", Color.hex(0x90a080FF), Color.hex(0x9b8f78FF), [30, 200], [0.0, 0.4], [0, ALTITUDE_MAX], false, [TYPE_DEAD]),
-	Biome.new("Montagnes Mortes", Color.hex(0x504850FF), Color.hex(0x625e59FF), [-200, 200], [0.0, 1.0], [3000, ALTITUDE_MAX], false, [TYPE_DEAD]),
+	Biome.new("Terres Désolées (Wasteland)", Color.hex(0x706860FF), Color.hex(0x7e6c59FF), [-20, 50], [0.0, 0.4], [0, 2000], false, [TYPE_DEAD]),
+	Biome.new("Désert de Sel", Color.hex(0xf8f0e8FF), Color.hex(0xd8d0bdFF), [0, 60], [0.0, 0.2], [-500, 500], false, [TYPE_DEAD]),
+	Biome.new("Forêt Morte (Arbres Noirs)", Color.hex(0x383030FF), Color.hex(0x403831FF), [-10, 40], [0.3, 0.7], [0, 1500], false, [TYPE_DEAD]),
+	Biome.new("Cratère Nucléaire", Color.hex(0x00e000FF), Color.hex(0x706d45FF), [-50, 100], [0.0, 1.0], [-500, 500], false, [TYPE_DEAD]),
+	Biome.new("Plaines de Cendres Grises", Color.hex(0x787878FF), Color.hex(0x716d69FF), [-30, 30], [0.0, 0.3], [0, 3000], false, [TYPE_DEAD]),
+	Biome.new("Désert Radioactif", Color.hex(0x90a080FF), Color.hex(0x8d7a5bFF), [30, 200], [0.0, 0.4], [0, ALTITUDE_MAX], false, [TYPE_DEAD]),
+	Biome.new("Montagnes Mortes", Color.hex(0x504850FF), Color.hex(0x524b49FF), [-200, 200], [0.0, 1.0], [3000, ALTITUDE_MAX], false, [TYPE_DEAD]),
 
 	# --- RIVIÈRES MORTES ---
-	Biome.new("Rivière de Boue", Color.hex(0x906040FF), Color.hex(0x70675fFF), [-21, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
-	Biome.new("Rivière Pollué", Color.hex(0x608040FF), Color.hex(0x5b6665FF), [-21, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
-	Biome.new("Lac Irradié", Color.hex(0xc0ff40FF), Color.hex(0x63706aFF), [-21, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
+	Biome.new("Rivière de Boue", Color.hex(0x906040FF), Color.hex(0x68533fFF), [-21, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
+	Biome.new("Rivière Pollué", Color.hex(0x608040FF), Color.hex(0x4e604aFF), [-21, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
+	Biome.new("Lac Irradié", Color.hex(0xc0ff40FF), Color.hex(0x718055FF), [-21, 50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
 
 	# ==========================================================================
 	# TYPE 5 : STÉRILE (Planète rocheuse morte)
 	# Couleur 1 (vive) = identification carte | Couleur 2 (réaliste) = roche grise/brune
 	# ==========================================================================
 
-	Biome.new("Désert Stérile", Color.hex(0x909080FF), Color.hex(0xb3a18fFF), [50, 200], [0.0, 1.0], [-500, 500], false, [TYPE_STERILE]),
-	Biome.new("Plaine Rocheuse", Color.hex(0x686860FF), Color.hex(0x998c80FF), [-50, 50], [0.0, 1.0], [-500, 500], false, [TYPE_STERILE]),
-	Biome.new("Montagnes Rocheuses", Color.hex(0x585050FF), Color.hex(0x776f69FF), [-200, 200], [0.0, 1.0], [1000, ALTITUDE_MAX], false, [TYPE_STERILE]),
-	Biome.new("Vallées Profondes", Color.hex(0x484040FF), Color.hex(0x7e746dFF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, -500], false, [TYPE_STERILE]),
-	Biome.new("Désert de Pierre", Color.hex(0x787068FF), Color.hex(0x8a7e73FF), [-150, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE]),
-	Biome.new("Glaciers Stériles", Color.hex(0xd0d0d8FF), Color.hex(0xd2cfcaFF), [-200, -50], [0.0, 1.0], [0, ALTITUDE_MAX], false, [TYPE_STERILE]),
-	Biome.new("Plateaux Érodés", Color.hex(0x706860FF), Color.hex(0x98887bFF), [-200, 200], [0.0, 1.0], [500, 1000], false, [TYPE_STERILE]),
-	Biome.new("Cratères Secs", Color.hex(0x605858FF), Color.hex(0x7d716aFF), [50, 150], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE])
+	Biome.new("Désert Stérile", Color.hex(0x909080FF), Color.hex(0xb49270FF), [50, 200], [0.0, 1.0], [-500, 500], false, [TYPE_STERILE]),
+	Biome.new("Plaine Rocheuse", Color.hex(0x686860FF), Color.hex(0x7b6c5eFF), [-50, 50], [0.0, 1.0], [-500, 500], false, [TYPE_STERILE]),
+	Biome.new("Montagnes Rocheuses", Color.hex(0x585050FF), Color.hex(0x5c5450FF), [-200, 200], [0.0, 1.0], [1000, ALTITUDE_MAX], false, [TYPE_STERILE]),
+	Biome.new("Vallées Profondes", Color.hex(0x484040FF), Color.hex(0x574a43FF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, -500], false, [TYPE_STERILE]),
+	Biome.new("Désert de Pierre", Color.hex(0x787068FF), Color.hex(0x78665aFF), [-150, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE]),
+	Biome.new("Glaciers Stériles", Color.hex(0xd0d0d8FF), Color.hex(0xd9e2e5FF), [-200, -50], [0.0, 1.0], [0, ALTITUDE_MAX], false, [TYPE_STERILE]),
+	Biome.new("Plateaux Érodés", Color.hex(0x706860FF), Color.hex(0x8d745fFF), [-200, 200], [0.0, 1.0], [500, 1000], false, [TYPE_STERILE]),
+	Biome.new("Cratères Secs", Color.hex(0x605858FF), Color.hex(0x68584fFF), [50, 150], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE])
 ]
 
 # Définition des couleurs pour les élévations
