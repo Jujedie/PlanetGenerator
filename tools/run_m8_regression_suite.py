@@ -36,6 +36,17 @@ SCENES = [
 ]
 
 
+def _output_text(value: object) -> str:
+    """Return subprocess output as UTF-8 text without depending on Windows ACP."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("godot", help="Godot 4 executable")
@@ -52,18 +63,24 @@ def main() -> int:
             cmd.append("--headless")
         cmd.append(scene)
         started = time.perf_counter()
+        print(f"[{index:02d}/{len(SCENES)}] RUN  {scene}", flush=True)
         try:
             proc = subprocess.run(
                 cmd,
                 cwd=project,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 timeout=args.timeout,
             )
-            output = proc.stdout or ""
+            output = _output_text(proc.stdout)
             fatal_markers = ("SCRIPT ERROR", "Assertion failed", "Parse Error", "FATAL")
-            ok = proc.returncode == 0 and "PASS" in output and not any(m in output for m in fatal_markers)
+            # M1-M6 predate the explicit "...: PASS" convention and signal
+            # success through get_tree().quit(0). Requiring a literal PASS in
+            # stdout therefore creates false failures for valid legacy tests.
+            ok = proc.returncode == 0 and not any(m in output for m in fatal_markers)
             result = {
                 "scene": scene,
                 "ok": ok,
@@ -77,14 +94,28 @@ def main() -> int:
                 "ok": False,
                 "timeout": True,
                 "elapsed_ms": (time.perf_counter() - started) * 1000.0,
-                "output_tail": (exc.stdout or "")[-8000:] if isinstance(exc.stdout, str) else "",
+                "output_tail": _output_text(exc.stdout)[-8000:],
             }
+        except KeyboardInterrupt:
+            result = {
+                "scene": scene,
+                "ok": False,
+                "interrupted": True,
+                "elapsed_ms": (time.perf_counter() - started) * 1000.0,
+                "output_tail": "Interrupted by user.",
+            }
+            results.append(result)
+            print(f"[{index:02d}/{len(SCENES)}] INTERRUPTED {scene}", flush=True)
+            break
         results.append(result)
-        print(f"[{index:02d}/{len(SCENES)}] {'PASS' if result['ok'] else 'FAIL'} {scene}")
+        print(f"[{index:02d}/{len(SCENES)}] {'PASS' if result['ok'] else 'FAIL'} {scene}", flush=True)
 
+    completed = len(results)
     report = {
         "regression_report_version": 1,
-        "result": "PASS" if all(r["ok"] for r in results) else "FAIL",
+        "result": "PASS" if completed == len(SCENES) and all(r["ok"] for r in results) else "FAIL",
+        "completed_tests": completed,
+        "expected_tests": len(SCENES),
         "tests": results,
     }
     out = pathlib.Path(args.output)
