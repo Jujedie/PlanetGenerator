@@ -13,13 +13,19 @@ func _run() -> void:
 	var budget_ok := bool(budget["within_hard_budget"]) and bool(budget["within_preferred_budget"])
 
 	# Absolute sampling must agree in the overlapping halo of adjacent tiles.
-	var test_generator := TiledGlobalGenerator.new(Vector2i(64, 32), 32)
+	# TiledGlobalGenerator clamps tile_size to a minimum of 64. Use a 128x64
+	# fixture so the plan contains two adjacent 64px tiles and their 4px halos.
+	var test_generator := TiledGlobalGenerator.new(Vector2i(128, 64), 64)
 	var test_plan := test_generator.build_tile_plan(4)
+	if test_plan.size() < 2:
+		push_error("Milestone 5 seam fixture requires at least two adjacent tiles; got %d" % test_plan.size())
+		get_tree().quit(1)
+		return
 	var left: Dictionary = test_plan[0]
 	var right: Dictionary = test_plan[1]
 	var seam_ok := true
-	for global_y in range(4, 28):
-		for global_x in range(28, 36):
+	for global_y in range(4, 60):
+		for global_x in range(60, 68):
 			var left_origin: Vector2i = left["sample_origin"]
 			var right_origin: Vector2i = right["sample_origin"]
 			var left_local := Vector2i(global_x - left_origin.x, global_y - left_origin.y)
