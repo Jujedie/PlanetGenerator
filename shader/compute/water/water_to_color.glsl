@@ -5,8 +5,8 @@
 // WATER TO COLOR SHADER - Classification visuelle eau salée/douce
 // ============================================================================
 // Ce shader colore les masses d'eau en fonction de leur taille :
-// - Toute l'eau est d'abord colorée en bleu océan (eau salée)
-// - Ensuite, les petites zones (< freshwater_max_size) sont recolorées en bleu lac
+// - Chaque fluide reçoit d'abord la teinte océanique de son type de monde
+// - Les petites zones (< freshwater_max_size) prennent sa teinte de lac
 //
 // Utilise un système de flood-fill GPU via JFA déjà effectué :
 // - water_component contient le seed de chaque composante connexe
@@ -62,20 +62,20 @@ layout(set = 1, binding = 0, std140) uniform WaterColorParams {
 // ============================================================================
 
 // Default type (0)
-const vec4 COL_OCEAN = vec4(0.145, 0.322, 0.541, 1.0);         // 0x25528a - Eau salée
-const vec4 COL_LAC = vec4(0.271, 0.518, 0.824, 1.0);           // 0x4584d2 - Eau douce
+const vec4 COL_OCEAN = vec4(0.145, 0.322, 0.541, 1.0);         // 0x25528a
+const vec4 COL_LAC = vec4(0.271, 0.518, 0.824, 1.0);           // 0x4584d2
 
 // Toxic type (1)
-const vec4 COL_OCEAN_TOXIC = vec4(0.196, 0.608, 0.514, 1.0);   // 0x329b83
-const vec4 COL_LAC_TOXIC = vec4(0.282, 0.839, 0.231, 1.0);     // 0x48d63b
+const vec4 COL_OCEAN_TOXIC = vec4(0.325, 0.412, 0.153, 1.0);   // 0x536927
+const vec4 COL_LAC_TOXIC = vec4(0.545, 0.616, 0.173, 1.0);     // 0x8b9d2c
 
 // Volcanic type (2)
-const vec4 COL_LAVE = vec4(0.839, 0.588, 0.090, 1.0);          // 0xd69617
-const vec4 COL_MAGMA = vec4(0.718, 0.286, 0.055, 1.0);         // 0xb7490e
+const vec4 COL_LAVE = vec4(0.529, 0.149, 0.039, 1.0);          // 0x87260a
+const vec4 COL_MAGMA = vec4(0.910, 0.298, 0.047, 1.0);         // 0xe84c0c
 
 // Dead type (4)
-const vec4 COL_OCEAN_MORT = vec4(0.286, 0.475, 0.290, 1.0);    // 0x49794a
-const vec4 COL_LAC_MORT = vec4(0.380, 0.624, 0.388, 1.0);      // 0x619f63
+const vec4 COL_OCEAN_MORT = vec4(0.192, 0.239, 0.220, 1.0);    // 0x313d38
+const vec4 COL_LAC_MORT = vec4(0.396, 0.357, 0.204, 1.0);      // 0x655b34
 
 // Transparent (pas d'eau)
 const vec4 COL_TRANSPARENT = vec4(0.0, 0.0, 0.0, 0.0);

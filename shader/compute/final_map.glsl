@@ -8,7 +8,8 @@
 // 1. geo_texture : palette hypsométrique et ombrage topographique
 // 2. biome_id : modulation écologique de la palette cartographique
 // 3. river_flux : cours d'eau principaux
-// 4. ice_caps : banquise en overlay prioritaire
+// 4. ice_caps : banquise maritime en overlay prioritaire
+// 5. climat + relief : neige et givre terrestres calculés localement
 //
 // Le résultat n'est volontairement ni une copie de biome_colored, ni une
 // simple texture de végétation : c'est une carte physique stylisée.
@@ -19,7 +20,7 @@
 // - river_flux (R32F) : Intensité du flux des rivières
 // - geo_texture (RGBA32F) : R=height pour calcul ombrage
 // - climate_texture (RGBA32F) : R=température, G=humidité continues
-// - ice_caps (RGBA8) : Banquise (blanc/transparent)
+// - ice_caps (RGBA8) : Banquise uniquement (couleur, alpha=concentration)
 // - BiomeLUT (SSBO) : Couleurs végétation des biomes
 //
 // Sorties :
@@ -108,17 +109,23 @@ layout(set = 3, binding = 0, std430) readonly buffer RiverBiomeLUT {
 };
 
 // ============================================================================
-// BANQUISE COLOR BY ATMOSPHERE
+// CRYOSPHERE FALLBACK COLOR BY ATMOSPHERE
 // ============================================================================
 
-// Banquise color constants
-const vec3 BANQUISE_DEFAULT = vec3(0.87, 0.86, 0.80);  // Ivoire froid cartographique
-const vec3 BANQUISE_VOLCANIC = vec3(0.231, 0.192, 0.169);  // Cooled lava
+const vec3 ICE_TERRAN = vec3(0.88, 0.92, 0.93);
+const vec3 ICE_TOXIC = vec3(0.78, 0.86, 0.73);
+const vec3 ICE_VOLCANIC = vec3(0.76, 0.77, 0.76);
+const vec3 ICE_AIRLESS = vec3(0.76, 0.84, 0.88);
+const vec3 ICE_DEAD = vec3(0.72, 0.75, 0.70);
+const vec3 ICE_STERILE = vec3(0.82, 0.84, 0.83);
 
-vec3 getBanquiseColor(uint atmo) {
-    // Bleu-gris naturel pour tous les types d'atmosphère sauf volcanic.
-    if (atmo == 2u) return BANQUISE_VOLCANIC;  // Volcanic banquise is cooled lava
-    return BANQUISE_DEFAULT;
+vec3 getCryosphereColor(uint atmo) {
+    if (atmo == 1u) return ICE_TOXIC;
+    if (atmo == 2u) return ICE_VOLCANIC;
+    if (atmo == 3u) return ICE_AIRLESS;
+    if (atmo == 4u) return ICE_DEAD;
+    if (atmo == 5u) return ICE_STERILE;
+    return ICE_TERRAN;
 }
 
 // ============================================================================
@@ -130,16 +137,18 @@ vec3 getBanquiseColor(uint atmo) {
 vec3 getRiverBlendedColor(vec3 terrain_color, vec3 river_color, uint atmo) {
     // TYPE_VOLCANIC (2) : Rivières de lave - elles brillent et dominent le terrain
     if (atmo == 2u) {
-        // Forte dominance de la couleur lave, légère influence du terrain
-        return mix(terrain_color, river_color, 0.85);
+        vec3 incandescent_lava = mix(vec3(0.94, 0.19, 0.015), river_color, 0.34);
+        return mix(terrain_color, min(incandescent_lava * 1.08, vec3(1.0)), 0.91);
     }
     // TYPE_TOXIC (1) : Rivières acides - très visibles, teinte acide dominante
     if (atmo == 1u) {
-        return mix(terrain_color, river_color, 0.75);
+        vec3 acid = mix(vec3(0.55, 0.66, 0.12), river_color, 0.42);
+        return mix(terrain_color, acid, 0.78);
     }
     // TYPE_DEAD (4) : Rivières polluées/boueuses - se fondent plus avec le terrain
     if (atmo == 4u) {
-        return mix(terrain_color, river_color, 0.65);
+        vec3 polluted_water = mix(vec3(0.30, 0.25, 0.15), river_color, 0.38);
+        return mix(terrain_color, polluted_water, 0.64);
     }
     // TYPE_TERRAN (0) et autres : bleu-vert sombre accordé aux eaux de la
     // carte physique. Le biome rivière ne sert plus que de variation légère,
@@ -305,21 +314,6 @@ vec3 terranWaterHypsometry(float depth, vec3 source_water) {
     return mix(color, source_water, 0.03);
 }
 
-// Tous les types de planète rocheuse utilisent désormais la même chaîne de
-// rendu physique que le type Terran : matériau de biome lissé, variation
-// continue avec le climat/l'altitude, bathymétrie, relief, rivières et glace.
-// Les poids ci-dessous ne changent que l'identité chromatique du matériau :
-// ils évitent qu'une planète toxique, volcanique ou stérile devienne une copie
-// verte de la Terre tout en supprimant l'ancien rendu plat "biome direct".
-float planetaryMaterialIdentity(uint atmosphere_type) {
-    if (atmosphere_type == 1u) return 0.62; // Toxique
-    if (atmosphere_type == 2u) return 0.72; // Volcanique
-    if (atmosphere_type == 3u) return 0.78; // Sans atmosphère
-    if (atmosphere_type == 4u) return 0.68; // Morte
-    if (atmosphere_type == 5u) return 0.74; // Stérile
-    return 0.0;
-}
-
 vec3 planetaryLandSurface(
     vec3 biome_material,
     float temperature,
@@ -327,39 +321,141 @@ vec3 planetaryLandSurface(
     float relative_height,
     uint atmosphere_type
 ) {
-    // Le type par défaut reste bit-for-bit sur son chemin historique.
-    vec3 physical_surface = terranClimateSurface(
-        biome_material,
-        temperature,
-        humidity,
-        relative_height
-    );
     if (atmosphere_type == 0u) {
-        return physical_surface;
+        return terranClimateSurface(
+            biome_material,
+            temperature,
+            humidity,
+            relative_height
+        );
     }
 
-    // Les autres planètes profitent du même modelé continu. Leur palette de
-    // biome reste dominante afin de préserver soufre, basalte, régolithe,
-    // wasteland, roche stérile, etc. biome_material est déjà lissé spatialement
-    // par smoothedBiomeMaterial(), donc ce mélange ne réintroduit pas de
-    // frontières de biome dures.
-    float identity = planetaryMaterialIdentity(atmosphere_type);
-    return mix(physical_surface, biome_material, identity);
+    float moisture = clamp(humidity, 0.0, 1.0);
+    float height_factor = smoothstep(200.0, 4200.0, relative_height);
+    vec3 physical_surface;
+    float biome_identity;
+
+    if (atmosphere_type == 1u) {
+        // Toxique : soufre sec, dépôts ferriques chauds et bassins acides.
+        float heat = smoothstep(35.0, 360.0, temperature);
+        vec3 sulfur = mix(vec3(0.58, 0.53, 0.24), vec3(0.72, 0.49, 0.16), heat);
+        vec3 acid_soil = mix(vec3(0.39, 0.43, 0.20), vec3(0.31, 0.34, 0.13), heat);
+        physical_surface = mix(sulfur, acid_soil, smoothstep(0.35, 0.82, moisture));
+        physical_surface = mix(physical_surface, vec3(0.66, 0.58, 0.31), height_factor * 0.34);
+        biome_identity = 0.46;
+    } else if (atmosphere_type == 2u) {
+        // Volcanique : basalte, cendres, oxydes et soufre, sans végétation
+        // Terran injectée dans la palette.
+        float heat = smoothstep(80.0, 500.0, temperature);
+        vec3 basalt = mix(vec3(0.19, 0.19, 0.20), vec3(0.28, 0.16, 0.12), heat);
+        vec3 ash = mix(vec3(0.37, 0.35, 0.34), vec3(0.47, 0.27, 0.18), heat);
+        physical_surface = mix(basalt, ash, smoothstep(0.10, 0.62, moisture) * 0.54);
+        physical_surface = mix(physical_surface, vec3(0.43, 0.36, 0.26), height_factor * 0.28);
+        biome_identity = 0.55;
+    } else if (atmosphere_type == 3u) {
+        // Sans atmosphère : régolithe neutre dont la valeur suit surtout le
+        // relief. La température ne crée aucune fausse verdure.
+        vec3 mare = vec3(0.18, 0.19, 0.20);
+        vec3 highland = vec3(0.58, 0.57, 0.54);
+        physical_surface = mix(mare, highland, smoothstep(0.0, 3200.0, relative_height));
+        biome_identity = 0.48;
+    } else if (atmosphere_type == 4u) {
+        // Monde mort : terres désaturées, sel sec et zones humides sombres.
+        float heat = smoothstep(5.0, 55.0, temperature);
+        vec3 waste = mix(vec3(0.39, 0.36, 0.32), vec3(0.48, 0.34, 0.24), heat);
+        vec3 mire = vec3(0.25, 0.28, 0.22);
+        physical_surface = mix(waste, mire, smoothstep(0.38, 0.82, moisture) * 0.62);
+        physical_surface = mix(physical_surface, vec3(0.48, 0.45, 0.41), height_factor * 0.38);
+        biome_identity = 0.45;
+    } else if (atmosphere_type == 5u) {
+        // Stérile / martien : poussière ferrique dans les plaines, roche plus
+        // froide et grise sur les reliefs.
+        float warmth = smoothstep(-45.0, 45.0, temperature);
+        vec3 cold_rock = vec3(0.43, 0.38, 0.34);
+        vec3 ferric_dust = vec3(0.61, 0.39, 0.25);
+        physical_surface = mix(cold_rock, ferric_dust, warmth);
+        physical_surface = mix(physical_surface, vec3(0.39, 0.36, 0.35), height_factor * 0.58);
+        biome_identity = 0.46;
+    } else {
+        physical_surface = biome_material;
+        biome_identity = 1.0;
+    }
+
+    // Le matériau de biome est lissé spatialement : il donne l'identité
+    // locale sans produire de frontières de couleur artificiellement nettes.
+    return mix(physical_surface, biome_material, biome_identity);
 }
 
 vec3 planetaryWaterSurface(float depth, vec3 source_water, uint atmosphere_type) {
-    vec3 physical_water = terranWaterHypsometry(depth, source_water);
     if (atmosphere_type == 0u) {
-        return physical_water;
+        return terranWaterHypsometry(depth, source_water);
     }
 
-    // Même bathymétrie que la planète par défaut, mais en conservant une part
-    // forte de la couleur physique propre au fluide (acide, lave, eau morte).
-    float source_identity = 0.58;
-    if (atmosphere_type == 2u) source_identity = 0.78;
-    else if (atmosphere_type == 1u) source_identity = 0.66;
-    else if (atmosphere_type == 4u) source_identity = 0.62;
-    return mix(physical_water, source_water, source_identity);
+    vec3 shallow;
+    vec3 deep;
+    float source_identity;
+    if (atmosphere_type == 1u) {
+        shallow = vec3(0.53, 0.59, 0.18);
+        deep = vec3(0.23, 0.31, 0.10);
+        source_identity = 0.34;
+    } else if (atmosphere_type == 2u) {
+        shallow = vec3(0.96, 0.25, 0.025);
+        deep = vec3(0.34, 0.035, 0.008);
+        source_identity = 0.30;
+    } else if (atmosphere_type == 4u) {
+        shallow = vec3(0.35, 0.34, 0.23);
+        deep = vec3(0.13, 0.17, 0.16);
+        source_identity = 0.32;
+    } else {
+        return source_water;
+    }
+    vec3 depth_color = mix(shallow, deep, smoothstep(120.0, 4800.0, depth));
+    return mix(depth_color, source_water, source_identity);
+}
+
+// Couverture de neige/givre terrestre, distincte du masque ice_caps. Elle ne
+// dépend pas du nom du biome : la température permet le gel, l'humidité fournit
+// le condensat et l'altitude favorise l'accumulation et la conservation.
+float landCryosphereCoverage(
+    float temperature,
+    float humidity,
+    float relative_height,
+    uint atmosphere_type
+) {
+    float coldness;
+    if (atmosphere_type == 1u) {
+        coldness = 1.0 - smoothstep(-55.0, -38.0, temperature);
+    } else if (atmosphere_type == 3u) {
+        coldness = 1.0 - smoothstep(-165.0, -125.0, temperature);
+    } else if (atmosphere_type == 5u) {
+        float water_frost = 1.0 - smoothstep(-58.0, -38.0, temperature);
+        float carbon_frost = 1.0 - smoothstep(-105.0, -78.0, temperature);
+        coldness = max(water_frost * 0.72, carbon_frost);
+    } else {
+        // Terran, volcanique et monde mort : le givre reste de l'eau et ne
+        // peut apparaître que dans leurs régions localement froides.
+        coldness = 1.0 - smoothstep(-5.0, 1.5, temperature);
+    }
+
+    float moisture_supply = smoothstep(0.035, 0.58, clamp(humidity, 0.0, 1.0));
+    float height_retention = smoothstep(650.0, 3900.0, max(relative_height, 0.0));
+    float orographic_supply = height_retention * mix(0.10, 0.62, moisture_supply);
+    float dry_deposition = 0.0;
+    if (atmosphere_type == 3u) {
+        dry_deposition = coldness * 0.46; // dépôts dans les pièges froids
+    } else if (atmosphere_type == 5u) {
+        dry_deposition = coldness * 0.34; // givre polaire / CO2
+    } else if (temperature < -14.0) {
+        dry_deposition = 0.08;
+    }
+
+    float condensate_supply = clamp(
+        moisture_supply * 0.82 + orographic_supply + dry_deposition,
+        0.0,
+        1.0
+    );
+    float retention = mix(0.72, 1.0, height_retention);
+    return clamp(coldness * condensate_supply * retention, 0.0, 1.0);
 }
 
 // ============================================================================
@@ -388,7 +484,7 @@ void main() {
     float relative_height = elevation - params.sea_level;
     
     bool is_water = water.a > 0.0;  // L'eau a alpha > 0 dans water_colored
-    bool is_banquise = ice.a > 0.025;
+    bool has_surface_ice = ice.a > 0.025;
     bool is_river = (river_bid != 0xFFFFFFFFu) &&
         (flux >= params.river_threshold);
     
@@ -455,20 +551,34 @@ void main() {
         color = getRiverBlendedColor(color, river_veg_color, params.atmosphere_type);
     }
     
-    // === STEP 4: Banquise overlay (highest priority) ===
-    // Banquise uniquement sur les pixels eau (double vérification)
-    if (is_banquise && is_water) {
-        // Respecter la variation bord/cœur calculée par ice_caps au lieu de
-        // remplacer toute la calotte par un même bleu pâle.
-        vec3 banquise_color = mix(
-            getBanquiseColor(params.atmosphere_type),
-            ice.rgb,
-            params.atmosphere_type == 2u ? 0.25 : 0.65
+    // === STEP 4: Land snow/frost from continuous physical conditions ===
+    // This is deliberately separate from ice_caps, which remains water-only.
+    if (!is_water) {
+        float land_ice = landCryosphereCoverage(
+            climate.r,
+            climate.g,
+            max(relative_height, 0.0),
+            params.atmosphere_type
         );
-        // ice.a encode désormais la concentration. Une lisière peu compacte
-        // doit laisser voir l'océan, tandis que le pack ancien reste opaque.
+        float land_ice_opacity = smoothstep(0.06, 0.88, land_ice) * 0.90;
+        color = mix(
+            color,
+            getCryosphereColor(params.atmosphere_type),
+            land_ice_opacity
+        );
+    }
+
+    // === STEP 5: Water-only sea-ice overlay (highest priority) ===
+    // Defensive is_water check prevents a stale or malformed ice texture from
+    // ever painting an ice cap over land.
+    if (has_surface_ice && is_water) {
+        vec3 cryosphere_color = mix(
+            getCryosphereColor(params.atmosphere_type),
+            ice.rgb,
+            0.78
+        );
         float ice_opacity = smoothstep(0.025, 0.92, ice.a) * 0.84;
-        color = mix(color, banquise_color, ice_opacity);
+        color = mix(color, cryosphere_color, ice_opacity);
     }
     
     // === OUTPUT ===

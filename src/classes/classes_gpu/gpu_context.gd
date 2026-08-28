@@ -75,7 +75,7 @@ static var TextureID_Erosion : Array[String] = ["geo_temp", "river_flux", "flux_
 # temperature_colored : (RGBA8) - couleur température pour export direct
 # precipitation_colored : (RGBA8) - couleur précipitation pour export direct
 # clouds : (RGBA8) - nuages en alpha droit (RGB=blanc, A=opacité, ciel transparent)
-# ice_caps : (RGBA8) - banquise blanc/transparent
+# ice_caps : (RGBA8) - banquise maritime uniquement (alpha=concentration)
 static var TextureID_Climat : Array[String] = ["vapor", "vapor_temp", "temperature_colored", "precipitation_colored", "clouds", "ice_caps"]
 
 # Textures Étape 5 - Ressources & Pétrole
@@ -107,7 +107,7 @@ static var TextureID_Region : Array[String] = ["region_map", "region_cost", "reg
 static var TextureID_Biome : Array[String] = ["biome_id", "biome_id_temp", "biome_colored", "biome_colored_temp"]
 
 # Textures Étape 6 - Final Map & Water Colored
-# final_map : (RGBA8) - Carte finale combinée (biome + rivières + relief + banquise)
+# final_map : (RGBA8) - Carte finale combinée (biome + rivières + relief + cryosphère)
 # water_colored : (RGBA8) - Carte colorée des eaux (eau salée/douce)
 static var TextureID_Final : Array[String] = ["final_map", "water_colored"]
 
@@ -1074,7 +1074,7 @@ func initialize_final_map_textures() -> void:
 	Appelé par l'orchestrateur avant la phase de génération de la carte finale.
 	
 	Textures créées:
-	- final_map (RGBA8) : Carte finale combinée (biome + rivières + relief + banquise)
+	- final_map (RGBA8) : Carte finale combinée (biome + rivières + relief + cryosphère)
 	- water_colored (RGBA8) : Carte colorée des eaux (eau salée/douce)
 	"""
 	

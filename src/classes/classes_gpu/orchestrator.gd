@@ -1630,13 +1630,14 @@ func run_pre_erosion_climate_phase(params: Dictionary, w: int, h: int) -> void:
 	_dispatch_precipitation(w, h, groups_x, groups_y, seed_val, avg_precipitation, cylinder_radius, atmosphere_type, sea_level)
 	print("[Orchestrator] ✅ Climat préliminaire prêt")
 
-## Génère les cartes climatiques : température, précipitation, nuages, banquise.
+## Génère les cartes climatiques : température, précipitation et nuages.
 ##
 ## Cette phase exécute :
 ## 1. Température : basée sur latitude, altitude, bruit fBm
 ## 2. Précipitation : basée sur 3 types de bruit + influence latitude
 ## 3. Nuages : simulation fluide (init, advection x N, render)
-## 4. Banquise : eau + température < 0 avec probabilité
+## La neige terrestre est rendue depuis ces champs ; la banquise est calculée
+## après l'hydrologie afin de rester limitée aux surfaces liquides.
 ##
 ## Écrit dans ClimateTexture (RGBA32F) :
 ## - R = temperature (°C)
@@ -1668,9 +1669,10 @@ func run_atmosphere_phase(params: Dictionary, w: int, h: int) -> void:
 	# === PASSE 2 : PRÉCIPITATION ===
 	_dispatch_precipitation(w, h, groups_x, groups_y, seed_val, avg_precipitation, cylinder_radius, atmosphere_type, sea_level)
 	
-	# Pas de nuages ni de banquise sur planètes sans atmosphère ou stériles
+	# Pas de nuages sur les planètes sans atmosphère. Leur givre terrestre reste
+	# calculable dans la carte finale à partir de la température et du relief.
 	if atmosphere_type in [Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE]:
-		print("  ⏭️ Nuages et banquise ignorés (type=", atmosphere_type, ")")
+		print("  ⏭️ Nuages ignorés (type=", atmosphere_type, ")")
 		print("[Orchestrator] ✅ Phase 3 : Atmosphère & Climat terminée")
 		return
 	
@@ -1679,8 +1681,8 @@ func run_atmosphere_phase(params: Dictionary, w: int, h: int) -> void:
 	var cloud_density = float(params.get("cloud_density", 0.8))
 	_dispatch_clouds(w, h, groups_x, groups_y, seed_val, cloud_coverage, cloud_density, cylinder_radius, atmosphere_type)
 
-	# NOTE: Banquise (ice_caps) déplacée après la phase eau pour pouvoir
-	# vérifier water_colored et éviter de générer de la glace sans eau.
+	# NOTE: la banquise (ice_caps) est calculée après la phase eau. La neige et
+	# le givre terrestres sont ajoutés séparément dans final_map.glsl.
 	
 	print("[Orchestrator] ✅ Phase 3 : Atmosphère & Climat terminée")
 
@@ -1909,15 +1911,16 @@ func _dispatch_clouds(w: int, h: int, groups_x: int, groups_y: int, seed_val: in
 	gpu.release_rid(param_buffer)
 
 
-## Phase banquise - exécutée APRÈS la phase eau pour avoir accès à water_colored
+## Phase banquise - exécutée APRÈS l'eau afin de rester strictement maritime
 func run_ice_caps_phase(params: Dictionary, w: int, h: int) -> void:
 	var atmosphere_type = int(params.get("planet_type", 0))
-	
-	# Pas de banquise sur planètes sans atmosphère ou stériles
+
+	# Ces types ne génèrent aucune surface liquide. Leur éventuel givre
+	# terrestre est rendu directement dans la carte finale.
 	if atmosphere_type in [Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE]:
-		print("[Orchestrator] ⏭️ Banquise ignorée (type=", atmosphere_type, ")")
+		print("[Orchestrator] ⏭️ Phase 3.5 : pas de banquise sans surface liquide")
 		return
-	
+
 	print("[Orchestrator] 🧊 Phase 3.5 : Banquise")
 	
 	var groups_x = ceili(float(w) / 16.0)
@@ -2054,7 +2057,9 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 
 	# Les textures restent initialisées même lorsqu'un type de planète ne peut
 	# pas avoir d'eau liquide, car les phases finales les référencent.
+	# water_colored appartient au groupe final_map.
 	gpu.initialize_water_textures()
+	gpu.initialize_final_map_textures()
 	if atmosphere_type in [Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE]:
 		last_hydrology_stats = {"skipped_no_liquid_water": true}
 		print("  ⏭️ Planète sans eau liquide (type=", atmosphere_type, ")")
@@ -2072,7 +2077,7 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	# 1. Le premier masque ne contient que l'océan thermiquement liquide.
 	# Les lacs seront dérivés ensuite de la profondeur réelle des bassins.
 	print("  • Initialisation du masque océanique...")
-	_dispatch_water_fill(w, h, groups_x, groups_y, sea_level, 0.0)
+	_dispatch_water_fill(w, h, groups_x, groups_y, sea_level, 0.0, atmosphere_type)
 
 	# 2. Priority-Flood exact : convergence par épuisement de la file de
 	# priorité, sans nombre de passes arbitraire. Le solveur classe ensuite les
@@ -2095,7 +2100,6 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 		push_error("[Orchestrator] Hydrology surface solve failed")
 		return
 
-	gpu.initialize_final_map_textures()
 	var water_mask_data: PackedByteArray = surface_result["water_mask"]
 	var routing_parent: PackedInt32Array = surface_result["routing_parent"]
 	var routing_child_count: PackedInt32Array = surface_result["routing_child_count"]
@@ -2225,7 +2229,8 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	print("[Orchestrator] ✅ Phase 2.5 : Hydrologie terminée")
 
 ## Dispatch le shader d'identification des zones d'eau
-func _dispatch_water_fill(w: int, h: int, groups_x: int, groups_y: int, sea_level: float, lake_threshold: float) -> void:
+func _dispatch_water_fill(w: int, h: int, groups_x: int, groups_y: int,
+		sea_level: float, lake_threshold: float, atmosphere_type: int) -> void:
 	if not gpu.shaders.has("water_fill") or not gpu.shaders["water_fill"].is_valid():
 		push_warning("[Orchestrator] ⚠️ water_fill shader non disponible")
 		return
@@ -2253,13 +2258,17 @@ func _dispatch_water_fill(w: int, h: int, groups_x: int, groups_y: int, sea_leve
 	
 	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["water_fill"], 0)
 	
-	# UBO paramètres (16 bytes, std140)
+	# UBO paramètres (32 bytes, std140)
 	var buffer_bytes = PackedByteArray()
-	buffer_bytes.resize(16)
+	buffer_bytes.resize(32)
 	buffer_bytes.encode_u32(0, w)
 	buffer_bytes.encode_u32(4, h)
 	buffer_bytes.encode_float(8, sea_level)
 	buffer_bytes.encode_float(12, lake_threshold)
+	buffer_bytes.encode_u32(16, atmosphere_type)
+	buffer_bytes.encode_float(20, 0.0)
+	buffer_bytes.encode_float(24, 0.0)
+	buffer_bytes.encode_float(28, 0.0)
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
 	var param_uniform = RDUniform.new()

@@ -26,20 +26,20 @@ static var WATER_COLORS = {
 		"saltwater": Color.hex(0x25528aFF),  # Océan
 		"freshwater": Color.hex(0x4584d2FF)  # Lac
 	},
-	# Type 1 (Toxic) - Vert toxique
+	# Type 1 (Toxic) - saumures acides jaune-olive
 	1: {
-		"saltwater": Color.hex(0x329b83FF),
-		"freshwater": Color.hex(0x48d63bFF)
+		"saltwater": Color.hex(0x536927FF),
+		"freshwater": Color.hex(0x8b9d2cFF)
 	},
 	# Type 2 (Volcanic) - Lave
 	2: {
-		"saltwater": Color.hex(0xd69617FF),
-		"freshwater": Color.hex(0xb7490eFF)
+		"saltwater": Color.hex(0x87260aFF),
+		"freshwater": Color.hex(0xe84c0cFF)
 	},
-	# Type 4 (Dead) - Vert mort
+	# Type 4 (Dead) - eau sombre et lacs boueux
 	4: {
-		"saltwater": Color.hex(0x49794aFF),
-		"freshwater": Color.hex(0x619f63FF)
+		"saltwater": Color.hex(0x313d38FF),
+		"freshwater": Color.hex(0x655b34FF)
 	}
 }
 
@@ -200,7 +200,8 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		return exported_files
 	
 	# === EXPORT CLIMAT (Step 3) - Optimisé RGBA8 Direct ===
-	# Pour les planètes sans atmosphère ou stériles, exporter seulement temp/precip (pas nuages/banquise)
+	# Les mondes sans atmosphère n'ont ni nuages ni surface liquide. Leur givre
+	# terrestre éventuel fait partie de final_map, pas du masque de banquise.
 	if planet_type in [3, 5]:  # TYPE_NO_ATMOS, TYPE_STERILE
 		var climate_result = _export_climate_maps_without_clouds(gpu, output_dir)
 		for key in climate_result.keys():
@@ -715,7 +716,7 @@ func _export_climate_maps_without_clouds(gpu: GPUContext, output_dir: String) ->
 	
 
 	
-	# Seulement température et précipitation, sans nuages ni banquise
+	# Température et précipitation nulle, sans nuages ni banquise.
 	var climate_textures = {
 		"temperature_colored": "temperature_map.png",
 		"precipitation_colored": "precipitation_map.png",
@@ -1775,9 +1776,9 @@ func _export_river_type_map(gpu: GPUContext, output_dir: String, width: int, hei
 ##
 ## La texture final_map contient la combinaison :
 ## - Biome (couleur de base végétation)
-## - Rivières (overlay bleu si flux > seuil)
+## - Rivières (fluide propre au type de monde si flux > seuil)
 ## - Relief topographique (ombrage hillshade)
-## - Banquise (overlay prioritaire)
+## - Givre/neige terrestres climatiques et banquise maritime prioritaire
 ##
 ## Post-traitement CPU :
 ## - Assombrit les pixels eau avec WATER_DARKENING_FACTOR
@@ -1912,6 +1913,15 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 	# La texture geo n'a aucune signification pour une géante gazeuse et n'est
 	# volontairement jamais utilisée pour modifier son rendu final.
 	var planet_type = int(params.get("planet_type", 0))
+	var water_darkening_factor: float = WATER_DARKENING_FACTOR
+	if planet_type == Enum.TYPE_TOXIC:
+		water_darkening_factor = 0.92
+	elif planet_type == Enum.TYPE_VOLCANIC:
+		# La lave est émissive : le post-traitement ne doit pas annuler la
+		# luminance construite par le shader de carte finale.
+		water_darkening_factor = 1.0
+	elif planet_type == Enum.TYPE_DEAD:
+		water_darkening_factor = 0.82
 	if planet_type != Enum.TYPE_GAZEUZE and gpu.textures.has("geo") and gpu.textures["geo"].is_valid():
 		var geo_data = _read_texture(gpu, "geo")
 		var water_data := PackedByteArray()
@@ -1924,7 +1934,7 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 		var has_ice_data: bool = ice_data.size() == expected_size
 		
 		if geo_data.size() > 0:
-			print("  Applying water darkening factor: ", WATER_DARKENING_FACTOR)
+			print("  Applying water darkening factor: ", water_darkening_factor)
 			var water_pixels_darkened = 0
 			var ice_pixels_preserved = 0
 			
@@ -1938,15 +1948,14 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 					) or (not has_water_data and elevation < 0.0)
 					var is_ice: bool = has_ice_data and ice_data[pixel_idx * 4 + 3] > 6
 					
-					# Ne jamais assombrir la banquise déjà composée par le GPU :
-					# cela détruisait sa teinte ivoire dans final_map.png.
+					# Ne jamais assombrir la banquise déjà composée par le GPU.
 					if is_water and not is_ice:
 						var current_color = img.get_pixel(x, y)
 						# Assombrir RGB tout en gardant l'alpha
 						var darkened_color = Color(
-							current_color.r * WATER_DARKENING_FACTOR,
-							current_color.g * WATER_DARKENING_FACTOR,
-							current_color.b * WATER_DARKENING_FACTOR,
+							current_color.r * water_darkening_factor,
+							current_color.g * water_darkening_factor,
+							current_color.b * water_darkening_factor,
 							current_color.a
 						)
 						img.set_pixel(x, y, darkened_color)

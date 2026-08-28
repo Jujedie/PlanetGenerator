@@ -335,7 +335,10 @@ void main() {
         * planetary * 3.6;
     float temp = base_temp + anomaly + inland_seasonality + altitude_temp;
     
-    temp = clamp(temp, -200.0, 200.0);
+    // Le contrôle UI et les presets montent à 500 °C. Conserver cette
+    // plage est indispensable pour distinguer correctement les biomes
+    // vénusiens et les mers de lave au lieu de tout rabattre sur 200 °C.
+    temp = clamp(temp, -200.0, 550.0);
     
     // === 5. Écriture des résultats ===
     

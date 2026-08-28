@@ -553,7 +553,7 @@ func solve_surface_and_water(
 	for candidate_index in range(deep_fill_count):
 		var index := int(deep_fill_cells[candidate_index])
 		var temperature := climate_values[index * 4]
-		if temperature >= WATER_MIN_TEMP and temperature <= WATER_MAX_TEMP:
+		if _temperature_allows_surface_fluid(temperature, atmosphere_type):
 			candidate_mask[index] = 1
 			lake_candidate_cells += 1
 	climate_values = PackedFloat32Array()
@@ -1166,17 +1166,26 @@ func _direction_between_neighbors(index: int, target: int, width: int) -> int:
 
 func _saltwater_color(atmosphere_type: int) -> Array[int]:
 	match atmosphere_type:
-		1: return [50, 155, 131]
-		2: return [214, 150, 23]
-		4: return [73, 121, 74]
-		_: return [37, 82, 138]
+		1: return [83, 105, 39]   # saumure acide profonde
+		2: return [135, 38, 10]   # magma profond
+		4: return [49, 61, 56]    # eau morte, sombre et polluée
+		_: return [37, 82, 138]   # palette Terran historique
+
+func _temperature_allows_surface_fluid(temperature: float, atmosphere_type: int) -> bool:
+	match atmosphere_type:
+		1:
+			return temperature >= -55.0 and temperature <= 550.0
+		2:
+			return temperature >= 150.0 and temperature <= 550.0
+		_:
+			return temperature >= WATER_MIN_TEMP and temperature <= WATER_MAX_TEMP
 
 func _freshwater_color(atmosphere_type: int) -> Array[int]:
 	match atmosphere_type:
-		1: return [72, 214, 59]
-		2: return [183, 73, 14]
-		4: return [97, 159, 99]
-		_: return [69, 132, 210]
+		1: return [139, 157, 44]  # acide concentré / lagon toxique
+		2: return [232, 76, 12]   # lave peu profonde plus lumineuse
+		4: return [101, 91, 52]   # lac stagnant / boueux
+		_: return [69, 132, 210]  # palette Terran historique
 
 func _neighbor_index(index: int, direction: int, width: int, height: int) -> int:
 	var x := index % width

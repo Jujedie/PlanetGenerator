@@ -58,6 +58,7 @@ func _run() -> void:
 		and int(stats["partial_alpha_pixels"]) > int(stats["visible_pixels"]) / 10
 		and int(stats["alpha_levels"]) >= 24
 		and int(stats["land_violations"]) == 0
+		and int(stats["water_visible"]) > 300
 		and int(stats["warm_belt_violations"]) == 0
 		and int(stats["north_visible"]) > 0
 		and int(stats["south_visible"]) > 0
@@ -99,17 +100,26 @@ func _build_synthetic_inputs() -> Dictionary:
 			var pixel_index := y * TEST_RESOLUTION.x + x
 			var float_offset := pixel_index * 16
 			var byte_offset := pixel_index * 4
+			# Les terres alternent entre basses/hautes et sèches/humides afin de
+			# vérifier que le masque maritime n'en peint aucune, même lorsqu'elles
+			# seraient propices à la neige dans la carte finale.
+			var condition := int(x / 12) % 4
+			var high_land := condition >= 2
+			var wet_land := condition % 2 == 1
 			var temperature := (
 				20.0
 				- 49.0 * pow(latitude, 1.35)
 				+ sin(u * TAU * 3.0 + v * 4.0) * latitude * 1.8
 			)
-			geo.encode_float(float_offset, 220.0 if is_land else -1200.0)
+			geo.encode_float(
+				float_offset,
+				(3200.0 if high_land else 220.0) if is_land else -1200.0
+			)
 			geo.encode_float(float_offset + 4, 0.0)
 			geo.encode_float(float_offset + 8, 0.0)
 			geo.encode_float(float_offset + 12, 0.0 if is_land else 1200.0)
 			climate.encode_float(float_offset, temperature)
-			climate.encode_float(float_offset + 4, 0.55)
+			climate.encode_float(float_offset + 4, (0.68 if wet_land else 0.015) if is_land else 0.55)
 			climate.encode_float(float_offset + 8, 0.0)
 			climate.encode_float(float_offset + 12, 0.0)
 			water[byte_offset] = 48
@@ -141,11 +151,15 @@ func _inside_warped_ellipse(
 	return delta.length_squared() < 1.0
 
 
-func _analyze_ice(ice_data: PackedByteArray, land_mask: PackedByteArray) -> Dictionary:
+func _analyze_ice(
+	ice_data: PackedByteArray,
+	land_mask: PackedByteArray
+) -> Dictionary:
 	var visible_pixels := 0
 	var dense_pixels := 0
 	var partial_alpha_pixels := 0
 	var land_violations := 0
+	var water_visible := 0
 	var warm_belt_violations := 0
 	var north_visible := 0
 	var south_visible := 0
@@ -166,6 +180,8 @@ func _analyze_ice(ice_data: PackedByteArray, land_mask: PackedByteArray) -> Dict
 				partial_alpha_pixels += 1
 			if land_mask[pixel_index] != 0:
 				land_violations += 1
+			else:
+				water_visible += 1
 			if latitude < 0.45:
 				warm_belt_violations += 1
 			if y < TEST_RESOLUTION.y / 2:
@@ -181,6 +197,7 @@ func _analyze_ice(ice_data: PackedByteArray, land_mask: PackedByteArray) -> Dict
 		"partial_alpha_pixels": partial_alpha_pixels,
 		"alpha_levels": alpha_values.size(),
 		"land_violations": land_violations,
+		"water_visible": water_visible,
 		"warm_belt_violations": warm_belt_violations,
 		"north_visible": north_visible,
 		"south_visible": south_visible,

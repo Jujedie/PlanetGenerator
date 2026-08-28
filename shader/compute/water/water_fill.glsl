@@ -6,7 +6,7 @@
 // ============================================================================
 // Étape 1 du système d'eau :
 // - Identifie uniquement les pixels sous le niveau de la mer (eau potentielle)
-// - Vérifie la température : l'eau liquide n'existe que si T ∈ [0°C, 100°C]
+// - Vérifie la plage thermique du fluide propre au type de planète
 // - Initialise les seeds JFA pour la détection des composantes connexes
 //
 // Les lacs sont construits après le Priority-Flood à partir de la profondeur
@@ -43,6 +43,10 @@ layout(set = 1, binding = 0, std140) uniform WaterParams {
     uint height;          // Hauteur texture
     float sea_level;      // Niveau de la mer
     float lake_threshold; // Réservé pour compatibilité UBO (non utilisé)
+    uint atmosphere_type; // 0=Terran, 1=Toxique, 2=Volcanique, 4=Mort
+    float padding1;
+    float padding2;
+    float padding3;
 } params;
 
 // ============================================================================
@@ -52,11 +56,21 @@ layout(set = 1, binding = 0, std140) uniform WaterParams {
 const uint WATER_NONE = 0u;
 const uint WATER_POTENTIAL = 1u;  // Eau potentielle (sera classifiée après)
 
-// Limites de température pour l'existence de l'eau liquide
-// En dessous de WATER_MIN_TEMP → glace (pas d'eau liquide)
-// Au dessus de WATER_MAX_TEMP → vapeur (pas d'eau liquide)
+// Limites de l'eau liquide Terran / monde mort.
 const float WATER_MIN_TEMP = -21.0;    // Point de congélation (°C)
 const float WATER_MAX_TEMP = 100.0;  // Point d'ébullition (°C)
+
+bool temperatureAllowsSurfaceFluid(float temperature) {
+    if (params.atmosphere_type == 1u) {
+        // Saumures/acides et solvants exotiques du type toxique.
+        return temperature >= -55.0 && temperature <= 550.0;
+    }
+    if (params.atmosphere_type == 2u) {
+        // Le masque hydrologique représente ici de la lave ou du magma.
+        return temperature >= 150.0 && temperature <= 550.0;
+    }
+    return temperature >= WATER_MIN_TEMP && temperature <= WATER_MAX_TEMP;
+}
 
 // ============================================================================
 // FONCTIONS UTILITAIRES
@@ -95,9 +109,9 @@ void main() {
     float temperature = imageLoad(climate_texture, pixel).r;
     
     // === VÉRIFICATION TEMPÉRATURE ===
-    // L'eau liquide ne peut exister que dans la plage [WATER_MIN_TEMP, WATER_MAX_TEMP]
-    // En dehors de cette plage : glace ou vapeur, pas d'eau de surface
-    bool temperature_allows_water = (temperature >= WATER_MIN_TEMP && temperature <= WATER_MAX_TEMP);
+    // Eau, saumure/acide ou lave selon le monde. En dehors de sa plage de
+    // stabilité, le fluide n'est pas classé comme surface liquide.
+    bool temperature_allows_water = temperatureAllowsSurfaceFluid(temperature);
     
     // === CLASSIFICATION DE BASE ===
     bool is_water = false;

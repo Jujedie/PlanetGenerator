@@ -2,20 +2,23 @@
 #version 450
 
 // ============================================================================
-// ICE CAPS SHADER - Étape 3.4 : Génération des Banquises et Glaciers
+// SEA-ICE SHADER - Étape 3.4 : Banquise et glace flottante
 // ============================================================================
-// Génère une concentration de glace de mer basée sur :
+// Génère une concentration de banquise basée sur :
 // - Température locale lissée (climate.R)
-// - Masses de banquise déformées à plusieurs échelles
+// - Masses de glace déformées à plusieurs échelles
 // - Floes dans la zone marginale et chenaux sombres dans le pack
-// - Léger ancrage côtier, sans jamais déposer de glace sur terre
+//
+// Cette texture reste strictement maritime : un pixel terrestre est toujours
+// transparent. La neige et le givre terrestres sont calculés séparément par
+// final_map.glsl à partir du climat et du relief.
 //
 // Entrées :
-// - geo_texture (R=height, A=water_height)
 // - climate_texture (R=temperature)
+// - water_colored (A>0 pour les surfaces liquides)
 //
 // Sorties :
-// - ice_caps_texture : RGBA8 (bleu ivoire, alpha=concentration)
+// - ice_caps_texture : RGBA8 (couleur de banquise, alpha=concentration)
 // ============================================================================
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
@@ -166,6 +169,53 @@ float coastalProximity(ivec2 pixel) {
     return land_samples / max(sample_count, 1.0);
 }
 
+// La substance gelée et son point de transition dépendent du type de monde.
+// Les mers volcaniques sont du magma : elles ne produisent jamais de banquise.
+float localColdness(float temperature) {
+    if (params.atmosphere_type == 1u) {
+        return 1.0 - smoothstep(-55.0, -38.0, temperature); // condensats toxiques
+    }
+    if (params.atmosphere_type == 2u) {
+        return 0.0;
+    }
+    if (params.atmosphere_type == 3u) {
+        return 1.0 - smoothstep(-155.0, -112.0, temperature); // glace de piège froid
+    }
+    if (params.atmosphere_type == 5u) {
+        float water_frost = 1.0 - smoothstep(-58.0, -38.0, temperature);
+        float carbon_frost = 1.0 - smoothstep(-105.0, -78.0, temperature);
+        return max(water_frost * 0.72, carbon_frost);
+    }
+    return 1.0 - smoothstep(-2.2, 0.8, temperature);
+}
+
+void seaIcePalette(
+    out vec3 young_ice,
+    out vec3 old_ice,
+    out vec3 fracture_color
+) {
+    young_ice = vec3(0.42, 0.59, 0.65);
+    old_ice = vec3(0.88, 0.92, 0.91);
+    fracture_color = vec3(0.30, 0.46, 0.54);
+    if (params.atmosphere_type == 1u) {
+        young_ice = vec3(0.48, 0.61, 0.42);
+        old_ice = vec3(0.80, 0.87, 0.72);
+        fracture_color = vec3(0.27, 0.38, 0.20);
+    } else if (params.atmosphere_type == 3u) {
+        young_ice = vec3(0.49, 0.61, 0.67);
+        old_ice = vec3(0.79, 0.86, 0.89);
+        fracture_color = vec3(0.30, 0.39, 0.44);
+    } else if (params.atmosphere_type == 4u) {
+        young_ice = vec3(0.44, 0.50, 0.47);
+        old_ice = vec3(0.75, 0.78, 0.71);
+        fracture_color = vec3(0.27, 0.31, 0.28);
+    } else if (params.atmosphere_type == 5u) {
+        young_ice = vec3(0.57, 0.59, 0.58);
+        old_ice = vec3(0.84, 0.85, 0.84);
+        fracture_color = vec3(0.38, 0.34, 0.32);
+    }
+}
+
 // ============================================================================
 // MAIN
 // ============================================================================
@@ -180,23 +230,20 @@ void main() {
     // Couleurs de sortie
     vec4 no_ice_color = vec4(0.0, 0.0, 0.0, 0.0); // Transparent = pas de glace
     
-    // Lisser la température avant la décision de gel.
-    float temperature = smoothedTemperature(pixel);
-    
-    // === Condition 1 : Présence d'eau (banquise = glace flottante uniquement) ===
-    // On vérifie directement water_colored (source de vérité pour l'eau visible).
-    // Ni geo.a (résidus d'érosion) ni sea_level seul ne suffisent.
+    // Un masque de banquise ne doit jamais déborder sur la terre. Ce test est
+    // volontairement effectué avant toute logique climatique ou bruitée.
     vec4 water = imageLoad(water_colored, pixel);
     if (water.a <= 0.0) {
-        // Pas d'eau visible sur ce pixel = pas de banquise
         imageStore(ice_caps_texture, pixel, no_ice_color);
         return;
     }
+
+    // Lisser le champ thermique avant la décision de gel.
+    float temperature = smoothedTemperature(pixel);
     
     float probability = clamp(params.ice_probability, 0.0, 1.0);
-    if (probability <= 0.001 || temperature > 0.5) {
-        // Le paramètre peut désactiver complètement la glace. Une petite
-        // tolérance thermique conserve une lisière douce près du point de gel.
+    float coldness = localColdness(temperature);
+    if (probability <= 0.001 || coldness <= 0.001) {
         imageStore(ice_caps_texture, pixel, no_ice_color);
         return;
     }
@@ -231,13 +278,14 @@ void main() {
         params.seed + 260003u
     );
 
-    // De 0.5 °C à -11 °C : nouvelle glace -> pack compact. Le réglage de
-    // probabilité déplace le seuil de formation au lieu d'ajouter des pixels
-    // aléatoires, ce qui garantit des masses cohérentes à toute résolution.
-    float coldness = 1.0 - smoothstep(-11.0, 0.5, temperature);
+    // La banquise dépend de la température de l'eau ; la proximité des
+    // côtes aide seulement sa stabilisation et ne peut créer de glace terrestre.
     float coast_boost = coastalProximity(pixel) * coldness * 0.09;
-    float formation = coldness + macro_noise * 0.20 + floe_noise * 0.065 + coast_boost;
-    float formation_threshold = mix(0.86, 0.28, probability);
+    float formation = coldness
+        + macro_noise * 0.17
+        + floe_noise * 0.055
+        + coast_boost;
+    float formation_threshold = mix(0.86, 0.28, sqrt(probability));
     float coverage = smoothstep(
         formation_threshold - 0.22,
         formation_threshold + 0.20,
@@ -270,12 +318,14 @@ void main() {
         return;
     }
 
-    const vec3 YOUNG_ICE = vec3(0.42, 0.59, 0.65);
-    const vec3 PACK_ICE = vec3(0.88, 0.91, 0.86);
+    vec3 young_ice;
+    vec3 pack_ice;
+    vec3 fracture_color;
+    seaIcePalette(young_ice, pack_ice, fracture_color);
     float ice_age = clamp(coldness * 0.56 + concentration * 0.32 + surface_noise * 0.08, 0.0, 1.0);
     float albedo_texture = 0.86 + (surface_noise * 0.5 + 0.5) * 0.15;
-    vec3 ice_color = mix(YOUNG_ICE, PACK_ICE, ice_age) * albedo_texture;
-    ice_color = mix(ice_color, vec3(0.30, 0.46, 0.54), lead_ridge * 0.26 + polynya_ridge * 0.18);
+    vec3 ice_color = mix(young_ice, pack_ice, ice_age) * albedo_texture;
+    ice_color = mix(ice_color, fracture_color, lead_ridge * 0.26 + polynya_ridge * 0.18);
     ice_color = clamp(ice_color, 0.0, 1.0);
     imageStore(ice_caps_texture, pixel, vec4(ice_color, ice_alpha));
 }

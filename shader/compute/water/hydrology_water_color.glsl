@@ -13,16 +13,16 @@ layout(push_constant, std430) uniform Params {
 } params;
 
 vec3 saltColor(uint atmosphereType) {
-    if (atmosphereType == 1u) return vec3(50.0, 155.0, 131.0) / 255.0;
-    if (atmosphereType == 2u) return vec3(214.0, 150.0, 23.0) / 255.0;
-    if (atmosphereType == 4u) return vec3(73.0, 121.0, 74.0) / 255.0;
+    if (atmosphereType == 1u) return vec3(83.0, 105.0, 39.0) / 255.0;
+    if (atmosphereType == 2u) return vec3(135.0, 38.0, 10.0) / 255.0;
+    if (atmosphereType == 4u) return vec3(49.0, 61.0, 56.0) / 255.0;
     return vec3(37.0, 82.0, 138.0) / 255.0;
 }
 
 vec3 freshColor(uint atmosphereType) {
-    if (atmosphereType == 1u) return vec3(72.0, 214.0, 59.0) / 255.0;
-    if (atmosphereType == 2u) return vec3(183.0, 73.0, 14.0) / 255.0;
-    if (atmosphereType == 4u) return vec3(97.0, 159.0, 99.0) / 255.0;
+    if (atmosphereType == 1u) return vec3(139.0, 157.0, 44.0) / 255.0;
+    if (atmosphereType == 2u) return vec3(232.0, 76.0, 12.0) / 255.0;
+    if (atmosphereType == 4u) return vec3(101.0, 91.0, 52.0) / 255.0;
     return vec3(69.0, 132.0, 210.0) / 255.0;
 }
 
