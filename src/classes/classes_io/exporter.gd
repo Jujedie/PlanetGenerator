@@ -28,18 +28,18 @@ static var WATER_COLORS = {
 	},
 	# Type 1 (Toxic) - saumures acides jaune-olive
 	1: {
-		"saltwater": Color.hex(0x536927FF),
-		"freshwater": Color.hex(0x8b9d2cFF)
+		"saltwater": Color.hex(0x414c2dFF),
+		"freshwater": Color.hex(0x636c3aFF)
 	},
 	# Type 2 (Volcanic) - Lave
 	2: {
-		"saltwater": Color.hex(0x87260aFF),
-		"freshwater": Color.hex(0xe84c0cFF)
+		"saltwater": Color.hex(0x602a1cFF),
+		"freshwater": Color.hex(0xb8491bFF)
 	},
 	# Type 4 (Dead) - eau sombre et lacs boueux
 	4: {
 		"saltwater": Color.hex(0x313d38FF),
-		"freshwater": Color.hex(0x655b34FF)
+		"freshwater": Color.hex(0x4c4f42FF)
 	}
 }
 
@@ -1917,9 +1917,8 @@ func _export_final_map(gpu: GPUContext, output_dir: String) -> Dictionary:
 	if planet_type == Enum.TYPE_TOXIC:
 		water_darkening_factor = 0.92
 	elif planet_type == Enum.TYPE_VOLCANIC:
-		# La lave est émissive : le post-traitement ne doit pas annuler la
-		# luminance construite par le shader de carte finale.
-		water_darkening_factor = 1.0
+		# La lave reste lisible sans devenir un réseau orange fluorescent.
+		water_darkening_factor = 0.93
 	elif planet_type == Enum.TYPE_DEAD:
 		water_darkening_factor = 0.82
 	if planet_type != Enum.TYPE_GAZEUZE and gpu.textures.has("geo") and gpu.textures["geo"].is_valid():

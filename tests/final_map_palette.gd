@@ -287,7 +287,8 @@ func _validate_palette(biomes: Array, final_data: PackedByteArray, resolution: V
 		and ice_cap.r > 0.85 and ice_cap.b >= ice_cap.r
 		and taiga.g > taiga.r * 1.30
 		and rainforest.g > rainforest.r * 1.45
-		and sulfur.r > 0.70 and sulfur.g > 0.60 and sulfur.b < 0.40
+		and sulfur.r > 0.48 and sulfur.g > 0.42 and sulfur.b < 0.40
+		and sulfur.r > sulfur.g
 		and magma.r > magma.g * 2.0
 		and _luminance(lunar_highland) > _luminance(lunar_mare) + 0.30
 		and minf(salt.r, minf(salt.g, salt.b)) > 0.70

@@ -47,6 +47,12 @@ func _run() -> void:
 	orchestrator.run_ice_caps_phase(disabled_params, TEST_RESOLUTION.x, TEST_RESOLUTION.y)
 	var disabled_data := gpu.readback_texture_raw("ice_caps")
 	var disabled_visible := _count_visible_pixels(disabled_data)
+	var low_params := params.duplicate()
+	low_params["ice_probability"] = 0.3
+	orchestrator.run_ice_caps_phase(low_params, TEST_RESOLUTION.x, TEST_RESOLUTION.y)
+	var low_probability_visible := _count_visible_pixels(
+		gpu.readback_texture_raw("ice_caps")
+	)
 	orchestrator.run_ice_caps_phase(params, TEST_RESOLUTION.x, TEST_RESOLUTION.y)
 	var repeated_data := gpu.readback_texture_raw("ice_caps")
 	var deterministic := hash(ice_data) == hash(repeated_data)
@@ -64,10 +70,12 @@ func _run() -> void:
 		and int(stats["south_visible"]) > 0
 		and float(stats["seam_mean_alpha_delta"]) < 20.0
 		and disabled_visible == 0
+		and int(stats["visible_pixels"]) > int(low_probability_visible * 1.5)
 		and deterministic
 	)
 	print("[IceCapsGeneration] stats=", stats)
 	print("[IceCapsGeneration] disabled_visible=", disabled_visible)
+	print("[IceCapsGeneration] low_probability_visible=", low_probability_visible)
 	print("[IceCapsGeneration] deterministic=", deterministic)
 	print("[IceCapsGeneration] raw=", preview_paths["raw"])
 	print("[IceCapsGeneration] preview=", preview_paths["preview"])

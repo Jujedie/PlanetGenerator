@@ -1166,8 +1166,8 @@ func _direction_between_neighbors(index: int, target: int, width: int) -> int:
 
 func _saltwater_color(atmosphere_type: int) -> Array[int]:
 	match atmosphere_type:
-		1: return [83, 105, 39]   # saumure acide profonde
-		2: return [135, 38, 10]   # magma profond
+		1: return [65, 76, 45]    # saumure acide profonde, désaturée
+		2: return [96, 42, 28]    # magma profond, brun-rouge sombre
 		4: return [49, 61, 56]    # eau morte, sombre et polluée
 		_: return [37, 82, 138]   # palette Terran historique
 
@@ -1182,9 +1182,9 @@ func _temperature_allows_surface_fluid(temperature: float, atmosphere_type: int)
 
 func _freshwater_color(atmosphere_type: int) -> Array[int]:
 	match atmosphere_type:
-		1: return [139, 157, 44]  # acide concentré / lagon toxique
-		2: return [232, 76, 12]   # lave peu profonde plus lumineuse
-		4: return [101, 91, 52]   # lac stagnant / boueux
+		1: return [99, 108, 58]   # acide concentré / lagon toxique
+		2: return [184, 73, 27]   # lave peu profonde sans orange néon
+		4: return [76, 79, 66]    # lac mort gris-olive, non fluorescent
 		_: return [69, 132, 210]  # palette Terran historique
 
 func _neighbor_index(index: int, direction: int, width: int, height: int) -> int:

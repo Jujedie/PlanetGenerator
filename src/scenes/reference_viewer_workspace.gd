@@ -38,6 +38,7 @@ var empty_label: Label
 var load_button: Button
 var save_button: Button
 var viewer_panel: PanelContainer
+var viewer_scroll: ScrollContainer
 var viewer_title_label: Label
 var shortcut_label: Label
 var base_title_label: Label
@@ -303,9 +304,18 @@ func _build_interface() -> void:
 	viewer_panel.name = "MapViewerControls"
 	viewer_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.045, 0.055, 0.06, 1.0), UI_BORDER, 2, 10.0))
 	root.add_child(viewer_panel)
+	viewer_scroll = ScrollContainer.new()
+	viewer_scroll.name = "ViewerControlsScroll"
+	viewer_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	viewer_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	viewer_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	viewer_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	viewer_panel.add_child(viewer_scroll)
 	var viewer_box := VBoxContainer.new()
+	viewer_box.name = "ViewerControlsContent"
+	viewer_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	viewer_box.add_theme_constant_override("separation", 7)
-	viewer_panel.add_child(viewer_box)
+	viewer_scroll.add_child(viewer_box)
 	viewer_title_label = Label.new()
 	viewer_title_label.name = "ViewerTitle"
 	viewer_title_label.add_theme_color_override("font_color", UI_AMBER)
@@ -425,25 +435,55 @@ func _on_theme_changed(_theme_id: StringName) -> void:
 	call_deferred("_layout_interface")
 
 
-func _layout_interface() -> void:
-	if root == null:
-		return
-	var viewport_size := get_viewport().get_visible_rect().size
-	var margin := 22.0
-	var header_height := 88.0
-	var narrow_layout: bool = viewport_size.x < 1180.0
-	var viewer_height := clampf(viewport_size.y * (0.48 if narrow_layout else 0.36), 440.0 if narrow_layout else 315.0, 520.0 if narrow_layout else 370.0)
-	var viewer_top := viewport_size.y - viewer_height - margin
+func _calculate_layout(viewport_size: Vector2) -> Dictionary:
+	var margin := clampf(minf(viewport_size.x, viewport_size.y) * 0.025, 12.0, 22.0)
+	var header_height := clampf(viewport_size.y * 0.098, 68.0, 88.0)
 	var action_height := 52.0
+	var narrow_layout: bool = viewport_size.x < 1180.0
+	var desired_viewer_height := clampf(
+		viewport_size.y * (0.48 if narrow_layout else 0.40),
+		330.0 if narrow_layout else 280.0,
+		500.0 if narrow_layout else 370.0
+	)
+	var minimum_map_height := clampf(viewport_size.y * 0.20, 100.0, 180.0)
+	var fixed_height := (
+		margin * 2.0
+		+ header_height
+		+ 14.0
+		+ minimum_map_height
+		+ 10.0
+		+ action_height
+		+ 10.0
+	)
+	var available_viewer_height := maxf(viewport_size.y - fixed_height, 80.0)
+	var viewer_height := minf(desired_viewer_height, available_viewer_height)
+	var viewer_top := viewport_size.y - viewer_height - margin
 	var action_top := viewer_top - action_height - 10.0
 	var map_top := margin + header_height + 14.0
 	var map_bottom := action_top - 10.0
-	header_panel.position = Vector2(margin, margin)
-	header_panel.size = Vector2(viewport_size.x - margin * 2.0, header_height)
-	map_viewport.position = Vector2(margin, map_top)
-	map_viewport.size = Vector2(viewport_size.x - margin * 2.0, maxf(map_bottom - map_top, 180.0))
+	var content_width := maxf(viewport_size.x - margin * 2.0, 1.0)
+	return {
+		"header": Rect2(margin, margin, content_width, header_height),
+		"map": Rect2(margin, map_top, content_width, maxf(map_bottom - map_top, 1.0)),
+		"actions": Rect2(margin, action_top, content_width, action_height),
+		"viewer": Rect2(margin, viewer_top, content_width, viewer_height),
+	}
+
+
+func _layout_interface() -> void:
+	if root == null:
+		return
+	var layout := _calculate_layout(get_viewport().get_visible_rect().size)
+	var header_rect: Rect2 = layout["header"]
+	var map_rect: Rect2 = layout["map"]
+	var actions_rect: Rect2 = layout["actions"]
+	var viewer_rect: Rect2 = layout["viewer"]
+	header_panel.position = header_rect.position
+	header_panel.size = header_rect.size
+	map_viewport.position = map_rect.position
+	map_viewport.size = map_rect.size
 	var actions := root.get_node("MapActions") as Control
-	actions.position = Vector2(margin, action_top)
-	actions.size = Vector2(viewport_size.x - margin * 2.0, action_height)
-	viewer_panel.position = Vector2(margin, viewer_top)
-	viewer_panel.size = Vector2(viewport_size.x - margin * 2.0, viewer_height)
+	actions.position = actions_rect.position
+	actions.size = actions_rect.size
+	viewer_panel.position = viewer_rect.position
+	viewer_panel.size = viewer_rect.size

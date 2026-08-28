@@ -137,18 +137,18 @@ vec3 getCryosphereColor(uint atmo) {
 vec3 getRiverBlendedColor(vec3 terrain_color, vec3 river_color, uint atmo) {
     // TYPE_VOLCANIC (2) : Rivières de lave - elles brillent et dominent le terrain
     if (atmo == 2u) {
-        vec3 incandescent_lava = mix(vec3(0.94, 0.19, 0.015), river_color, 0.34);
-        return mix(terrain_color, min(incandescent_lava * 1.08, vec3(1.0)), 0.91);
+        vec3 lava = mix(vec3(0.70, 0.24, 0.06), river_color, 0.45);
+        return mix(terrain_color, lava, 0.66);
     }
     // TYPE_TOXIC (1) : Rivières acides - très visibles, teinte acide dominante
     if (atmo == 1u) {
-        vec3 acid = mix(vec3(0.55, 0.66, 0.12), river_color, 0.42);
-        return mix(terrain_color, acid, 0.78);
+        vec3 acid = mix(vec3(0.36, 0.42, 0.18), river_color, 0.30);
+        return mix(terrain_color, acid, 0.58);
     }
     // TYPE_DEAD (4) : Rivières polluées/boueuses - se fondent plus avec le terrain
     if (atmo == 4u) {
-        vec3 polluted_water = mix(vec3(0.30, 0.25, 0.15), river_color, 0.38);
-        return mix(terrain_color, polluted_water, 0.64);
+        vec3 polluted_water = mix(vec3(0.27, 0.25, 0.20), river_color, 0.30);
+        return mix(terrain_color, polluted_water, 0.50);
     }
     // TYPE_TERRAN (0) et autres : bleu-vert sombre accordé aux eaux de la
     // carte physique. Le biome rivière ne sert plus que de variation légère,
@@ -201,6 +201,28 @@ float calculateTopoShading(ivec2 pos, int w, int h) {
     // Une surface plane vaut exactement 0.5. Le relief pourra donc éclaircir
     // autant qu'assombrir sans ternir uniformément toute la carte.
     return clamp(0.5 + (shade - light_dir.z) * 0.65, 0.0, 1.0);
+}
+
+// Détail haute fréquence dérivé du relief brut. Les palettes rocheuses
+// perdent facilement leurs petits cratères et coulées lorsqu'elles ne varient
+// qu'avec de grands champs climatiques ; ce passe-haut restaure leur lecture
+// sans ajouter de bruit arbitraire à la géographie.
+float localTerrainDetail(ivec2 pos, int w, int h) {
+    float center = elevationAt(pos, w, h);
+    float cardinal = (
+        elevationAt(pos + ivec2(-1, 0), w, h)
+        + elevationAt(pos + ivec2(1, 0), w, h)
+        + elevationAt(pos + ivec2(0, -1), w, h)
+        + elevationAt(pos + ivec2(0, 1), w, h)
+    ) * 0.25;
+    float diagonal = (
+        elevationAt(pos + ivec2(-1, -1), w, h)
+        + elevationAt(pos + ivec2(1, -1), w, h)
+        + elevationAt(pos + ivec2(-1, 1), w, h)
+        + elevationAt(pos + ivec2(1, 1), w, h)
+    ) * 0.25;
+    float neighborhood = mix(cardinal, diagonal, 0.34);
+    return clamp((center - neighborhood) / 900.0, -1.0, 1.0);
 }
 
 // Palette inspirée des cartes physiques de référence : plaines olive, reliefs
@@ -338,35 +360,37 @@ vec3 planetaryLandSurface(
     if (atmosphere_type == 1u) {
         // Toxique : soufre sec, dépôts ferriques chauds et bassins acides.
         float heat = smoothstep(35.0, 360.0, temperature);
-        vec3 sulfur = mix(vec3(0.58, 0.53, 0.24), vec3(0.72, 0.49, 0.16), heat);
-        vec3 acid_soil = mix(vec3(0.39, 0.43, 0.20), vec3(0.31, 0.34, 0.13), heat);
+        vec3 sulfur = mix(vec3(0.45, 0.43, 0.26), vec3(0.54, 0.39, 0.20), heat);
+        vec3 acid_soil = mix(vec3(0.30, 0.32, 0.21), vec3(0.25, 0.28, 0.18), heat);
         physical_surface = mix(sulfur, acid_soil, smoothstep(0.35, 0.82, moisture));
-        physical_surface = mix(physical_surface, vec3(0.66, 0.58, 0.31), height_factor * 0.34);
-        biome_identity = 0.46;
+        physical_surface = mix(physical_surface, vec3(0.51, 0.48, 0.34), height_factor * 0.34);
+        biome_identity = 0.34;
     } else if (atmosphere_type == 2u) {
         // Volcanique : basalte, cendres, oxydes et soufre, sans végétation
         // Terran injectée dans la palette.
         float heat = smoothstep(80.0, 500.0, temperature);
-        vec3 basalt = mix(vec3(0.19, 0.19, 0.20), vec3(0.28, 0.16, 0.12), heat);
-        vec3 ash = mix(vec3(0.37, 0.35, 0.34), vec3(0.47, 0.27, 0.18), heat);
+        vec3 basalt = mix(vec3(0.16, 0.17, 0.18), vec3(0.24, 0.18, 0.16), heat);
+        vec3 ash = mix(vec3(0.32, 0.31, 0.30), vec3(0.38, 0.28, 0.23), heat);
         physical_surface = mix(basalt, ash, smoothstep(0.10, 0.62, moisture) * 0.54);
-        physical_surface = mix(physical_surface, vec3(0.43, 0.36, 0.26), height_factor * 0.28);
-        biome_identity = 0.55;
+        physical_surface = mix(physical_surface, vec3(0.40, 0.37, 0.32), height_factor * 0.28);
+        biome_identity = 0.38;
     } else if (atmosphere_type == 3u) {
         // Sans atmosphère : régolithe neutre dont la valeur suit surtout le
         // relief. La température ne crée aucune fausse verdure.
-        vec3 mare = vec3(0.18, 0.19, 0.20);
-        vec3 highland = vec3(0.58, 0.57, 0.54);
-        physical_surface = mix(mare, highland, smoothstep(0.0, 3200.0, relative_height));
-        biome_identity = 0.48;
+        vec3 mare = vec3(0.12, 0.14, 0.17);
+        vec3 regolith = vec3(0.40, 0.40, 0.39);
+        vec3 highland = vec3(0.64, 0.62, 0.57);
+        physical_surface = mix(mare, regolith, smoothstep(-1200.0, 600.0, relative_height));
+        physical_surface = mix(physical_surface, highland, smoothstep(700.0, 4200.0, relative_height));
+        biome_identity = 0.30;
     } else if (atmosphere_type == 4u) {
         // Monde mort : terres désaturées, sel sec et zones humides sombres.
         float heat = smoothstep(5.0, 55.0, temperature);
-        vec3 waste = mix(vec3(0.39, 0.36, 0.32), vec3(0.48, 0.34, 0.24), heat);
-        vec3 mire = vec3(0.25, 0.28, 0.22);
+        vec3 waste = mix(vec3(0.36, 0.34, 0.31), vec3(0.43, 0.34, 0.28), heat);
+        vec3 mire = vec3(0.27, 0.28, 0.25);
         physical_surface = mix(waste, mire, smoothstep(0.38, 0.82, moisture) * 0.62);
-        physical_surface = mix(physical_surface, vec3(0.48, 0.45, 0.41), height_factor * 0.38);
-        biome_identity = 0.45;
+        physical_surface = mix(physical_surface, vec3(0.46, 0.43, 0.39), height_factor * 0.38);
+        biome_identity = 0.34;
     } else if (atmosphere_type == 5u) {
         // Stérile / martien : poussière ferrique dans les plaines, roche plus
         // froide et grise sur les reliefs.
@@ -395,17 +419,17 @@ vec3 planetaryWaterSurface(float depth, vec3 source_water, uint atmosphere_type)
     vec3 deep;
     float source_identity;
     if (atmosphere_type == 1u) {
-        shallow = vec3(0.53, 0.59, 0.18);
-        deep = vec3(0.23, 0.31, 0.10);
-        source_identity = 0.34;
+        shallow = vec3(0.34, 0.37, 0.21);
+        deep = vec3(0.15, 0.19, 0.13);
+        source_identity = 0.28;
     } else if (atmosphere_type == 2u) {
-        shallow = vec3(0.96, 0.25, 0.025);
-        deep = vec3(0.34, 0.035, 0.008);
-        source_identity = 0.30;
+        shallow = vec3(0.60, 0.22, 0.08);
+        deep = vec3(0.20, 0.075, 0.045);
+        source_identity = 0.28;
     } else if (atmosphere_type == 4u) {
-        shallow = vec3(0.35, 0.34, 0.23);
+        shallow = vec3(0.28, 0.29, 0.25);
         deep = vec3(0.13, 0.17, 0.16);
-        source_identity = 0.32;
+        source_identity = 0.35;
     } else {
         return source_water;
     }
@@ -502,8 +526,18 @@ void main() {
             params.atmosphere_type
         );
     } else if (biome_count > 0u && biome_index < biome_count) {
+        vec3 land_material = smoothedBiomeMaterial(pos, w, h, vegetation_color);
+        // Les cartes rocheuses ont besoin de conserver une partie du matériau
+        // local. Le lissage 7x7 seul effaçait les petites coulées, cratères et
+        // bassins et donnait un aspect flou aux mondes non-Terran.
+        float local_material_weight = 0.0;
+        if (params.atmosphere_type == 1u) local_material_weight = 0.34;
+        else if (params.atmosphere_type == 2u) local_material_weight = 0.46;
+        else if (params.atmosphere_type == 3u) local_material_weight = 0.40;
+        else if (params.atmosphere_type == 4u) local_material_weight = 0.40;
+        land_material = mix(land_material, vegetation_color, local_material_weight);
         color = planetaryLandSurface(
-            smoothedBiomeMaterial(pos, w, h, vegetation_color),
+            land_material,
             climate.r,
             climate.g,
             max(relative_height, 0.0),
@@ -527,6 +561,19 @@ void main() {
             params.atmosphere_type
         );
     }
+
+    // Renforcer les détails géologiques des types signalés comme flous,
+    // sans modifier le rendu Terran ni le rendu stérile déjà satisfaisant.
+    if (!is_water && params.atmosphere_type >= 1u && params.atmosphere_type <= 4u) {
+        float detail_strength = 0.052;
+        if (params.atmosphere_type == 2u) detail_strength = 0.066;
+        else if (params.atmosphere_type == 3u) detail_strength = 0.085;
+        color = clamp(
+            color + vec3(localTerrainDetail(pos, w, h) * detail_strength),
+            vec3(0.0),
+            vec3(1.0)
+        );
+    }
     
     // === STEP 2: Apply subtle, continuous terrain lighting ===
     float shading = calculateTopoShading(pos, w, h);
@@ -535,6 +582,14 @@ void main() {
     float effective_strength = params.relief_strength;
     if (is_water) {
         effective_strength *= params.water_relief_factor;  // Relief très atténué sur l'eau
+    } else if (params.atmosphere_type == 1u) {
+        effective_strength *= 1.10;
+    } else if (params.atmosphere_type == 2u) {
+        effective_strength *= 1.18;
+    } else if (params.atmosphere_type == 3u) {
+        effective_strength *= 1.28;
+    } else if (params.atmosphere_type == 4u) {
+        effective_strength *= 1.15;
     }
     
     // Une variation additive reste perceptible avec la même intensité sur une

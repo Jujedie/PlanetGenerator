@@ -186,7 +186,10 @@ float localColdness(float temperature) {
         float carbon_frost = 1.0 - smoothstep(-105.0, -78.0, temperature);
         return max(water_frost * 0.72, carbon_frost);
     }
-    return 1.0 - smoothstep(-2.2, 0.8, temperature);
+    // Conserver la courbe Terran/morte du commit précédent. La transition
+    // progressive jusqu'à -11 °C empêche toute la zone froide admissible de
+    // devenir instantanément un pack compact.
+    return 1.0 - smoothstep(-11.0, 0.5, temperature);
 }
 
 void seaIcePalette(
@@ -282,10 +285,12 @@ void main() {
     // côtes aide seulement sa stabilisation et ne peut créer de glace terrestre.
     float coast_boost = coastalProximity(pixel) * coldness * 0.09;
     float formation = coldness
-        + macro_noise * 0.17
-        + floe_noise * 0.055
+        + macro_noise * 0.20
+        + floe_noise * 0.065
         + coast_boost;
-    float formation_threshold = mix(0.86, 0.28, sqrt(probability));
+    // Le paramètre agit linéairement, comme avant la régression. sqrt()
+    // surévaluait fortement les petites et moyennes probabilités.
+    float formation_threshold = mix(0.86, 0.28, probability);
     float coverage = smoothstep(
         formation_threshold - 0.22,
         formation_threshold + 0.20,
@@ -298,6 +303,10 @@ void main() {
     float core_lock = smoothstep(0.58, 0.88, coverage);
     float pack_variation = clamp(0.76 + floe_noise * 0.13 + surface_noise * 0.06, 0.52, 0.96);
     float concentration = coverage * mix(floe_mask * 0.82, pack_variation, core_lock);
+    // 0.9 est la valeur de référence historique : son rendu reste inchangé.
+    // En dessous, le paramètre contrôle aussi la concentration du pack au
+    // lieu de ne déplacer que sa lisière, ce qui le rend visuellement effectif.
+    concentration *= clamp(probability / 0.9, 0.0, 1.0);
     float lead_ridge = 1.0 - smoothstep(0.040, 0.185, abs(lead_noise + surface_noise * 0.055));
     float polynya_ridge = 1.0 - smoothstep(0.018, 0.090, abs(polynya_noise - 0.08));
     float lead_strength = lead_ridge * mix(0.86, 0.62, coldness) * smoothstep(0.16, 0.72, coverage);

@@ -3,9 +3,9 @@ extends Node
 
 const EXPECTED_WATER_COLORS := {
 	Enum.TYPE_TERRAN: [[37, 82, 138], [69, 132, 210]],
-	Enum.TYPE_TOXIC: [[83, 105, 39], [139, 157, 44]],
-	Enum.TYPE_VOLCANIC: [[135, 38, 10], [232, 76, 12]],
-	Enum.TYPE_DEAD: [[49, 61, 56], [101, 91, 52]],
+	Enum.TYPE_TOXIC: [[65, 76, 45], [99, 108, 58]],
+	Enum.TYPE_VOLCANIC: [[96, 42, 28], [184, 73, 27]],
+	Enum.TYPE_DEAD: [[49, 61, 56], [76, 79, 66]],
 }
 
 
@@ -48,12 +48,18 @@ func _run() -> void:
 	valid = valid and final_shader.contains("if (atmosphere_type == 1u)")
 	valid = valid and final_shader.contains("else if (atmosphere_type == 5u)")
 	valid = valid and final_shader.contains("landCryosphereCoverage")
+	valid = valid and final_shader.contains("localTerrainDetail")
+	valid = valid and final_shader.contains("atmosphere_type <= 4u")
 	valid = valid and final_shader.contains("temperature,\n    float humidity,\n    float relative_height")
 	valid = valid and final_shader.contains("if (has_surface_ice && is_water)")
 	valid = valid and ice_shader.contains("if (water.a <= 0.0)")
+	valid = valid and ice_shader.contains("smoothstep(-11.0, 0.5, temperature)")
+	valid = valid and ice_shader.contains("mix(0.86, 0.28, probability)")
+	valid = valid and ice_shader.contains("probability / 0.9")
+	valid = valid and not ice_shader.contains("sqrt(probability)")
 	valid = valid and not ice_shader.contains("condensateSupply")
 	valid = valid and not ice_shader.contains("height_retention")
-	valid = valid and water_shader.contains("vec3(135.0, 38.0, 10.0)")
+	valid = valid and water_shader.contains("vec3(96.0, 42.0, 28.0)")
 
 	print("[WorldTypePaletteContract] result=", "PASS" if valid else "FAIL")
 	if not valid:

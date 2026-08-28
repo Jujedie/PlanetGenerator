@@ -26,6 +26,20 @@ func _ready() -> void:
 	var controls := viewer_root.get_node_or_null("MapViewerControls") as Control
 	assert(map_viewport != null and map_viewport.size.x > 1000.0)
 	assert(controls != null and controls.position.y > map_viewport.position.y + map_viewport.size.y)
+	var actual_viewport_size := get_viewport().get_visible_rect().size
+	assert(controls.position.y + controls.size.y <= actual_viewport_size.y + 0.01)
+	var controls_scroll := controls.get_node_or_null("ViewerControlsScroll") as ScrollContainer
+	assert(controls_scroll != null)
+	assert(controls_scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_AUTO)
+	for test_size in [Vector2(1600, 900), Vector2(1280, 720), Vector2(1024, 600)]:
+		var layout: Dictionary = viewer_layer.call("_calculate_layout", test_size)
+		var previous_bottom := 0.0
+		for region_name in ["header", "map", "actions", "viewer"]:
+			var region: Rect2 = layout[region_name]
+			assert(region.position.x >= 0.0 and region.position.y >= previous_bottom)
+			assert(region.end.x <= test_size.x + 0.01)
+			assert(region.end.y <= test_size.y + 0.01)
+			previous_bottom = region.end.y
 	var base_select := master.get("_viewer_base_select") as OptionButton
 	assert(base_select != null and base_select.custom_minimum_size.y >= 44.0)
 	var shortcut_label := viewer_root.find_child("ShortcutLabel", true, false) as Label
