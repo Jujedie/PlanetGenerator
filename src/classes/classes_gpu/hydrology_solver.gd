@@ -75,33 +75,30 @@ func solve_surface_and_water(
 	routing_parent.fill(-1)
 	routing_child_count.fill(0)
 	flow_direction.fill(DIR_SINK)
+	var priority_key_count := 0
 	for index in range(pixel_count):
 		original[index] = geo_values[index * 4]
-		# Priority-Flood's comparison heap is monotone: every terrain cell sent to
-		# the open set keeps its original float32 elevation as key and newly queued
-		# keys are strictly above the current spill level.  Pre-sort all cells once
-		# in native code, then walk this order forward to recover the exact same
-		# (elevation, pixel index) pop order without O(log N) GDScript heap work.
-		var raw_bits := int(geo_bits[index * 4]) & 0xFFFFFFFF
-		# -0.0 and +0.0 compare equal in the previous heap, so normalize both to
-		# the same sortable representation before applying the index tie-break.
-		if (raw_bits & 0x7FFFFFFF) == 0:
-			raw_bits = 0
-		var ordered_bits: int
-		if (raw_bits & 0x80000000) != 0:
-			ordered_bits = (~raw_bits) & 0xFFFFFFFF
-		else:
-			ordered_bits = raw_bits ^ 0x80000000
-		var signed_order := ordered_bits - 0x80000000
-		priority_keys[index] = (signed_order << 32) | index
+		# Initial ocean cells are already visited outlets and can never enter the
+		# open set unless they lie on its frontier. Sort all land up front; frontier
+		# water keys are appended below before the single native sort. This halves
+		# sort/scanning work on ocean-heavy worlds without changing queue order.
+		if initial_water_mask[index] == WATER_NONE:
+			var raw_bits := int(geo_bits[index * 4]) & 0xFFFFFFFF
+			if (raw_bits & 0x7FFFFFFF) == 0:
+				raw_bits = 0
+			var ordered_bits: int
+			if (raw_bits & 0x80000000) != 0:
+				ordered_bits = (~raw_bits) & 0xFFFFFFFF
+			else:
+				ordered_bits = raw_bits ^ 0x80000000
+			var signed_order := ordered_bits - 0x80000000
+			priority_keys[priority_key_count] = (signed_order << 32) | index
+			priority_key_count += 1
 	var filled := original.duplicate()
 	geo_values = PackedFloat32Array()
-	geo_bits = PackedInt32Array()
 	var decode_ms: float = float(Time.get_ticks_usec() - solve_start_usec) / 1000.0
 
 	var flood_start_usec: int = Time.get_ticks_usec()
-	priority_keys.sort()
-	var priority_sort_ms: float = float(Time.get_ticks_usec() - flood_start_usec) / 1000.0
 	var visited := PackedByteArray()
 	visited.resize(pixel_count)
 	visited.fill(0)
@@ -147,6 +144,10 @@ func solve_surface_and_water(
 	var queued := PackedByteArray()
 	queued.resize(pixel_count)
 	queued.fill(0)
+	# The frontier scan already visits every pixel. Cache X there so Priority-Flood
+	# avoids one integer modulo and one integer division for every processed cell.
+	var x_by_index := PackedInt32Array()
+	x_by_index.resize(pixel_count)
 	var pending_count := 0
 	# Scan whichever side of the visited/unvisited boundary is smaller. Both
 	# branches produce exactly the same set of outlet frontier pixels. On
@@ -159,6 +160,7 @@ func solve_surface_and_water(
 			var row_down := down_row[y]
 			for x in range(width):
 				var index := row + x
+				x_by_index[index] = x
 				if visited[index] != 0:
 					continue
 				var left := left_x[x]
@@ -169,34 +171,74 @@ func solve_surface_and_water(
 				if visited[outlet] != 0 and queued[outlet] == 0:
 					queued[outlet] = 1
 					pending_count += 1
+					if initial_water_mask[outlet] != WATER_NONE:
+						priority_keys[priority_key_count] = _priority_key_from_bits(
+							int(geo_bits[outlet * 4]), outlet
+						)
+						priority_key_count += 1
 				outlet = row_up + x
 				if visited[outlet] != 0 and queued[outlet] == 0:
 					queued[outlet] = 1
 					pending_count += 1
+					if initial_water_mask[outlet] != WATER_NONE:
+						priority_keys[priority_key_count] = _priority_key_from_bits(
+							int(geo_bits[outlet * 4]), outlet
+						)
+						priority_key_count += 1
 				outlet = row_up + right
 				if visited[outlet] != 0 and queued[outlet] == 0:
 					queued[outlet] = 1
 					pending_count += 1
+					if initial_water_mask[outlet] != WATER_NONE:
+						priority_keys[priority_key_count] = _priority_key_from_bits(
+							int(geo_bits[outlet * 4]), outlet
+						)
+						priority_key_count += 1
 				outlet = row + left
 				if visited[outlet] != 0 and queued[outlet] == 0:
 					queued[outlet] = 1
 					pending_count += 1
+					if initial_water_mask[outlet] != WATER_NONE:
+						priority_keys[priority_key_count] = _priority_key_from_bits(
+							int(geo_bits[outlet * 4]), outlet
+						)
+						priority_key_count += 1
 				outlet = row + right
 				if visited[outlet] != 0 and queued[outlet] == 0:
 					queued[outlet] = 1
 					pending_count += 1
+					if initial_water_mask[outlet] != WATER_NONE:
+						priority_keys[priority_key_count] = _priority_key_from_bits(
+							int(geo_bits[outlet * 4]), outlet
+						)
+						priority_key_count += 1
 				outlet = row_down + left
 				if visited[outlet] != 0 and queued[outlet] == 0:
 					queued[outlet] = 1
 					pending_count += 1
+					if initial_water_mask[outlet] != WATER_NONE:
+						priority_keys[priority_key_count] = _priority_key_from_bits(
+							int(geo_bits[outlet * 4]), outlet
+						)
+						priority_key_count += 1
 				outlet = row_down + x
 				if visited[outlet] != 0 and queued[outlet] == 0:
 					queued[outlet] = 1
 					pending_count += 1
+					if initial_water_mask[outlet] != WATER_NONE:
+						priority_keys[priority_key_count] = _priority_key_from_bits(
+							int(geo_bits[outlet * 4]), outlet
+						)
+						priority_key_count += 1
 				outlet = row_down + right
 				if visited[outlet] != 0 and queued[outlet] == 0:
 					queued[outlet] = 1
 					pending_count += 1
+					if initial_water_mask[outlet] != WATER_NONE:
+						priority_keys[priority_key_count] = _priority_key_from_bits(
+							int(geo_bits[outlet * 4]), outlet
+						)
+						priority_key_count += 1
 	else:
 		for y in range(height):
 			var row := y * width
@@ -204,6 +246,7 @@ func solve_surface_and_water(
 			var row_down := down_row[y]
 			for x in range(width):
 				var index := row + x
+				x_by_index[index] = x
 				if visited[index] == 0:
 					continue
 				var left := left_x[x]
@@ -220,8 +263,20 @@ func solve_surface_and_water(
 				):
 					queued[index] = 1
 					pending_count += 1
+					if initial_water_mask[index] != WATER_NONE:
+						priority_keys[priority_key_count] = _priority_key_from_bits(
+							int(geo_bits[index * 4]), index
+						)
+						priority_key_count += 1
 
 	var outlet_frontier_cells := pending_count
+	priority_keys.resize(priority_key_count)
+	var priority_sort_start_usec := Time.get_ticks_usec()
+	priority_keys.sort()
+	var priority_sort_ms: float = float(
+		Time.get_ticks_usec() - priority_sort_start_usec
+	) / 1000.0
+	geo_bits = PackedInt32Array()
 
 	# Optimized Priority-Flood (Barnes-style pit queue): cells lying at or below
 	# the current spill elevation belong to the same depression and can be
@@ -237,6 +292,11 @@ func solve_surface_and_water(
 	var priority_cursor := 0
 	var priority_scanned_cells := 0
 	var seam_children := PackedInt32Array()
+	var deep_fill_cells := PackedInt32Array()
+	deep_fill_cells.resize(pixel_count)
+	var deep_fill_count := 0
+	var filled_cell_count := 0
+	var lake_depth_threshold: float = maxf(min_lake_depth_m, MIN_ROUTING_EPSILON_M)
 	while pending_count > 0 or pit_head < pit_tail:
 		var current: int
 		if pit_head < pit_tail:
@@ -248,7 +308,7 @@ func solve_surface_and_water(
 			pit_head = 0
 			pit_tail = 0
 			current = -1
-			while priority_cursor < pixel_count:
+			while priority_cursor < priority_key_count:
 				var candidate := int(priority_keys[priority_cursor] & 0xFFFFFFFF)
 				priority_cursor += 1
 				priority_scanned_cells += 1
@@ -264,13 +324,12 @@ func solve_surface_and_water(
 			heap_pop_count += 1
 
 		var current_level := filled[current]
-		var current_x := current % width
-		var current_y := int(current / width)
+		var current_x := int(x_by_index[current])
 		var row_base := current - current_x
 		var left := left_x[current_x]
 		var right := right_x[current_x]
-		var row_up := up_row[current_y]
-		var row_down := down_row[current_y]
+		var row_up := row_base - width if row_base >= width else row_base
+		var row_down := row_base + width if row_base + width < pixel_count else row_base
 		var neighbor: int
 		var neighbor_level: float
 
@@ -286,6 +345,12 @@ func solve_surface_and_water(
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
+				var fill_depth := current_level - neighbor_level
+				if fill_depth > MIN_ROUTING_EPSILON_M:
+					filled_cell_count += 1
+				if fill_depth >= lake_depth_threshold:
+					deep_fill_cells[deep_fill_count] = neighbor
+					deep_fill_count += 1
 				pit_queue[pit_tail] = neighbor
 				pit_tail += 1
 			else:
@@ -303,6 +368,12 @@ func solve_surface_and_water(
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
+				var fill_depth := current_level - neighbor_level
+				if fill_depth > MIN_ROUTING_EPSILON_M:
+					filled_cell_count += 1
+				if fill_depth >= lake_depth_threshold:
+					deep_fill_cells[deep_fill_count] = neighbor
+					deep_fill_count += 1
 				pit_queue[pit_tail] = neighbor
 				pit_tail += 1
 			else:
@@ -322,6 +393,12 @@ func solve_surface_and_water(
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
+				var fill_depth := current_level - neighbor_level
+				if fill_depth > MIN_ROUTING_EPSILON_M:
+					filled_cell_count += 1
+				if fill_depth >= lake_depth_threshold:
+					deep_fill_cells[deep_fill_count] = neighbor
+					deep_fill_count += 1
 				pit_queue[pit_tail] = neighbor
 				pit_tail += 1
 			else:
@@ -341,6 +418,12 @@ func solve_surface_and_water(
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
+				var fill_depth := current_level - neighbor_level
+				if fill_depth > MIN_ROUTING_EPSILON_M:
+					filled_cell_count += 1
+				if fill_depth >= lake_depth_threshold:
+					deep_fill_cells[deep_fill_count] = neighbor
+					deep_fill_count += 1
 				pit_queue[pit_tail] = neighbor
 				pit_tail += 1
 			else:
@@ -360,6 +443,12 @@ func solve_surface_and_water(
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
+				var fill_depth := current_level - neighbor_level
+				if fill_depth > MIN_ROUTING_EPSILON_M:
+					filled_cell_count += 1
+				if fill_depth >= lake_depth_threshold:
+					deep_fill_cells[deep_fill_count] = neighbor
+					deep_fill_count += 1
 				pit_queue[pit_tail] = neighbor
 				pit_tail += 1
 			else:
@@ -379,6 +468,12 @@ func solve_surface_and_water(
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
+				var fill_depth := current_level - neighbor_level
+				if fill_depth > MIN_ROUTING_EPSILON_M:
+					filled_cell_count += 1
+				if fill_depth >= lake_depth_threshold:
+					deep_fill_cells[deep_fill_count] = neighbor
+					deep_fill_count += 1
 				pit_queue[pit_tail] = neighbor
 				pit_tail += 1
 			else:
@@ -396,6 +491,12 @@ func solve_surface_and_water(
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
+				var fill_depth := current_level - neighbor_level
+				if fill_depth > MIN_ROUTING_EPSILON_M:
+					filled_cell_count += 1
+				if fill_depth >= lake_depth_threshold:
+					deep_fill_cells[deep_fill_count] = neighbor
+					deep_fill_count += 1
 				pit_queue[pit_tail] = neighbor
 				pit_tail += 1
 			else:
@@ -415,6 +516,12 @@ func solve_surface_and_water(
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
+				var fill_depth := current_level - neighbor_level
+				if fill_depth > MIN_ROUTING_EPSILON_M:
+					filled_cell_count += 1
+				if fill_depth >= lake_depth_threshold:
+					deep_fill_cells[deep_fill_count] = neighbor
+					deep_fill_count += 1
 				pit_queue[pit_tail] = neighbor
 				pit_tail += 1
 			else:
@@ -427,53 +534,44 @@ func solve_surface_and_water(
 	var priority_flood_ms: float = float(Time.get_ticks_usec() - flood_start_usec) / 1000.0
 	priority_keys = PackedInt64Array()
 	queued = PackedByteArray()
+	x_by_index = PackedInt32Array()
+	left_x = PackedInt32Array()
+	right_x = PackedInt32Array()
+	up_row = PackedInt32Array()
+	down_row = PackedInt32Array()
 
 	var candidate_start_usec: int = Time.get_ticks_usec()
 	var candidate_mask := PackedByteArray()
 	candidate_mask.resize(pixel_count)
 	candidate_mask.fill(0)
-	var filled_cell_count := 0
 	var lake_candidate_cells := 0
-	var lake_depth_threshold: float = maxf(min_lake_depth_m, MIN_ROUTING_EPSILON_M)
 
+	# Only cells that were actually raised above the lake-depth threshold can be
+	# candidates. Priority-Flood records them while visiting the depression, so
+	# climate filtering no longer rescans the complete map.
 	var climate_values := climate_data.to_float32_array()
-	for index in range(pixel_count):
-		var fill_depth := filled[index] - original[index]
-		if fill_depth > MIN_ROUTING_EPSILON_M:
-			filled_cell_count += 1
-
-		if initial_water_mask[index] != WATER_NONE:
-			continue
+	for candidate_index in range(deep_fill_count):
+		var index := int(deep_fill_cells[candidate_index])
 		var temperature := climate_values[index * 4]
-		var liquid_temperature := temperature >= WATER_MIN_TEMP and temperature <= WATER_MAX_TEMP
-		if liquid_temperature and fill_depth >= lake_depth_threshold:
+		if temperature >= WATER_MIN_TEMP and temperature <= WATER_MAX_TEMP:
 			candidate_mask[index] = 1
 			lake_candidate_cells += 1
 	climate_values = PackedFloat32Array()
+	deep_fill_cells = PackedInt32Array()
 	var candidate_ms: float = float(Time.get_ticks_usec() - candidate_start_usec) / 1000.0
 
 	var water_mask := initial_water_mask.duplicate()
 	var lake_components_start_usec: int = Time.get_ticks_usec()
 	var lake_component_stats := _retain_lake_components(
-		candidate_mask,
-		water_mask,
-		width,
-		height,
-		max(min_lake_cells, 1),
-		left_x, right_x, up_row, down_row,
+		candidate_mask, water_mask, width, height, max(min_lake_cells, 1),
 		routing_parent, routing_child_count, flow_direction,
 	)
 	var lake_components_ms: float = float(Time.get_ticks_usec() - lake_components_start_usec) / 1000.0
 
 	var water_components_start_usec: int = Time.get_ticks_usec()
 	var water_stats := _classify_water_components(
-		water_mask,
-		original,
-		width,
-		height,
-		sea_level,
+		water_mask, original, width, height, sea_level,
 		max(saltwater_min_cells, 1),
-		left_x, right_x, up_row, down_row,
 	)
 	var water_components_ms: float = float(Time.get_ticks_usec() - water_components_start_usec) / 1000.0
 
@@ -495,6 +593,7 @@ func solve_surface_and_water(
 		"lake_candidate_cells": lake_candidate_cells,
 		"surface_decode_ms": decode_ms,
 		"priority_sort_ms": priority_sort_ms,
+		"priority_sorted_cells": priority_key_count,
 		"priority_flood_ms": priority_flood_ms,
 		"priority_scanned_cells": priority_scanned_cells,
 		"lake_candidate_ms": candidate_ms,
@@ -698,116 +797,82 @@ func accumulate_flow(
 		},
 	}
 
+func _priority_key_from_bits(raw_bits_signed: int, index: int) -> int:
+	var raw_bits := raw_bits_signed & 0xFFFFFFFF
+	# -0.0 and +0.0 compared equal in the previous heap.
+	if (raw_bits & 0x7FFFFFFF) == 0:
+		raw_bits = 0
+	var ordered_bits: int
+	if (raw_bits & 0x80000000) != 0:
+		ordered_bits = (~raw_bits) & 0xFFFFFFFF
+	else:
+		ordered_bits = raw_bits ^ 0x80000000
+	var signed_order := ordered_bits - 0x80000000
+	return (signed_order << 32) | index
+
 func _retain_lake_components(
 	candidates: PackedByteArray,
 	water_mask: PackedByteArray,
 	width: int,
 	height: int,
 	minimum_size: int,
-	left_x: PackedInt32Array,
-	right_x: PackedInt32Array,
-	up_row: PackedInt32Array,
-	down_row: PackedInt32Array,
 	routing_parent: PackedInt32Array,
 	routing_child_count: PackedInt32Array,
 	flow_direction: PackedByteArray,
 ) -> Dictionary:
-	var visited := PackedByteArray()
-	visited.resize(candidates.size())
-	visited.fill(0)
-	var queue := PackedInt32Array()
-	queue.resize(candidates.size())
-	var candidate_components := 0
+	var runs := _build_binary_runs_8(candidates, width, height)
+	var run_starts: PackedInt32Array = runs["starts"]
+	var run_ends: PackedInt32Array = runs["ends"]
+	var run_rows: PackedInt32Array = runs["rows"]
+	var root_by_run: PackedInt32Array = runs["root_by_run"]
+	var root_sizes: PackedInt32Array = runs["root_sizes"]
+	var run_count := run_starts.size()
+	var candidate_components := int(runs["component_count"])
+	var retained_root := PackedByteArray()
+	retained_root.resize(run_count)
+	retained_root.fill(0)
 	var retained_components := 0
 	var retained_cells := 0
 	var removed_cells := 0
 
-	for start in range(candidates.size()):
-		if candidates[start] == 0 or visited[start] != 0:
+	for root in range(run_count):
+		var size := int(root_sizes[root])
+		if size <= 0:
 			continue
-
-		candidate_components += 1
-		var head := 0
-		var tail := 1
-		queue[0] = start
-		visited[start] = 1
-		while head < tail:
-			var current := queue[head]
-			head += 1
-			var current_x := current % width
-			var current_y := int(current / width)
-			var row_base := current - current_x
-			var left := left_x[current_x]
-			var right := right_x[current_x]
-			var row_up := up_row[current_y]
-			var row_down := down_row[current_y]
-			var neighbor: int
-
-			neighbor = row_up + left
-			if candidates[neighbor] != 0 and visited[neighbor] == 0:
-				visited[neighbor] = 1
-				queue[tail] = neighbor
-				tail += 1
-			neighbor = row_up + current_x
-			if candidates[neighbor] != 0 and visited[neighbor] == 0:
-				visited[neighbor] = 1
-				queue[tail] = neighbor
-				tail += 1
-			neighbor = row_up + right
-			if candidates[neighbor] != 0 and visited[neighbor] == 0:
-				visited[neighbor] = 1
-				queue[tail] = neighbor
-				tail += 1
-			neighbor = row_base + left
-			if candidates[neighbor] != 0 and visited[neighbor] == 0:
-				visited[neighbor] = 1
-				queue[tail] = neighbor
-				tail += 1
-			neighbor = row_base + right
-			if candidates[neighbor] != 0 and visited[neighbor] == 0:
-				visited[neighbor] = 1
-				queue[tail] = neighbor
-				tail += 1
-			neighbor = row_down + left
-			if candidates[neighbor] != 0 and visited[neighbor] == 0:
-				visited[neighbor] = 1
-				queue[tail] = neighbor
-				tail += 1
-			neighbor = row_down + current_x
-			if candidates[neighbor] != 0 and visited[neighbor] == 0:
-				visited[neighbor] = 1
-				queue[tail] = neighbor
-				tail += 1
-			neighbor = row_down + right
-			if candidates[neighbor] != 0 and visited[neighbor] == 0:
-				visited[neighbor] = 1
-				queue[tail] = neighbor
-				tail += 1
-
-		if tail >= minimum_size:
+		if size >= minimum_size:
+			retained_root[root] = 1
 			retained_components += 1
-			retained_cells += tail
-			for queue_index in range(tail):
-				var cell := queue[queue_index]
-				water_mask[cell] = WATER_FRESH
-				flow_direction[cell] = DIR_SINK
-			# Child counts were built while the Priority-Flood forest was discovered.
-			# Retained lake cells leave the land-only Kahn graph, so remove their edge
-			# from a land parent exactly once. All cells in this retained component are
-			# marked as water before the parent test, making the result order-independent.
-			for queue_index in range(tail):
-				var cell := queue[queue_index]
-				var parent := int(routing_parent[cell])
-				if parent >= 0 and water_mask[parent] == WATER_NONE:
-					routing_child_count[parent] -= 1
+			retained_cells += size
 		else:
-			removed_cells += tail
+			removed_cells += size
+
+	# First materialize every retained lake cell as water. Then detach its edge
+	# from a remaining land parent. This is the same two-phase ordering as the BFS
+	# implementation and therefore preserves Kahn indegrees exactly.
+	for run_index in range(run_count):
+		if retained_root[root_by_run[run_index]] == 0:
+			continue
+		var row := run_rows[run_index] * width
+		for x in range(run_starts[run_index], run_ends[run_index] + 1):
+			var cell := row + x
+			water_mask[cell] = WATER_FRESH
+			flow_direction[cell] = DIR_SINK
+	for run_index in range(run_count):
+		if retained_root[root_by_run[run_index]] == 0:
+			continue
+		var row := run_rows[run_index] * width
+		for x in range(run_starts[run_index], run_ends[run_index] + 1):
+			var cell := row + x
+			var parent := int(routing_parent[cell])
+			if parent >= 0 and water_mask[parent] == WATER_NONE:
+				routing_child_count[parent] -= 1
 
 	return {
 		"lake_candidate_components": candidate_components,
 		"lake_components_retained": retained_components,
 		"lake_cells_retained": retained_cells,
 		"lake_cells_removed": removed_cells,
+		"lake_component_runs": run_count,
 	}
 
 func _classify_water_components(
@@ -817,102 +882,60 @@ func _classify_water_components(
 	height: int,
 	sea_level: float,
 	saltwater_min_cells: int,
-	left_x: PackedInt32Array,
-	right_x: PackedInt32Array,
-	up_row: PackedInt32Array,
-	down_row: PackedInt32Array,
 ) -> Dictionary:
-	var visited := PackedByteArray()
-	visited.resize(water_mask.size())
-	visited.fill(0)
-	var queue := PackedInt32Array()
-	queue.resize(water_mask.size())
+	var runs := _build_binary_runs_8(water_mask, width, height)
+	var run_starts: PackedInt32Array = runs["starts"]
+	var run_ends: PackedInt32Array = runs["ends"]
+	var run_rows: PackedInt32Array = runs["rows"]
+	var root_by_run: PackedInt32Array = runs["root_by_run"]
+	var root_sizes: PackedInt32Array = runs["root_sizes"]
+	var run_count := run_starts.size()
+	var root_touches_subsea := PackedByteArray()
+	root_touches_subsea.resize(run_count)
+	root_touches_subsea.fill(0)
+
+	# Once a component has one original cell below sea level, no further height
+	# probes are required for its later runs. Large oceans therefore usually pay
+	# only a handful of comparisons instead of one per water cell.
+	for run_index in range(run_count):
+		var root := int(root_by_run[run_index])
+		if root_touches_subsea[root] != 0:
+			continue
+		var row := run_rows[run_index] * width
+		for x in range(run_starts[run_index], run_ends[run_index] + 1):
+			if original_height[row + x] < sea_level:
+				root_touches_subsea[root] = 1
+				break
+
+	var root_water_type := PackedByteArray()
+	root_water_type.resize(run_count)
+	root_water_type.fill(WATER_NONE)
 	var salt_components := 0
 	var fresh_components := 0
 	var total_water_cells := 0
 	var largest_component := 0
-
-	for start in range(water_mask.size()):
-		if water_mask[start] == WATER_NONE or visited[start] != 0:
+	for root in range(run_count):
+		var size := int(root_sizes[root])
+		if size <= 0:
 			continue
-
-		var head := 0
-		var tail := 1
-		queue[0] = start
-		visited[start] = 1
-		var touches_subsea := original_height[start] < sea_level
-		while head < tail:
-			var current := queue[head]
-			head += 1
-			var current_x := current % width
-			var current_y := int(current / width)
-			var row_base := current - current_x
-			var left := left_x[current_x]
-			var right := right_x[current_x]
-			var row_up := up_row[current_y]
-			var row_down := down_row[current_y]
-			var neighbor: int
-
-			neighbor = row_up + left
-			if water_mask[neighbor] != WATER_NONE and visited[neighbor] == 0:
-				visited[neighbor] = 1
-				touches_subsea = touches_subsea or original_height[neighbor] < sea_level
-				queue[tail] = neighbor
-				tail += 1
-			neighbor = row_up + current_x
-			if water_mask[neighbor] != WATER_NONE and visited[neighbor] == 0:
-				visited[neighbor] = 1
-				touches_subsea = touches_subsea or original_height[neighbor] < sea_level
-				queue[tail] = neighbor
-				tail += 1
-			neighbor = row_up + right
-			if water_mask[neighbor] != WATER_NONE and visited[neighbor] == 0:
-				visited[neighbor] = 1
-				touches_subsea = touches_subsea or original_height[neighbor] < sea_level
-				queue[tail] = neighbor
-				tail += 1
-			neighbor = row_base + left
-			if water_mask[neighbor] != WATER_NONE and visited[neighbor] == 0:
-				visited[neighbor] = 1
-				touches_subsea = touches_subsea or original_height[neighbor] < sea_level
-				queue[tail] = neighbor
-				tail += 1
-			neighbor = row_base + right
-			if water_mask[neighbor] != WATER_NONE and visited[neighbor] == 0:
-				visited[neighbor] = 1
-				touches_subsea = touches_subsea or original_height[neighbor] < sea_level
-				queue[tail] = neighbor
-				tail += 1
-			neighbor = row_down + left
-			if water_mask[neighbor] != WATER_NONE and visited[neighbor] == 0:
-				visited[neighbor] = 1
-				touches_subsea = touches_subsea or original_height[neighbor] < sea_level
-				queue[tail] = neighbor
-				tail += 1
-			neighbor = row_down + current_x
-			if water_mask[neighbor] != WATER_NONE and visited[neighbor] == 0:
-				visited[neighbor] = 1
-				touches_subsea = touches_subsea or original_height[neighbor] < sea_level
-				queue[tail] = neighbor
-				tail += 1
-			neighbor = row_down + right
-			if water_mask[neighbor] != WATER_NONE and visited[neighbor] == 0:
-				visited[neighbor] = 1
-				touches_subsea = touches_subsea or original_height[neighbor] < sea_level
-				queue[tail] = neighbor
-				tail += 1
-
 		var water_type := WATER_FRESH
-		if touches_subsea and tail >= saltwater_min_cells:
+		if root_touches_subsea[root] != 0 and size >= saltwater_min_cells:
 			water_type = WATER_SALT
 			salt_components += 1
 		else:
 			fresh_components += 1
+		root_water_type[root] = water_type
+		total_water_cells += size
+		largest_component = maxi(largest_component, size)
 
-		total_water_cells += tail
-		largest_component = max(largest_component, tail)
-		for queue_index in range(tail):
-			water_mask[queue[queue_index]] = water_type
+	# Classification itself must touch every water pixel once to materialize the
+	# authoritative mask, but it is now a contiguous run write with no BFS queue,
+	# visited map, modulo, clamp, or eight-neighbor probes.
+	for run_index in range(run_count):
+		var water_type := int(root_water_type[root_by_run[run_index]])
+		var row := run_rows[run_index] * width
+		for x in range(run_starts[run_index], run_ends[run_index] + 1):
+			water_mask[row + x] = water_type
 
 	return {
 		"water_components": salt_components + fresh_components,
@@ -920,7 +943,112 @@ func _classify_water_components(
 		"freshwater_components": fresh_components,
 		"total_water_cells": total_water_cells,
 		"largest_water_component": largest_component,
+		"water_component_runs": run_count,
 	}
+
+## Run-length 8-connected component labeler on a cylindrical X / clamped-Y map.
+## Horizontal runs remove the queue + eight-neighbor inner loop that dominated
+## water-component classification at multi-megapixel resolutions.
+func _build_binary_runs_8(mask: PackedByteArray, width: int, height: int) -> Dictionary:
+	var run_starts := PackedInt32Array()
+	var run_ends := PackedInt32Array()
+	var run_rows := PackedInt32Array()
+	var run_parent := PackedInt32Array()
+	var row_run_begin := PackedInt32Array()
+	var row_run_end := PackedInt32Array()
+	row_run_begin.resize(height)
+	row_run_end.resize(height)
+
+	for y in range(height):
+		var row := y * width
+		var row_begin := run_starts.size()
+		row_run_begin[y] = row_begin
+		var x := 0
+		while x < width:
+			while x < width and mask[row + x] == WATER_NONE:
+				x += 1
+			if x >= width:
+				break
+			var start_x := x
+			x += 1
+			while x < width and mask[row + x] != WATER_NONE:
+				x += 1
+			var run_index := run_starts.size()
+			run_starts.append(start_x)
+			run_ends.append(x - 1)
+			run_rows.append(y)
+			run_parent.append(run_index)
+		var row_end := run_starts.size()
+		row_run_end[y] = row_end
+
+		# Same-row X seam is an 8-neighbor contact too.
+		if row_end - row_begin >= 2 and run_starts[row_begin] == 0 and run_ends[row_end - 1] == width - 1:
+			_run_union_smallest(run_parent, row_begin, row_end - 1)
+
+		if y == 0 or row_begin >= row_end:
+			continue
+		var previous_begin := int(row_run_begin[y - 1])
+		var previous_end := int(row_run_end[y - 1])
+		var previous_cursor := previous_begin
+		for current_run in range(row_begin, row_end):
+			var start_x := int(run_starts[current_run])
+			var end_x := int(run_ends[current_run])
+			while previous_cursor < previous_end and run_ends[previous_cursor] < start_x - 1:
+				previous_cursor += 1
+			var candidate_run := previous_cursor
+			while candidate_run < previous_end and run_starts[candidate_run] <= end_x + 1:
+				if run_ends[candidate_run] >= start_x - 1:
+					_run_union_smallest(run_parent, current_run, candidate_run)
+				candidate_run += 1
+			# Diagonal seam contacts are outside the ordinary interval overlap.
+			if start_x == 0 and previous_end > previous_begin and run_ends[previous_end - 1] == width - 1:
+				_run_union_smallest(run_parent, current_run, previous_end - 1)
+			if end_x == width - 1 and previous_end > previous_begin and run_starts[previous_begin] == 0:
+				_run_union_smallest(run_parent, current_run, previous_begin)
+
+	var run_count := run_starts.size()
+	var root_by_run := PackedInt32Array()
+	var root_sizes := PackedInt32Array()
+	root_by_run.resize(run_count)
+	root_sizes.resize(run_count)
+	root_sizes.fill(0)
+	var component_count := 0
+	for run_index in range(run_count):
+		var root := _run_find_root(run_parent, run_index)
+		root_by_run[run_index] = root
+		if root_sizes[root] == 0:
+			component_count += 1
+		root_sizes[root] += run_ends[run_index] - run_starts[run_index] + 1
+
+	return {
+		"starts": run_starts,
+		"ends": run_ends,
+		"rows": run_rows,
+		"root_by_run": root_by_run,
+		"root_sizes": root_sizes,
+		"component_count": component_count,
+	}
+
+func _run_find_root(parent: PackedInt32Array, value: int) -> int:
+	var root := value
+	while parent[root] != root:
+		root = parent[root]
+	var current := value
+	while parent[current] != current:
+		var next := int(parent[current])
+		parent[current] = root
+		current = next
+	return root
+
+func _run_union_smallest(parent: PackedInt32Array, a: int, b: int) -> void:
+	var root_a := _run_find_root(parent, a)
+	var root_b := _run_find_root(parent, b)
+	if root_a == root_b:
+		return
+	if root_a < root_b:
+		parent[root_b] = root_a
+	else:
+		parent[root_a] = root_b
 
 func _build_water_colors(water_mask: PackedByteArray, atmosphere_type: int) -> PackedByteArray:
 	var salt_color := _saltwater_color(atmosphere_type)

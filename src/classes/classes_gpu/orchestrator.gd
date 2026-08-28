@@ -2117,6 +2117,7 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 		"    [Hydrology queue] outlet-frontier=", last_hydrology_stats.get("priority_flood_outlet_frontier_cells", 0),
 		" | open-pops=", last_hydrology_stats.get("priority_flood_heap_pops", 0),
 		" | pit-pops=", last_hydrology_stats.get("priority_flood_pit_pops", 0),
+		" | sorted=", last_hydrology_stats.get("priority_sorted_cells", 0),
 		" | sorted-scan=", last_hydrology_stats.get("priority_scanned_cells", 0),
 		" | pre-sort=", snappedf(float(last_hydrology_stats.get("priority_sort_ms", 0.0)), 0.01), " ms",
 	)
@@ -2125,6 +2126,8 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 		"    Lacs conservés: ", last_hydrology_stats.get("lake_components_retained", 0),
 		" | cellules lac supprimées: ", last_hydrology_stats.get("lake_cells_removed", 0),
 		" | composantes eau: ", last_hydrology_stats.get("water_components", 0),
+		" | runs lac/eau=", last_hydrology_stats.get("lake_component_runs", 0),
+		"/", last_hydrology_stats.get("water_component_runs", 0),
 	)
 
 	# 3. Le parent enregistré lors du Priority-Flood forme directement une
@@ -2975,18 +2978,32 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	var cleanup_passes := 0 if (
 		growth_converged and growth_unassigned == 0
 	) else maxi(4, ceili(mean_department_spacing_px))
+	var cleanup_unassigned := growth_unassigned
 	if cleanup_passes > 0:
 		print("  • Nettoyage final (sécurité, ", cleanup_passes, " passes)...")
 		var region_cleanup_sets: Array[RID] = [
 			_create_region_cleanup_texture_set(false),
 			_create_region_cleanup_texture_set(true),
 		]
+		var cleanup_convergence := _create_growth_convergence_resources(
+			"region_cleanup", groups_x, groups_y
+		)
+		var cleanup_convergence_set: RID = cleanup_convergence.get("set", RID())
 		_dispatch_region_cleanup_batch(
 			w, h, groups_x, groups_y, seed_val, sea_level,
-			growth_executed, cleanup_passes, region_cleanup_sets
+			growth_executed, cleanup_passes, region_cleanup_sets,
+			cleanup_convergence_set
 		)
+		if not cleanup_convergence.is_empty():
+			var cleanup_status := _read_growth_batch_status(
+				cleanup_convergence["buffer"], int(cleanup_convergence["group_count"]),
+				"land_region_cleanup_convergence"
+			)
+			cleanup_unassigned = int(cleanup_status["unassigned"])
+		_release_growth_convergence_resources(cleanup_convergence)
 		for cleanup_uniform_set in region_cleanup_sets:
 			gpu.release_rid(cleanup_uniform_set)
+		print("    Couverture après nettoyage : non assignées=", cleanup_unassigned)
 	else:
 		print("  • Nettoyage final ignoré : croissance déjà convergée")
 	
@@ -3002,7 +3019,8 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	var normalization_start_usec := Time.get_ticks_usec()
 	var normalization := DepartmentNormalizer.normalize(
 		region_map_data, land_mask, w, h, target_department_cells,
-		minimum_department_ratio, maximum_department_ratio
+		minimum_department_ratio, maximum_department_ratio, false, false,
+		cleanup_unassigned == 0
 	)
 	var normalization_ms := float(Time.get_ticks_usec() - normalization_start_usec) / 1000.0
 	var normalized_data: PackedByteArray = region_map_data
@@ -3048,6 +3066,7 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	department_stats["growth_unassigned_cells"] = growth_unassigned
 	department_stats["growth_batch_size"] = growth_batch_size
 	department_stats["cleanup_executed_passes"] = cleanup_passes
+	department_stats["cleanup_unassigned_cells"] = cleanup_unassigned
 	print(
 		"    [Administration timing] readback=", snappedf(region_readback_ms, 0.01),
 		" ms | normalization=", snappedf(normalization_ms, 0.01), " ms"
@@ -3415,12 +3434,12 @@ func _create_region_cleanup_texture_set(use_swap: bool) -> RID:
 func _dispatch_region_cleanup_batch(w: int, h: int, groups_x: int,
 		groups_y: int, seed_val: int, sea_level: float,
 		growth_passes: int, cleanup_passes: int,
-		texture_sets: Array[RID]) -> void:
+		texture_sets: Array[RID], convergence_set: RID) -> void:
 	if not gpu.shaders.has("region_cleanup") or not gpu.shaders["region_cleanup"].is_valid():
 		push_warning("[Orchestrator] ⚠️ region_cleanup shader non disponible")
 		return
 
-	if texture_sets.size() < 2 or cleanup_passes <= 0:
+	if texture_sets.size() < 2 or cleanup_passes <= 0 or not convergence_set.is_valid():
 		return
 
 	# Push constants (16 bytes): avoid per-pass parameter RIDs.
@@ -3435,6 +3454,7 @@ func _dispatch_region_cleanup_batch(w: int, h: int, groups_x: int,
 	# pass-by-pass ping-pong visibility of the former implementation.
 	var compute_list := rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["region_cleanup"])
+	rd.compute_list_bind_uniform_set(compute_list, convergence_set, 1)
 	for cleanup_pass in range(cleanup_passes):
 		var use_swap := ((growth_passes + cleanup_pass) % 2 == 1)
 		rd.compute_list_bind_uniform_set(
@@ -3662,18 +3682,32 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	var cleanup_passes := 0 if (
 		growth_converged and growth_unassigned == 0
 	) else maxi(4, ceili(mean_department_spacing_px))
+	var cleanup_unassigned := growth_unassigned
 	if cleanup_passes > 0:
 		print("  • Nettoyage final (couverture complète, ", cleanup_passes, " passes)...")
 		var ocean_cleanup_sets: Array[RID] = [
 			_create_ocean_region_cleanup_texture_set(false),
 			_create_ocean_region_cleanup_texture_set(true),
 		]
+		var cleanup_convergence := _create_growth_convergence_resources(
+			"ocean_region_cleanup", groups_x, groups_y
+		)
+		var cleanup_convergence_set: RID = cleanup_convergence.get("set", RID())
 		_dispatch_ocean_region_cleanup_batch(
 			w, h, groups_x, groups_y, seed_val,
-			growth_executed, cleanup_passes, ocean_cleanup_sets
+			growth_executed, cleanup_passes, ocean_cleanup_sets,
+			cleanup_convergence_set
 		)
+		if not cleanup_convergence.is_empty():
+			var cleanup_status := _read_growth_batch_status(
+				cleanup_convergence["buffer"], int(cleanup_convergence["group_count"]),
+				"ocean_region_cleanup_convergence"
+			)
+			cleanup_unassigned = int(cleanup_status["unassigned"])
+		_release_growth_convergence_resources(cleanup_convergence)
 		for cleanup_uniform_set in ocean_cleanup_sets:
 			gpu.release_rid(cleanup_uniform_set)
+		print("    Couverture après nettoyage : non assignées=", cleanup_unassigned)
 	else:
 		print("  • Nettoyage final ignoré : croissance déjà convergée")
 
@@ -3689,7 +3723,8 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	var normalization_start_usec := Time.get_ticks_usec()
 	var normalization := DepartmentNormalizer.normalize(
 		ocean_region_data, water_department_mask, w, h, target_department_cells,
-		minimum_department_ratio, maximum_department_ratio, false, true
+		minimum_department_ratio, maximum_department_ratio, false, true,
+		cleanup_unassigned == 0
 	)
 	var normalization_ms := float(Time.get_ticks_usec() - normalization_start_usec) / 1000.0
 	var normalized_data: PackedByteArray = ocean_region_data
@@ -3747,6 +3782,7 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	department_stats["growth_unassigned_cells"] = growth_unassigned
 	department_stats["growth_batch_size"] = growth_batch_size
 	department_stats["cleanup_executed_passes"] = cleanup_passes
+	department_stats["cleanup_unassigned_cells"] = cleanup_unassigned
 	print(
 		"    [Administration timing] readback=", snappedf(ocean_readback_ms, 0.01),
 		" ms | normalization=", snappedf(normalization_ms, 0.01), " ms"
@@ -3978,12 +4014,12 @@ func _create_ocean_region_cleanup_texture_set(use_swap: bool) -> RID:
 
 func _dispatch_ocean_region_cleanup_batch(w: int, h: int, groups_x: int,
 		groups_y: int, seed_val: int, growth_passes: int,
-		cleanup_passes: int, texture_sets: Array[RID]) -> void:
+		cleanup_passes: int, texture_sets: Array[RID], convergence_set: RID) -> void:
 	if not gpu.shaders.has("ocean_region_cleanup") or not gpu.shaders["ocean_region_cleanup"].is_valid():
 		push_warning("[Orchestrator] ⚠️ ocean_region_cleanup shader non disponible")
 		return
 
-	if texture_sets.size() < 2 or cleanup_passes <= 0:
+	if texture_sets.size() < 2 or cleanup_passes <= 0 or not convergence_set.is_valid():
 		return
 
 	# Push constants (16 bytes): avoid per-pass parameter RIDs.
@@ -3996,6 +4032,7 @@ func _dispatch_ocean_region_cleanup_batch(w: int, h: int, groups_x: int,
 	
 	var compute_list := rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["ocean_region_cleanup"])
+	rd.compute_list_bind_uniform_set(compute_list, convergence_set, 1)
 	for cleanup_pass in range(cleanup_passes):
 		var use_swap := ((growth_passes + cleanup_pass) % 2 == 1)
 		rd.compute_list_bind_uniform_set(
