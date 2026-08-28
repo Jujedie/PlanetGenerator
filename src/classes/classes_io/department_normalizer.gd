@@ -55,6 +55,7 @@ static func normalize(region_data: PackedByteArray,
 	var pixel_count := w * h
 	if region_data.size() != pixel_count * 4 or land_mask.size() != pixel_count:
 		return {}
+	var normalization_start_usec := Time.get_ticks_usec()
 
 	# R32UI administrative IDs are pixel-derived and therefore stay below INT32_MAX
 	# for any practical map. Bulk reinterpretation runs natively and maps the
@@ -65,8 +66,7 @@ static func normalize(region_data: PackedByteArray,
 	# One packed queue is reused by all flood-fills. This removes repeated
 	# Array[int] allocations and Variant boxing from administrative hot paths.
 	var queue := PackedInt32Array()
-	queue.resize(pixel_count)
-	var assigned_tail := 0
+	var initial_unassigned := 0
 	for index in range(pixel_count):
 		var region_id := int(region_ids[index])
 		if land_mask[index] == 0:
@@ -76,38 +76,69 @@ static func normalize(region_data: PackedByteArray,
 			continue
 		if region_id >= 0:
 			next_id = maxi(next_id, region_id + 1)
-			queue[assigned_tail] = index
-			assigned_tail += 1
+		else:
+			initial_unassigned += 1
+
+	# X lookup tables are shared by the rare unassigned-fill path and the
+	# connected-component labelling pass.  They also remove modulo/wrap branches
+	# from the two hottest administrative flood loops.
+	var left_x := PackedInt32Array()
+	var right_x := PackedInt32Array()
+	left_x.resize(w)
+	right_x.resize(w)
+	for x in range(w):
+		left_x[x] = x - 1 if x > 0 else w - 1
+		right_x[x] = x + 1 if x + 1 < w else 0
 
 	# Extend existing departments only into genuinely unassigned land.  This is
 	# a multi-source, four-connected flood: it cannot jump water and its X
 	# neighbors cross the equirectangular seam.
 	var filled_land := 0
 	var head := 0
-	while head < assigned_tail:
-		var current := queue[head]
-		head += 1
-		var current_id := int(region_ids[current])
-		var x := current % w
-		var y := int(current / w)
-		for direction in range(4):
-			var ny := y + CARDINAL_DY[direction]
-			if ny < 0 or ny >= h:
-				continue
-			var nx := x + CARDINAL_DX[direction]
-			if nx < 0:
-				nx += w
-			elif nx >= w:
-				nx -= w
-			var neighbor := ny * w + nx
-			if land_mask[neighbor] == 0:
-				continue
-			if region_ids[neighbor] >= 0:
-				continue
-			region_ids[neighbor] = current_id
-			filled_land += 1
-			queue[assigned_tail] = neighbor
-			assigned_tail += 1
+	if initial_unassigned > 0:
+		queue.resize(pixel_count)
+		var assigned_tail := 0
+		# The common path after converged GPU growth has zero unassigned cells. Do
+		# not enqueue and re-scan the entire active map unless there is actual work
+		# to fill. When there is, this second linear pass is still cheaper than the
+		# old unconditional 4-neighbor flood over every assigned pixel.
+		for index in range(pixel_count):
+			if land_mask[index] != 0 and region_ids[index] >= 0:
+				queue[assigned_tail] = index
+				assigned_tail += 1
+		while head < assigned_tail:
+			var current := queue[head]
+			head += 1
+			var current_id := int(region_ids[current])
+			var x := current % w
+			var y := int(current / w)
+			var row := current - x
+			var neighbor := row + left_x[x]
+			if land_mask[neighbor] != 0 and region_ids[neighbor] < 0:
+				region_ids[neighbor] = current_id
+				filled_land += 1
+				queue[assigned_tail] = neighbor
+				assigned_tail += 1
+			neighbor = row + right_x[x]
+			if land_mask[neighbor] != 0 and region_ids[neighbor] < 0:
+				region_ids[neighbor] = current_id
+				filled_land += 1
+				queue[assigned_tail] = neighbor
+				assigned_tail += 1
+			if y > 0:
+				neighbor = current - w
+				if land_mask[neighbor] != 0 and region_ids[neighbor] < 0:
+					region_ids[neighbor] = current_id
+					filled_land += 1
+					queue[assigned_tail] = neighbor
+					assigned_tail += 1
+			if y + 1 < h:
+				neighbor = current + w
+				if land_mask[neighbor] != 0 and region_ids[neighbor] < 0:
+					region_ids[neighbor] = current_id
+					filled_land += 1
+					queue[assigned_tail] = neighbor
+					assigned_tail += 1
 
 	# A connected island with no seed becomes one department, rather than a
 	# field of unrelated local-minimum seeds.
@@ -127,37 +158,127 @@ static func normalize(region_data: PackedByteArray,
 			head += 1
 			var x := current % w
 			var y := int(current / w)
-			for direction in range(4):
-				var ny := y + CARDINAL_DY[direction]
-				if ny < 0 or ny >= h:
-					continue
-				var nx := x + CARDINAL_DX[direction]
-				if nx < 0:
-					nx += w
-				elif nx >= w:
-					nx -= w
-				var neighbor := ny * w + nx
-				if land_mask[neighbor] == 0:
-					continue
-				if region_ids[neighbor] >= 0:
-					continue
+			var row := current - x
+			# Preserve the previous left/right/up/down BFS discovery order while
+			# removing the tiny direction arrays and wrap arithmetic from each cell.
+			var neighbor := row + left_x[x]
+			if land_mask[neighbor] != 0 and region_ids[neighbor] < 0:
 				region_ids[neighbor] = component_id
 				filled_land += 1
 				queue[tail] = neighbor
 				tail += 1
+			neighbor = row + right_x[x]
+			if land_mask[neighbor] != 0 and region_ids[neighbor] < 0:
+				region_ids[neighbor] = component_id
+				filled_land += 1
+				queue[tail] = neighbor
+				tail += 1
+			if y > 0:
+				neighbor = current - w
+				if land_mask[neighbor] != 0 and region_ids[neighbor] < 0:
+					region_ids[neighbor] = component_id
+					filled_land += 1
+					queue[tail] = neighbor
+					tail += 1
+			if y + 1 < h:
+				neighbor = current + w
+				if land_mask[neighbor] != 0 and region_ids[neighbor] < 0:
+					region_ids[neighbor] = component_id
+					filled_land += 1
+					queue[tail] = neighbor
+					tail += 1
+	var fill_done_usec := Time.get_ticks_usec()
 
-	# Label each connected use of an ID separately.  This both recognizes
-	# seamless departments crossing X=0 and splits accidental disconnected IDs.
+	# Label each connected use of an ID separately. The previous implementation
+	# ran a four-neighbor BFS over every active pixel. A two-neighbor scanline CCL
+	# is equivalent for 4-connectivity, handles the X seam explicitly, and moves
+	# almost all work to contiguous PackedArray accesses instead of queue churn.
 	var pixel_component := PackedInt32Array()
 	pixel_component.resize(pixel_count)
 	pixel_component.fill(-1)
-	var component_ids: Array[int] = []
-	var component_areas: Array[int] = []
-	var component_min_y: Array[int] = []
-	var component_max_y: Array[int] = []
-	var component_sum_y: Array[float] = []
-	var component_sum_cos: Array[float] = []
-	var component_sum_sin: Array[float] = []
+	var label_parent := PackedInt32Array()
+	label_parent.resize(pixel_count)
+	var label_count := 0
+	for y in range(h):
+		var row := y * w
+		for x in range(w):
+			var index := row + x
+			var raw_id := int(region_ids[index])
+			if raw_id < 0:
+				continue
+			var left_label := -1
+			if x > 0 and int(region_ids[index - 1]) == raw_id:
+				left_label = pixel_component[index - 1]
+			var up_label := -1
+			if y > 0 and int(region_ids[index - w]) == raw_id:
+				up_label = pixel_component[index - w]
+			if left_label < 0 and up_label < 0:
+				pixel_component[index] = label_count
+				label_parent[label_count] = label_count
+				label_count += 1
+			elif left_label < 0:
+				pixel_component[index] = up_label
+			elif up_label < 0 or left_label == up_label:
+				pixel_component[index] = left_label
+			else:
+				pixel_component[index] = left_label
+				var left_root := left_label
+				while label_parent[left_root] != left_root:
+					left_root = label_parent[left_root]
+				var up_root := up_label
+				while label_parent[up_root] != up_root:
+					up_root = label_parent[up_root]
+				if left_root != up_root:
+					if left_root < up_root:
+						label_parent[up_root] = left_root
+					else:
+						label_parent[left_root] = up_root
+
+		# Horizontal equirectangular seam: first and last pixels in a row are
+		# cardinal neighbors even though the scan itself intentionally does not wrap.
+		if w > 1:
+			var first := row
+			var last := row + w - 1
+			var seam_id := int(region_ids[first])
+			if seam_id >= 0 and int(region_ids[last]) == seam_id:
+				var first_root := pixel_component[first]
+				while label_parent[first_root] != first_root:
+					first_root = label_parent[first_root]
+				var last_root := pixel_component[last]
+				while label_parent[last_root] != last_root:
+					last_root = label_parent[last_root]
+				if first_root != last_root:
+					if first_root < last_root:
+						label_parent[last_root] = first_root
+					else:
+						label_parent[first_root] = last_root
+
+	# Resolve provisional scanline labels once. Union-to-smallest guarantees the
+	# root corresponds to the earliest row-major fragment of each component,
+	# matching the old BFS component discovery order.
+	var root_by_label := PackedInt32Array()
+	root_by_label.resize(label_count)
+	for label in range(label_count):
+		var root := label
+		while label_parent[root] != root:
+			root = label_parent[root]
+		root_by_label[label] = root
+		var current := label
+		while label_parent[current] != current:
+			var next := label_parent[current]
+			label_parent[current] = root
+			current = next
+
+	var component_ids := PackedInt32Array()
+	var component_areas := PackedInt32Array()
+	var component_min_y := PackedInt32Array()
+	var component_max_y := PackedInt32Array()
+	var component_sum_y := PackedFloat64Array()
+	var component_sum_cos := PackedFloat64Array()
+	var component_sum_sin := PackedFloat64Array()
+	var component_for_root := PackedInt32Array()
+	component_for_root.resize(label_count)
+	component_for_root.fill(-1)
 	var completed_ids: Dictionary = {}
 	var split_fragments := 0
 	# Longitude depends only on X. Trigonometric calls inside the component flood
@@ -173,67 +294,44 @@ static func normalize(region_data: PackedByteArray,
 		longitude_cos[x] = cos(angle)
 		longitude_sin[x] = sin(angle)
 
-	for start in range(pixel_count):
-		if land_mask[start] == 0 or pixel_component[start] != -1:
-			continue
-		var raw_id := int(region_ids[start])
-		if raw_id < 0:
-			continue
-		var effective_id := raw_id
-		if completed_ids.has(raw_id):
-			effective_id = next_id
-			next_id += 1
-			split_fragments += 1
-		else:
-			completed_ids[raw_id] = true
-
-		var component_index := component_ids.size()
-		head = 0
-		var tail := 1
-		queue[0] = start
-		pixel_component[start] = component_index
-		var area := 0
-		var min_y := h
-		var max_y := -1
-		var sum_y := 0.0
-		var sum_cos := 0.0
-		var sum_sin := 0.0
-		while head < tail:
-			var current := queue[head]
-			head += 1
-			var x := current % w
-			var y := int(current / w)
-			area += 1
-			min_y = mini(min_y, y)
-			max_y = maxi(max_y, y)
-			sum_y += float(y)
-			sum_cos += longitude_cos[x]
-			sum_sin += longitude_sin[x]
-			for direction in range(4):
-				var ny := y + CARDINAL_DY[direction]
-				if ny < 0 or ny >= h:
-					continue
-				var nx := x + CARDINAL_DX[direction]
-				if nx < 0:
-					nx += w
-				elif nx >= w:
-					nx -= w
-				var neighbor := ny * w + nx
-				if pixel_component[neighbor] != -1:
-					continue
-				if int(region_ids[neighbor]) != raw_id:
-					continue
-				pixel_component[neighbor] = component_index
-				queue[tail] = neighbor
-				tail += 1
-
-		component_ids.append(effective_id)
-		component_areas.append(area)
-		component_min_y.append(min_y)
-		component_max_y.append(max_y)
-		component_sum_y.append(sum_y)
-		component_sum_cos.append(sum_cos)
-		component_sum_sin.append(sum_sin)
+	# Convert provisional labels to compact component indices and gather geometry
+	# in one row-major pass. The final pixel_component map is identical in meaning
+	# to the previous BFS output and is consumed unchanged by adjacency/merging.
+	for y in range(h):
+		var row := y * w
+		for x in range(w):
+			var index := row + x
+			var raw_id := int(region_ids[index])
+			if raw_id < 0:
+				continue
+			var label := pixel_component[index]
+			var root := root_by_label[label]
+			var component_index := component_for_root[root]
+			if component_index < 0:
+				var effective_id := raw_id
+				if completed_ids.has(raw_id):
+					effective_id = next_id
+					next_id += 1
+					split_fragments += 1
+				else:
+					completed_ids[raw_id] = true
+				component_index = component_ids.size()
+				component_for_root[root] = component_index
+				component_ids.append(effective_id)
+				component_areas.append(0)
+				component_min_y.append(h)
+				component_max_y.append(-1)
+				component_sum_y.append(0.0)
+				component_sum_cos.append(0.0)
+				component_sum_sin.append(0.0)
+			pixel_component[index] = component_index
+			component_areas[component_index] += 1
+			component_min_y[component_index] = mini(component_min_y[component_index], y)
+			component_max_y[component_index] = maxi(component_max_y[component_index], y)
+			component_sum_y[component_index] += float(y)
+			component_sum_cos[component_index] += longitude_cos[x]
+			component_sum_sin[component_index] += longitude_sin[x]
+	var components_done_usec := Time.get_ticks_usec()
 
 	var component_count := component_ids.size()
 	if component_count == 0:
@@ -256,27 +354,15 @@ static func normalize(region_data: PackedByteArray,
 
 	var parent := PackedInt32Array()
 	parent.resize(component_count)
-	var areas := PackedInt32Array()
-	areas.resize(component_count)
-	var min_ys := PackedInt32Array()
-	min_ys.resize(component_count)
-	var max_ys := PackedInt32Array()
-	max_ys.resize(component_count)
-	var sum_ys := PackedFloat64Array()
-	sum_ys.resize(component_count)
-	var sum_cosines := PackedFloat64Array()
-	sum_cosines.resize(component_count)
-	var sum_sines := PackedFloat64Array()
-	sum_sines.resize(component_count)
+	var areas := component_areas.duplicate()
+	var min_ys := component_min_y.duplicate()
+	var max_ys := component_max_y.duplicate()
+	var sum_ys := component_sum_y.duplicate()
+	var sum_cosines := component_sum_cos.duplicate()
+	var sum_sines := component_sum_sin.duplicate()
 	var adjacency: Array[Dictionary] = []
 	for index in range(component_count):
 		parent[index] = index
-		areas[index] = component_areas[index]
-		min_ys[index] = component_min_y[index]
-		max_ys[index] = component_max_y[index]
-		sum_ys[index] = component_sum_y[index]
-		sum_cosines[index] = component_sum_cos[index]
-		sum_sines[index] = component_sum_sin[index]
 		adjacency.append({})
 
 	# Every undirected contact is counted once, including X=w-1 <-> X=0.
@@ -295,6 +381,7 @@ static func normalize(region_data: PackedByteArray,
 				var down_component := pixel_component[index + w]
 				if down_component >= 0 and down_component != component:
 					_add_contact(component, down_component, adjacency)
+	var adjacency_done_usec := Time.get_ticks_usec()
 
 	var minimum_cells := maxi(int(ceil(target_cells * clampf(minimum_ratio, 0.0, 1.0))), 2)
 	var maximum_cells := maxi(
@@ -348,6 +435,7 @@ static func normalize(region_data: PackedByteArray,
 			)
 			merged_components += 1
 			changed = true
+	var merge_done_usec := Time.get_ticks_usec()
 
 	var isolated_undersized := 0
 	var undersized_nonisolated := 0
@@ -359,8 +447,8 @@ static func normalize(region_data: PackedByteArray,
 		if parent[component] != component:
 			continue
 		final_sizes.append(areas[component])
-		var neighbors := _canonical_neighbors(component, parent, adjacency)
 		if areas[component] < minimum_cells:
+			var neighbors := _canonical_neighbors(component, parent, adjacency)
 			if neighbors.is_empty():
 				isolated_undersized += 1
 			elif enforce_global_minimum or areas[component] < _local_minimum(
@@ -428,6 +516,7 @@ static func normalize(region_data: PackedByteArray,
 		else:
 			output_ids[index] = component_ids[root]
 	var output := output_ids.to_byte_array()
+	var finalize_done_usec := Time.get_ticks_usec()
 
 	return {
 		"data": output,
@@ -449,6 +538,12 @@ static func normalize(region_data: PackedByteArray,
 		"discarded_isolated_undersized": discarded_roots.size(),
 		"discarded_isolated_cells": discarded_cells,
 		"final_count": retained_partition_sizes.size(),
+		"timing_fill_ms": float(fill_done_usec - normalization_start_usec) / 1000.0,
+		"timing_components_ms": float(components_done_usec - fill_done_usec) / 1000.0,
+		"timing_adjacency_ms": float(adjacency_done_usec - components_done_usec) / 1000.0,
+		"timing_merge_ms": float(merge_done_usec - adjacency_done_usec) / 1000.0,
+		"timing_finalize_ms": float(finalize_done_usec - merge_done_usec) / 1000.0,
+		"timing_total_internal_ms": float(finalize_done_usec - normalization_start_usec) / 1000.0,
 	}
 
 

@@ -51,7 +51,7 @@ static func run(gpu: GPUContext, generation_params: Dictionary,
 	_check_hydrology(checks, metrics, water, flow_direction, river_flux, pixel_count,
 		int(generation_params.get("planet_type", 0)))
 	_check_exports(checks, metrics, exported_files, width, height,
-		int(generation_params.get("planet_type", 0)))
+		int(generation_params.get("planet_type", 0)), sea_ids.size() == pixel_count * 4)
 	_check_river_export_consistency(checks, metrics, exported_files,
 		int(generation_params.get("planet_type", 0)))
 	_check_administrative_colors(checks, metrics, exported_files)
@@ -394,7 +394,8 @@ static func _check_hydrology(checks: Array[Dictionary], metrics: Dictionary,
 
 
 static func _check_exports(checks: Array[Dictionary], metrics: Dictionary,
-		exported_files: Dictionary, width: int, height: int, planet_type: int) -> void:
+		exported_files: Dictionary, width: int, height: int, planet_type: int,
+		has_ocean_region_layer: bool) -> void:
 	var wrong_size: Array[String] = []
 	var missing: Array[String] = []
 	var png_count := 0
@@ -414,7 +415,13 @@ static func _check_exports(checks: Array[Dictionary], metrics: Dictionary,
 	if planet_type == 6:
 		required = ["final_map"]
 	elif planet_type not in [3, 5]:
-		required.append_array(["eaux_map", "river_map", "river_type_map", "ocean_region_colored"])
+		required.append_array(["eaux_map", "river_map", "river_type_map"])
+		# Completely dry planets intentionally skip maritime administration and do
+		# not create ocean_region_map/ocean_region_colored. The raw-layer checks
+		# already fail if a maritime domain should exist but its authoritative layer
+		# is missing, so only require this export when that layer actually exists.
+		if has_ocean_region_layer:
+			required.append("ocean_region_colored")
 	var required_missing: Array[String] = []
 	for key in required:
 		if not exported_files.has(key) or not FileAccess.file_exists(str(exported_files[key])):

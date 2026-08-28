@@ -61,18 +61,47 @@ func solve_surface_and_water(
 	# than one decode_float() call per pixel. Geo is RGBA32F, so elevation is the
 	# first float in every four-float texel.
 	var geo_values := geo_data.to_float32_array()
+	var geo_bits := geo_data.to_int32_array()
 	var original := PackedFloat32Array()
 	var routing_parent := PackedInt32Array()
+	var routing_child_count := PackedInt32Array()
+	var flow_direction := PackedByteArray()
+	var priority_keys := PackedInt64Array()
 	original.resize(pixel_count)
 	routing_parent.resize(pixel_count)
+	routing_child_count.resize(pixel_count)
+	flow_direction.resize(pixel_count)
+	priority_keys.resize(pixel_count)
 	routing_parent.fill(-1)
+	routing_child_count.fill(0)
+	flow_direction.fill(DIR_SINK)
 	for index in range(pixel_count):
 		original[index] = geo_values[index * 4]
+		# Priority-Flood's comparison heap is monotone: every terrain cell sent to
+		# the open set keeps its original float32 elevation as key and newly queued
+		# keys are strictly above the current spill level.  Pre-sort all cells once
+		# in native code, then walk this order forward to recover the exact same
+		# (elevation, pixel index) pop order without O(log N) GDScript heap work.
+		var raw_bits := int(geo_bits[index * 4]) & 0xFFFFFFFF
+		# -0.0 and +0.0 compare equal in the previous heap, so normalize both to
+		# the same sortable representation before applying the index tie-break.
+		if (raw_bits & 0x7FFFFFFF) == 0:
+			raw_bits = 0
+		var ordered_bits: int
+		if (raw_bits & 0x80000000) != 0:
+			ordered_bits = (~raw_bits) & 0xFFFFFFFF
+		else:
+			ordered_bits = raw_bits ^ 0x80000000
+		var signed_order := ordered_bits - 0x80000000
+		priority_keys[index] = (signed_order << 32) | index
 	var filled := original.duplicate()
 	geo_values = PackedFloat32Array()
+	geo_bits = PackedInt32Array()
 	var decode_ms: float = float(Time.get_ticks_usec() - solve_start_usec) / 1000.0
 
 	var flood_start_usec: int = Time.get_ticks_usec()
+	priority_keys.sort()
+	var priority_sort_ms: float = float(Time.get_ticks_usec() - flood_start_usec) / 1000.0
 	var visited := PackedByteArray()
 	visited.resize(pixel_count)
 	visited.fill(0)
@@ -112,21 +141,18 @@ func solve_surface_and_water(
 	# Only outlet cells touching an unvisited cell need to enter the priority
 	# queue. On an Earth-like planet this changes the initial heap from tens or
 	# hundreds of thousands of ocean pixels to roughly the shoreline length.
-	# Fixed-size packed storage removes the Variant-heavy Array[int] churn from
-	# the hottest Priority-Flood path. The effective heap size is tracked
-	# separately, so no resize/pop allocation occurs while preserving exactly the
-	# same (elevation, pixel-index) ordering as the previous binary heap.
-	var heap := PackedInt32Array()
-	heap.resize(pixel_count)
-	var heap_size := 0
+	# The open set is represented by one byte per cell. `priority_keys` provides
+	# the global exact order and `priority_cursor` only moves forward because a
+	# later discovery can never have a key below the current spill elevation.
+	var queued := PackedByteArray()
+	queued.resize(pixel_count)
+	queued.fill(0)
+	var pending_count := 0
 	# Scan whichever side of the visited/unvisited boundary is smaller. Both
 	# branches produce exactly the same set of outlet frontier pixels. On
 	# ocean-heavy planets this avoids probing eight neighbors for every ocean
 	# pixel just to recover a shoreline-sized frontier.
 	if visited_count * 2 > pixel_count:
-		var frontier_added := PackedByteArray()
-		frontier_added.resize(pixel_count)
-		frontier_added.fill(0)
 		for y in range(height):
 			var row := y * width
 			var row_up := up_row[y]
@@ -140,45 +166,37 @@ func solve_surface_and_water(
 				var outlet: int
 
 				outlet = row_up + left
-				if visited[outlet] != 0 and frontier_added[outlet] == 0:
-					frontier_added[outlet] = 1
-					_heap_push_fixed(heap, heap_size, filled, outlet)
-					heap_size += 1
+				if visited[outlet] != 0 and queued[outlet] == 0:
+					queued[outlet] = 1
+					pending_count += 1
 				outlet = row_up + x
-				if visited[outlet] != 0 and frontier_added[outlet] == 0:
-					frontier_added[outlet] = 1
-					_heap_push_fixed(heap, heap_size, filled, outlet)
-					heap_size += 1
+				if visited[outlet] != 0 and queued[outlet] == 0:
+					queued[outlet] = 1
+					pending_count += 1
 				outlet = row_up + right
-				if visited[outlet] != 0 and frontier_added[outlet] == 0:
-					frontier_added[outlet] = 1
-					_heap_push_fixed(heap, heap_size, filled, outlet)
-					heap_size += 1
+				if visited[outlet] != 0 and queued[outlet] == 0:
+					queued[outlet] = 1
+					pending_count += 1
 				outlet = row + left
-				if visited[outlet] != 0 and frontier_added[outlet] == 0:
-					frontier_added[outlet] = 1
-					_heap_push_fixed(heap, heap_size, filled, outlet)
-					heap_size += 1
+				if visited[outlet] != 0 and queued[outlet] == 0:
+					queued[outlet] = 1
+					pending_count += 1
 				outlet = row + right
-				if visited[outlet] != 0 and frontier_added[outlet] == 0:
-					frontier_added[outlet] = 1
-					_heap_push_fixed(heap, heap_size, filled, outlet)
-					heap_size += 1
+				if visited[outlet] != 0 and queued[outlet] == 0:
+					queued[outlet] = 1
+					pending_count += 1
 				outlet = row_down + left
-				if visited[outlet] != 0 and frontier_added[outlet] == 0:
-					frontier_added[outlet] = 1
-					_heap_push_fixed(heap, heap_size, filled, outlet)
-					heap_size += 1
+				if visited[outlet] != 0 and queued[outlet] == 0:
+					queued[outlet] = 1
+					pending_count += 1
 				outlet = row_down + x
-				if visited[outlet] != 0 and frontier_added[outlet] == 0:
-					frontier_added[outlet] = 1
-					_heap_push_fixed(heap, heap_size, filled, outlet)
-					heap_size += 1
+				if visited[outlet] != 0 and queued[outlet] == 0:
+					queued[outlet] = 1
+					pending_count += 1
 				outlet = row_down + right
-				if visited[outlet] != 0 and frontier_added[outlet] == 0:
-					frontier_added[outlet] = 1
-					_heap_push_fixed(heap, heap_size, filled, outlet)
-					heap_size += 1
+				if visited[outlet] != 0 and queued[outlet] == 0:
+					queued[outlet] = 1
+					pending_count += 1
 	else:
 		for y in range(height):
 			var row := y * width
@@ -200,23 +218,26 @@ func solve_surface_and_water(
 					or visited[row_down + x] == 0
 					or visited[row_down + right] == 0
 				):
-					_heap_push_fixed(heap, heap_size, filled, index)
-					heap_size += 1
+					queued[index] = 1
+					pending_count += 1
 
-	var outlet_frontier_cells := heap_size
+	var outlet_frontier_cells := pending_count
 
 	# Optimized Priority-Flood (Barnes-style pit queue): cells lying at or below
 	# the current spill elevation belong to the same depression and can be
 	# processed FIFO. A preallocated PackedInt32Array keeps this queue numeric and
-	# allocation-free. Only terrain rising above the spill level needs O(log N)
-	# heap work. The resulting filled surface is still exact and deterministic.
+	# allocation-free. Terrain rising above the spill level stays in the monotone
+	# pre-sorted open set. The result preserves the previous heap's exact order.
 	var pit_queue := PackedInt32Array()
 	pit_queue.resize(pixel_count)
 	var pit_head := 0
 	var pit_tail := 0
 	var heap_pop_count := 0
 	var pit_pop_count := 0
-	while heap_size > 0 or pit_head < pit_tail:
+	var priority_cursor := 0
+	var priority_scanned_cells := 0
+	var seam_children := PackedInt32Array()
+	while pending_count > 0 or pit_head < pit_tail:
 		var current: int
 		if pit_head < pit_tail:
 			current = pit_queue[pit_head]
@@ -226,8 +247,20 @@ func solve_surface_and_water(
 			# The queue storage is reused rather than cleared/reallocated.
 			pit_head = 0
 			pit_tail = 0
-			current = _heap_pop_fixed(heap, heap_size, filled)
-			heap_size -= 1
+			current = -1
+			while priority_cursor < pixel_count:
+				var candidate := int(priority_keys[priority_cursor] & 0xFFFFFFFF)
+				priority_cursor += 1
+				priority_scanned_cells += 1
+				if queued[candidate] == 0:
+					continue
+				queued[candidate] = 0
+				pending_count -= 1
+				current = candidate
+				break
+			if current < 0:
+				push_error("[Hydrology] Monotone priority cursor exhausted before open set")
+				break
 			heap_pop_count += 1
 
 		var current_level := filled[current]
@@ -246,6 +279,10 @@ func solve_surface_and_water(
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
+			routing_child_count[current] += 1
+			flow_direction[neighbor] = 7
+			if current_x == 0:
+				seam_children.append(neighbor)
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
@@ -253,14 +290,16 @@ func solve_surface_and_water(
 				pit_tail += 1
 			else:
 				filled[neighbor] = neighbor_level
-				_heap_push_fixed(heap, heap_size, filled, neighbor)
-				heap_size += 1
+				queued[neighbor] = 1
+				pending_count += 1
 
 		neighbor = row_up + current_x
 		if visited[neighbor] == 0:
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
+			routing_child_count[current] += 1
+			flow_direction[neighbor] = 6
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
@@ -268,14 +307,18 @@ func solve_surface_and_water(
 				pit_tail += 1
 			else:
 				filled[neighbor] = neighbor_level
-				_heap_push_fixed(heap, heap_size, filled, neighbor)
-				heap_size += 1
+				queued[neighbor] = 1
+				pending_count += 1
 
 		neighbor = row_up + right
 		if visited[neighbor] == 0:
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
+			routing_child_count[current] += 1
+			flow_direction[neighbor] = 5
+			if current_x + 1 == width:
+				seam_children.append(neighbor)
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
@@ -283,14 +326,18 @@ func solve_surface_and_water(
 				pit_tail += 1
 			else:
 				filled[neighbor] = neighbor_level
-				_heap_push_fixed(heap, heap_size, filled, neighbor)
-				heap_size += 1
+				queued[neighbor] = 1
+				pending_count += 1
 
 		neighbor = row_base + left
 		if visited[neighbor] == 0:
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
+			routing_child_count[current] += 1
+			flow_direction[neighbor] = 4
+			if current_x == 0:
+				seam_children.append(neighbor)
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
@@ -298,14 +345,18 @@ func solve_surface_and_water(
 				pit_tail += 1
 			else:
 				filled[neighbor] = neighbor_level
-				_heap_push_fixed(heap, heap_size, filled, neighbor)
-				heap_size += 1
+				queued[neighbor] = 1
+				pending_count += 1
 
 		neighbor = row_base + right
 		if visited[neighbor] == 0:
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
+			routing_child_count[current] += 1
+			flow_direction[neighbor] = 3
+			if current_x + 1 == width:
+				seam_children.append(neighbor)
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
@@ -313,14 +364,18 @@ func solve_surface_and_water(
 				pit_tail += 1
 			else:
 				filled[neighbor] = neighbor_level
-				_heap_push_fixed(heap, heap_size, filled, neighbor)
-				heap_size += 1
+				queued[neighbor] = 1
+				pending_count += 1
 
 		neighbor = row_down + left
 		if visited[neighbor] == 0:
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
+			routing_child_count[current] += 1
+			flow_direction[neighbor] = 2
+			if current_x == 0:
+				seam_children.append(neighbor)
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
@@ -328,14 +383,16 @@ func solve_surface_and_water(
 				pit_tail += 1
 			else:
 				filled[neighbor] = neighbor_level
-				_heap_push_fixed(heap, heap_size, filled, neighbor)
-				heap_size += 1
+				queued[neighbor] = 1
+				pending_count += 1
 
 		neighbor = row_down + current_x
 		if visited[neighbor] == 0:
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
+			routing_child_count[current] += 1
+			flow_direction[neighbor] = 1
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
@@ -343,14 +400,18 @@ func solve_surface_and_water(
 				pit_tail += 1
 			else:
 				filled[neighbor] = neighbor_level
-				_heap_push_fixed(heap, heap_size, filled, neighbor)
-				heap_size += 1
+				queued[neighbor] = 1
+				pending_count += 1
 
 		neighbor = row_down + right
 		if visited[neighbor] == 0:
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
+			routing_child_count[current] += 1
+			flow_direction[neighbor] = 0
+			if current_x + 1 == width:
+				seam_children.append(neighbor)
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
@@ -358,12 +419,14 @@ func solve_surface_and_water(
 				pit_tail += 1
 			else:
 				filled[neighbor] = neighbor_level
-				_heap_push_fixed(heap, heap_size, filled, neighbor)
-				heap_size += 1
+				queued[neighbor] = 1
+				pending_count += 1
 
 	if visited_count != pixel_count:
 		push_error("[Hydrology] Priority flood did not visit the complete map")
 	var priority_flood_ms: float = float(Time.get_ticks_usec() - flood_start_usec) / 1000.0
+	priority_keys = PackedInt64Array()
+	queued = PackedByteArray()
 
 	var candidate_start_usec: int = Time.get_ticks_usec()
 	var candidate_mask := PackedByteArray()
@@ -398,6 +461,7 @@ func solve_surface_and_water(
 		height,
 		max(min_lake_cells, 1),
 		left_x, right_x, up_row, down_row,
+		routing_parent, routing_child_count, flow_direction,
 	)
 	var lake_components_ms: float = float(Time.get_ticks_usec() - lake_components_start_usec) / 1000.0
 
@@ -413,10 +477,14 @@ func solve_surface_and_water(
 	)
 	var water_components_ms: float = float(Time.get_ticks_usec() - water_components_start_usec) / 1000.0
 
-	# Routing directions are now materialized together with topological flow
-	# accumulation. This avoids walking the full land map once to encode D8 and
-	# then walking it again immediately to decode the same parent relation.
+	# Routing directions and child counts were materialized while the exact
+	# Priority-Flood forest was discovered. This removes a later full-map graph
+	# reconstruction pass before conservative topological accumulation.
 	var surface_total_ms: float = float(Time.get_ticks_usec() - solve_start_usec) / 1000.0
+	var routing_seam_links := 0
+	for child in seam_children:
+		if water_mask[child] == WATER_NONE:
+			routing_seam_links += 1
 
 	var stats := {
 		"priority_flood_visited_cells": visited_count,
@@ -426,7 +494,9 @@ func solve_surface_and_water(
 		"depression_filled_cells": filled_cell_count,
 		"lake_candidate_cells": lake_candidate_cells,
 		"surface_decode_ms": decode_ms,
+		"priority_sort_ms": priority_sort_ms,
 		"priority_flood_ms": priority_flood_ms,
+		"priority_scanned_cells": priority_scanned_cells,
 		"lake_candidate_ms": candidate_ms,
 		"lake_components_ms": lake_components_ms,
 		"water_components_ms": water_components_ms,
@@ -435,9 +505,19 @@ func solve_surface_and_water(
 	stats.merge(lake_component_stats, true)
 	stats.merge(water_stats, true)
 
+	# On width 1-2 maps the wrapped left/right neighbors alias each other, so the
+	# unrolled discovery direction is not a unique geometric D8 direction. These
+	# tiny diagnostic resolutions use the compatibility reconstruction path.
+	if width < 3:
+		routing_child_count = PackedInt32Array()
+		flow_direction = PackedByteArray()
+
 	return {
 		"water_mask": water_mask,
 		"routing_parent": routing_parent,
+		"routing_child_count": routing_child_count,
+		"flow_direction": flow_direction,
+		"routing_seam_links": routing_seam_links,
 		"stats": stats,
 	}
 
@@ -450,6 +530,9 @@ func accumulate_flow(
 	local_flux_data: PackedByteArray,
 	width: int,
 	height: int,
+	precomputed_child_count: PackedInt32Array = PackedInt32Array(),
+	precomputed_flow_direction: PackedByteArray = PackedByteArray(),
+	precomputed_seam_links: int = -1,
 ) -> Dictionary:
 	var pixel_count := width * height
 	if (
@@ -463,42 +546,74 @@ func accumulate_flow(
 	# R32F -> PackedFloat32Array is a native bulk conversion; the final upload
 	# uses the inverse native conversion instead of N encode_float() calls.
 	var flux := local_flux_data.to_float32_array()
-	var downstream := PackedInt32Array()
+	var use_precomputed := (
+		precomputed_child_count.size() == pixel_count
+		and precomputed_flow_direction.size() == pixel_count
+	)
 	var indegree := PackedInt32Array()
 	var flow_direction := PackedByteArray()
-	downstream.resize(pixel_count)
-	indegree.resize(pixel_count)
-	flow_direction.resize(pixel_count)
-	downstream.fill(-1)
-	indegree.fill(0)
-	flow_direction.fill(DIR_SINK)
+	if use_precomputed:
+		# Priority-Flood discovers every child from an already-visited parent. Its
+		# child counts are therefore already the exact Kahn indegrees after retained
+		# lake edges are removed in _retain_lake_components().
+		indegree = precomputed_child_count.duplicate()
+		flow_direction = precomputed_flow_direction
+	else:
+		indegree.resize(pixel_count)
+		indegree.fill(0)
+		flow_direction.resize(pixel_count)
+		flow_direction.fill(DIR_SINK)
 
 	var land_cells := 0
 	var local_precipitation := 0.0
-	var seam_flow_links := 0
-	var routing_seam_links := 0
+	var terminal_flux := 0.0
+	var max_land_flux := 0.0
+	var seam_flow_links := maxi(precomputed_seam_links, 0) if use_precomputed else 0
+	var routing_seam_links := seam_flow_links
 	var routing_invalid_parents := 0
 	var nonpolar_land_sinks := 0
+	var queue := PackedInt32Array()
+	queue.resize(pixel_count)
+	var queue_tail := 0
 
 	for index in range(pixel_count):
 		var local_flux: float = maxf(flux[index], 0.0)
 		if local_flux != flux[index]:
 			flux[index] = local_flux
 		if water_mask[index] != WATER_NONE:
+			# Preserve any local water contribution in the mass-balance statistic.
+			# Land inflow is added when its finalized Kahn node reaches this sink.
+			terminal_flux += local_flux
 			continue
 
 		land_cells += 1
 		local_precipitation += local_flux
+		if use_precomputed:
+			var parent := int(routing_parent[index])
+			if parent < 0:
+				# Only deliberately open polar rows are valid land sinks.
+				var sink_y := int(index / width)
+				if sink_y >= 2 and sink_y < height - 2:
+					routing_invalid_parents += 1
+					nonpolar_land_sinks += 1
+			elif parent >= pixel_count or flow_direction[index] == DIR_SINK:
+				routing_invalid_parents += 1
+				nonpolar_land_sinks += 1
+			if indegree[index] == 0:
+				queue[queue_tail] = index
+				queue_tail += 1
+			continue
+
+		# Compatibility/reference path used by direct callers that do not provide
+		# the forest metadata computed by solve_surface_and_water().
 		var y := int(index / width)
 		if y < 2 or y >= height - 2:
 			continue
-
 		var parent := int(routing_parent[index])
 		if parent < 0 or parent >= pixel_count:
 			routing_invalid_parents += 1
 			nonpolar_land_sinks += 1
 			continue
-
 		var x := index % width
 		var parent_x := parent % width
 		var parent_y := int(parent / width)
@@ -522,22 +637,18 @@ func accumulate_flow(
 			routing_invalid_parents += 1
 			nonpolar_land_sinks += 1
 			continue
-
 		flow_direction[index] = direction
-		downstream[index] = parent
 		if water_mask[parent] == WATER_NONE:
 			indegree[parent] += 1
 		if abs(parent_x - x) > 1:
 			routing_seam_links += 1
 			seam_flow_links += 1
 
-	var queue := PackedInt32Array()
-	queue.resize(pixel_count)
-	var queue_tail := 0
-	for index in range(pixel_count):
-		if water_mask[index] == WATER_NONE and indegree[index] == 0:
-			queue[queue_tail] = index
-			queue_tail += 1
+	if not use_precomputed:
+		for index in range(pixel_count):
+			if water_mask[index] == WATER_NONE and indegree[index] == 0:
+				queue[queue_tail] = index
+				queue_tail += 1
 
 	var queue_head := 0
 	var processed_land_cells := 0
@@ -546,8 +657,13 @@ func accumulate_flow(
 		queue_head += 1
 		processed_land_cells += 1
 
-		var target := downstream[current]
-		if target < 0:
+		# Kahn only releases a node after every land child has contributed, so its
+		# flux is final here. Collect statistics in this same pass instead of
+		# scanning the complete map a third time after accumulation.
+		max_land_flux = maxf(max_land_flux, flux[current])
+		var target := int(routing_parent[current])
+		if target < 0 or target >= pixel_count:
+			terminal_flux += flux[current]
 			continue
 
 		flux[target] += flux[current]
@@ -556,16 +672,8 @@ func accumulate_flow(
 			if indegree[target] == 0:
 				queue[queue_tail] = target
 				queue_tail += 1
-
-	var terminal_flux := 0.0
-	var max_land_flux := 0.0
-	for index in range(pixel_count):
-		if water_mask[index] != WATER_NONE:
-			terminal_flux += flux[index]
 		else:
-			max_land_flux = max(max_land_flux, flux[index])
-			if downstream[index] < 0:
-				terminal_flux += flux[index]
+			terminal_flux += flux[current]
 
 	var unresolved_land_cells := land_cells - processed_land_cells
 	var mass_error: float = absf(terminal_flux - local_precipitation)
@@ -600,6 +708,9 @@ func _retain_lake_components(
 	right_x: PackedInt32Array,
 	up_row: PackedInt32Array,
 	down_row: PackedInt32Array,
+	routing_parent: PackedInt32Array,
+	routing_child_count: PackedInt32Array,
+	flow_direction: PackedByteArray,
 ) -> Dictionary:
 	var visited := PackedByteArray()
 	visited.resize(candidates.size())
@@ -677,7 +788,18 @@ func _retain_lake_components(
 			retained_components += 1
 			retained_cells += tail
 			for queue_index in range(tail):
-				water_mask[queue[queue_index]] = WATER_FRESH
+				var cell := queue[queue_index]
+				water_mask[cell] = WATER_FRESH
+				flow_direction[cell] = DIR_SINK
+			# Child counts were built while the Priority-Flood forest was discovered.
+			# Retained lake cells leave the land-only Kahn graph, so remove their edge
+			# from a land parent exactly once. All cells in this retained component are
+			# marked as water before the parent test, making the result order-independent.
+			for queue_index in range(tail):
+				var cell := queue[queue_index]
+				var parent := int(routing_parent[cell])
+				if parent >= 0 and water_mask[parent] == WATER_NONE:
+					routing_child_count[parent] -= 1
 		else:
 			removed_cells += tail
 

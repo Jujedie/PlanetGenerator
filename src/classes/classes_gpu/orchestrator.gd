@@ -2098,6 +2098,9 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	gpu.initialize_final_map_textures()
 	var water_mask_data: PackedByteArray = surface_result["water_mask"]
 	var routing_parent: PackedInt32Array = surface_result["routing_parent"]
+	var routing_child_count: PackedInt32Array = surface_result["routing_child_count"]
+	var precomputed_flow_direction: PackedByteArray = surface_result["flow_direction"]
+	var routing_seam_links := int(surface_result.get("routing_seam_links", 0))
 	rd.texture_update(gpu.textures["water_mask"], 0, water_mask_data)
 	# Colorization is a trivial GPU pass over the final classified mask. Keeping
 	# it on-device avoids a full GDScript RGBA construction plus texture upload.
@@ -2112,8 +2115,10 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	)
 	print(
 		"    [Hydrology queue] outlet-frontier=", last_hydrology_stats.get("priority_flood_outlet_frontier_cells", 0),
-		" | heap-pops=", last_hydrology_stats.get("priority_flood_heap_pops", 0),
+		" | open-pops=", last_hydrology_stats.get("priority_flood_heap_pops", 0),
 		" | pit-pops=", last_hydrology_stats.get("priority_flood_pit_pops", 0),
+		" | sorted-scan=", last_hydrology_stats.get("priority_scanned_cells", 0),
+		" | pre-sort=", snappedf(float(last_hydrology_stats.get("priority_sort_ms", 0.0)), 0.01), " ms",
 	)
 
 	print(
@@ -2140,6 +2145,9 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 		gpu.readback_texture_raw("river_flux"),
 		w,
 		h,
+		routing_child_count,
+		precomputed_flow_direction,
+		routing_seam_links,
 	)
 	if accumulation_result.is_empty():
 		push_error("[Orchestrator] Hydrology flow accumulation failed")
@@ -3009,6 +3017,13 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 			normalization["isolated_undersized"],
 			" petite(s) île(s) sans voisin"
 		)
+		print(
+			"    [Administration CPU] fill=", snappedf(float(normalization.get("timing_fill_ms", 0.0)), 0.01), " ms",
+			" | components=", snappedf(float(normalization.get("timing_components_ms", 0.0)), 0.01), " ms",
+			" | adjacency=", snappedf(float(normalization.get("timing_adjacency_ms", 0.0)), 0.01), " ms",
+			" | merge=", snappedf(float(normalization.get("timing_merge_ms", 0.0)), 0.01), " ms",
+			" | finalize=", snappedf(float(normalization.get("timing_finalize_ms", 0.0)), 0.01), " ms"
+		)
 	
 	# === PASSE 3 : FINALISATION ET COLORATION ===
 	print("  • Finalisation et coloration...")
@@ -3699,6 +3714,13 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 		" ID(s) disjoint(s) séparé(s), exceptions isolées sous le minimum=",
 		int(normalization.get("isolated_undersized", 0)),
 		", couverture manquante=", missing_water
+	)
+	print(
+		"    [Administration CPU] fill=", snappedf(float(normalization.get("timing_fill_ms", 0.0)), 0.01), " ms",
+		" | components=", snappedf(float(normalization.get("timing_components_ms", 0.0)), 0.01), " ms",
+		" | adjacency=", snappedf(float(normalization.get("timing_adjacency_ms", 0.0)), 0.01), " ms",
+		" | merge=", snappedf(float(normalization.get("timing_merge_ms", 0.0)), 0.01), " ms",
+		" | finalize=", snappedf(float(normalization.get("timing_finalize_ms", 0.0)), 0.01), " ms"
 	)
 
 	# Vérification quantitative : toute l'eau doit être couverte et un même ID
