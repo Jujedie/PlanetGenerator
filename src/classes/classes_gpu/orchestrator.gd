@@ -152,13 +152,16 @@ func _compile_all_shaders() -> bool:
 		{"path": "res://shader/compute/water/river_sources.glsl", "name": "river_sources", "critical": false},
 		{"path": "res://shader/compute/water/river_classify.glsl", "name": "river_classify", "critical": false},
 		{"path": "res://shader/compute/water/river_type_assign.glsl", "name": "river_type_assign", "critical": false},
+		{"path": "res://shader/compute/water/hydrology_water_color.glsl", "name": "hydrology_water_color", "critical": false},
 		# Shaders Régions Administratives (Étape 4)
 		{"path": "res://shader/compute/region/region_seed_placement.glsl", "name": "region_seed_placement", "critical": false},
+		{"path": "res://shader/compute/region/region_edge_cost.glsl", "name": "region_edge_cost", "critical": false},
 		{"path": "res://shader/compute/region/region_growth.glsl", "name": "region_growth", "critical": false},
 		{"path": "res://shader/compute/region/region_cleanup.glsl", "name": "region_cleanup", "critical": false},
 		{"path": "res://shader/compute/region/region_finalize.glsl", "name": "region_finalize", "critical": false},
 		# Shaders Régions Océaniques (Étape 4.5)
 		{"path": "res://shader/compute/ocean_region/ocean_region_seed_placement.glsl", "name": "ocean_region_seed_placement", "critical": false},
+		{"path": "res://shader/compute/ocean_region/ocean_region_edge_cost.glsl", "name": "ocean_region_edge_cost", "critical": false},
 		{"path": "res://shader/compute/ocean_region/ocean_region_growth.glsl", "name": "ocean_region_growth", "critical": false},
 		{"path": "res://shader/compute/ocean_region/ocean_region_cleanup.glsl", "name": "ocean_region_cleanup", "critical": false},
 		{"path": "res://shader/compute/ocean_region/ocean_region_finalize.glsl", "name": "ocean_region_finalize", "critical": false},
@@ -2094,11 +2097,11 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 
 	gpu.initialize_final_map_textures()
 	var water_mask_data: PackedByteArray = surface_result["water_mask"]
-	var water_color_data: PackedByteArray = surface_result["water_colored"]
-	var flow_direction_data: PackedByteArray = surface_result["flow_direction"]
+	var routing_parent: PackedInt32Array = surface_result["routing_parent"]
 	rd.texture_update(gpu.textures["water_mask"], 0, water_mask_data)
-	rd.texture_update(gpu.textures["water_colored"], 0, water_color_data)
-	rd.texture_update(gpu.textures["flow_direction"], 0, flow_direction_data)
+	# Colorization is a trivial GPU pass over the final classified mask. Keeping
+	# it on-device avoids a full GDScript RGBA construction plus texture upload.
+	_dispatch_hydrology_water_color(w, h, groups_x, groups_y, atmosphere_type)
 	last_hydrology_stats = Dictionary(surface_result["stats"]).duplicate()
 
 	print(
@@ -2132,7 +2135,7 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  • Accumulation topologique conservatrice...")
 	var accumulation_start_usec: int = Time.get_ticks_usec()
 	var accumulation_result := solver.accumulate_flow(
-		flow_direction_data,
+		routing_parent,
 		water_mask_data,
 		gpu.readback_texture_raw("river_flux"),
 		w,
@@ -2143,7 +2146,9 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 		return
 
 	var accumulated_flux: PackedByteArray = accumulation_result["flux_data"]
+	var flow_direction_data: PackedByteArray = accumulation_result["flow_direction"]
 	rd.texture_update(gpu.textures["river_flux"], 0, accumulated_flux)
+	rd.texture_update(gpu.textures["flow_direction"], 0, flow_direction_data)
 	last_hydrology_stats.merge(Dictionary(accumulation_result["stats"]), true)
 	var accumulation_ms: float = float(Time.get_ticks_usec() - accumulation_start_usec) / 1000.0
 	last_hydrology_stats["flow_accumulation_ms"] = accumulation_ms
@@ -2263,6 +2268,37 @@ func _dispatch_water_fill(w: int, h: int, groups_x: int, groups_y: int, sea_leve
 	
 	gpu.release_rid(param_set)
 	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
+
+func _dispatch_hydrology_water_color(w: int, h: int, groups_x: int,
+		groups_y: int, atmosphere_type: int) -> void:
+	if not gpu.shaders.has("hydrology_water_color") or not gpu.shaders["hydrology_water_color"].is_valid():
+		push_warning("[Orchestrator] ⚠️ hydrology_water_color shader non disponible")
+		return
+	var tex_uniforms: Array[RDUniform] = []
+	var mask_uniform := RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 0
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	var color_uniform := RDUniform.new()
+	color_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	color_uniform.binding = 1
+	color_uniform.add_id(gpu.textures["water_colored"])
+	tex_uniforms.append(color_uniform)
+	var tex_set := rd.uniform_set_create(tex_uniforms, gpu.shaders["hydrology_water_color"], 0)
+	var push := PackedByteArray()
+	push.resize(16)
+	push.encode_u32(0, w)
+	push.encode_u32(4, h)
+	push.encode_u32(8, atmosphere_type)
+	var compute_list := rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["hydrology_water_color"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_set_push_constant(compute_list, push, push.size())
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	gpu.submit_gpu_work()
 	gpu.release_rid(tex_set)
 
 func _dispatch_water_to_color(w: int, h: int, groups_x: int, groups_y: int, pass_type: int, sea_level: float, atmosphere_type: int, freshwater_max_size: int, counter_buffer: RID) -> void:
@@ -2862,6 +2898,11 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 		w, h, groups_x, groups_y, seed_val, seed_probability, sea_level,
 		budget_variation, mean_department_spacing_px
 	)
+	print("  • Pré-calcul des coûts statiques de croissance...")
+	_dispatch_region_edge_cost(
+		w, h, groups_x, groups_y, seed_val, river_threshold, cost_flat,
+		cost_uphill, cost_river, noise_strength, mean_department_spacing_px
+	)
 	
 	# === PASSE 2 : CROISSANCE LOCALE MASQUÉE ===
 	var growth_batch_size := clampi(
@@ -3141,6 +3182,45 @@ func _dispatch_region_seed_placement(w: int, h: int, groups_x: int,
 	gpu.release_rid(param_buffer)
 	gpu.release_rid(tex_set)
 
+func _dispatch_region_edge_cost(w: int, h: int, groups_x: int, groups_y: int,
+		seed_val: int, river_threshold: float, cost_flat: float,
+		cost_uphill: float, cost_river: float, noise_strength: float,
+		mean_spacing_px: float) -> void:
+	if not gpu.shaders.has("region_edge_cost") or not gpu.shaders["region_edge_cost"].is_valid():
+		push_warning("[Orchestrator] ⚠️ region_edge_cost shader non disponible")
+		return
+	var tex_uniforms: Array[RDUniform] = []
+	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
+	var mask_uniform := RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 1
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["river_flux"]))
+	tex_uniforms.append(gpu.create_texture_uniform(3, gpu.textures["administrative_edge_cost"]))
+	var tex_set := rd.uniform_set_create(tex_uniforms, gpu.shaders["region_edge_cost"], 0)
+
+	var push := PackedByteArray()
+	push.resize(48)
+	push.encode_u32(0, w)
+	push.encode_u32(4, h)
+	push.encode_u32(8, seed_val)
+	push.encode_float(12, river_threshold)
+	push.encode_float(16, cost_flat)
+	push.encode_float(20, cost_uphill)
+	push.encode_float(24, cost_river)
+	push.encode_float(28, noise_strength)
+	push.encode_float(32, mean_spacing_px)
+
+	var compute_list := rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["region_edge_cost"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_set_push_constant(compute_list, push, push.size())
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	gpu.submit_gpu_work()
+	gpu.release_rid(tex_set)
+
 ## Dispatch le shader de croissance des régions (Dijkstra-like)
 func _create_region_growth_texture_set(use_swap: bool) -> RID:
 	if not gpu.shaders.has("region_growth") or not gpu.shaders["region_growth"].is_valid():
@@ -3151,21 +3231,9 @@ func _create_region_growth_texture_set(use_swap: bool) -> RID:
 	var cost_in: RID = gpu.textures["region_cost"] if not use_swap else gpu.textures["region_cost_temp"]
 	var cost_out: RID = gpu.textures["region_cost_temp"] if not use_swap else gpu.textures["region_cost"]
 	
-	# Créer les uniforms de texture (set 0)
+	# Static cardinal traversal costs were computed once before growth.
 	var tex_uniforms: Array[RDUniform] = []
-	
-	# geo_texture (binding 0)
-	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
-	
-	# water_mask (binding 1)
-	var mask_uniform = RDUniform.new()
-	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	mask_uniform.binding = 1
-	mask_uniform.add_id(gpu.textures["water_mask"])
-	tex_uniforms.append(mask_uniform)
-	
-	# river_flux (binding 2)
-	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["river_flux"]))
+	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["administrative_edge_cost"]))
 	
 	# region_map_in (binding 3) - lecture
 	var map_in_uniform = RDUniform.new()
@@ -3518,6 +3586,11 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  • Placement des seeds de départements maritimes...")
 	_dispatch_ocean_region_seed_placement(w, h, groups_x, groups_y, seed_val,
 		target_departments, sea_level, seed_probability)
+	print("  • Pré-calcul des coûts statiques maritimes...")
+	_dispatch_ocean_region_edge_cost(
+		w, h, groups_x, groups_y, seed_val, sea_level, cost_flat, cost_deeper,
+		noise_strength, mean_department_spacing_px
+	)
 	
 	# === PASSE 2 : CROISSANCE ITÉRATIVE ===
 	var growth_batch_size := clampi(
@@ -3737,6 +3810,42 @@ func _dispatch_ocean_region_seed_placement(w: int, h: int, groups_x: int,
 	gpu.release_rid(param_buffer)
 	gpu.release_rid(tex_set)
 
+func _dispatch_ocean_region_edge_cost(w: int, h: int, groups_x: int,
+		groups_y: int, seed_val: int, sea_level: float, cost_flat: float,
+		cost_deeper: float, noise_strength: float, mean_spacing_px: float) -> void:
+	if not gpu.shaders.has("ocean_region_edge_cost") or not gpu.shaders["ocean_region_edge_cost"].is_valid():
+		push_warning("[Orchestrator] ⚠️ ocean_region_edge_cost shader non disponible")
+		return
+	var tex_uniforms: Array[RDUniform] = []
+	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
+	var mask_uniform := RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 1
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["administrative_edge_cost"]))
+	var tex_set := rd.uniform_set_create(tex_uniforms, gpu.shaders["ocean_region_edge_cost"], 0)
+
+	var push := PackedByteArray()
+	push.resize(48)
+	push.encode_u32(0, w)
+	push.encode_u32(4, h)
+	push.encode_u32(8, seed_val)
+	push.encode_float(12, sea_level)
+	push.encode_float(16, cost_flat)
+	push.encode_float(20, cost_deeper)
+	push.encode_float(24, noise_strength)
+	push.encode_float(28, mean_spacing_px)
+
+	var compute_list := rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["ocean_region_edge_cost"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_set_push_constant(compute_list, push, push.size())
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	gpu.submit_gpu_work()
+	gpu.release_rid(tex_set)
+
 ## Dispatch le shader de croissance des régions océaniques
 func _create_ocean_region_growth_texture_set(use_swap: bool) -> RID:
 	if not gpu.shaders.has("ocean_region_growth") or not gpu.shaders["ocean_region_growth"].is_valid():
@@ -3747,13 +3856,7 @@ func _create_ocean_region_growth_texture_set(use_swap: bool) -> RID:
 	var dst_cost: RID = gpu.textures["ocean_region_cost_temp"] if not use_swap else gpu.textures["ocean_region_cost"]
 	
 	var tex_uniforms: Array[RDUniform] = []
-	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
-	
-	var mask_uniform = RDUniform.new()
-	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	mask_uniform.binding = 1
-	mask_uniform.add_id(gpu.textures["water_mask"])
-	tex_uniforms.append(mask_uniform)
+	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["administrative_edge_cost"]))
 	
 	var map_in_uniform = RDUniform.new()
 	map_in_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE

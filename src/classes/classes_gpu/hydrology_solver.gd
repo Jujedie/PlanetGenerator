@@ -57,18 +57,19 @@ func solve_surface_and_water(
 	# routing_surface duplicated another float per pixel solely to manufacture a
 	# downhill epsilon. routing_parent already is a tree by construction, so it
 	# cannot contain a cycle and needs no synthetic elevation gradient.
+	# Bulk conversion is implemented in native code and is substantially cheaper
+	# than one decode_float() call per pixel. Geo is RGBA32F, so elevation is the
+	# first float in every four-float texel.
+	var geo_values := geo_data.to_float32_array()
 	var original := PackedFloat32Array()
-	var filled := PackedFloat32Array()
 	var routing_parent := PackedInt32Array()
 	original.resize(pixel_count)
-	filled.resize(pixel_count)
 	routing_parent.resize(pixel_count)
 	routing_parent.fill(-1)
-
 	for index in range(pixel_count):
-		var elevation := geo_data.decode_float(index * 16)
-		original[index] = elevation
-		filled[index] = elevation
+		original[index] = geo_values[index * 4]
+	var filled := original.duplicate()
+	geo_values = PackedFloat32Array()
 	var decode_ms: float = float(Time.get_ticks_usec() - solve_start_usec) / 1000.0
 
 	var flood_start_usec: int = Time.get_ticks_usec()
@@ -76,6 +77,24 @@ func solve_surface_and_water(
 	visited.resize(pixel_count)
 	visited.fill(0)
 	var visited_count := 0
+
+	# Cylindrical X and clamped Y lookup tables are shared by Priority-Flood,
+	# shoreline discovery, and both component flood-fills. Building four tiny
+	# arrays once removes millions of modulo/clamp branches on large maps.
+	var left_x := PackedInt32Array()
+	var right_x := PackedInt32Array()
+	left_x.resize(width)
+	right_x.resize(width)
+	for x in range(width):
+		left_x[x] = x - 1 if x > 0 else width - 1
+		right_x[x] = x + 1 if x + 1 < width else 0
+	var up_row := PackedInt32Array()
+	var down_row := PackedInt32Array()
+	up_row.resize(height)
+	down_row.resize(height)
+	for y in range(height):
+		up_row[y] = maxi(y - 1, 0) * width
+		down_row[y] = mini(y + 1, height - 1) * width
 
 	# Mark all global outlets first. Initial ocean cells are independent outlets,
 	# and the polar rows deliberately remain open. Unlike the old implementation,
@@ -110,50 +129,77 @@ func solve_surface_and_water(
 		frontier_added.fill(0)
 		for y in range(height):
 			var row := y * width
+			var row_up := up_row[y]
+			var row_down := down_row[y]
 			for x in range(width):
 				var index := row + x
 				if visited[index] != 0:
 					continue
-				for direction in range(8):
-					var nx := x + NEIGHBOR_DX[direction]
-					if nx < 0:
-						nx += width
-					elif nx >= width:
-						nx -= width
-					var ny := y + NEIGHBOR_DY[direction]
-					if ny < 0:
-						ny = 0
-					elif ny >= height:
-						ny = height - 1
-					var outlet := ny * width + nx
-					if visited[outlet] == 0 or frontier_added[outlet] != 0:
-						continue
+				var left := left_x[x]
+				var right := right_x[x]
+				var outlet: int
+
+				outlet = row_up + left
+				if visited[outlet] != 0 and frontier_added[outlet] == 0:
+					frontier_added[outlet] = 1
+					_heap_push_fixed(heap, heap_size, filled, outlet)
+					heap_size += 1
+				outlet = row_up + x
+				if visited[outlet] != 0 and frontier_added[outlet] == 0:
+					frontier_added[outlet] = 1
+					_heap_push_fixed(heap, heap_size, filled, outlet)
+					heap_size += 1
+				outlet = row_up + right
+				if visited[outlet] != 0 and frontier_added[outlet] == 0:
+					frontier_added[outlet] = 1
+					_heap_push_fixed(heap, heap_size, filled, outlet)
+					heap_size += 1
+				outlet = row + left
+				if visited[outlet] != 0 and frontier_added[outlet] == 0:
+					frontier_added[outlet] = 1
+					_heap_push_fixed(heap, heap_size, filled, outlet)
+					heap_size += 1
+				outlet = row + right
+				if visited[outlet] != 0 and frontier_added[outlet] == 0:
+					frontier_added[outlet] = 1
+					_heap_push_fixed(heap, heap_size, filled, outlet)
+					heap_size += 1
+				outlet = row_down + left
+				if visited[outlet] != 0 and frontier_added[outlet] == 0:
+					frontier_added[outlet] = 1
+					_heap_push_fixed(heap, heap_size, filled, outlet)
+					heap_size += 1
+				outlet = row_down + x
+				if visited[outlet] != 0 and frontier_added[outlet] == 0:
+					frontier_added[outlet] = 1
+					_heap_push_fixed(heap, heap_size, filled, outlet)
+					heap_size += 1
+				outlet = row_down + right
+				if visited[outlet] != 0 and frontier_added[outlet] == 0:
 					frontier_added[outlet] = 1
 					_heap_push_fixed(heap, heap_size, filled, outlet)
 					heap_size += 1
 	else:
 		for y in range(height):
 			var row := y * width
+			var row_up := up_row[y]
+			var row_down := down_row[y]
 			for x in range(width):
 				var index := row + x
 				if visited[index] == 0:
 					continue
-				var is_frontier := false
-				for direction in range(8):
-					var nx := x + NEIGHBOR_DX[direction]
-					if nx < 0:
-						nx += width
-					elif nx >= width:
-						nx -= width
-					var ny := y + NEIGHBOR_DY[direction]
-					if ny < 0:
-						ny = 0
-					elif ny >= height:
-						ny = height - 1
-					if visited[ny * width + nx] == 0:
-						is_frontier = true
-						break
-				if is_frontier:
+				var left := left_x[x]
+				var right := right_x[x]
+				if (
+					visited[row_up + left] == 0
+					or visited[row_up + x] == 0
+					or visited[row_up + right] == 0
+					or visited[row + left] == 0
+					or visited[row + right] == 0
+					or visited[row_down + left] == 0
+					or visited[row_down + x] == 0
+					or visited[row_down + right] == 0
+				):
 					_heap_push_fixed(heap, heap_size, filled, index)
 					heap_size += 1
 
@@ -186,26 +232,126 @@ func solve_surface_and_water(
 
 		var current_level := filled[current]
 		var current_x := current % width
-		var current_y := current / width
-		for direction in range(8):
-			var nx := current_x + NEIGHBOR_DX[direction]
-			if nx < 0:
-				nx += width
-			elif nx >= width:
-				nx -= width
-			var ny := current_y + NEIGHBOR_DY[direction]
-			if ny < 0:
-				ny = 0
-			elif ny >= height:
-				ny = height - 1
-			var neighbor := ny * width + nx
-			if visited[neighbor] != 0:
-				continue
+		var current_y := int(current / width)
+		var row_base := current - current_x
+		var left := left_x[current_x]
+		var right := right_x[current_x]
+		var row_up := up_row[current_y]
+		var row_down := down_row[current_y]
+		var neighbor: int
+		var neighbor_level: float
 
+		neighbor = row_up + left
+		if visited[neighbor] == 0:
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
-			var neighbor_level := original[neighbor]
+			neighbor_level = original[neighbor]
+			if neighbor_level <= current_level:
+				filled[neighbor] = current_level
+				pit_queue[pit_tail] = neighbor
+				pit_tail += 1
+			else:
+				filled[neighbor] = neighbor_level
+				_heap_push_fixed(heap, heap_size, filled, neighbor)
+				heap_size += 1
+
+		neighbor = row_up + current_x
+		if visited[neighbor] == 0:
+			visited[neighbor] = 1
+			visited_count += 1
+			routing_parent[neighbor] = current
+			neighbor_level = original[neighbor]
+			if neighbor_level <= current_level:
+				filled[neighbor] = current_level
+				pit_queue[pit_tail] = neighbor
+				pit_tail += 1
+			else:
+				filled[neighbor] = neighbor_level
+				_heap_push_fixed(heap, heap_size, filled, neighbor)
+				heap_size += 1
+
+		neighbor = row_up + right
+		if visited[neighbor] == 0:
+			visited[neighbor] = 1
+			visited_count += 1
+			routing_parent[neighbor] = current
+			neighbor_level = original[neighbor]
+			if neighbor_level <= current_level:
+				filled[neighbor] = current_level
+				pit_queue[pit_tail] = neighbor
+				pit_tail += 1
+			else:
+				filled[neighbor] = neighbor_level
+				_heap_push_fixed(heap, heap_size, filled, neighbor)
+				heap_size += 1
+
+		neighbor = row_base + left
+		if visited[neighbor] == 0:
+			visited[neighbor] = 1
+			visited_count += 1
+			routing_parent[neighbor] = current
+			neighbor_level = original[neighbor]
+			if neighbor_level <= current_level:
+				filled[neighbor] = current_level
+				pit_queue[pit_tail] = neighbor
+				pit_tail += 1
+			else:
+				filled[neighbor] = neighbor_level
+				_heap_push_fixed(heap, heap_size, filled, neighbor)
+				heap_size += 1
+
+		neighbor = row_base + right
+		if visited[neighbor] == 0:
+			visited[neighbor] = 1
+			visited_count += 1
+			routing_parent[neighbor] = current
+			neighbor_level = original[neighbor]
+			if neighbor_level <= current_level:
+				filled[neighbor] = current_level
+				pit_queue[pit_tail] = neighbor
+				pit_tail += 1
+			else:
+				filled[neighbor] = neighbor_level
+				_heap_push_fixed(heap, heap_size, filled, neighbor)
+				heap_size += 1
+
+		neighbor = row_down + left
+		if visited[neighbor] == 0:
+			visited[neighbor] = 1
+			visited_count += 1
+			routing_parent[neighbor] = current
+			neighbor_level = original[neighbor]
+			if neighbor_level <= current_level:
+				filled[neighbor] = current_level
+				pit_queue[pit_tail] = neighbor
+				pit_tail += 1
+			else:
+				filled[neighbor] = neighbor_level
+				_heap_push_fixed(heap, heap_size, filled, neighbor)
+				heap_size += 1
+
+		neighbor = row_down + current_x
+		if visited[neighbor] == 0:
+			visited[neighbor] = 1
+			visited_count += 1
+			routing_parent[neighbor] = current
+			neighbor_level = original[neighbor]
+			if neighbor_level <= current_level:
+				filled[neighbor] = current_level
+				pit_queue[pit_tail] = neighbor
+				pit_tail += 1
+			else:
+				filled[neighbor] = neighbor_level
+				_heap_push_fixed(heap, heap_size, filled, neighbor)
+				heap_size += 1
+
+		neighbor = row_down + right
+		if visited[neighbor] == 0:
+			visited[neighbor] = 1
+			visited_count += 1
+			routing_parent[neighbor] = current
+			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
 				filled[neighbor] = current_level
 				pit_queue[pit_tail] = neighbor
@@ -227,20 +373,20 @@ func solve_surface_and_water(
 	var lake_candidate_cells := 0
 	var lake_depth_threshold: float = maxf(min_lake_depth_m, MIN_ROUTING_EPSILON_M)
 
+	var climate_values := climate_data.to_float32_array()
 	for index in range(pixel_count):
 		var fill_depth := filled[index] - original[index]
 		if fill_depth > MIN_ROUTING_EPSILON_M:
 			filled_cell_count += 1
 
-		# Ocean cells can never become lake candidates. Skip their climate decode;
-		# on ocean-heavy planets this avoids decoding most climate pixels here.
 		if initial_water_mask[index] != WATER_NONE:
 			continue
-		var temperature := climate_data.decode_float(index * 16)
+		var temperature := climate_values[index * 4]
 		var liquid_temperature := temperature >= WATER_MIN_TEMP and temperature <= WATER_MAX_TEMP
 		if liquid_temperature and fill_depth >= lake_depth_threshold:
 			candidate_mask[index] = 1
 			lake_candidate_cells += 1
+	climate_values = PackedFloat32Array()
 	var candidate_ms: float = float(Time.get_ticks_usec() - candidate_start_usec) / 1000.0
 
 	var water_mask := initial_water_mask.duplicate()
@@ -251,6 +397,7 @@ func solve_surface_and_water(
 		width,
 		height,
 		max(min_lake_cells, 1),
+		left_x, right_x, up_row, down_row,
 	)
 	var lake_components_ms: float = float(Time.get_ticks_usec() - lake_components_start_usec) / 1000.0
 
@@ -262,16 +409,13 @@ func solve_surface_and_water(
 		height,
 		sea_level,
 		max(saltwater_min_cells, 1),
+		left_x, right_x, up_row, down_row,
 	)
 	var water_components_ms: float = float(Time.get_ticks_usec() - water_components_start_usec) / 1000.0
 
-	var flow_start_usec: int = Time.get_ticks_usec()
-	var flow_result := _build_flow_directions(routing_parent, water_mask, width, height)
-	var flow_direction_ms: float = float(Time.get_ticks_usec() - flow_start_usec) / 1000.0
-
-	var color_start_usec: int = Time.get_ticks_usec()
-	var water_colored := _build_water_colors(water_mask, atmosphere_type)
-	var water_color_ms: float = float(Time.get_ticks_usec() - color_start_usec) / 1000.0
+	# Routing directions are now materialized together with topological flow
+	# accumulation. This avoids walking the full land map once to encode D8 and
+	# then walking it again immediately to decode the same parent relation.
 	var surface_total_ms: float = float(Time.get_ticks_usec() - solve_start_usec) / 1000.0
 
 	var stats := {
@@ -286,18 +430,14 @@ func solve_surface_and_water(
 		"lake_candidate_ms": candidate_ms,
 		"lake_components_ms": lake_components_ms,
 		"water_components_ms": water_components_ms,
-		"flow_direction_ms": flow_direction_ms,
-		"water_color_ms": water_color_ms,
 		"surface_total_ms": surface_total_ms,
 	}
 	stats.merge(lake_component_stats, true)
 	stats.merge(water_stats, true)
-	stats.merge(Dictionary(flow_result["stats"]), true)
 
 	return {
 		"water_mask": water_mask,
-		"water_colored": water_colored,
-		"flow_direction": flow_result["flow_direction"],
+		"routing_parent": routing_parent,
 		"stats": stats,
 	}
 
@@ -305,7 +445,7 @@ func solve_surface_and_water(
 ## acyclic D8 graph. Kahn's algorithm makes the result independent of a
 ## propagation-pass count and exposes any residual cycle as an invariant error.
 func accumulate_flow(
-	flow_direction: PackedByteArray,
+	routing_parent: PackedInt32Array,
 	water_mask: PackedByteArray,
 	local_flux_data: PackedByteArray,
 	width: int,
@@ -313,63 +453,82 @@ func accumulate_flow(
 ) -> Dictionary:
 	var pixel_count := width * height
 	if (
-		flow_direction.size() != pixel_count
+		routing_parent.size() != pixel_count
 		or water_mask.size() != pixel_count
 		or local_flux_data.size() != pixel_count * 4
 	):
 		push_error("[Hydrology] Invalid input sizes for flow accumulation")
 		return {}
 
-	var flux := PackedFloat32Array()
+	# R32F -> PackedFloat32Array is a native bulk conversion; the final upload
+	# uses the inverse native conversion instead of N encode_float() calls.
+	var flux := local_flux_data.to_float32_array()
 	var downstream := PackedInt32Array()
 	var indegree := PackedInt32Array()
-	flux.resize(pixel_count)
+	var flow_direction := PackedByteArray()
 	downstream.resize(pixel_count)
 	indegree.resize(pixel_count)
+	flow_direction.resize(pixel_count)
 	downstream.fill(-1)
 	indegree.fill(0)
+	flow_direction.fill(DIR_SINK)
 
 	var land_cells := 0
 	var local_precipitation := 0.0
 	var seam_flow_links := 0
+	var routing_seam_links := 0
+	var routing_invalid_parents := 0
 	var nonpolar_land_sinks := 0
 
 	for index in range(pixel_count):
-		var local_flux: float = maxf(local_flux_data.decode_float(index * 4), 0.0)
-		flux[index] = local_flux
+		var local_flux: float = maxf(flux[index], 0.0)
+		if local_flux != flux[index]:
+			flux[index] = local_flux
 		if water_mask[index] != WATER_NONE:
 			continue
 
 		land_cells += 1
 		local_precipitation += local_flux
-		var direction := int(flow_direction[index])
-		if direction < 0 or direction >= NEIGHBORS.size():
-			var y := index / width
-			if y >= 2 and y < height - 2:
-				nonpolar_land_sinks += 1
+		var y := int(index / width)
+		if y < 2 or y >= height - 2:
 			continue
 
-		# Inline the only _neighbor_index() hot-path call. This loop runs once for
-		# every land pixel and the helper previously repeated modulo/division plus a
-		# GDScript function call for each one.
-		var x := index % width
-		var y := int(index / width)
-		var target_x := x + NEIGHBOR_DX[direction]
-		if target_x < 0:
-			target_x += width
-		elif target_x >= width:
-			target_x -= width
-		var target_y := y + NEIGHBOR_DY[direction]
-		if target_y < 0:
-			target_y = 0
-		elif target_y >= height:
-			target_y = height - 1
-		var target := target_y * width + target_x
-		downstream[index] = target
-		if water_mask[target] == WATER_NONE:
-			indegree[target] += 1
+		var parent := int(routing_parent[index])
+		if parent < 0 or parent >= pixel_count:
+			routing_invalid_parents += 1
+			nonpolar_land_sinks += 1
+			continue
 
-		if abs(target_x - x) > 1:
+		var x := index % width
+		var parent_x := parent % width
+		var parent_y := int(parent / width)
+		var dx := parent_x - x
+		if dx > 1:
+			dx = -1
+		elif dx < -1:
+			dx = 1
+		var dy := parent_y - y
+		var direction := -1
+		if dy == -1 and dx >= -1 and dx <= 1:
+			direction = dx + 1
+		elif dy == 0:
+			if dx == -1:
+				direction = 3
+			elif dx == 1:
+				direction = 4
+		elif dy == 1 and dx >= -1 and dx <= 1:
+			direction = dx + 6
+		if direction < 0:
+			routing_invalid_parents += 1
+			nonpolar_land_sinks += 1
+			continue
+
+		flow_direction[index] = direction
+		downstream[index] = parent
+		if water_mask[parent] == WATER_NONE:
+			indegree[parent] += 1
+		if abs(parent_x - x) > 1:
+			routing_seam_links += 1
 			seam_flow_links += 1
 
 	var queue := PackedInt32Array()
@@ -412,13 +571,9 @@ func accumulate_flow(
 	var mass_error: float = absf(terminal_flux - local_precipitation)
 	var relative_mass_error: float = mass_error / maxf(local_precipitation, 0.000001)
 
-	var accumulated_data := PackedByteArray()
-	accumulated_data.resize(pixel_count * 4)
-	for index in range(pixel_count):
-		accumulated_data.encode_float(index * 4, flux[index])
-
 	return {
-		"flux_data": accumulated_data,
+		"flux_data": flux.to_byte_array(),
+		"flow_direction": flow_direction,
 		"max_land_flux": max_land_flux,
 		"stats": {
 			"land_cells": land_cells,
@@ -426,6 +581,8 @@ func accumulate_flow(
 			"unresolved_land_cells": unresolved_land_cells,
 			"nonpolar_land_sinks": nonpolar_land_sinks,
 			"seam_flow_links": seam_flow_links,
+			"routing_invalid_parents": routing_invalid_parents,
+			"routing_seam_links": routing_seam_links,
 			"local_precipitation": local_precipitation,
 			"terminal_flux": terminal_flux,
 			"mass_error": mass_error,
@@ -439,6 +596,10 @@ func _retain_lake_components(
 	width: int,
 	height: int,
 	minimum_size: int,
+	left_x: PackedInt32Array,
+	right_x: PackedInt32Array,
+	up_row: PackedInt32Array,
+	down_row: PackedInt32Array,
 ) -> Dictionary:
 	var visited := PackedByteArray()
 	visited.resize(candidates.size())
@@ -463,21 +624,51 @@ func _retain_lake_components(
 			var current := queue[head]
 			head += 1
 			var current_x := current % width
-			var current_y := current / width
-			for direction in range(8):
-				var nx := current_x + NEIGHBOR_DX[direction]
-				if nx < 0:
-					nx += width
-				elif nx >= width:
-					nx -= width
-				var ny := current_y + NEIGHBOR_DY[direction]
-				if ny < 0:
-					ny = 0
-				elif ny >= height:
-					ny = height - 1
-				var neighbor := ny * width + nx
-				if candidates[neighbor] == 0 or visited[neighbor] != 0:
-					continue
+			var current_y := int(current / width)
+			var row_base := current - current_x
+			var left := left_x[current_x]
+			var right := right_x[current_x]
+			var row_up := up_row[current_y]
+			var row_down := down_row[current_y]
+			var neighbor: int
+
+			neighbor = row_up + left
+			if candidates[neighbor] != 0 and visited[neighbor] == 0:
+				visited[neighbor] = 1
+				queue[tail] = neighbor
+				tail += 1
+			neighbor = row_up + current_x
+			if candidates[neighbor] != 0 and visited[neighbor] == 0:
+				visited[neighbor] = 1
+				queue[tail] = neighbor
+				tail += 1
+			neighbor = row_up + right
+			if candidates[neighbor] != 0 and visited[neighbor] == 0:
+				visited[neighbor] = 1
+				queue[tail] = neighbor
+				tail += 1
+			neighbor = row_base + left
+			if candidates[neighbor] != 0 and visited[neighbor] == 0:
+				visited[neighbor] = 1
+				queue[tail] = neighbor
+				tail += 1
+			neighbor = row_base + right
+			if candidates[neighbor] != 0 and visited[neighbor] == 0:
+				visited[neighbor] = 1
+				queue[tail] = neighbor
+				tail += 1
+			neighbor = row_down + left
+			if candidates[neighbor] != 0 and visited[neighbor] == 0:
+				visited[neighbor] = 1
+				queue[tail] = neighbor
+				tail += 1
+			neighbor = row_down + current_x
+			if candidates[neighbor] != 0 and visited[neighbor] == 0:
+				visited[neighbor] = 1
+				queue[tail] = neighbor
+				tail += 1
+			neighbor = row_down + right
+			if candidates[neighbor] != 0 and visited[neighbor] == 0:
 				visited[neighbor] = 1
 				queue[tail] = neighbor
 				tail += 1
@@ -504,6 +695,10 @@ func _classify_water_components(
 	height: int,
 	sea_level: float,
 	saltwater_min_cells: int,
+	left_x: PackedInt32Array,
+	right_x: PackedInt32Array,
+	up_row: PackedInt32Array,
+	down_row: PackedInt32Array,
 ) -> Dictionary:
 	var visited := PackedByteArray()
 	visited.resize(water_mask.size())
@@ -528,24 +723,60 @@ func _classify_water_components(
 			var current := queue[head]
 			head += 1
 			var current_x := current % width
-			var current_y := current / width
-			for direction in range(8):
-				var nx := current_x + NEIGHBOR_DX[direction]
-				if nx < 0:
-					nx += width
-				elif nx >= width:
-					nx -= width
-				var ny := current_y + NEIGHBOR_DY[direction]
-				if ny < 0:
-					ny = 0
-				elif ny >= height:
-					ny = height - 1
-				var neighbor := ny * width + nx
-				if water_mask[neighbor] == WATER_NONE or visited[neighbor] != 0:
-					continue
+			var current_y := int(current / width)
+			var row_base := current - current_x
+			var left := left_x[current_x]
+			var right := right_x[current_x]
+			var row_up := up_row[current_y]
+			var row_down := down_row[current_y]
+			var neighbor: int
+
+			neighbor = row_up + left
+			if water_mask[neighbor] != WATER_NONE and visited[neighbor] == 0:
 				visited[neighbor] = 1
-				if original_height[neighbor] < sea_level:
-					touches_subsea = true
+				touches_subsea = touches_subsea or original_height[neighbor] < sea_level
+				queue[tail] = neighbor
+				tail += 1
+			neighbor = row_up + current_x
+			if water_mask[neighbor] != WATER_NONE and visited[neighbor] == 0:
+				visited[neighbor] = 1
+				touches_subsea = touches_subsea or original_height[neighbor] < sea_level
+				queue[tail] = neighbor
+				tail += 1
+			neighbor = row_up + right
+			if water_mask[neighbor] != WATER_NONE and visited[neighbor] == 0:
+				visited[neighbor] = 1
+				touches_subsea = touches_subsea or original_height[neighbor] < sea_level
+				queue[tail] = neighbor
+				tail += 1
+			neighbor = row_base + left
+			if water_mask[neighbor] != WATER_NONE and visited[neighbor] == 0:
+				visited[neighbor] = 1
+				touches_subsea = touches_subsea or original_height[neighbor] < sea_level
+				queue[tail] = neighbor
+				tail += 1
+			neighbor = row_base + right
+			if water_mask[neighbor] != WATER_NONE and visited[neighbor] == 0:
+				visited[neighbor] = 1
+				touches_subsea = touches_subsea or original_height[neighbor] < sea_level
+				queue[tail] = neighbor
+				tail += 1
+			neighbor = row_down + left
+			if water_mask[neighbor] != WATER_NONE and visited[neighbor] == 0:
+				visited[neighbor] = 1
+				touches_subsea = touches_subsea or original_height[neighbor] < sea_level
+				queue[tail] = neighbor
+				tail += 1
+			neighbor = row_down + current_x
+			if water_mask[neighbor] != WATER_NONE and visited[neighbor] == 0:
+				visited[neighbor] = 1
+				touches_subsea = touches_subsea or original_height[neighbor] < sea_level
+				queue[tail] = neighbor
+				tail += 1
+			neighbor = row_down + right
+			if water_mask[neighbor] != WATER_NONE and visited[neighbor] == 0:
+				visited[neighbor] = 1
+				touches_subsea = touches_subsea or original_height[neighbor] < sea_level
 				queue[tail] = neighbor
 				tail += 1
 

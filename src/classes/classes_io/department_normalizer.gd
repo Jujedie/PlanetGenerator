@@ -56,13 +56,10 @@ static func normalize(region_data: PackedByteArray,
 	if region_data.size() != pixel_count * 4 or land_mask.size() != pixel_count:
 		return {}
 
-	# Decode R32UI once. Repeated PackedByteArray.decode_u32()/encode_u32() in
-	# every flood-fill neighbor was a major CPU tax. PackedInt64Array preserves the
-	# complete uint32 ID domain (except the explicit INVALID_ID sentinel) while
-	# keeping all hot-loop accesses numeric.
-	var region_ids := PackedInt64Array()
-	region_ids.resize(pixel_count)
-	region_ids.fill(-1)
+	# R32UI administrative IDs are pixel-derived and therefore stay below INT32_MAX
+	# for any practical map. Bulk reinterpretation runs natively and maps the
+	# 0xFFFFFFFF sentinel directly to -1, avoiding one decode_u32() call per pixel.
+	var region_ids := region_data.to_int32_array()
 	var next_id := pixel_count
 	var removed_non_land := 0
 	# One packed queue is reused by all flood-fills. This removes repeated
@@ -71,13 +68,13 @@ static func normalize(region_data: PackedByteArray,
 	queue.resize(pixel_count)
 	var assigned_tail := 0
 	for index in range(pixel_count):
-		var region_id := int(region_data.decode_u32(index * 4))
+		var region_id := int(region_ids[index])
 		if land_mask[index] == 0:
-			if region_id != INVALID_ID:
+			if region_id >= 0:
 				removed_non_land += 1
+			region_ids[index] = -1
 			continue
-		if region_id != INVALID_ID:
-			region_ids[index] = region_id
+		if region_id >= 0:
 			next_id = maxi(next_id, region_id + 1)
 			queue[assigned_tail] = index
 			assigned_tail += 1
@@ -240,10 +237,10 @@ static func normalize(region_data: PackedByteArray,
 
 	var component_count := component_ids.size()
 	if component_count == 0:
-		var empty_output := PackedByteArray()
-		empty_output.resize(pixel_count * 4)
-		for index in range(pixel_count):
-			empty_output.encode_u32(index * 4, INVALID_ID)
+		var empty_ids := PackedInt32Array()
+		empty_ids.resize(pixel_count)
+		empty_ids.fill(-1)
+		var empty_output := empty_ids.to_byte_array()
 		return {
 			"data": empty_output,
 			"partition_sizes": [],
@@ -404,29 +401,33 @@ static func normalize(region_data: PackedByteArray,
 
 	# The decoded raw IDs and flood queue are no longer needed. Release them
 	# before allocating the encoded R32UI result to keep the peak bounded.
-	region_ids = PackedInt64Array()
+	region_ids = PackedInt32Array()
 	queue = PackedInt32Array()
-	var output := PackedByteArray()
-	output.resize(pixel_count * 4)
+	var output_ids := PackedInt32Array()
+	output_ids.resize(pixel_count)
+	output_ids.fill(-1)
 	var unassigned_active_cells := 0
 
-	# Retain the target root's stable ID. All cells in a merged department are
-	# encoded once, so subsequent adjacency and hierarchy scans see one component.
+	# Resolve the union-find root once per component, not once per pixel. Large
+	# maps may contain millions of pixels but only thousands of components.
+	var root_by_component := PackedInt32Array()
+	root_by_component.resize(component_count)
+	for component in range(component_count):
+		root_by_component[component] = _find_root(parent, component)
+
 	for index in range(pixel_count):
 		if land_mask[index] == 0:
-			output.encode_u32(index * 4, INVALID_ID)
 			continue
 		var component := pixel_component[index]
 		if component < 0:
-			output.encode_u32(index * 4, INVALID_ID)
 			unassigned_active_cells += 1
 			continue
-		var root := _find_root(parent, component)
+		var root := root_by_component[component]
 		if discarded_roots.has(root):
-			output.encode_u32(index * 4, INVALID_ID)
 			unassigned_active_cells += 1
 		else:
-			output.encode_u32(index * 4, component_ids[root])
+			output_ids[index] = component_ids[root]
+	var output := output_ids.to_byte_array()
 
 	return {
 		"data": output,
@@ -726,6 +727,13 @@ static func _find_root(parent: PackedInt32Array, component: int) -> int:
 	var root := component
 	while parent[root] != root:
 		root = parent[root]
+	# Path compression keeps repeated adjacency/merge lookups effectively O(1)
+	# without changing the selected root or any deterministic tie-break.
+	var current := component
+	while parent[current] != current:
+		var next := parent[current]
+		parent[current] = root
+		current = next
 	return root
 
 

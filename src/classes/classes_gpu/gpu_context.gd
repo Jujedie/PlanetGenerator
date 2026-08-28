@@ -29,7 +29,7 @@ const TEXTURE_LIFECYCLE := {
 		"river_sources", "flow_direction",
 		"region_map_temp", "region_cost",
 		"region_cost_temp", "ocean_region_map_temp", "ocean_region_cost",
-		"ocean_region_cost_temp", "biome_id_temp", "biome_colored_temp",
+		"ocean_region_cost_temp", "administrative_edge_cost", "biome_id_temp", "biome_colored_temp",
 		"gas_velocity", "gas_dye_a", "gas_dye_b",
 	],
 	"export_only": [
@@ -765,6 +765,28 @@ func initialize_water_textures() -> void:
 
 	print("✅ Textures eaux créées (3x R8 + 1x RG32I + 2x R32UI + 1x R32F)")
 
+
+func _ensure_administrative_edge_cost_texture() -> void:
+	# One transient RGBA32F texture stores the four static cardinal traversal
+	# costs used by both land and ocean administration. It is overwritten before
+	# each phase, so one allocation is enough for both systems.
+	if textures.has("administrative_edge_cost") and textures["administrative_edge_cost"].is_valid():
+		return
+	var format := RDTextureFormat.new()
+	format.width = resolution.x
+	format.height = resolution.y
+	format.format = FORMAT_STATE
+	format.usage_bits = (
+		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
+		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT
+	)
+	var view := RDTextureView.new()
+	var rid := rd.texture_create(format, view)
+	if rid.is_valid():
+		textures["administrative_edge_cost"] = rid
+	else:
+		push_error("❌ Échec création texture administrative_edge_cost")
+
 # === CRÉATION DES TEXTURES RÉGIONS (Étape 4) ===
 func initialize_region_textures() -> void:
 	"""
@@ -776,6 +798,7 @@ func initialize_region_textures() -> void:
 	- region_cost / region_cost_temp (R32F) : Coûts accumulés (ping-pong Dijkstra)
 	- region_colored (RGBA8) : Couleur finale pour export
 	"""
+	_ensure_administrative_edge_cost_texture()
 	
 	# Format R32UI pour IDs de région (4 bytes par pixel)
 	var format_r32ui := RDTextureFormat.new()
@@ -883,6 +906,7 @@ func initialize_ocean_region_textures() -> void:
 	- ocean_region_cost / ocean_region_cost_temp (R32F) : Coûts accumulés
 	- ocean_region_colored (RGBA8) : Couleur finale pour export
 	"""
+	_ensure_administrative_edge_cost_texture()
 	
 	# Format R32UI pour IDs de région (4 bytes par pixel)
 	var format_r32ui := RDTextureFormat.new()
