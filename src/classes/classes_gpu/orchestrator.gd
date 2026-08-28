@@ -1194,107 +1194,225 @@ func _dispatch_crust_age_finalize(w: int, h: int, groups_x: int, groups_y: int, 
 ## @param w: Largeur de la texture
 ## @param h: Hauteur de la texture
 func run_cratering_phase(params: Dictionary, w: int, h: int) -> void:
-	# Vérifier que le shader est disponible
 	if not gpu.shaders.has("cratering") or not gpu.shaders["cratering"].is_valid():
 		push_warning("[Orchestrator] ⚠️ cratering shader non disponible, phase ignorée")
 		return
-	
-	# Vérifier si la planète peut avoir des cratères
-	# Types avec cratères : Sans Atmosphère (3), Mort (4), Stérile (5)
+
+	# Types avec cratères : Sans Atmosphère (3), Mort (4), Stérile (5).
 	var atmosphere_type = int(params.get("planet_type", 0))
 	if atmosphere_type not in [Enum.TYPE_NO_ATMOS, Enum.TYPE_DEAD, Enum.TYPE_STERILE]:
 		print("[Orchestrator] ⏭️ Phase 0.6 : Cratères ignorés (planète avec atmosphère épaisse)")
 		return
-	
+
 	print("[Orchestrator] ☄️ Phase 0.6 : Génération des cratères d'impact (type=", atmosphere_type, ")")
-	
+
 	var groups_x = ceili(float(w) / 16.0)
 	var groups_y = ceili(float(h) / 16.0)
-	
-	# Paramètres de cratères
-	var seed_val = int(params.get("seed", 12345))
-	var crater_density = float(params.get("crater_density", 0.5))  # 0.0 - 1.0
-	
-	# Calculer l'échelle pixels → mètres
-	# Pour une planète de rayon R km, la circonférence = 2πR km
-	# Sur une texture de largeur W, chaque pixel = (2πR × 1000) / W mètres
-	var planet_radius_km = float(params.get("planet_radius", 1737.0))  # Défaut: Lune (1737 km)
-	var meters_per_pixel = (2.0 * PI * planet_radius_km * 1000.0) / float(w)
-	
-	# Calculer le nombre de cratères basé sur la densité et la taille
-	# Densité 0.5 sur 2048x1024 → environ 500 cratères
-	var base_craters = int(float(w * h) / 4000.0)
-	var num_craters = int(float(base_craters) * crater_density)
-	num_craters = clamp(num_craters, 50, 3000)  # Limites raisonnables
-	
-	# Paramètres du profil de cratère
-	var max_radius = float(params.get("crater_max_radius", min(w, h) * 0.08))  # 8% de la dimension
-	var min_radius = float(params.get("crater_min_radius", 3.0))  # Minimum 3 pixels
-	var depth_ratio = float(params.get("crater_depth_ratio", 0.25))  # Profondeur = 25% du rayon
-	var rim_height_ratio = float(params.get("crater_rim_ratio", 0.15))  # Rebord = 15% de la profondeur
-	var ejecta_extent = float(params.get("crater_ejecta_extent", 2.5))  # Éjectas jusqu'à 2.5× rayon
-	var ejecta_decay = float(params.get("crater_ejecta_decay", 3.0))  # Décroissance exponentielle
-	var azimuth_variation = float(params.get("crater_azimuth_var", 0.3))  # 30% de variation
-	
-	print("  Nombre de cratères: ", num_craters)
-	print("  Rayon: ", min_radius, " - ", max_radius, " px")
-	print("  Profondeur ratio: ", depth_ratio)
-	print("  Échelle: ", meters_per_pixel, " m/px")
+	var seed_val = int(params.get("seed", 12345)) & 0xFFFFFFFF
+	var crater_density = clampf(float(params.get("crater_density", 0.5)), 0.0, 1.0)
+	var planet_radius_km = maxf(float(params.get("planet_radius", 1737.0)), 1.0)
+	var planet_density = maxf(float(params.get("planet_density", 5.51)), 0.01)
+
+	# Physical pixel scale for the equirectangular projection. Crater radii are
+	# expressed in kilometres, so changing texture resolution only changes how
+	# many pixels represent a crater; it never changes the crater's real size.
+	var meters_per_pixel_x = (2.0 * PI * planet_radius_km * 1000.0) / float(maxi(w, 1))
+	var meters_per_pixel_y = (PI * planet_radius_km * 1000.0) / float(maxi(h, 1))
+
+	# The UI values are physical radii in km. Limit a crater to 25% of the body
+	# radius so invalid project settings cannot create a globe-sized depression.
+	var physical_radius_cap_km = maxf(1.0, planet_radius_km * 0.25)
+	var requested_min_radius_km = maxf(float(params.get("crater_min_radius", 3.0)), 0.25)
+	var requested_max_radius_km = maxf(float(params.get("crater_max_radius", 24.0)), requested_min_radius_km)
+	var max_radius_km = minf(requested_max_radius_km, physical_radius_cap_km)
+	var min_radius_km = minf(requested_min_radius_km, max_radius_km)
+
+	# Count craters per physical surface area rather than per texture pixel.
+	# The reference density keeps the historical default close to ~50 visible
+	# craters on a 150 km-radius body, while larger bodies naturally have more
+	# impacts without making individual craters larger.
+	var surface_area_km2 = 4.0 * PI * planet_radius_km * planet_radius_km
+	var craters_per_km2_at_density_one = 0.00035
+	var num_craters = clampi(
+		roundi(surface_area_km2 * craters_per_km2_at_density_one * crater_density),
+		8,
+		3000
+	)
+
+	# Simple-to-complex crater transition scales approximately as 1/g. This is
+	# ~18 km diameter on the Moon, ~8 km on Mars and ~3 km on Earth. Small low-g
+	# bodies therefore keep simple bowl craters to much larger diameters.
+	var gravity = compute_gravity(planet_radius_km, planet_density)
+	var complex_transition_diameter_km = clampf(29.16 / maxf(gravity, 0.05), 3.0, 250.0)
+
+	var depth_ratio = clampf(float(params.get("crater_depth_ratio", 0.25)), 0.01, 1.0)
+	var rim_height_ratio = clampf(float(params.get("crater_rim_ratio", 0.15)), 0.02, 0.5)
+	var ejecta_extent = clampf(float(params.get("crater_ejecta_extent", 2.5)), 1.05, 4.0)
+	var ejecta_decay = maxf(float(params.get("crater_ejecta_decay", 3.0)), 0.1)
+	var azimuth_variation = clampf(float(params.get("crater_azimuth_var", 0.3)), 0.0, 1.0)
+
+	var crater_data = _build_crater_descriptor_bytes(
+		seed_val,
+		w,
+		h,
+		num_craters,
+		min_radius_km,
+		max_radius_km
+	)
+	var crater_buffer = rd.storage_buffer_create(crater_data.size(), crater_data)
+	if not crater_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create crater descriptor buffer")
+		return
+
+	print("  Nombre de cratères: ", num_craters, " (densité surfacique)")
+	print("  Rayon physique: ", min_radius_km, " - ", max_radius_km, " km")
+	print("  Échelle: ", snappedf(meters_per_pixel_x, 0.01), " × ", snappedf(meters_per_pixel_y, 0.01), " m/px")
+	print("  Transition simple/complexe: ", snappedf(complex_transition_diameter_km, 0.1), " km de diamètre")
 	print("  Éjectas: ", ejecta_extent, "× rayon")
-	
-	# Structure UBO pour cratering (std140, 48 bytes):
-	# uint seed (4) + uint width (4) + uint height (4) + uint num_craters (4) = 16 bytes
-	# float max_radius (4) + float min_radius (4) + float depth_ratio (4) + float rim_height_ratio (4) = 16 bytes
-	# float ejecta_extent (4) + float ejecta_decay (4) + float azimuth_variation (4) + float meters_per_pixel (4) = 16 bytes
-	# Total: 48 bytes
-	
+
+	# std140, 48 bytes:
+	# 4 uints + 8 floats. The crater centres/sizes themselves live in a compact
+	# std430 SSBO and are generated once on CPU instead of being re-hashed for
+	# every pixel/crater pair in the shader.
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(48)
-	
-	buffer_bytes.encode_u32(0, seed_val)              # seed
-	buffer_bytes.encode_u32(4, w)                      # width
-	buffer_bytes.encode_u32(8, h)                      # height
-	buffer_bytes.encode_u32(12, num_craters)           # num_craters
-	buffer_bytes.encode_float(16, max_radius)          # max_radius
-	buffer_bytes.encode_float(20, min_radius)          # min_radius
-	buffer_bytes.encode_float(24, depth_ratio)         # depth_ratio
-	buffer_bytes.encode_float(28, rim_height_ratio)    # rim_height_ratio
-	buffer_bytes.encode_float(32, ejecta_extent)       # ejecta_extent
-	buffer_bytes.encode_float(36, ejecta_decay)        # ejecta_decay
-	buffer_bytes.encode_float(40, azimuth_variation)   # azimuth_variation
-	buffer_bytes.encode_float(44, meters_per_pixel)    # meters_per_pixel
-	
+	buffer_bytes.encode_u32(0, seed_val)
+	buffer_bytes.encode_u32(4, w)
+	buffer_bytes.encode_u32(8, h)
+	buffer_bytes.encode_u32(12, num_craters)
+	buffer_bytes.encode_float(16, depth_ratio)
+	buffer_bytes.encode_float(20, rim_height_ratio)
+	buffer_bytes.encode_float(24, ejecta_extent)
+	buffer_bytes.encode_float(28, ejecta_decay)
+	buffer_bytes.encode_float(32, azimuth_variation)
+	buffer_bytes.encode_float(36, meters_per_pixel_x)
+	buffer_bytes.encode_float(40, meters_per_pixel_y)
+	buffer_bytes.encode_float(44, complex_transition_diameter_km)
+
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
 	if not param_buffer.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create cratering param buffer")
+		gpu.release_rid(crater_buffer)
 		return
-	
+
 	var param_uniform = RDUniform.new()
 	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
 	param_uniform.binding = 0
 	param_uniform.add_id(param_buffer)
-	
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["cratering"], 1)
+
+	var crater_uniform = RDUniform.new()
+	crater_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	crater_uniform.binding = 1
+	crater_uniform.add_id(crater_buffer)
+
+	var param_set = rd.uniform_set_create([param_uniform, crater_uniform], gpu.shaders["cratering"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create cratering param set")
 		gpu.release_rid(param_buffer)
+		gpu.release_rid(crater_buffer)
 		return
-	
-	# Dispatch du compute shader
+
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["cratering"])
 	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["cratering_textures"], 0)
 	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
-	
 	gpu.submit_gpu_work()
-	
-	# Nettoyage
+
 	gpu.release_rid(param_set)
 	gpu.release_rid(param_buffer)
-	
+	gpu.release_rid(crater_buffer)
+
 	print("[Orchestrator] ✅ Phase 0.6 : Cratères générés")
+
+
+func _build_crater_descriptor_bytes(
+	seed_val: int,
+	w: int,
+	h: int,
+	num_craters: int,
+	min_radius_km: float,
+	max_radius_km: float
+) -> PackedByteArray:
+	# Three vec4 values per crater (48 bytes):
+	#   A = center_x_px, center_y_px, physical_radius_km, degradation_age
+	#   B = minor/major axis ratio, rotation, rim phase, morphology random
+	#   C = cos(latitude) metric scale, reserved, reserved, reserved
+	var values = PackedFloat32Array()
+	values.resize(num_craters * 12)
+
+	# Differential size-frequency distribution dN/dr ~ r^-2.8. The old shader
+	# was actually log-uniform despite its "power-law" comment and produced far
+	# too many giant craters. This exponent yields many small impacts and only a
+	# few large basins, which is much closer to observed crater populations.
+	var size_exponent = 2.8
+	var inverse_exponent = 1.0 - size_exponent
+	var min_power = pow(min_radius_km, inverse_exponent)
+	var max_power = pow(max_radius_km, inverse_exponent)
+
+	for crater_idx in range(num_craters):
+		var h0 = _crater_hash32(crater_idx + seed_val)
+		var h1 = _crater_hash32(h0)
+		var h2 = _crater_hash32(h1)
+		var h3 = _crater_hash32(h2)
+		var h4 = _crater_hash32(h3)
+		var h5 = _crater_hash32(h4)
+		var h6 = _crater_hash32(h5)
+		var h7 = _crater_hash32(h6)
+
+		# Uniform distribution on a sphere. Uniform Y in an equirectangular map
+		# would over-populate the polar regions by 1/cos(latitude).
+		var center_x = _crater_rand01(h0) * float(w)
+		var sin_latitude = clampf(_crater_rand01(h1) * 2.0 - 1.0, -0.999999, 0.999999)
+		var latitude = asin(sin_latitude)
+		var center_y = (0.5 - latitude / PI) * float(h)
+
+		var size_u = _crater_rand01(h2)
+		var radius_km = pow(lerpf(min_power, max_power, size_u), 1.0 / inverse_exponent)
+
+		# 0=fresh, 1=old/degraded. Bias mildly toward mature craters so the final
+		# terrain does not look like every impact happened at the same instant.
+		var degradation_age = pow(_crater_rand01(h3), 0.65)
+
+		# Almost all impact craters are near-circular. Only the rarest grazing
+		# impacts receive noticeable ellipticity.
+		var grazing = pow(_crater_rand01(h4), 7.0)
+		var axis_ratio = 1.0 - 0.22 * grazing
+		var rotation = _crater_rand01(h5) * TAU
+		var rim_phase = _crater_rand01(h6) * TAU
+		var morphology_random = _crater_rand01(h7)
+		var longitude_scale = maxf(absf(cos(latitude)), 0.08)
+
+		var base = crater_idx * 12
+		values[base + 0] = center_x
+		values[base + 1] = center_y
+		values[base + 2] = radius_km
+		values[base + 3] = degradation_age
+		values[base + 4] = axis_ratio
+		values[base + 5] = rotation
+		values[base + 6] = rim_phase
+		values[base + 7] = morphology_random
+		values[base + 8] = longitude_scale
+		values[base + 9] = 0.0
+		values[base + 10] = 0.0
+		values[base + 11] = 0.0
+
+	return values.to_byte_array()
+
+
+func _crater_hash32(value: int) -> int:
+	var x = value & 0xFFFFFFFF
+	x = (x ^ (x >> 16)) & 0xFFFFFFFF
+	x = (x * 0x85EBCA6B) & 0xFFFFFFFF
+	x = (x ^ (x >> 13)) & 0xFFFFFFFF
+	x = (x * 0xC2B2AE35) & 0xFFFFFFFF
+	x = (x ^ (x >> 16)) & 0xFFFFFFFF
+	return x
+
+
+func _crater_rand01(hash_value: int) -> float:
+	return float(hash_value & 0xFFFFFFFF) / 4294967295.0
 
 # ============================================================================
 # ÉTAPE 2 : ÉROSION HYDRAULIQUE

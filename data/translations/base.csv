@@ -74,6 +74,7 @@ SUBSIDENCE_COEFFICIENT,Subsidence coefficient : {val},Coefficient d'affaissement
 CRATER_CATEGORIE,Crater category,Catégorie cratère,Kraterkategorie
 CRATER_DENSITY,Crater density : {val},Densité de cratères : {val},Kraterdichte : {val}
 CRATER_MIN_RADIUS,Crater min radius : {val},Rayon min du cratère : {val},Min. Kraterradius : {val}
+CRATER_MAX_RADIUS,Crater max radius : {val},Rayon max du cratère : {val},Max. Kraterradius : {val}
 CRATER_DEPTH_RATIO,Crater depth ratio : {val},Rapport profondeur/diamètre : {val},Verhältnis Tiefe/Durchmesser : {val}
 CRATER_EJECTA_EXTENT,Crater ejecta extent : {val},Étendue de l'éjecta : {val},Auswurfweite : {val}
 CRATER_EJECTA_DECAY,Crater ejecta decay : {val},Décroissance de l'éjecta : {val},Abklingverhalten des Auswurfs : {val}

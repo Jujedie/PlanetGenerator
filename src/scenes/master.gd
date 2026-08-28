@@ -799,8 +799,11 @@ func _compile_generation_params() -> Dictionary:
 		"subsidence_coeff": ui["subsidence_coeff"],
 
 		"crater_density": ui["crater_density"],
-		"crater_max_radius": min(canonical_resolution.x, canonical_resolution.y) * 0.08,
-		"crater_min_radius": min(float(ui["crater_min_radius"]), min(canonical_resolution.x, canonical_resolution.y) * 0.08),
+		# Crater radii are physical values in kilometres. They must not depend on
+		# the render/canonical resolution; the cratering phase converts them to
+		# the appropriate footprint for the current equirectangular texture.
+		"crater_min_radius": ui["crater_min_radius"],
+		"crater_max_radius": ui["crater_max_radius"],
 		"crater_depth_ratio": ui["crater_depth_ratio"],
 		"crater_ejecta_extent": ui["crater_ejecta_extent"],
 		"crater_ejecta_decay": ui["crater_ejecta_decay"],

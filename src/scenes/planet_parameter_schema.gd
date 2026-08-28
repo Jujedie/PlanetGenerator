@@ -43,7 +43,8 @@ const DEFINITIONS := [
 	{"key":"subsidence_coeff", "category":"EROSION", "kind":"slider", "label":"SUBSIDENCE_COEFFICIENT", "unit":" m/Myr", "default":2800.0, "min":20.0, "max":10000.0, "step":20.0},
 
 	{"key":"crater_density", "category":"CRATER", "kind":"slider", "label":"CRATER_DENSITY", "default":0.5, "min":0.1, "max":1.0, "step":0.1},
-	{"key":"crater_min_radius", "category":"CRATER", "kind":"slider", "label":"CRATER_MIN_RADIUS", "unit":" km", "default":3.0, "min":1.0, "max":500.0, "step":1.0},
+	{"key":"crater_min_radius", "category":"CRATER", "kind":"slider", "label":"CRATER_MIN_RADIUS", "unit":" km", "default":3.0, "min":1.0, "max":100.0, "step":1.0},
+	{"key":"crater_max_radius", "category":"CRATER", "kind":"slider", "label":"CRATER_MAX_RADIUS", "unit":" km", "default":24.0, "min":4.0, "max":250.0, "step":1.0},
 	{"key":"crater_depth_ratio", "category":"CRATER", "kind":"slider", "label":"CRATER_DEPTH_RATIO", "default":0.25, "min":0.01, "max":1.0, "step":0.01},
 	{"key":"crater_ejecta_extent", "category":"CRATER", "kind":"slider", "label":"CRATER_EJECTA_EXTENT", "default":2.5, "min":0.1, "max":2.5, "step":0.1},
 	{"key":"crater_ejecta_decay", "category":"CRATER", "kind":"slider", "label":"CRATER_EJECTA_DECAY", "default":3.0, "min":0.5, "max":10.0, "step":0.5},
