@@ -394,22 +394,29 @@ func _build_interface() -> void:
 	# Give the data inspector a slightly stronger frame than the surrounding
 	# controls. The content itself remains theme-aware through BBCode colors.
 	inspector_panel.add_theme_stylebox_override(
-		"panel", _panel_style(UI_PANEL_ALT.darkened(0.12), UI_BORDER.lightened(0.12), 1, 12.0)
+		"panel", _panel_style(UI_PANEL_ALT.darkened(0.12), UI_BORDER.lightened(0.12), 1, 18.0)
 	)
 	viewer_box.add_child(inspector_panel)
 	inspector_label = RichTextLabel.new()
 	inspector_label.name = "InspectorLabel"
 	# RichTextLabel gives the inspector semantic colors, bold values and selectable
 	# text. Keep the parent ScrollContainer authoritative to avoid nested scrolling.
-	inspector_label.custom_minimum_size.y = 240
+	inspector_label.custom_minimum_size.y = 300
 	inspector_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inspector_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	inspector_label.bbcode_enabled = true
 	inspector_label.add_theme_color_override("default_color", UI_TEXT)
 	inspector_label.add_theme_color_override("font_selected_color", UI_TEXT_BRIGHT)
 	inspector_label.add_theme_color_override("selection_color", UITheme.color(&"selection"))
-	inspector_label.add_theme_font_size_override("normal_font_size", 17)
-	inspector_label.add_theme_font_size_override("bold_font_size", 17)
-	inspector_label.add_theme_constant_override("line_separation", 2)
+	# The viewer is often used at desktop-scale resolutions; 17 px was too small
+	# with the project's condensed UI font. Keep technical information readable
+	# without forcing the user to zoom the whole application.
+	inspector_label.add_theme_font_size_override("normal_font_size", 20)
+	inspector_label.add_theme_font_size_override("bold_font_size", 20)
+	inspector_label.add_theme_font_size_override("mono_font_size", 19)
+	inspector_label.add_theme_constant_override("line_separation", 5)
+	inspector_label.add_theme_constant_override("table_h_separation", 18)
+	inspector_label.add_theme_constant_override("table_v_separation", 8)
 	inspector_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	inspector_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	inspector_label.fit_content = true
@@ -420,7 +427,7 @@ func _build_interface() -> void:
 	help_label = Label.new()
 	help_label.add_theme_color_override("font_color", UI_MUTED)
 	help_label.add_theme_color_override("font_color", Color(0.58, 0.62, 0.63, 1.0))
-	help_label.add_theme_font_size_override("font_size", 16)
+	help_label.add_theme_font_size_override("font_size", 17)
 	viewer_box.add_child(help_label)
 
 

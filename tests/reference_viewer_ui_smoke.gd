@@ -46,7 +46,9 @@ func _ready() -> void:
 	assert(shortcut_label != null and shortcut_label.text.contains("A/Q/D"))
 	var inspector := viewer_root.find_child("InspectorLabel", true, false) as RichTextLabel
 	assert(inspector != null)
-	assert(inspector.custom_minimum_size.y >= 240.0)
+	assert(inspector.custom_minimum_size.y >= 300.0)
+	assert(inspector.get_theme_font_size("normal_font_size") >= 20)
+	assert(inspector.size_flags_horizontal == Control.SIZE_EXPAND_FILL)
 	assert(inspector.bbcode_enabled)
 	assert(inspector.selection_enabled)
 	assert(inspector.fit_content)

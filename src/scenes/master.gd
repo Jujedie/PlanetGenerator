@@ -570,15 +570,27 @@ func _viewer_semantic_color(role: String) -> Color:
 
 func _viewer_info_section(title_text: String, section_color: Color,
 		rows: Array[String]) -> String:
-	var header: String = "[font_size=18][color=#%s][b]◆ %s[/b][/color][/font_size]" % [
+	# RichTextLabel tables let the inspector consume the whole panel width. Each
+	# logical information item contributes two cells (label + value), and four
+	# table columns place two items side-by-side on desktop layouts. Cell expansion
+	# ratios keep both halves balanced while long values can still wrap.
+	var header: String = "[font_size=23][color=#%s][b]◆ %s[/b][/color][/font_size]" % [
 		_viewer_bbcode_color(section_color), _viewer_bbcode_escape(title_text).to_upper()
 	]
-	var separator: String = "[color=#%s]────────────────────────────────────────[/color]" % [
-		_viewer_bbcode_color(UITheme.color(&"border"))
-	]
-	var result: Array[String] = [header, separator]
-	result.append_array(rows)
-	return "\n".join(result)
+	var use_wide_layout: bool = (
+		_viewer_inspector_label != null and _viewer_inspector_label.size.x >= 900.0
+	)
+	var table_cells: Array[String] = []
+	table_cells.append_array(rows)
+	if use_wide_layout and rows.size() % 2 != 0:
+		# Complete the last four-column row so the table keeps stable proportions.
+		table_cells.append(
+			"[cell expand=1 padding=8,5,14,5][/cell]"
+			+ "[cell expand=2 padding=0,5,18,5][/cell]"
+		)
+	var column_count: int = 4 if use_wide_layout else 2
+	var table: String = "[table=%d]%s[/table]" % [column_count, "".join(table_cells)]
+	return "%s\n[hr]\n%s" % [header, table]
 
 
 func _viewer_info_row(label_text: String, value_text: String,
@@ -587,7 +599,13 @@ func _viewer_info_row(label_text: String, value_text: String,
 	if resolved_color.a <= 0.0:
 		resolved_color = UITheme.color(&"text_bright")
 	var rendered_value: String = value_text if value_is_bbcode else _viewer_bbcode_escape(value_text)
-	return "[indent][color=#%s]%s[/color]  [color=#%s][b]%s[/b][/color][/indent]" % [
+	# Return two table cells rather than a preformatted line. `expand` ratios make
+	# every section use the available horizontal space instead of hugging the left
+	# edge, while values receive twice the width of their labels.
+	return (
+		"[cell expand=1 padding=8,5,14,5][color=#%s]%s[/color][/cell]"
+		+ "[cell expand=2 padding=0,5,18,5][color=#%s][b]%s[/b][/color][/cell]"
+	) % [
 		_viewer_bbcode_color(UITheme.color(&"secondary_text")),
 		_viewer_bbcode_escape(label_text),
 		_viewer_bbcode_color(resolved_color),
