@@ -253,6 +253,12 @@ func _build_inputs(biomes: Array, resolution: Vector2i) -> Dictionary:
 				0.0,
 				1.0
 			)
+			# Trois colonnes internes forcent la même forte humidité sur tous les
+			# biomes terrestres. Elles vérifient qu'un désert humide ne devient pas
+			# visuellement une forêt, tout en autorisant un léger green-up.
+			var local_x := x % PREVIEW_WIDTH_PER_BIOME
+			if not water_pixel and local_x >= 12 and local_x <= 14:
+				humidity = 0.82
 			geo.encode_float(float_offset, -1200.0 if water_pixel else elevation)
 			geo.encode_float(float_offset + 4, 0.0)
 			geo.encode_float(float_offset + 8, 0.0)
@@ -336,6 +342,37 @@ func _validate_palette(biomes: Array, final_data: PackedByteArray, resolution: V
 		return false
 	if _luminance(summit) < _luminance(lowland) + 0.24:
 		return false
+	var wet_probe_offset := 13
+	var wet_probe_y := 10
+	var sand_index := _biome_index(biomes, "Désert de Sable")
+	var badlands_index := _biome_index(biomes, "Désert Rocheux (Badlands)")
+	var rainforest_index := _biome_index(biomes, "Forêt Humide (Rainforest)")
+	if sand_index < 0 or badlands_index < 0 or rainforest_index < 0:
+		return false
+	var wet_sand := _rendered_color(
+		final_data, resolution,
+		sand_index * PREVIEW_WIDTH_PER_BIOME + wet_probe_offset,
+		wet_probe_y
+	)
+	var wet_badlands := _rendered_color(
+		final_data, resolution,
+		badlands_index * PREVIEW_WIDTH_PER_BIOME + wet_probe_offset,
+		wet_probe_y
+	)
+	var wet_rainforest := _rendered_color(
+		final_data, resolution,
+		rainforest_index * PREVIEW_WIDTH_PER_BIOME + wet_probe_offset,
+		wet_probe_y
+	)
+	print(
+		"[FinalMapPalette] wet_sand=", wet_sand,
+		" wet_badlands=", wet_badlands,
+		" wet_rainforest=", wet_rainforest
+	)
+	if wet_sand.r <= wet_sand.g or wet_badlands.r <= wet_badlands.g:
+		return false
+	if wet_rainforest.g <= wet_rainforest.r * 1.15:
+		return false
 	var sand := _biome_color("Désert de Sable")
 	var badlands := _biome_color("Désert Rocheux (Badlands)")
 	var ice_cap := _biome_color("Calotte Glaciaire")
@@ -368,6 +405,8 @@ func _validate_final_map_shader() -> bool:
 		shader.contains("calculateTopoShading")
 		and shader.contains("climate_texture")
 		and shader.contains("smoothedBiomeMaterial")
+		and shader.contains("biomeVegetationCapacity")
+		and shader.contains("ephemeral_greenup")
 		and shader.contains("BIOME_TINT_STRENGTH = 0.16")
 		and shader.contains("mountain_snow")
 		and not shader.contains("contourKind")

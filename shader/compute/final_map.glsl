@@ -245,8 +245,23 @@ vec3 terranLandHypsometry(float relative_height) {
 // Les biomes sont des catégories utiles pour l'analyse, mais leurs frontières
 // ne sont pas des frontières de couleur dans la nature. Cette moyenne spatiale
 // construit une nuance écologique douce, sans mélanger la terre avec l'eau.
-vec3 smoothedBiomeMaterial(ivec2 pos, int w, int h, vec3 fallback) {
+// Capacité écologique dérivée de l'intervalle de précipitation du biome.
+// L'humidité instantanée peut reverdir légèrement un désert après une pluie,
+// mais ne doit pas lui donner la couverture végétale d'une forêt.
+float biomeVegetationCapacity(BiomeData biome) {
+    return smoothstep(0.30, 0.66, biome.humid_max);
+}
+
+vec3 smoothedBiomeMaterial(
+    ivec2 pos,
+    int w,
+    int h,
+    vec3 fallback,
+    float fallback_vegetation_capacity,
+    out float vegetation_capacity
+) {
     vec3 accumulated = vec3(0.0);
+    float accumulated_capacity = 0.0;
     float total_weight = 0.0;
     for (int oy = -3; oy <= 3; ++oy) {
         for (int ox = -3; ox <= 3; ++ox) {
@@ -261,10 +276,16 @@ vec3 smoothedBiomeMaterial(ivec2 pos, int w, int h, vec3 fallback) {
             float distance_sq = float(ox * ox + oy * oy);
             float weight = 1.0 / (1.0 + distance_sq * 0.72);
             accumulated += biomes[sample_id].color.rgb * weight;
+            accumulated_capacity += biomeVegetationCapacity(biomes[sample_id]) * weight;
             total_weight += weight;
         }
     }
-    return total_weight > 0.0 ? accumulated / total_weight : fallback;
+    if (total_weight > 0.0) {
+        vegetation_capacity = accumulated_capacity / total_weight;
+        return accumulated / total_weight;
+    }
+    vegetation_capacity = fallback_vegetation_capacity;
+    return fallback;
 }
 
 // Surface terrestre pilotée par des valeurs physiques continues. Le biome
@@ -274,7 +295,8 @@ vec3 terranClimateSurface(
     vec3 biome_material,
     float temperature,
     float humidity,
-    float relative_height
+    float relative_height,
+    float biome_vegetation_capacity
 ) {
     const float BIOME_TINT_STRENGTH = 0.16;
     float moisture = clamp(humidity, 0.0, 1.0);
@@ -298,6 +320,16 @@ vec3 terranClimateSurface(
     float growing_temperature = smoothstep(-9.0, 5.0, temperature);
     float vegetation_cover = smoothstep(0.16, 0.68, moisture) * growing_temperature;
     vegetation_cover *= 1.0 - dryness * 0.55;
+
+    // Après une pluie intense, un désert peut brièvement reverdir, mais seule
+    // une faible fraction du sol porte cette végétation. Le maximum conserve
+    // cette exception sans laisser l'humidité brute écraser l'identité aride.
+    float ephemeral_greenup = smoothstep(0.68, 0.88, moisture) * 0.18;
+    float ecological_capacity = max(
+        clamp(biome_vegetation_capacity, 0.0, 1.0),
+        ephemeral_greenup
+    );
+    vegetation_cover *= ecological_capacity;
 
     vec3 surface = mix(soil, vegetation_color, vegetation_cover * 0.84);
     surface = mix(surface, biome_material, BIOME_TINT_STRENGTH);
@@ -341,6 +373,7 @@ vec3 planetaryLandSurface(
     float temperature,
     float humidity,
     float relative_height,
+    float biome_vegetation_capacity,
     uint atmosphere_type
 ) {
     if (atmosphere_type == 0u) {
@@ -348,7 +381,8 @@ vec3 planetaryLandSurface(
             biome_material,
             temperature,
             humidity,
-            relative_height
+            relative_height,
+            biome_vegetation_capacity
         );
     }
 
@@ -526,7 +560,16 @@ void main() {
             params.atmosphere_type
         );
     } else if (biome_count > 0u && biome_index < biome_count) {
-        vec3 land_material = smoothedBiomeMaterial(pos, w, h, vegetation_color);
+        float local_vegetation_capacity = biomeVegetationCapacity(biomes[biome_index]);
+        float smoothed_vegetation_capacity = local_vegetation_capacity;
+        vec3 land_material = smoothedBiomeMaterial(
+            pos,
+            w,
+            h,
+            vegetation_color,
+            local_vegetation_capacity,
+            smoothed_vegetation_capacity
+        );
         // Les cartes rocheuses ont besoin de conserver une partie du matériau
         // local. Le lissage 7x7 seul effaçait les petites coulées, cratères et
         // bassins et donnait un aspect flou aux mondes non-Terran.
@@ -541,6 +584,7 @@ void main() {
             climate.r,
             climate.g,
             max(relative_height, 0.0),
+            smoothed_vegetation_capacity,
             params.atmosphere_type
         );
     } else if (params.atmosphere_type == 0u) {
@@ -558,6 +602,7 @@ void main() {
             climate.r,
             climate.g,
             max(relative_height, 0.0),
+            1.0,
             params.atmosphere_type
         );
     }
