@@ -5,7 +5,9 @@ const PREVIEW_HEIGHT := 128
 
 
 func _ready() -> void:
-	if "--arid-preview" in OS.get_cmdline_user_args():
+	if "--desert-preview" in OS.get_cmdline_user_args():
+		call_deferred("_run_world_preview", "desert")
+	elif "--arid-preview" in OS.get_cmdline_user_args():
 		call_deferred("_run_world_preview", "arid")
 	elif "--cold-preview" in OS.get_cmdline_user_args():
 		call_deferred("_run_world_preview", "cold")
@@ -17,17 +19,18 @@ func _ready() -> void:
 
 func _run_world_preview(profile: String) -> void:
 	var resolution := Vector2i(752, 376)
+	var is_desert_case := profile == "desert"
 	var params := {
-		"seed": 3001918132,
+		"seed": 616988363 if is_desert_case else 3001918132,
 		"resolution": resolution,
 		"planet_type": Enum.TYPE_TERRAN,
 		"planet_radius": 150.0,
 		"planet_density": 5.51,
-		"avg_temperature": -7.0 if profile == "cold" else (34.0 if profile == "arid" else 21.0),
-		"global_humidity": 0.42 if profile == "cold" else (0.18 if profile == "arid" else 0.5),
-		"avg_precipitation": 0.42 if profile == "cold" else (0.18 if profile == "arid" else 0.5),
+		"avg_temperature": 43.0 if is_desert_case else (-7.0 if profile == "cold" else (34.0 if profile == "arid" else 21.0)),
+		"global_humidity": 0.4 if is_desert_case else (0.42 if profile == "cold" else (0.18 if profile == "arid" else 0.5)),
+		"avg_precipitation": 0.4 if is_desert_case else (0.42 if profile == "cold" else (0.18 if profile == "arid" else 0.5)),
 		"sea_level": 0.0,
-		"ocean_ratio": 55.0,
+		"ocean_ratio": 43.0 if is_desert_case else 55.0,
 		"terrain_scale": 150.0,
 		"erosion_iterations": 32,
 		"rain_rate": 0.005,
@@ -67,7 +70,11 @@ func _run_world_preview(profile: String) -> void:
 		gpu.cleanup()
 		_quit(1)
 		return
-	orchestrator.run_simulation()
+	if is_desert_case:
+		_run_surface_preview_pipeline(orchestrator, params, resolution)
+		_print_surface_preview_stats(gpu, resolution)
+	else:
+		orchestrator.run_simulation()
 	var final_path := _save_texture(
 		gpu.readback_texture_raw("final_map"),
 		resolution,
@@ -84,6 +91,65 @@ func _run_world_preview(profile: String) -> void:
 	orchestrator.cleanup()
 	GPUContext.shutdown_shared_device()
 	_quit(0 if valid else 1)
+
+
+func _run_surface_preview_pipeline(
+	orchestrator: GPUOrchestrator,
+	params: Dictionary,
+	resolution: Vector2i
+) -> void:
+	var width := resolution.x
+	var height := resolution.y
+	orchestrator.run_base_elevation_phase(params, width, height)
+	orchestrator.run_crust_age_phase(params, width, height)
+	orchestrator.run_cratering_phase(params, width, height)
+	orchestrator.run_pre_erosion_climate_phase(params, width, height)
+	orchestrator.run_erosion_phase(params, width, height)
+	orchestrator.run_atmosphere_phase(params, width, height)
+	orchestrator.run_water_phase(params, width, height)
+	orchestrator.run_ice_caps_phase(params, width, height)
+	orchestrator.run_biome_phase(params, width, height)
+	orchestrator.run_final_map_phase(params, width, height)
+
+
+func _print_surface_preview_stats(gpu: GPUContext, resolution: Vector2i) -> void:
+	var geo := gpu.readback_texture_raw("geo")
+	var climate := gpu.readback_texture_raw("climate")
+	var water_mask := gpu.readback_texture_raw("water_mask")
+	var biome_ids := gpu.readback_texture_raw("biome_id")
+	var biomes: Array = Enum.get_biomes_for_gpu(Enum.TYPE_TERRAN)
+	var elevations: Array[float] = []
+	var humidities: Array[float] = []
+	var biome_counts: Dictionary = {}
+	for pixel_index in range(resolution.x * resolution.y):
+		if water_mask[pixel_index] != 0:
+			continue
+		elevations.append(geo.decode_float(pixel_index * 16))
+		humidities.append(climate.decode_float(pixel_index * 16 + 4))
+		var biome_id := int(biome_ids.decode_u32(pixel_index * 4))
+		if biome_id >= 0 and biome_id < biomes.size():
+			var biome_name: String = (biomes[biome_id] as Biome).get_nom()
+			biome_counts[biome_name] = int(biome_counts.get(biome_name, 0)) + 1
+	elevations.sort()
+	humidities.sort()
+	print("[FinalMapPalette] land_elevation_quantiles=", _quantiles(elevations))
+	print("[FinalMapPalette] land_humidity_quantiles=", _quantiles(humidities))
+	print("[FinalMapPalette] biome_counts=", biome_counts)
+
+
+func _quantiles(values: Array[float]) -> Dictionary:
+	if values.is_empty():
+		return {}
+	var last := values.size() - 1
+	return {
+		"min": values[0],
+		"p10": values[roundi(last * 0.10)],
+		"p25": values[roundi(last * 0.25)],
+		"p50": values[roundi(last * 0.50)],
+		"p75": values[roundi(last * 0.75)],
+		"p90": values[roundi(last * 0.90)],
+		"max": values[last],
+	}
 
 
 func _run() -> void:

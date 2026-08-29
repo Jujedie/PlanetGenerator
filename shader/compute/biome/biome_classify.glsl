@@ -36,7 +36,7 @@ layout(set = 1, binding = 0, std140) uniform BiomeParams {
     float sea_level;
     float cylinder_radius;
     float flux_humidity_boost;  // Boost d'humidité près des flux d'eau
-    float padding;
+    float river_affluent_threshold; // Échelle physique du réseau de drainage
 };
 
 // === SET 2 : SSBO BIOMES DATA ===
@@ -283,10 +283,17 @@ void main() {
         humidity = 0.0;
     }
     
-    // Boost d'humidité près des flux d'eau (zones humides, pas rivières)
-    // Seulement si la planète a de l'eau et une atmosphère
+    // Humidité riparienne uniquement sur le réseau de drainage établi. Le flux
+    // est accumulé et n'est donc pas normalisé dans [0, 1] : le multiplier
+    // directement rendait presque toutes les terres artificiellement humides.
     if (!waterless_planet && !airless_planet) {
-        float flux_boost = min(flux * flux_humidity_boost, 0.3);
+        float safe_threshold = max(river_affluent_threshold, 0.0001);
+        float river_signal = smoothstep(
+            safe_threshold * 0.45,
+            safe_threshold * 1.60,
+            flux
+        );
+        float flux_boost = river_signal * flux_humidity_boost;
         humidity = min(humidity + flux_boost, 1.0);
     }
     
@@ -423,20 +430,45 @@ void main() {
                 if (biome_sw && is_freshwater) continue;
             }
             
-            // Distance normalisée au centre de chaque plage
+            // Distance jusqu'à la frontière de chaque plage. L'ancienne
+            // distance au centre, divisée par la largeur de l'intervalle,
+            // avantageait fortement les biomes aux plages immenses : un pixel
+            // tropical sans candidat exact pouvait ainsi devenir polaire.
             float temp_center = (biome.temp_min + biome.temp_max) * 0.5;
             float humid_center = (biome.humid_min + biome.humid_max) * 0.5;
             float elev_center = (biome.elev_min + biome.elev_max) * 0.5;
-            
+
             float temp_range = max(biome.temp_max - biome.temp_min, 1.0);
             float humid_range = max(biome.humid_max - biome.humid_min, 0.01);
             float elev_range = max(biome.elev_max - biome.elev_min, 1.0);
-            
-            float td = abs(temp_with_noise - temp_center) / temp_range;
-            float hd = abs(humid_with_noise - humid_center) / humid_range;
-            float ed = abs(effective_elevation - elev_center) / elev_range;
-            
-            float dist = td + hd + ed;
+
+            float temp_outside = max(
+                max(biome.temp_min - temp_with_noise, temp_with_noise - biome.temp_max),
+                0.0
+            );
+            float humid_outside = max(
+                max(biome.humid_min - humid_with_noise, humid_with_noise - biome.humid_max),
+                0.0
+            );
+            float elev_outside = max(
+                max(biome.elev_min - effective_elevation, effective_elevation - biome.elev_max),
+                0.0
+            );
+
+            // Échelles correspondant à une différence climatique ou
+            // topographique significative. Un très léger terme de centre ne
+            // sert qu'à départager deux intervalles équidistants.
+            float boundary_dist = (
+                temp_outside / 18.0
+                + humid_outside / 0.18
+                + elev_outside / 2500.0
+            );
+            float center_tiebreak = (
+                abs(temp_with_noise - temp_center) / temp_range
+                + abs(humid_with_noise - humid_center) / humid_range
+                + abs(effective_elevation - elev_center) / elev_range
+            ) * 0.01;
+            float dist = boundary_dist + center_tiebreak;
             
             if (dist < best_fallback_dist) {
                 best_fallback_dist = dist;

@@ -2721,7 +2721,8 @@ func run_biome_phase(params: Dictionary, w: int, h: int) -> void:
 	var sea_level = float(params.get("sea_level", 0.0))
 	var atmosphere_type = int(params.get("planet_type", 0))
 	var cylinder_radius = float(w) / (2.0 * PI)
-	var flux_humidity_boost = 0.5  # Boost d'humidité près des flux d'eau
+	var flux_humidity_boost = 0.12  # Humidité locale maximale sur le réseau fluvial
+	var river_affluent_threshold = float(params.get("river_affluent_threshold", 1.0e20))
 	
 	print("  Seed: ", seed_val, " | Type planète: ", atmosphere_type)
 	print("  Sea level: ", sea_level, " | Cylinder radius: ", cylinder_radius)
@@ -2741,7 +2742,10 @@ func run_biome_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# === PASSE 1 : CLASSIFICATION INITIALE ===
 	print("  • Classification des biomes...")
-	_dispatch_biome_classify(w, h, groups_x, groups_y, seed_val, atmosphere_type, sea_level, cylinder_radius, flux_humidity_boost, biomes_ssbo)
+	_dispatch_biome_classify(
+		w, h, groups_x, groups_y, seed_val, atmosphere_type, sea_level,
+		cylinder_radius, flux_humidity_boost, river_affluent_threshold, biomes_ssbo
+	)
 	
 	# === PASSES 2-3 : LISSAGE (2 passes ping-pong) ===
 	if gpu.shaders.has("biome_smooth") and gpu.shaders["biome_smooth"].is_valid():
@@ -2761,7 +2765,8 @@ func run_biome_phase(params: Dictionary, w: int, h: int) -> void:
 ## Dispatch le shader de classification des biomes
 func _dispatch_biome_classify(w: int, h: int, groups_x: int, groups_y: int, 
 		seed_val: int, atmosphere_type: int, sea_level: float, 
-		cylinder_radius: float, flux_humidity_boost: float, biomes_ssbo: RID) -> void:
+		cylinder_radius: float, flux_humidity_boost: float,
+		river_affluent_threshold: float, biomes_ssbo: RID) -> void:
 	
 	# Vérifier les textures nécessaires
 	var required_textures = ["geo", "climate", "water_mask", "river_flux", "biome_id", "biome_colored"]
@@ -2798,7 +2803,7 @@ func _dispatch_biome_classify(w: int, h: int, groups_x: int, groups_y: int,
 	buffer_bytes.encode_float(16, sea_level)           # sea_level
 	buffer_bytes.encode_float(20, cylinder_radius)     # cylinder_radius
 	buffer_bytes.encode_float(24, flux_humidity_boost) # flux_humidity_boost
-	buffer_bytes.encode_float(28, 0.0)                 # padding
+	buffer_bytes.encode_float(28, river_affluent_threshold)
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
 	var param_uniform = RDUniform.new()

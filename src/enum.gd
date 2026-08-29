@@ -55,13 +55,18 @@ var BIOMES = [
 	Biome.new("Marécage Tempéré", Color.hex(0x397c65FF), Color.hex(0x425f50FF), [5, 100], [0.72, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
 
 	# --- TERRES : CLIMATS CHAUDS & ARIDES ---
-	Biome.new("Jungle Tropicale", Color.hex(0x006b28FF), Color.hex(0x285236FF), [18, 45], [0.62, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Savane", Color.hex(0x9d9a25FF), Color.hex(0xa88c49FF), [18, 45], [0.18, 0.42], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Brousse (Bush)", Color.hex(0x7f8f32FF), Color.hex(0x717d4cFF), [18, 45], [0.35, 0.62], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Désert semi-aride", Color.hex(0xc9954bFF), Color.hex(0xc4935bFF), [8, 50], [0.08, 0.3], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Désert de Sable", Color.hex(0xd6af6aFF), Color.hex(0xd9b772FF), [20, 55], [0.0, 0.14], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Désert Rocheux (Badlands)", Color.hex(0xa85f36FF), Color.hex(0xa96746FF), [10, 70], [0.0, 0.20], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
-	Biome.new("Désert Extrême", Color.hex(0x80442fFF), Color.hex(0x98523bFF), [45, 200], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Jungle Tropicale", Color.hex(0x006b28FF), Color.hex(0x285236FF), [18, 65], [0.64, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Savane", Color.hex(0x9d9a25FF), Color.hex(0xa88c49FF), [18, 60], [0.40, 0.58], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	Biome.new("Brousse (Bush)", Color.hex(0x7f8f32FF), Color.hex(0x717d4cFF), [16, 60], [0.52, 0.72], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	# Les biomes arides forment un continuum climatique sans trou. Le relief
+	# sépare les ergs sableux de basse altitude des déserts rocheux élevés,
+	# au lieu de faire concourir trois définitions presque identiques.
+	Biome.new("Désert semi-aride", Color.hex(0xc9954bFF), Color.hex(0xc4935bFF), [10, 55], [0.30, 0.44], [-200, 4500], false, [TYPE_TERRAN]),
+	Biome.new("Désert de Sable", Color.hex(0xd6af6aFF), Color.hex(0xd9b772FF), [20, 62], [0.0, 0.32], [-200, 2400], false, [TYPE_TERRAN]),
+	Biome.new("Désert Rocheux (Badlands)", Color.hex(0xa85f36FF), Color.hex(0xa96746FF), [12, 65], [0.18, 0.40], [600, 5000], false, [TYPE_TERRAN]),
+	# Un désert extrême requiert chaleur ET aridité. L'ancienne humidité 0..1
+	# transformait toute région dépassant 45 °C, même humide, en désert.
+	Biome.new("Désert Extrême", Color.hex(0x80442fFF), Color.hex(0x98523bFF), [58, 200], [0.0, 0.24], [-200, 5000], false, [TYPE_TERRAN]),
 	
 	# --- EAUX DOUCES INTÉRIEURES (Surface) ---
 	Biome.new("Oasis", Color.hex(0x45a96dFF), Color.hex(0x3f7955FF), [0, 100], [0.0, 0.3], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
