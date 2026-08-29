@@ -1122,6 +1122,18 @@ func load_compute_shader(glsl_path: String, shader_name: String) -> bool:
 		push_error("❌ Pas de SPIR-V disponible: " + shader_name)
 		return false
 
+	# Surface the source-level compiler error before asking RenderingDevice to
+	# create a shader from invalid bytecode. This avoids the generic
+	# "errored bytecode" message hiding the actual GLSL line.
+	var compile_error := shader_spirv.get_stage_compile_error(
+		RenderingDevice.SHADER_STAGE_COMPUTE
+	)
+	if not compile_error.is_empty():
+		push_error("❌ GLSL compute compilation failed [%s]:\n%s" % [
+			shader_name, compile_error
+		])
+		return false
+
 	var shader_rid: RID = rd.shader_create_from_spirv(shader_spirv)
 	if not shader_rid.is_valid():
 		push_error("❌ Échec compilation SPIR-V: " + shader_name)

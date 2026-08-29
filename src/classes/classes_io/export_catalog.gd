@@ -112,6 +112,10 @@ static func finalize_outputs(output_root: String, exported_files: Dictionary,
 		var destination_dir := output_root.path_join(category)
 		DirAccess.make_dir_recursive_absolute(destination_dir)
 		var destination := destination_dir.path_join(source.get_file())
+		# PNG workers compute and cache SHA-256 while compression is already running.
+		# Preserve that hash across the catalog move instead of rereading every PNG
+		# serially after all workers have finished.
+		var source_sha256 := FileChecksumCache.sha256(source)
 		FileChecksumCache.invalidate(destination)
 		if source.simplify_path() != destination.simplify_path():
 			var move_error := DirAccess.rename_absolute(source, destination)
@@ -125,10 +129,12 @@ static func finalize_outputs(output_root: String, exported_files: Dictionary,
 				out.store_buffer(bytes); out.close()
 				DirAccess.remove_absolute(source)
 		result[key] = destination
+		if not source_sha256.is_empty():
+			FileChecksumCache.remember(destination, source_sha256)
 		catalog_entries[key] = {
 			"path": _relative_path(output_root, destination),
 			"category": category,
-			"sha256": FileChecksumCache.sha256(destination),
+			"sha256": source_sha256 if not source_sha256.is_empty() else FileChecksumCache.sha256(destination),
 		}
 		if category == "maps/resources":
 			resource_cleanup_targets[source.get_file()] = destination

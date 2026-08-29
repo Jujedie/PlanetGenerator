@@ -407,8 +407,11 @@ static func _check_exports(checks: Array[Dictionary], metrics: Dictionary,
 		if path.get_extension().to_lower() != "png":
 			continue
 		png_count += 1
-		var image := Image.new()
-		if image.load(path) != OK or image.get_width() != width or image.get_height() != height:
+		# Reading/decompressing every PNG is extremely expensive for complete
+		# exports (116+ resource maps). Dimensions live in the fixed PNG IHDR
+		# header, so validate them without decoding the pixel payload.
+		var dimensions := _png_header_dimensions(path)
+		if dimensions.x != width or dimensions.y != height:
 			wrong_size.append(str(key))
 	# Validate the keys actually returned by PlanetExporter, not obsolete aliases.
 	var required := ["topographie_map", "biome_colored", "final_map", "region_colored"]
@@ -433,6 +436,31 @@ static func _check_exports(checks: Array[Dictionary], metrics: Dictionary,
 	}
 	_add(checks, "exports.files", "PASS" if ok else "FAIL",
 		"All announced PNG exports exist and share the canonical dimensions." if ok else "Export set contains missing or inconsistent files.", metrics["exports"])
+
+
+static func _png_header_dimensions(path: String) -> Vector2i:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null or file.get_length() < 24:
+		return Vector2i.ZERO
+	var header := file.get_buffer(24)
+	file.close()
+	if header.size() < 24:
+		return Vector2i.ZERO
+	var signature := [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+	for i in range(signature.size()):
+		if int(header[i]) != int(signature[i]):
+			return Vector2i.ZERO
+	if header[12] != 0x49 or header[13] != 0x48 or header[14] != 0x44 or header[15] != 0x52:
+		return Vector2i.ZERO
+	var width := (
+		(int(header[16]) << 24) | (int(header[17]) << 16)
+		| (int(header[18]) << 8) | int(header[19])
+	)
+	var height := (
+		(int(header[20]) << 24) | (int(header[21]) << 16)
+		| (int(header[22]) << 8) | int(header[23])
+	)
+	return Vector2i(width, height)
 
 
 static func _check_river_export_consistency(checks: Array[Dictionary], metrics: Dictionary,
