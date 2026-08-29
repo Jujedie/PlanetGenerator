@@ -50,7 +50,7 @@ var opacity_slider: HSlider
 var opacity_percent_label: Label
 var zoom_label: Label
 var reset_button: Button
-var inspector_label: Label
+var inspector_label: RichTextLabel
 var help_label: Label
 
 
@@ -389,15 +389,33 @@ func _build_interface() -> void:
 	zoom_row.add_child(reset_button)
 
 	var inspector_panel := PanelContainer.new()
+	inspector_panel.name = "InspectorPanel"
 	inspector_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	inspector_panel.add_theme_stylebox_override("panel", _panel_style(UI_PANEL_ALT, UI_BORDER, 1, 7.0))
+	# Give the data inspector a slightly stronger frame than the surrounding
+	# controls. The content itself remains theme-aware through BBCode colors.
+	inspector_panel.add_theme_stylebox_override(
+		"panel", _panel_style(UI_PANEL_ALT.darkened(0.12), UI_BORDER.lightened(0.12), 1, 12.0)
+	)
 	viewer_box.add_child(inspector_panel)
-	inspector_label = Label.new()
+	inspector_label = RichTextLabel.new()
 	inspector_label.name = "InspectorLabel"
-	inspector_label.custom_minimum_size.y = 40
-	inspector_label.add_theme_color_override("font_color", UI_TEXT)
-	inspector_label.add_theme_font_size_override("font_size", 18)
+	# RichTextLabel gives the inspector semantic colors, bold values and selectable
+	# text. Keep the parent ScrollContainer authoritative to avoid nested scrolling.
+	inspector_label.custom_minimum_size.y = 240
+	inspector_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inspector_label.bbcode_enabled = true
+	inspector_label.add_theme_color_override("default_color", UI_TEXT)
+	inspector_label.add_theme_color_override("font_selected_color", UI_TEXT_BRIGHT)
+	inspector_label.add_theme_color_override("selection_color", UITheme.color(&"selection"))
+	inspector_label.add_theme_font_size_override("normal_font_size", 17)
+	inspector_label.add_theme_font_size_override("bold_font_size", 17)
+	inspector_label.add_theme_constant_override("line_separation", 2)
 	inspector_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	inspector_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	inspector_label.fit_content = true
+	inspector_label.scroll_active = false
+	inspector_label.selection_enabled = true
+	inspector_label.context_menu_enabled = true
 	inspector_panel.add_child(inspector_label)
 	help_label = Label.new()
 	help_label.add_theme_color_override("font_color", UI_MUTED)

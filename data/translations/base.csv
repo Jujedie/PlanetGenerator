@@ -363,3 +363,151 @@ UI_THEME_AMBER,Amber,Ambre,Bernstein
 UI_THEME_OCEAN,Ocean,Océan,Ozean
 UI_THEME_HIGH_CONTRAST,High contrast,Contraste élevé,Hoher Kontrast
 UI_THEME_TOOLTIP,UI theme,Thème de l’interface,UI-Theme
+MAP_VIEWER_INSPECT_POSITION,POSITION,POSITION,POSITION
+MAP_VIEWER_INSPECT_WORLD,WORLD,MONDE,WELT
+MAP_VIEWER_INSPECT_SURFACE,SURFACE,SURFACE,OBERFLÄCHE
+MAP_VIEWER_INSPECT_CLIMATE,CLIMATE,CLIMAT,KLIMA
+MAP_VIEWER_INSPECT_HYDROLOGY,HYDROLOGY,HYDROLOGIE,HYDROLOGIE
+MAP_VIEWER_INSPECT_ADMIN,ADMINISTRATION,ADMINISTRATION,VERWALTUNG
+MAP_VIEWER_INSPECT_TECTONICS,TECTONICS,TECTONIQUE,TEKTONIK
+MAP_VIEWER_INSPECT_LAYER,LAYERS,COUCHES,EBENEN
+MAP_VIEWER_INSPECT_RESOURCES,RESOURCES,RESSOURCES,RESSOURCEN
+MAP_VIEWER_INSPECT_CELL,Cell,Cellule,Zelle
+MAP_VIEWER_INSPECT_UV,UV,UV,UV
+MAP_VIEWER_INSPECT_PLANET,Planet,Planète,Planet
+MAP_VIEWER_INSPECT_SEED,Seed,Graine,Seed
+MAP_VIEWER_INSPECT_RADIUS,Radius,Rayon,Radius
+MAP_VIEWER_INSPECT_SEA_LEVEL,Sea level,Niveau marin,Meeresspiegel
+MAP_VIEWER_INSPECT_BASE,Base,Base,Basis
+MAP_VIEWER_INSPECT_OVERLAY,Overlay,Superposition,Überlagerung
+MAP_VIEWER_INSPECT_BIOME,Biome,Biome,Biom
+MAP_VIEWER_INSPECT_BIOME_PROFILE,Biome profile,Profil du biome,Biomprofil
+MAP_VIEWER_INSPECT_TEMPERATURE,Temperature,Température,Temperatur
+MAP_VIEWER_INSPECT_PRECIPITATION,Precipitation,Précipitations,Niederschlag
+MAP_VIEWER_INSPECT_ELEVATION,Elevation,Élévation,Höhe
+MAP_VIEWER_INSPECT_WATER,Water,Eau,Wasser
+MAP_VIEWER_INSPECT_RIVER,River biome,Biome de rivière,Flussbiom
+MAP_VIEWER_INSPECT_RIVER_TYPE,River type,Type de rivière,Flusstyp
+MAP_VIEWER_INSPECT_ICE,Surface ice,Glace de surface,Oberflächeneis
+MAP_VIEWER_INSPECT_CLOUDS,Cloud signal,Signal nuageux,Wolkensignal
+MAP_VIEWER_INSPECT_PLATE,Plate,Plaque,Platte
+MAP_VIEWER_INSPECT_PLATE_BORDER,Plate boundary,Frontière de plaque,Plattengrenze
+MAP_VIEWER_INSPECT_DEPARTMENT,Department,Département,Bezirk
+MAP_VIEWER_INSPECT_REGION,Region,Région,Region
+MAP_VIEWER_INSPECT_COUNTRY,Country,Pays,Land
+MAP_VIEWER_INSPECT_CONTINENT,Continent,Continent,Kontinent
+MAP_VIEWER_INSPECT_SEA_DEPARTMENT,Sea department,Département maritime,Meeresbezirk
+MAP_VIEWER_INSPECT_SEA_REGION,Sea region,Région maritime,Meeresregion
+MAP_VIEWER_INSPECT_BASIN,Basin,Bassin,Becken
+MAP_VIEWER_INSPECT_OCEAN,Ocean,Océan,Ozean
+MAP_VIEWER_INSPECT_REQUIRES_WATER,water-dependent,dépendant de l’eau,wasserabhängig
+MAP_VIEWER_INSPECT_FRESHWATER,freshwater,eau douce,Süßwasser
+MAP_VIEWER_INSPECT_RIVER_ONLY,river-only,rivière uniquement,nur Fluss
+MAP_VIEWER_INSPECT_NONE,none,aucun,keine
+MAP_VIEWER_INSPECT_UNKNOWN,unknown,inconnu,unbekannt
+MAP_VIEWER_INSPECT_YES,yes,oui,ja
+MAP_VIEWER_INSPECT_NO,no,non,nein
+MAP_VIEWER_WATER_SALT,saltwater,eau salée,Salzwasser
+MAP_VIEWER_WATER_FRESH,freshwater,eau douce,Süßwasser
+MAP_VIEWER_RIVER_TRIBUTARY,tributary,affluent,Nebenfluss
+MAP_VIEWER_RIVER_RIVER,river,rivière,Fluss
+MAP_VIEWER_RIVER_MAJOR,major river,fleuve,Strom
+MAP_VIEWER_PLATE_CONVERGENT,convergent,convergente,konvergent
+MAP_VIEWER_PLATE_DIVERGENT,divergent,divergente,divergent
+MAP_VIEWER_PLATE_TRANSFORM,transform/other,transformante/autre,Transform/sonstige
+PLANET_TYPE_TERRAN,Terran,Tellurique,Terranisch
+PLANET_TYPE_TOXIC,Toxic,Toxique,Toxisch
+PLANET_TYPE_VOLCANIC,Volcanic,Volcanique,Vulkanisch
+PLANET_TYPE_NO_ATMOS,Airless,Sans atmosphère,Atmosphärenlos
+PLANET_TYPE_DEAD,Dead / irradiated,Morte / irradiée,Tot / verstrahlt
+PLANET_TYPE_STERILE,Barren,Stérile,Steril
+PLANET_TYPE_GAS,Gas giant,Gazeuse,Gasriese
+BIOME_ABYSSES,Abyss,Abysses,Abgrund
+BIOME_PLAINE_ABYSSALE,Abyssal Plain,Plaine abyssale,Abyssalebene
+BIOME_OCEAN_PROFOND,Deep Ocean,Océan profond,Tiefer Ozean
+BIOME_PLATEAU_CONTINENTAL,Continental Shelf,Plateau continental,Kontinentalschelf
+BIOME_RECIF_CORALLIEN,Coral Reef,Récif corallien,Korallenriff
+BIOME_LAGON_TROPICAL,Tropical Lagoon,Lagon tropical,Tropische Lagune
+BIOME_FJORD_GLACE,Glacial Fjord,Fjord glacé,Gletscherfjord
+BIOME_LITTORAL_PLAGE,Coast / Beach,Littoral / Plage,Küste / Strand
+BIOME_MANGROVE_SALEE,Salt Mangrove,Mangrove (salée),Salzmangrove
+BIOME_DELTA_FLUVIAL,River Delta,Delta fluvial,Flussdelta
+BIOME_CALOTTE_GLACIAIRE,Ice Cap,Calotte glaciaire,Eiskappe
+BIOME_DESERT_POLAIRE,Polar Desert,Désert polaire,Polarwüste
+BIOME_TOUNDRA,Tundra,Toundra,Tundra
+BIOME_TOUNDRA_ALPINE,Alpine Tundra,Toundra alpine,Alpine Tundra
+BIOME_TAIGA_FORET_BOREALE,Taiga (Boreal Forest),Taïga (forêt boréale),Taiga (Borealer Wald)
+BIOME_PRAIRIE_ALPINE_ALPAGE,Alpine Meadow,Prairie alpine (alpage),Almwiese
+BIOME_FORET_DE_MONTAGNE,Mountain Forest,Forêt de montagne,Bergwald
+BIOME_FORET_TEMPEREE_DECIDUE,Temperate Deciduous Forest,Forêt tempérée (décidue),Gemäßigter Laubwald
+BIOME_FORET_DE_SEQUOIAS,Redwood Forest,Forêt de séquoias,Mammutbaumwald
+BIOME_FORET_HUMIDE_RAINFOREST,Temperate Rainforest,Forêt humide,Gemäßigter Regenwald
+BIOME_PRAIRIE_VERDOYANTE,Lush Grassland,Prairie verdoyante,Üppiges Grasland
+BIOME_MAQUIS_MEDITERRANEEN,Mediterranean Scrub,Maquis méditerranéen,Mediterrane Macchie
+BIOME_STEPPES_SECHES,Dry Steppe,Steppes sèches,Trockene Steppe
+BIOME_STEPPES_TEMPEREES,Temperate Steppe,Steppes tempérées,Gemäßigte Steppe
+BIOME_MARECAGE_TEMPERE,Temperate Swamp,Marécage tempéré,Gemäßigter Sumpf
+BIOME_JUNGLE_TROPICALE,Tropical Jungle,Jungle tropicale,Tropischer Dschungel
+BIOME_SAVANE,Savanna,Savane,Savanne
+BIOME_BROUSSE_BUSH,Bushland,Brousse,Buschland
+BIOME_DESERT_SEMI_ARIDE,Semi-arid Desert,Désert semi-aride,Halbtrockene Wüste
+BIOME_DESERT_DE_SABLE,Sand Desert,Désert de sable,Sandwüste
+BIOME_DESERT_ROCHEUX_BADLANDS,Rocky Desert (Badlands),Désert rocheux (Badlands),Felswüste (Badlands)
+BIOME_DESERT_EXTREME,Extreme Desert,Désert extrême,Extremwüste
+BIOME_OASIS,Oasis,Oasis,Oase
+BIOME_CENOTE_GOUFFRE,Cenote (Sinkhole),Cénote (gouffre),Cenote (Doline)
+BIOME_BAYOU_MARAIS_CHAUD,Bayou (Warm Swamp),Bayou (marais chaud),Bayou (Warmer Sumpf)
+BIOME_RIVIERE,River,Rivière,Fluss
+BIOME_LAC_D_EAU_DOUCE,Freshwater Lake,Lac d'eau douce,Süßwassersee
+BIOME_LAC_GELE,Frozen Lake,Lac gelé,Gefrorener See
+BIOME_RIVIERE_GLACIAIRE,Glacial River,Rivière glaciaire,Gletscherfluss
+BIOME_OCEAN_ACIDE,Acid Ocean,Océan acide,Säureozean
+BIOME_LAGON_DE_BOUE_TOXIQUE,Toxic Mud Lagoon,Lagon de boue toxique,Giftige Schlammlagune
+BIOME_DESERT_DE_SOUFRE,Sulfur Desert,Désert de soufre,Schwefelwüste
+BIOME_DESERT_EXTREME_DE_SOUFRE,Extreme Sulfur Desert,Désert extrême de soufre,Extreme Schwefelwüste
+BIOME_FORET_FONGIQUE_CHAMPIGNONS,Fungal Forest,Forêt fongique (champignons),Pilzwald
+BIOME_PLAINES_DE_SPORES,Spore Plains,Plaines de spores,Sporenebenen
+BIOME_MARECAGES_ACIDES,Acid Marshes,Marécages acides,Säuremarschen
+BIOME_GLACIER_VERT_METHANE,Green Methane Glacier,Glacier vert (méthane),Grüner Methangletscher
+BIOME_PLAINES_VENTEUSES_TOXIQUES,Toxic Windy Plains,Plaines venteuses toxiques,Giftige Windebenen
+BIOME_CRATERES_ACIDES,Acid Craters,Cratères acides,Säurekrater
+BIOME_RIVIERE_ACIDE,Acid River,Rivière acide,Säurefluss
+BIOME_LAC_D_ACIDE,Acid Lake,Lac d'acide,Säuresee
+BIOME_OCEAN_DE_MAGMA,Magma Ocean,Océan de magma,Magmaozean
+BIOME_MER_DE_LAVE_EN_FUSION,Molten Lava Sea,Mer de lave en fusion,Geschmolzenes Lavameer
+BIOME_CROUTE_BASALTIQUE_REFROIDIE,Cooled Basaltic Crust,Croûte basaltique refroidie,Abgekühlte Basaltkruste
+BIOME_GLACE_VOLCANIQUE,Volcanic Ice,Glace volcanique,Vulkanisches Eis
+BIOME_TOUNDRA_VOLCANIQUE,Volcanic Tundra,Toundra volcanique,Vulkanische Tundra
+BIOME_PLAINES_DE_CENDRES,Ash Plains,Plaines de cendres,Ascheebenen
+BIOME_CHAMPS_DE_GEYSERS,Geyser Fields,Champs de geysers,Geysirfelder
+BIOME_VOLCAN_ACTIF_SOMMET,Active Volcano (Summit),Volcan actif (sommet),Aktiver Vulkan (Gipfel)
+BIOME_OBSIDIENNE_VERRE_VOLCANIQUE,Obsidian (Volcanic Glass),Obsidienne (verre volcanique),Obsidian (Vulkanglas)
+BIOME_DESERT_DE_SOUFRE_JAUNE,Yellow Sulfur Desert,Désert de soufre jaune,Gelbe Schwefelwüste
+BIOME_CALDEIRA_FUMANTE,Smoking Caldera,Caldeira fumante,Rauchende Caldera
+BIOME_RIVIERE_DE_LAVE,Lava River,Rivière de lave,Lavafluss
+BIOME_LAC_DE_LAVE,Lava Lake,Lac de lave,Lavasee
+BIOME_MARE_MER_LUNAIRE_BASALTE,Mare (Lunar Basalt Sea),Mare (mer lunaire - basalte),Mare (Lunarbasaltmeer)
+BIOME_REGOLITHE_GRIS,Grey Regolith,Régolithe gris,Grauer Regolith
+BIOME_CRATERE_D_IMPACT,Impact Crater,Cratère d'impact,Einschlagskrater
+BIOME_HAUTS_PLATEAUX_LUNAIRES,Lunar Highlands,Hauts plateaux lunaires,Mondhochland
+BIOME_GLACE_DE_CRATERE_POLAIRE,Polar Crater Ice,Glace de cratère polaire,Polares Kratereis
+BIOME_OCEAN_MORT_GRIS,Dead Ocean (Grey),Océan mort (gris),Toter Ozean (Grau)
+BIOME_MARECAGE_LUMINESCENT,Luminescent Swamp,Marécage luminescent,Leuchtender Sumpf
+BIOME_TERRES_DESOLEES_WASTELAND,Wasteland,Terres désolées,Ödland
+BIOME_DESERT_DE_SEL,Salt Desert,Désert de sel,Salzwüste
+BIOME_FORET_MORTE_ARBRES_NOIRS,Dead Forest (Black Trees),Forêt morte (arbres noirs),Toter Wald (Schwarze Bäume)
+BIOME_CRATERE_NUCLEAIRE,Nuclear Crater,Cratère nucléaire,Nuklearkrater
+BIOME_PLAINES_DE_CENDRES_GRISES,Grey Ash Plains,Plaines de cendres grises,Graue Ascheebenen
+BIOME_DESERT_RADIOACTIF,Radioactive Desert,Désert radioactif,Radioaktive Wüste
+BIOME_MONTAGNES_MORTES,Dead Mountains,Montagnes mortes,Tote Berge
+BIOME_RIVIERE_DE_BOUE,Mud River,Rivière de boue,Schlammfluss
+BIOME_RIVIERE_POLLUEE,Polluted River,Rivière polluée,Verschmutzter Fluss
+BIOME_LAC_IRRADIE,Irradiated Lake,Lac irradié,Verstrahlter See
+BIOME_DESERT_STERILE,Barren Desert,Désert stérile,Sterile Wüste
+BIOME_PLAINE_ROCHEUSE,Rocky Plain,Plaine rocheuse,Felsebene
+BIOME_MONTAGNES_ROCHEUSES,Rocky Mountains,Montagnes rocheuses,Felsgebirge
+BIOME_VALLEES_PROFONDES,Deep Valleys,Vallées profondes,Tiefe Täler
+BIOME_DESERT_DE_PIERRE,Stone Desert,Désert de pierre,Steinwüste
+BIOME_GLACIERS_STERILES,Barren Glaciers,Glaciers stériles,Sterile Gletscher
+BIOME_PLATEAUX_ERODES,Eroded Plateaus,Plateaux érodés,Erodierte Plateaus
+BIOME_CRATERES_SECS,Dry Craters,Cratères secs,Trockene Krater

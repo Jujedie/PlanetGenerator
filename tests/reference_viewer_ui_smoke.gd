@@ -44,6 +44,13 @@ func _ready() -> void:
 	assert(base_select != null and base_select.custom_minimum_size.y >= 44.0)
 	var shortcut_label := viewer_root.find_child("ShortcutLabel", true, false) as Label
 	assert(shortcut_label != null and shortcut_label.text.contains("A/Q/D"))
+	var inspector := viewer_root.find_child("InspectorLabel", true, false) as RichTextLabel
+	assert(inspector != null)
+	assert(inspector.custom_minimum_size.y >= 240.0)
+	assert(inspector.bbcode_enabled)
+	assert(inspector.selection_enabled)
+	assert(inspector.fit_content)
+	assert(not inspector.scroll_active)
 	var overlay_select := master.get("_viewer_overlay_select") as OptionButton
 	assert(overlay_select != null)
 	var overlay_original_index: int = maxi(overlay_select.selected, 0)

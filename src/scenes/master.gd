@@ -26,12 +26,14 @@ var _viewer_overlay_alpha: HSlider
 var _viewer_overlay_alpha_label: Label
 var _viewer_overlay_texture: TextureRect
 var _viewer_crosshair: PlanetMapCrosshair
-var _viewer_inspector_label: Label
+var _viewer_inspector_label: RichTextLabel
 var _viewer_zoom_label: Label
 var _viewer_reset_button: Button
 var _viewer_zoom: float = 1.0
 var _viewer_dragging: bool = false
 var _viewer_image_cache: Dictionary = {}
+var _viewer_scalar_decode_cache: Dictionary = {}
+var _viewer_inspected_uv := Vector2(-1.0, -1.0)
 var _viewer_shell_layer: CanvasLayer
 var _viewer_shell_root: Control
 var _viewer_map_viewport: PanelContainer
@@ -142,6 +144,10 @@ func _on_ui_theme_changed(_theme_id: StringName) -> void:
 	# Workspace styling is applied by each layer. Reapply status semantics after
 	# that pass so a completed/error dot keeps its role in the new palette.
 	_refresh_generation_status_translation()
+	# Inspector colors are BBCode generated from the active palette, so refresh
+	# an existing selection immediately when the user changes theme.
+	if _viewer_inspected_uv.x >= 0.0 and _viewer_inspector_label != null:
+		_refresh_viewer_inspector()
 
 
 func _setup_parameter_workspace() -> void:
@@ -296,7 +302,9 @@ func _refresh_advanced_viewer_translation() -> void:
 		_viewer_reset_button.tooltip_text = tr("UI_TOOLTIP_RESET_VIEW")
 	if _cancel_generation_button != null:
 		_cancel_generation_button.text = tr("GEN_CANCEL").to_upper()
-	if not _viewer_crosshair.has_point:
+	if _viewer_inspected_uv.x >= 0.0 and _viewer_crosshair.has_point:
+		_refresh_viewer_inspector()
+	else:
 		_viewer_inspector_label.visible = true
 		_viewer_inspector_label.text = tr("MAP_VIEWER_INSPECT_HINT")
 	_update_viewer_sources()
@@ -336,6 +344,8 @@ func _on_viewer_base_selected(index: int) -> void:
 		return
 	map_index = int(_viewer_base_select.get_item_metadata(index))
 	_load_current_map()
+	if _viewer_inspected_uv.x >= 0.0:
+		_refresh_viewer_inspector()
 
 
 func _on_viewer_overlay_selected(index: int) -> void:
@@ -344,10 +354,14 @@ func _on_viewer_overlay_selected(index: int) -> void:
 	var path := str(_viewer_overlay_select.get_item_metadata(index))
 	if path.is_empty():
 		_viewer_overlay_texture.texture = null
+		if _viewer_inspected_uv.x >= 0.0:
+			_refresh_viewer_inspector()
 		return
-	var image := _viewer_load_image(path)
+	var image: Image = _viewer_load_image(path)
 	if image != null:
 		_viewer_overlay_texture.texture = ImageTexture.create_from_image(image)
+	if _viewer_inspected_uv.x >= 0.0:
+		_refresh_viewer_inspector()
 
 
 func _on_viewer_overlay_alpha_changed(value: float) -> void:
@@ -419,6 +433,7 @@ func _reset_viewer_transform() -> void:
 	frame.position = Vector2.ZERO
 	_viewer_zoom_label.text = tr("MAP_VIEWER_ZOOM").format({"percent": 100})
 	_viewer_crosshair.clear_point()
+	_viewer_inspected_uv = Vector2(-1.0, -1.0)
 	_viewer_inspector_label.visible = true
 	_viewer_inspector_label.text = tr("MAP_VIEWER_INSPECT_HINT")
 
@@ -429,28 +444,560 @@ func _inspect_map_point(local_point: Vector2) -> void:
 	var map_control := _viewer_map_texture
 	if map_control.size.x <= 0.0 or map_control.size.y <= 0.0:
 		return
-	var image := _viewer_load_image(maps[map_index])
-	if image == null:
-		return
 	var uv := Vector2(
 		clampf(local_point.x / map_control.size.x, 0.0, 0.999999),
 		clampf(local_point.y / map_control.size.y, 0.0, 0.999999)
 	)
-	var cell := Vector2i(
-		int(floor(uv.x * image.get_width())),
-		int(floor(uv.y * image.get_height()))
-	)
-	var lon_lat := PlanetGridContract.global_cell_to_world(cell, image.get_size())
-	var color := image.get_pixelv(cell)
+	_viewer_inspected_uv = uv
 	_viewer_crosshair.set_point(local_point)
+	_refresh_viewer_inspector()
+
+
+func _refresh_viewer_inspector() -> void:
+	if maps.is_empty() or _viewer_inspected_uv.x < 0.0:
+		return
+	var base_path: String = str(maps[clampi(map_index, 0, maps.size() - 1)])
+	var base_sample: Dictionary = _viewer_sample_path(base_path, _viewer_inspected_uv)
+	if base_sample.is_empty():
+		return
+	var base_image_size: Vector2i = base_sample["size"]
+	var cell: Vector2i = base_sample["cell"]
+	var lon_lat: Vector2 = PlanetGridContract.global_cell_to_world(cell, base_image_size)
+	var generation_params: Dictionary = _viewer_generation_params()
+	var planet_type: int = int(generation_params.get("planet_type", 0))
+	var sections: Array[String] = []
+
+	var position_rows: Array[String] = [
+		_viewer_info_row(tr("MAP_VIEWER_INSPECT_CELL"), "%d, %d" % [cell.x, cell.y]),
+		_viewer_info_row(
+			"Lon / Lat",
+			"%.3f°  /  %.3f°" % [rad_to_deg(lon_lat.x), rad_to_deg(lon_lat.y)],
+			_viewer_semantic_color("coordinate")
+		),
+		_viewer_info_row(
+			tr("MAP_VIEWER_INSPECT_UV"),
+			"%.5f, %.5f" % [_viewer_inspected_uv.x, _viewer_inspected_uv.y],
+			_viewer_semantic_color("coordinate")
+		),
+	]
+	sections.append(_viewer_info_section(
+		tr("MAP_VIEWER_INSPECT_POSITION"), _viewer_semantic_color("position"), position_rows
+	))
+
+	var radius_km: float = float(generation_params.get("planet_radius", 0.0))
+	var sea_level: float = float(generation_params.get("sea_level", 0.0))
+	var world_rows: Array[String] = [
+		_viewer_info_row(tr("MAP_VIEWER_INSPECT_PLANET"), _viewer_planet_name()),
+		_viewer_info_row(tr("PLANET_TYPE"), _viewer_planet_type_name(planet_type)),
+		_viewer_info_row(tr("MAP_VIEWER_INSPECT_SEED"), str(generation_params.get("seed", 0))),
+		_viewer_info_row(tr("MAP_VIEWER_INSPECT_RADIUS"), "%.1f km" % radius_km),
+		_viewer_info_row(tr("MAP_VIEWER_INSPECT_SEA_LEVEL"), "%.1f m" % sea_level),
+	]
+	sections.append(_viewer_info_section(
+		tr("MAP_VIEWER_INSPECT_WORLD"), _viewer_semantic_color("world"), world_rows
+	))
+
+	var base_color: Color = base_sample["color"]
+	var layer_rows: Array[String] = [
+		_viewer_info_row(tr("MAP_VIEWER_INSPECT_BASE"), get_map_display_name(base_path)),
+		_viewer_info_row("RGBA", _viewer_color_rich_text(base_color), UITheme.color(&"text_bright"), true),
+	]
+	var overlay_path: String = _viewer_current_overlay_path()
+	if not overlay_path.is_empty():
+		var overlay_sample: Dictionary = _viewer_sample_path(overlay_path, _viewer_inspected_uv)
+		if not overlay_sample.is_empty():
+			layer_rows.append(_viewer_info_row(
+				tr("MAP_VIEWER_INSPECT_OVERLAY"), get_map_display_name(overlay_path)
+			))
+			layer_rows.append(_viewer_info_row(
+				"%s RGBA" % tr("MAP_VIEWER_INSPECT_OVERLAY"), _viewer_color_rich_text(overlay_sample["color"]),
+				UITheme.color(&"text_bright"), true
+			))
+	sections.append(_viewer_info_section(
+		tr("MAP_VIEWER_INSPECT_LAYER"), _viewer_semantic_color("layer"), layer_rows
+	))
+
+	_append_viewer_surface_info(sections, planet_type)
+	_append_viewer_climate_info(sections, planet_type)
+	_append_viewer_hydrology_info(sections, planet_type)
+	_append_viewer_administration_info(sections)
+	_append_viewer_tectonics_info(sections)
+	_append_viewer_resource_info(sections, base_path, overlay_path)
+
 	_viewer_inspector_label.visible = true
-	_viewer_inspector_label.text = tr("MAP_VIEWER_INSPECT_VALUE").format({
-		"x": cell.x, "y": cell.y,
-		"lon": "%.3f" % rad_to_deg(lon_lat.x),
-		"lat": "%.3f" % rad_to_deg(lon_lat.y),
-		"r": "%.3f" % color.r, "g": "%.3f" % color.g,
-		"b": "%.3f" % color.b, "a": "%.3f" % color.a,
-	})
+	_viewer_inspector_label.text = "\n\n".join(sections)
+
+
+func _viewer_bbcode_escape(value: Variant) -> String:
+	# Prevent project names / translated strings from being interpreted as BBCode.
+	return str(value).replace("[", "［").replace("]", "］")
+
+
+func _viewer_bbcode_color(color_value: Color) -> String:
+	return color_value.to_html(false).to_upper()
+
+
+func _viewer_semantic_color(role: String) -> Color:
+	match role:
+		"position":
+			return UITheme.color(&"accent_bright")
+		"coordinate":
+			return Color(0.58, 0.84, 1.0, 1.0)
+		"world":
+			return Color(0.96, 0.90, 0.58, 1.0)
+		"layer":
+			return Color(0.45, 0.80, 1.0, 1.0)
+		"surface":
+			return Color(0.48, 0.86, 0.45, 1.0)
+		"climate":
+			return Color(1.0, 0.72, 0.30, 1.0)
+		"water":
+			return Color(0.32, 0.72, 1.0, 1.0)
+		"ice":
+			return Color(0.70, 0.93, 1.0, 1.0)
+		"admin":
+			return Color(0.80, 0.60, 1.0, 1.0)
+		"tectonics":
+			return Color(1.0, 0.50, 0.32, 1.0)
+		"resources":
+			return Color(0.95, 0.80, 0.30, 1.0)
+		"positive":
+			return UITheme.color(&"success")
+		"negative":
+			return UITheme.color(&"muted")
+	return UITheme.color(&"text_bright")
+
+
+func _viewer_info_section(title_text: String, section_color: Color,
+		rows: Array[String]) -> String:
+	var header: String = "[font_size=18][color=#%s][b]◆ %s[/b][/color][/font_size]" % [
+		_viewer_bbcode_color(section_color), _viewer_bbcode_escape(title_text).to_upper()
+	]
+	var separator: String = "[color=#%s]────────────────────────────────────────[/color]" % [
+		_viewer_bbcode_color(UITheme.color(&"border"))
+	]
+	var result: Array[String] = [header, separator]
+	result.append_array(rows)
+	return "\n".join(result)
+
+
+func _viewer_info_row(label_text: String, value_text: String,
+		value_color: Color = Color.TRANSPARENT, value_is_bbcode: bool = false) -> String:
+	var resolved_color: Color = value_color
+	if resolved_color.a <= 0.0:
+		resolved_color = UITheme.color(&"text_bright")
+	var rendered_value: String = value_text if value_is_bbcode else _viewer_bbcode_escape(value_text)
+	return "[indent][color=#%s]%s[/color]  [color=#%s][b]%s[/b][/color][/indent]" % [
+		_viewer_bbcode_color(UITheme.color(&"secondary_text")),
+		_viewer_bbcode_escape(label_text),
+		_viewer_bbcode_color(resolved_color),
+		rendered_value,
+	]
+
+
+func _viewer_color_rich_text(color_value: Color) -> String:
+	var rgb_hex: String = color_value.to_html(false).to_upper()
+	return "[color=#%s]■[/color]  #%s   RGBA(%d, %d, %d, %d)" % [
+		rgb_hex, rgb_hex,
+		clampi(roundi(color_value.r * 255.0), 0, 255),
+		clampi(roundi(color_value.g * 255.0), 0, 255),
+		clampi(roundi(color_value.b * 255.0), 0, 255),
+		clampi(roundi(color_value.a * 255.0), 0, 255),
+	]
+
+
+func _viewer_generation_params() -> Dictionary:
+	if planetGenerator != null:
+		return planetGenerator.generation_params
+	var manifest_value = _loaded_project.get("manifest", {})
+	if manifest_value is Dictionary:
+		var manifest: Dictionary = manifest_value as Dictionary
+		var parameters_value = manifest.get("parameters", {})
+		if parameters_value is Dictionary:
+			return parameters_value as Dictionary
+	return {}
+
+
+func _viewer_planet_name() -> String:
+	if planetGenerator != null and not planetGenerator.nom.is_empty():
+		return planetGenerator.nom
+	var manifest_value = _loaded_project.get("manifest", {})
+	if manifest_value is Dictionary:
+		return str((manifest_value as Dictionary).get("planet_name", "—"))
+	return "—"
+
+
+func _viewer_planet_type_name(planet_type: int) -> String:
+	var key: String = "PLANET_TYPE_TERRAN"
+	match planet_type:
+		Enum.TYPE_TOXIC: key = "PLANET_TYPE_TOXIC"
+		Enum.TYPE_VOLCANIC: key = "PLANET_TYPE_VOLCANIC"
+		Enum.TYPE_NO_ATMOS: key = "PLANET_TYPE_NO_ATMOS"
+		Enum.TYPE_DEAD: key = "PLANET_TYPE_DEAD"
+		Enum.TYPE_STERILE: key = "PLANET_TYPE_STERILE"
+		Enum.TYPE_GAZEUZE: key = "PLANET_TYPE_GAS"
+	return tr(key)
+
+
+func _viewer_current_overlay_path() -> String:
+	if _viewer_overlay_select == null or _viewer_overlay_select.selected < 0:
+		return ""
+	return str(_viewer_overlay_select.get_item_metadata(_viewer_overlay_select.selected))
+
+
+func _viewer_find_map_path(file_name: String) -> String:
+	var target: String = file_name.to_lower()
+	for path_value in maps:
+		var path: String = str(path_value)
+		if path.get_file().to_lower() == target:
+			return path
+	return ""
+
+
+func _viewer_sample_filename(file_name: String) -> Dictionary:
+	var path: String = _viewer_find_map_path(file_name)
+	return {} if path.is_empty() else _viewer_sample_path(path, _viewer_inspected_uv)
+
+
+func _viewer_sample_path(path: String, uv: Vector2) -> Dictionary:
+	if path.is_empty():
+		return {}
+	var image: Image = _viewer_load_image(path)
+	if image == null or image.is_empty():
+		return {}
+	var size: Vector2i = image.get_size()
+	var cell: Vector2i = Vector2i(
+		clampi(int(floor(uv.x * float(size.x))), 0, maxi(size.x - 1, 0)),
+		clampi(int(floor(uv.y * float(size.y))), 0, maxi(size.y - 1, 0))
+	)
+	return {"path": path, "size": size, "cell": cell, "color": image.get_pixelv(cell)}
+
+
+func _viewer_color_description(color: Color) -> String:
+	return "#%s  RGBA(%d,%d,%d,%d)" % [
+		color.to_html(true).to_upper(),
+		clampi(roundi(color.r * 255.0), 0, 255),
+		clampi(roundi(color.g * 255.0), 0, 255),
+		clampi(roundi(color.b * 255.0), 0, 255),
+		clampi(roundi(color.a * 255.0), 0, 255),
+	]
+
+
+func _viewer_color_token(color: Color) -> String:
+	return "#" + color.to_html(false).to_upper()
+
+
+func _viewer_color_distance_sq(a: Color, b: Color) -> float:
+	var dr: float = a.r - b.r
+	var dg: float = a.g - b.g
+	var db: float = a.b - b.b
+	return dr * dr + dg * dg + db * db
+
+
+func _append_viewer_surface_info(sections: Array[String], planet_type: int) -> void:
+	var rows: Array[String] = []
+	var biome_sample: Dictionary = _viewer_sample_filename("biome_map.png")
+	if not biome_sample.is_empty():
+		var biome_color: Color = biome_sample["color"]
+		if biome_color.a > 0.01:
+			var biome: Biome = Enum.find_biome_by_map_color(biome_color, planet_type, 0)
+			if biome != null:
+				rows.append(_viewer_info_row(
+					tr("MAP_VIEWER_INSPECT_BIOME"), Enum.get_biome_display_name(biome),
+					_viewer_semantic_color("surface")
+				))
+				var temp: Array[int] = biome.get_interval_temp()
+				var precip: Array[float] = biome.get_interval_precipitation()
+				var elevation: Array[int] = biome.get_interval_elevation()
+				rows.append(_viewer_info_row(
+					tr("MAP_VIEWER_INSPECT_BIOME_PROFILE"),
+					"%d…%d°C   •   %.0f…%.0f%%   •   %d…%d m" % [
+						int(temp[0]), int(temp[1]), float(precip[0]) * 100.0,
+						float(precip[1]) * 100.0, int(elevation[0]), int(elevation[1]),
+					]
+				))
+				var flags: Array[String] = []
+				if biome.get_water_need(): flags.append(tr("MAP_VIEWER_INSPECT_REQUIRES_WATER"))
+				if biome.isEauDouce(): flags.append(tr("MAP_VIEWER_INSPECT_FRESHWATER"))
+				if biome.isRiver(): flags.append(tr("MAP_VIEWER_INSPECT_RIVER_ONLY"))
+				if not flags.is_empty():
+					rows.append(_viewer_info_row("Tags", " • ".join(flags), _viewer_semantic_color("surface")))
+	var topo_sample: Dictionary = _viewer_sample_filename("topographie_map.png")
+	if not topo_sample.is_empty():
+		var elevation_estimate: float = _viewer_estimate_elevation(topo_sample["color"])
+		if is_finite(elevation_estimate):
+			rows.append(_viewer_info_row(
+				tr("MAP_VIEWER_INSPECT_ELEVATION"), "≈ %.0f m" % elevation_estimate,
+				_viewer_semantic_color("surface")
+			))
+	if not rows.is_empty():
+		sections.append(_viewer_info_section(
+			tr("MAP_VIEWER_INSPECT_SURFACE"), _viewer_semantic_color("surface"), rows
+		))
+
+
+func _append_viewer_climate_info(sections: Array[String], _planet_type: int) -> void:
+	var rows: Array[String] = []
+	var temperature_sample: Dictionary = _viewer_sample_filename("temperature_map.png")
+	if not temperature_sample.is_empty():
+		var estimated_temp: float = _viewer_estimate_palette_scalar(
+			temperature_sample["color"], Enum.COULEURS_TEMPERATURE, -200.0, 200.0, 0.5,
+			"temp"
+		)
+		rows.append(_viewer_info_row(
+			tr("MAP_VIEWER_INSPECT_TEMPERATURE"), "≈ %.1f°C" % estimated_temp,
+			_viewer_semantic_color("climate")
+		))
+	var precipitation_sample: Dictionary = _viewer_sample_filename("precipitation_map.png")
+	if not precipitation_sample.is_empty():
+		var estimated_precip: float = _viewer_estimate_palette_scalar(
+			precipitation_sample["color"], Enum.COULEUR_PRECIPITATION, 0.0, 1.0, 0.002,
+			"precip"
+		)
+		rows.append(_viewer_info_row(
+			tr("MAP_VIEWER_INSPECT_PRECIPITATION"), "≈ %.1f%%" % (estimated_precip * 100.0),
+			_viewer_semantic_color("water")
+		))
+	var cloud_sample: Dictionary = _viewer_sample_filename("clouds_map.png")
+	if not cloud_sample.is_empty():
+		var cloud_color: Color = cloud_sample["color"]
+		var cloud_signal: float = maxf(cloud_color.r, maxf(cloud_color.g, cloud_color.b)) * 100.0
+		rows.append(_viewer_info_row(
+			tr("MAP_VIEWER_INSPECT_CLOUDS"), "%.0f%%" % cloud_signal,
+			Color(0.78, 0.84, 0.88, 1.0)
+		))
+	if not rows.is_empty():
+		sections.append(_viewer_info_section(
+			tr("MAP_VIEWER_INSPECT_CLIMATE"), _viewer_semantic_color("climate"), rows
+		))
+
+
+func _append_viewer_hydrology_info(sections: Array[String], planet_type: int) -> void:
+	var rows: Array[String] = []
+	var water_sample: Dictionary = _viewer_sample_filename("eaux_map.png")
+	if not water_sample.is_empty():
+		var water_color: Color = water_sample["color"]
+		var water_name: String = _viewer_water_type_name(water_color, planet_type)
+		rows.append(_viewer_info_row(
+			tr("MAP_VIEWER_INSPECT_WATER"), water_name,
+			_viewer_semantic_color("water") if water_color.a > 0.01 else _viewer_semantic_color("negative")
+		))
+	var river_sample: Dictionary = _viewer_sample_filename("river_map.png")
+	if not river_sample.is_empty():
+		var river_color: Color = river_sample["color"]
+		if river_color.a > 0.01:
+			var river_biome: Biome = Enum.find_biome_by_map_color(river_color, planet_type, 1)
+			rows.append(_viewer_info_row(
+				tr("MAP_VIEWER_INSPECT_RIVER"),
+				Enum.get_biome_display_name(river_biome) if river_biome != null else _viewer_color_token(river_color),
+				_viewer_semantic_color("water")
+			))
+	var river_type_sample: Dictionary = _viewer_sample_filename("river_type_map.png")
+	if not river_type_sample.is_empty() and (river_type_sample["color"] as Color).a > 0.01:
+		rows.append(_viewer_info_row(
+			tr("MAP_VIEWER_INSPECT_RIVER_TYPE"), _viewer_river_type_name(river_type_sample["color"]),
+			_viewer_semantic_color("water")
+		))
+	var ice_sample: Dictionary = _viewer_sample_filename("ice_caps_map.png")
+	if not ice_sample.is_empty():
+		var ice_color: Color = ice_sample["color"]
+		var has_ice: bool = ice_color.a > (6.0 / 255.0)
+		rows.append(_viewer_info_row(
+			tr("MAP_VIEWER_INSPECT_ICE"),
+			tr("MAP_VIEWER_INSPECT_YES") if has_ice else tr("MAP_VIEWER_INSPECT_NO"),
+			_viewer_semantic_color("ice") if has_ice else _viewer_semantic_color("negative")
+		))
+	if not rows.is_empty():
+		sections.append(_viewer_info_section(
+			tr("MAP_VIEWER_INSPECT_HYDROLOGY"), _viewer_semantic_color("water"), rows
+		))
+
+
+func _append_viewer_administration_info(sections: Array[String]) -> void:
+	var definitions: Array = [
+		["departement_map.png", "MAP_VIEWER_INSPECT_DEPARTMENT"],
+		["region_map.png", "MAP_VIEWER_INSPECT_REGION"],
+		["pays_map.png", "MAP_VIEWER_INSPECT_COUNTRY"],
+		["continent_map.png", "MAP_VIEWER_INSPECT_CONTINENT"],
+		["departement_mer_map.png", "MAP_VIEWER_INSPECT_SEA_DEPARTMENT"],
+		["region_mer_map.png", "MAP_VIEWER_INSPECT_SEA_REGION"],
+		["bassin_map.png", "MAP_VIEWER_INSPECT_BASIN"],
+		["ocean_map.png", "MAP_VIEWER_INSPECT_OCEAN"],
+	]
+	var rows: Array[String] = []
+	for definition in definitions:
+		var sample: Dictionary = _viewer_sample_filename(str(definition[0]))
+		if sample.is_empty():
+			continue
+		var color: Color = sample["color"]
+		if color.a <= 0.01:
+			continue
+		rows.append(_viewer_info_row(
+			tr(str(definition[1])), _viewer_color_rich_text(color),
+			_viewer_semantic_color("admin"), true
+		))
+	if not rows.is_empty():
+		sections.append(_viewer_info_section(
+			tr("MAP_VIEWER_INSPECT_ADMIN"), _viewer_semantic_color("admin"), rows
+		))
+
+
+func _append_viewer_tectonics_info(sections: Array[String]) -> void:
+	var rows: Array[String] = []
+	var plate_sample: Dictionary = _viewer_sample_filename("plaques_map.png")
+	if not plate_sample.is_empty():
+		var plate_color: Color = plate_sample["color"]
+		rows.append(_viewer_info_row(
+			tr("MAP_VIEWER_INSPECT_PLATE"), _viewer_color_rich_text(plate_color),
+			_viewer_semantic_color("tectonics"), true
+		))
+	var border_sample: Dictionary = _viewer_sample_filename("plaques_bordures_map.png")
+	if not border_sample.is_empty():
+		var border_color: Color = border_sample["color"]
+		if border_color.a > 0.01:
+			var boundary_name: String = _viewer_plate_boundary_name(border_color)
+			var boundary_value: String = "%s   %s" % [boundary_name, _viewer_color_rich_text(border_color)]
+			rows.append(_viewer_info_row(
+				tr("MAP_VIEWER_INSPECT_PLATE_BORDER"), boundary_value,
+				_viewer_semantic_color("tectonics"), true
+			))
+	if not rows.is_empty():
+		sections.append(_viewer_info_section(
+			tr("MAP_VIEWER_INSPECT_TECTONICS"), _viewer_semantic_color("tectonics"), rows
+		))
+
+
+func _append_viewer_resource_info(sections: Array[String], base_path: String, overlay_path: String) -> void:
+	var resource_paths: Array[String] = []
+	for path_value in [base_path, overlay_path, _viewer_find_map_path("petrole_map.png")]:
+		var path: String = str(path_value)
+		if path.is_empty() or path in resource_paths:
+			continue
+		if not _resource_map_translation_key(path).is_empty() or path.get_file().to_lower() == "petrole_map.png":
+			resource_paths.append(path)
+	var rows: Array[String] = []
+	for path in resource_paths:
+		var sample: Dictionary = _viewer_sample_path(path, _viewer_inspected_uv)
+		if sample.is_empty():
+			continue
+		var color: Color = sample["color"]
+		if color.a <= 0.01:
+			continue
+		var resource_strength: float = maxf(color.r, maxf(color.g, color.b)) * 100.0
+		var rich_value: String = "%s   ≈ %.0f%%" % [_viewer_color_rich_text(color), resource_strength]
+		rows.append(_viewer_info_row(
+			get_map_display_name(path), rich_value, _viewer_semantic_color("resources"), true
+		))
+	if not rows.is_empty():
+		sections.append(_viewer_info_section(
+			tr("MAP_VIEWER_INSPECT_RESOURCES"), _viewer_semantic_color("resources"), rows
+		))
+
+
+func _viewer_water_type_name(color: Color, planet_type: int) -> String:
+	if color.a <= 0.01:
+		return tr("MAP_VIEWER_INSPECT_NONE")
+	var salt: Color = Color(0.145, 0.322, 0.541, 1.0)
+	var fresh: Color = Color(0.271, 0.518, 0.824, 1.0)
+	match planet_type:
+		Enum.TYPE_TOXIC:
+			salt = Color(0.255, 0.298, 0.176, 1.0)
+			fresh = Color(0.388, 0.424, 0.227, 1.0)
+		Enum.TYPE_VOLCANIC:
+			salt = Color(0.376, 0.165, 0.110, 1.0)
+			fresh = Color(0.722, 0.286, 0.106, 1.0)
+		Enum.TYPE_DEAD:
+			salt = Color(0.192, 0.239, 0.220, 1.0)
+			fresh = Color(0.298, 0.310, 0.259, 1.0)
+	return tr("MAP_VIEWER_WATER_SALT") if _viewer_color_distance_sq(color, salt) <= _viewer_color_distance_sq(color, fresh) else tr("MAP_VIEWER_WATER_FRESH")
+
+
+func _viewer_river_type_name(color: Color) -> String:
+	var tributary: Color = Color(0.4, 0.75, 1.0, 1.0)
+	var river: Color = Color(0.1, 0.35, 0.85, 1.0)
+	var major: Color = Color(0.15, 0.05, 0.55, 1.0)
+	var distances: Array[float] = [
+		_viewer_color_distance_sq(color, tributary),
+		_viewer_color_distance_sq(color, river),
+		_viewer_color_distance_sq(color, major),
+	]
+	var best: int = 0
+	if float(distances[1]) < float(distances[best]): best = 1
+	if float(distances[2]) < float(distances[best]): best = 2
+	return tr(str(["MAP_VIEWER_RIVER_TRIBUTARY", "MAP_VIEWER_RIVER_RIVER", "MAP_VIEWER_RIVER_MAJOR"][best]))
+
+
+func _viewer_plate_boundary_name(color: Color) -> String:
+	var red: Color = Color(1.0, 0.0, 0.0, 1.0)
+	var blue: Color = Color(0.0, 0.5, 1.0, 1.0)
+	if _viewer_color_distance_sq(color, red) < 0.05:
+		return tr("MAP_VIEWER_PLATE_CONVERGENT")
+	if _viewer_color_distance_sq(color, blue) < 0.05:
+		return tr("MAP_VIEWER_PLATE_DIVERGENT")
+	return tr("MAP_VIEWER_PLATE_TRANSFORM")
+
+
+func _viewer_estimate_elevation(color: Color) -> float:
+	var cache_key: String = "elev:" + color.to_html(false)
+	if _viewer_scalar_decode_cache.has(cache_key):
+		return float(_viewer_scalar_decode_cache[cache_key])
+	var best_value: float = 0.0
+	var best_distance: float = INF
+	# Coarse 100 m search followed by 1 m refinement reproduces the exported
+	# elevation palette closely while keeping first-click cost bounded.
+	for elevation in range(-Enum.ALTITUDE_MAX, Enum.ALTITUDE_MAX + 1, 100):
+		var distance: float = _viewer_color_distance_sq(color, Enum.getElevationColor(elevation, false))
+		if distance < best_distance:
+			best_distance = distance
+			best_value = float(elevation)
+	var coarse: int = int(best_value)
+	for elevation in range(maxi(-Enum.ALTITUDE_MAX, coarse - 120), mini(Enum.ALTITUDE_MAX, coarse + 120) + 1):
+		var distance: float = _viewer_color_distance_sq(color, Enum.getElevationColor(elevation, false))
+		if distance < best_distance:
+			best_distance = distance
+			best_value = float(elevation)
+	_viewer_scalar_decode_cache[cache_key] = best_value
+	return best_value
+
+
+func _viewer_estimate_palette_scalar(color: Color, palette: Dictionary,
+		minimum: float, maximum: float, step: float, cache_namespace: String) -> float:
+	var cache_key: String = "%s:%s" % [cache_namespace, color.to_html(false)]
+	if _viewer_scalar_decode_cache.has(cache_key):
+		return float(_viewer_scalar_decode_cache[cache_key])
+	var best_value: float = minimum
+	var best_distance: float = INF
+	var count: int = maxi(int(round((maximum - minimum) / step)), 1)
+	for index in range(count + 1):
+		var value: float = minf(minimum + float(index) * step, maximum)
+		var candidate: Color = _viewer_palette_color(value, palette)
+		var distance: float = _viewer_color_distance_sq(color, candidate)
+		if distance < best_distance:
+			best_distance = distance
+			best_value = value
+	_viewer_scalar_decode_cache[cache_key] = best_value
+	return best_value
+
+
+func _viewer_palette_color(value: float, palette: Dictionary) -> Color:
+	var keys: Array = palette.keys()
+	keys.sort()
+	if keys.is_empty():
+		return Color.MAGENTA
+	if value <= float(keys[0]):
+		return palette[keys[0]] as Color
+	if value >= float(keys[-1]):
+		return palette[keys[-1]] as Color
+	for index in range(keys.size() - 1):
+		var lower: float = float(keys[index])
+		var upper: float = float(keys[index + 1])
+		if value > upper:
+			continue
+		var t: float = clampf((value - lower) / maxf(upper - lower, 0.000001), 0.0, 1.0)
+		var smooth_t: float = t * t * (3.0 - 2.0 * t)
+		return (palette[keys[index]] as Color).lerp(palette[keys[index + 1]] as Color, smooth_t)
+	return palette[keys[-1]] as Color
+
 
 func _set_generation_phase_text(key: String, fallback: String = "") -> void:
 	_generation_phase_key = key
@@ -540,9 +1087,12 @@ func _load_planet_project(path: String) -> void:
 		return
 	_release_planet_generator()
 	_loaded_project = project
+	_viewer_inspected_uv = Vector2(-1.0, -1.0)
+	_viewer_crosshair.clear_point()
 	maps = project.get("maps", [])
 	map_index = 0
 	_viewer_image_cache.clear()
+	_viewer_scalar_decode_cache.clear()
 	_update_viewer_sources()
 	if maps.is_empty():
 		push_warning("[Master] Project contains no displayable PNG maps")
@@ -618,6 +1168,8 @@ func _on_btn_comfirme_pressed() -> void:
 	var generation_params = _compile_generation_params()
 
 	# Reset state
+	_viewer_inspected_uv = Vector2(-1.0, -1.0)
+	_viewer_crosshair.clear_point()
 	maps      = []
 	map_index = 0
 	_set_map_texture(null)
@@ -693,6 +1245,7 @@ func _on_planetGenerator_finished_main(generation_epoch: int) -> void:
 	maps = planetGenerator.getMaps()
 	map_index = 0
 	_viewer_image_cache.clear()
+	_viewer_scalar_decode_cache.clear()
 	_update_viewer_sources()
 	if maps.is_empty():
 		push_warning("[Master] Generation completed without exportable maps")

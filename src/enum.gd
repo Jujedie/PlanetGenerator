@@ -173,6 +173,154 @@ var BIOMES = [
 	Biome.new("Cratères Secs", Color.hex(0x605858FF), Color.hex(0x68584fFF), [50, 150], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE])
 ]
 
+
+# Stable localization keys for biome names. Simulation keeps the canonical
+# biome name for logs/data compatibility; UI code resolves the localized name
+# through this table so changing locale never changes biome identity.
+var BIOME_TRANSLATION_KEYS: Dictionary = {
+	"Abysses": "BIOME_ABYSSES",
+	"Plaine Abyssale": "BIOME_PLAINE_ABYSSALE",
+	"Océan Profond": "BIOME_OCEAN_PROFOND",
+	"Plateau Continental": "BIOME_PLATEAU_CONTINENTAL",
+	"Récif Corallien": "BIOME_RECIF_CORALLIEN",
+	"Lagon Tropical": "BIOME_LAGON_TROPICAL",
+	"Fjord Glacé": "BIOME_FJORD_GLACE",
+	"Littoral / Plage": "BIOME_LITTORAL_PLAGE",
+	"Mangrove (Salée)": "BIOME_MANGROVE_SALEE",
+	"Delta Fluvial": "BIOME_DELTA_FLUVIAL",
+	"Calotte Glaciaire": "BIOME_CALOTTE_GLACIAIRE",
+	"Désert Polaire": "BIOME_DESERT_POLAIRE",
+	"Toundra": "BIOME_TOUNDRA",
+	"Toundra Alpine": "BIOME_TOUNDRA_ALPINE",
+	"Taïga (Forêt Boréale)": "BIOME_TAIGA_FORET_BOREALE",
+	"Prairie Alpine (Alpage)": "BIOME_PRAIRIE_ALPINE_ALPAGE",
+	"Forêt de montagne": "BIOME_FORET_DE_MONTAGNE",
+	"Forêt Tempérée (Décidue)": "BIOME_FORET_TEMPEREE_DECIDUE",
+	"Forêt de Séquoias": "BIOME_FORET_DE_SEQUOIAS",
+	"Forêt Humide (Rainforest)": "BIOME_FORET_HUMIDE_RAINFOREST",
+	"Prairie Verdoyante": "BIOME_PRAIRIE_VERDOYANTE",
+	"Maquis Méditerranéen": "BIOME_MAQUIS_MEDITERRANEEN",
+	"Steppes sèches": "BIOME_STEPPES_SECHES",
+	"Steppes tempérées": "BIOME_STEPPES_TEMPEREES",
+	"Marécage Tempéré": "BIOME_MARECAGE_TEMPERE",
+	"Jungle Tropicale": "BIOME_JUNGLE_TROPICALE",
+	"Savane": "BIOME_SAVANE",
+	"Brousse (Bush)": "BIOME_BROUSSE_BUSH",
+	"Désert semi-aride": "BIOME_DESERT_SEMI_ARIDE",
+	"Désert de Sable": "BIOME_DESERT_DE_SABLE",
+	"Désert Rocheux (Badlands)": "BIOME_DESERT_ROCHEUX_BADLANDS",
+	"Désert Extrême": "BIOME_DESERT_EXTREME",
+	"Oasis": "BIOME_OASIS",
+	"Cénote (Gouffre)": "BIOME_CENOTE_GOUFFRE",
+	"Bayou (Marais Chaud)": "BIOME_BAYOU_MARAIS_CHAUD",
+	"Rivière": "BIOME_RIVIERE",
+	"Lac d'eau douce": "BIOME_LAC_D_EAU_DOUCE",
+	"Lac gelé": "BIOME_LAC_GELE",
+	"Rivière glaciaire": "BIOME_RIVIERE_GLACIAIRE",
+	"Océan Acide": "BIOME_OCEAN_ACIDE",
+	"Lagon de Boue Toxique": "BIOME_LAGON_DE_BOUE_TOXIQUE",
+	"Désert de Soufre": "BIOME_DESERT_DE_SOUFRE",
+	"Désert Extrême de Soufre": "BIOME_DESERT_EXTREME_DE_SOUFRE",
+	"Forêt Fongique (Champignons)": "BIOME_FORET_FONGIQUE_CHAMPIGNONS",
+	"Plaines de Spores": "BIOME_PLAINES_DE_SPORES",
+	"Marécages Acides": "BIOME_MARECAGES_ACIDES",
+	"Glacier Vert (Méthane)": "BIOME_GLACIER_VERT_METHANE",
+	"Plaines Venteuses Toxiques": "BIOME_PLAINES_VENTEUSES_TOXIQUES",
+	"Cratères Acides": "BIOME_CRATERES_ACIDES",
+	"Rivière Acide": "BIOME_RIVIERE_ACIDE",
+	"Lac d'Acide": "BIOME_LAC_D_ACIDE",
+	"Océan de Magma": "BIOME_OCEAN_DE_MAGMA",
+	"Mer de Lave en Fusion": "BIOME_MER_DE_LAVE_EN_FUSION",
+	"Croûte Basaltique Refroidie": "BIOME_CROUTE_BASALTIQUE_REFROIDIE",
+	"Glace Volcanique": "BIOME_GLACE_VOLCANIQUE",
+	"Toundra Volcanique": "BIOME_TOUNDRA_VOLCANIQUE",
+	"Plaines de Cendres": "BIOME_PLAINES_DE_CENDRES",
+	"Champs de Geysers": "BIOME_CHAMPS_DE_GEYSERS",
+	"Volcan Actif (Sommet)": "BIOME_VOLCAN_ACTIF_SOMMET",
+	"Obsidienne (Verre Volcanique)": "BIOME_OBSIDIENNE_VERRE_VOLCANIQUE",
+	"Désert de Soufre Jaune": "BIOME_DESERT_DE_SOUFRE_JAUNE",
+	"Caldeira Fumante": "BIOME_CALDEIRA_FUMANTE",
+	"Rivière de Lave": "BIOME_RIVIERE_DE_LAVE",
+	"Lac de Lave": "BIOME_LAC_DE_LAVE",
+	"Mare (Mer Lunaire - Basalte)": "BIOME_MARE_MER_LUNAIRE_BASALTE",
+	"Régolithe Gris": "BIOME_REGOLITHE_GRIS",
+	"Cratère d'Impact": "BIOME_CRATERE_D_IMPACT",
+	"Hauts Plateaux Lunaires": "BIOME_HAUTS_PLATEAUX_LUNAIRES",
+	"Glace de Cratère Polaire": "BIOME_GLACE_DE_CRATERE_POLAIRE",
+	"Océan Mort (Gris)": "BIOME_OCEAN_MORT_GRIS",
+	"Marécage Luminescent": "BIOME_MARECAGE_LUMINESCENT",
+	"Terres Désolées (Wasteland)": "BIOME_TERRES_DESOLEES_WASTELAND",
+	"Désert de Sel": "BIOME_DESERT_DE_SEL",
+	"Forêt Morte (Arbres Noirs)": "BIOME_FORET_MORTE_ARBRES_NOIRS",
+	"Cratère Nucléaire": "BIOME_CRATERE_NUCLEAIRE",
+	"Plaines de Cendres Grises": "BIOME_PLAINES_DE_CENDRES_GRISES",
+	"Désert Radioactif": "BIOME_DESERT_RADIOACTIF",
+	"Montagnes Mortes": "BIOME_MONTAGNES_MORTES",
+	"Rivière de Boue": "BIOME_RIVIERE_DE_BOUE",
+	"Rivière Polluée": "BIOME_RIVIERE_POLLUEE",
+	"Lac Irradié": "BIOME_LAC_IRRADIE",
+	"Désert Stérile": "BIOME_DESERT_STERILE",
+	"Plaine Rocheuse": "BIOME_PLAINE_ROCHEUSE",
+	"Montagnes Rocheuses": "BIOME_MONTAGNES_ROCHEUSES",
+	"Vallées Profondes": "BIOME_VALLEES_PROFONDES",
+	"Désert de Pierre": "BIOME_DESERT_DE_PIERRE",
+	"Glaciers Stériles": "BIOME_GLACIERS_STERILES",
+	"Plateaux Érodés": "BIOME_PLATEAUX_ERODES",
+	"Cratères Secs": "BIOME_CRATERES_SECS",
+}
+
+
+func get_biome_translation_key(biome_or_name) -> String:
+	var canonical_name: String = ""
+	if biome_or_name is Biome:
+		canonical_name = (biome_or_name as Biome).get_nom()
+	else:
+		canonical_name = str(biome_or_name)
+	return str(BIOME_TRANSLATION_KEYS.get(canonical_name, canonical_name))
+
+
+func get_biome_display_name(biome_or_name) -> String:
+	var canonical_name: String = (biome_or_name as Biome).get_nom() if biome_or_name is Biome else str(biome_or_name)
+	var key: String = get_biome_translation_key(canonical_name)
+	var translated: String = str(TranslationServer.translate(key))
+	return canonical_name if translated == key else translated
+
+
+func find_biome_by_map_color(color: Color, planet_type: int, river_filter: int = -1) -> Biome:
+	# PNG maps are RGBA8, while biome definitions are Color constants. Compare
+	# in byte space and allow a one-byte tolerance for texture conversion.
+	var target: Vector3i = Vector3i(
+		clampi(roundi(color.r * 255.0), 0, 255),
+		clampi(roundi(color.g * 255.0), 0, 255),
+		clampi(roundi(color.b * 255.0), 0, 255)
+	)
+	var best: Biome = null
+	var best_distance: int = 1 << 30
+	for biome_value in BIOMES:
+		var biome: Biome = biome_value as Biome
+		if biome == null or planet_type not in biome.get_type_planete():
+			continue
+		if river_filter == 0 and biome.isRiver():
+			continue
+		if river_filter == 1 and not biome.isRiver():
+			continue
+		var candidate: Color = biome.get_couleur()
+		var cr: int = clampi(roundi(candidate.r * 255.0), 0, 255)
+		var cg: int = clampi(roundi(candidate.g * 255.0), 0, 255)
+		var cb: int = clampi(roundi(candidate.b * 255.0), 0, 255)
+		var dr: int = target.x - cr
+		var dg: int = target.y - cg
+		var db: int = target.z - cb
+		var distance: int = dr * dr + dg * dg + db * db
+		if distance < best_distance:
+			best_distance = distance
+			best = biome
+	# sqrt(3) bytes maximum difference is enough to tolerate RGBA8 rounding
+	# without confusing nearby biome palette entries.
+	if best_distance <= 3:
+		return best
+	return null
+
 # Définition des couleurs pour les élévations
 var COULEURS_ELEVATIONS = {
 	-ALTITUDE_MAX: Color.hex(0x4c7b9eFF),
