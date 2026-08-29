@@ -3176,15 +3176,9 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	# Keep phase timing honest without downloading region_map a second time. The
 	# normalized bytes above are already the authoritative IDs used by finalize.
 	gpu.sync_for_cpu("land_region_finalize")
-	var department_stats: Dictionary
-	if not normalization.is_empty():
-		department_stats = _measure_partition_sizes_from_sizes(
-			normalization.get("partition_sizes", []), target_department_cells
-		)
-	else:
-		department_stats = _measure_partition_sizes_from_data(
-			normalized_data, target_department_cells
-		)
+	var department_stats: Dictionary = _measure_normalized_partition_stats(
+		normalization, normalized_data, target_department_cells
+	)
 	department_stats["region_readback_ms"] = region_readback_ms
 	department_stats["normalization_ms"] = normalization_ms
 	department_stats["growth_requested_passes"] = region_iterations
@@ -3267,18 +3261,38 @@ func _partition_percentile(sorted_sizes: Array[int], percentile: float) -> int:
 	)
 	return sorted_sizes[index]
 
+func _measure_normalized_partition_stats(
+		normalization: Dictionary, normalized_data: PackedByteArray,
+		target_cells: float
+	) -> Dictionary:
+	# normalize() can legitimately return a non-empty metadata dictionary with an
+	# empty partition_sizes array (for example when the active mask contains no
+	# measurable component). In that case, measure the authoritative normalized
+	# ID bytes before declaring that no partition exists.
+	var stats: Dictionary = {}
+	if not normalization.is_empty():
+		stats = _measure_partition_sizes_from_sizes(
+			normalization.get("partition_sizes", []), target_cells
+		)
+	if not stats.has("count"):
+		stats = _measure_partition_sizes_from_data(normalized_data, target_cells)
+	return stats
+
+
 func _print_partition_stats(label: String, stats: Dictionary) -> void:
-	if stats.is_empty():
+	# Timing/normalization metadata may be appended even when no statistical
+	# payload exists. Test the required core field rather than Dictionary.is_empty().
+	if not stats.has("count") or int(stats.get("count", 0)) <= 0:
 		print("  ⚠️ ", label, " : aucune zone mesurable")
 		return
 	print(
-		"  ", label, " : n=", stats["count"],
-		" | moyenne=", snappedf(float(stats["mean"]), 0.01),
-		" | médiane=", stats["median"],
-		" | min/max=", stats["minimum"], "/", stats["maximum"],
-		" | p90/p95/p99=", stats["p90"], "/", stats["p95"], "/", stats["p99"],
-		" | extrêmes >", stats["extreme_outlier_threshold"],
-		": ", stats["extreme_outliers"]
+		"  ", label, " : n=", stats.get("count", 0),
+		" | moyenne=", snappedf(float(stats.get("mean", 0.0)), 0.01),
+		" | médiane=", stats.get("median", 0),
+		" | min/max=", stats.get("minimum", 0), "/", stats.get("maximum", 0),
+		" | p90/p95/p99=", stats.get("p90", 0), "/", stats.get("p95", 0), "/", stats.get("p99", 0),
+		" | extrêmes >", stats.get("extreme_outlier_threshold", 0),
+		": ", stats.get("extreme_outliers", 0)
 	)
 
 func _dispatch_region_seed_placement(w: int, h: int, groups_x: int,
@@ -3892,15 +3906,9 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	# Region IDs are already available in normalized_data; avoid another
 	# ocean_region_map download solely for statistics. Final coloration remains
 	# queued exactly as before and is synchronized by the next real dependency.
-	var department_stats: Dictionary
-	if not normalization.is_empty():
-		department_stats = _measure_partition_sizes_from_sizes(
-			normalization.get("partition_sizes", []), target_department_cells
-		)
-	else:
-		department_stats = _measure_partition_sizes_from_data(
-			normalized_data, target_department_cells
-		)
+	var department_stats: Dictionary = _measure_normalized_partition_stats(
+		normalization, normalized_data, target_department_cells
+	)
 	department_stats["region_readback_ms"] = ocean_readback_ms
 	department_stats["normalization_ms"] = normalization_ms
 	department_stats["growth_requested_passes"] = ocean_iterations
@@ -3920,16 +3928,16 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	department_stats["unassigned_water_cells"] = missing_water
 	last_administrative_stats["ocean_departments"] = department_stats
 	_print_partition_stats("Départements maritimes", department_stats)
-	if not department_stats.is_empty():
+	if department_stats.has("count") and int(department_stats.get("count", 0)) > 0:
 		var min_allowed := int(normalization.get("minimum_cells", 1))
 		if missing_water > 0:
 			push_error("[Orchestrator] Couverture maritime incomplète après normalisation: "
 				+ str(missing_water) + " pixel(s) d'eau sans département")
-		if int(department_stats["minimum"]) < min_allowed and int(
+		if int(department_stats.get("minimum", 0)) < min_allowed and int(
 			normalization.get("isolated_undersized", 0)
 		) == 0:
 			push_warning("[Orchestrator] Département maritime sous la taille minimale sans exception topologique: "
-				+ str(department_stats["minimum"]) + " < " + str(min_allowed))
+				+ str(department_stats.get("minimum", 0)) + " < " + str(min_allowed))
 	
 	# === PASSE 3 : FINALISATION ET COLORATION ===
 	print("  • Finalisation et coloration...")
