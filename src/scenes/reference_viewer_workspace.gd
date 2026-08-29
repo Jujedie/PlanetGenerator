@@ -248,14 +248,16 @@ func _build_interface() -> void:
 	map_texture = TextureRect.new()
 	map_texture.name = "Map"
 	map_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	map_texture.stretch_mode = TextureRect.STRETCH_SCALE
+	# Match the parameter-mode preview: preserve the exported map aspect ratio
+	# instead of stretching the equirectangular texture to the viewport rectangle.
+	map_texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	map_texture.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	map_canvas.add_child(map_texture)
 	map_texture.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay_texture = TextureRect.new()
 	overlay_texture.name = "MapOverlay"
 	overlay_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	overlay_texture.stretch_mode = TextureRect.STRETCH_SCALE
+	overlay_texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	overlay_texture.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay_texture.modulate.a = 0.65
 	map_canvas.add_child(overlay_texture)

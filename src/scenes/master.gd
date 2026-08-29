@@ -218,6 +218,8 @@ func _setup_reference_viewer_workspace() -> void:
 	_viewer_overlay_alpha.value_changed.connect(_on_viewer_overlay_alpha_changed)
 	_viewer_reset_button.pressed.connect(_reset_viewer_transform)
 	_viewer_map_viewport.gui_input.connect(_on_map_viewer_input)
+	if not get_viewport().size_changed.is_connected(_on_viewer_viewport_resized):
+		get_viewport().size_changed.connect(_on_viewer_viewport_resized)
 
 	_refresh_generation_status_translation()
 	_refresh_advanced_viewer_translation()
@@ -238,6 +240,7 @@ func _show_viewer_workspace() -> void:
 	if _viewer_workspace != null:
 		_viewer_workspace.visible = true
 	_sync_reference_map()
+	call_deferred("_sync_viewer_crosshair_to_uv")
 
 
 func _sync_reference_map() -> void:
@@ -254,6 +257,7 @@ func _sync_reference_map() -> void:
 	var image := _viewer_load_image(maps[map_index])
 	if image != null:
 		_viewer_map_texture.texture = ImageTexture.create_from_image(image)
+		call_deferred("_sync_viewer_crosshair_to_uv")
 
 
 func _set_map_texture(texture: Texture2D) -> void:
@@ -262,6 +266,7 @@ func _set_map_texture(texture: Texture2D) -> void:
 		_viewer_map_frame.visible = texture != null
 		_viewer_empty_label.visible = texture == null
 		_viewer_save_action.disabled = texture == null
+		call_deferred("_sync_viewer_crosshair_to_uv")
 	if _parameter_workspace != null:
 		_parameter_workspace.set_preview_texture(texture)
 
@@ -344,6 +349,7 @@ func _on_viewer_base_selected(index: int) -> void:
 		return
 	map_index = int(_viewer_base_select.get_item_metadata(index))
 	_load_current_map()
+	call_deferred("_sync_viewer_crosshair_to_uv")
 	if _viewer_inspected_uv.x >= 0.0:
 		_refresh_viewer_inspector()
 
@@ -381,6 +387,56 @@ func _viewer_load_image(path: String) -> Image:
 		return null
 	_viewer_image_cache[path] = image
 	return image
+
+
+func _viewer_aspect_fit_rect(content_size: Vector2, available_size: Vector2) -> Rect2:
+	if (
+		content_size.x <= 0.0 or content_size.y <= 0.0
+		or available_size.x <= 0.0 or available_size.y <= 0.0
+	):
+		return Rect2(Vector2.ZERO, available_size)
+	var fit_scale: float = minf(
+		available_size.x / content_size.x,
+		available_size.y / content_size.y
+	)
+	var fitted_size: Vector2 = content_size * fit_scale
+	var fitted_position: Vector2 = (available_size - fitted_size) * 0.5
+	return Rect2(fitted_position, fitted_size)
+
+
+func _viewer_map_content_rect() -> Rect2:
+	if _viewer_map_texture == null:
+		return Rect2()
+	var control_size: Vector2 = _viewer_map_texture.size
+	var texture: Texture2D = _viewer_map_texture.texture
+	if texture == null:
+		return Rect2(Vector2.ZERO, control_size)
+	return _viewer_aspect_fit_rect(texture.get_size(), control_size)
+
+
+func _viewer_point_from_uv(uv: Vector2) -> Vector2:
+	var content_rect: Rect2 = _viewer_map_content_rect()
+	return content_rect.position + Vector2(
+		clampf(uv.x, 0.0, 1.0) * content_rect.size.x,
+		clampf(uv.y, 0.0, 1.0) * content_rect.size.y
+	)
+
+
+func _sync_viewer_crosshair_to_uv() -> void:
+	if _viewer_crosshair == null:
+		return
+	var content_rect: Rect2 = _viewer_map_content_rect()
+	_viewer_crosshair.set_content_rect(content_rect)
+	if _viewer_inspected_uv.x < 0.0 or _viewer_inspected_uv.y < 0.0:
+		return
+	_viewer_crosshair.set_point(_viewer_point_from_uv(_viewer_inspected_uv))
+
+
+func _on_viewer_viewport_resized() -> void:
+	# ReferenceViewerWorkspace recalculates its geometry on the same signal. Wait
+	# one frame so the TextureRect has its new size before recomputing letterbox
+	# offsets and the inspected point.
+	call_deferred("_sync_viewer_crosshair_to_uv")
 
 
 func _on_map_viewer_input(event: InputEvent) -> void:
@@ -441,14 +497,20 @@ func _reset_viewer_transform() -> void:
 func _inspect_map_point(local_point: Vector2) -> void:
 	if maps.is_empty():
 		return
-	var map_control := _viewer_map_texture
-	if map_control.size.x <= 0.0 or map_control.size.y <= 0.0:
+	var content_rect: Rect2 = _viewer_map_content_rect()
+	if content_rect.size.x <= 0.0 or content_rect.size.y <= 0.0:
 		return
+	# KEEP_ASPECT_CENTERED can create horizontal or vertical letterboxing. Clicks
+	# in those empty bands are not map coordinates and must not inspect a cell.
+	if not content_rect.has_point(local_point):
+		return
+	var point_in_map: Vector2 = local_point - content_rect.position
 	var uv := Vector2(
-		clampf(local_point.x / map_control.size.x, 0.0, 0.999999),
-		clampf(local_point.y / map_control.size.y, 0.0, 0.999999)
+		clampf(point_in_map.x / content_rect.size.x, 0.0, 0.999999),
+		clampf(point_in_map.y / content_rect.size.y, 0.0, 0.999999)
 	)
 	_viewer_inspected_uv = uv
+	_viewer_crosshair.set_content_rect(content_rect)
 	_viewer_crosshair.set_point(local_point)
 	_refresh_viewer_inspector()
 

@@ -23,8 +23,20 @@ func _ready() -> void:
 	assert(parameter_layer != null)
 	assert(parameter_layer.visible and not viewer_layer.visible)
 	var map_viewport := viewer_root.get_node_or_null("MapViewport") as Control
+	var map_texture := viewer_root.find_child("Map", true, false) as TextureRect
+	var overlay_texture := viewer_root.find_child("MapOverlay", true, false) as TextureRect
 	var controls := viewer_root.get_node_or_null("MapViewerControls") as Control
 	assert(map_viewport != null and map_viewport.size.x > 1000.0)
+	assert(map_texture != null)
+	assert(overlay_texture != null)
+	assert(map_texture.stretch_mode == TextureRect.STRETCH_KEEP_ASPECT_CENTERED)
+	assert(overlay_texture.stretch_mode == TextureRect.STRETCH_KEEP_ASPECT_CENTERED)
+	var fit_rect: Rect2 = master.call(
+		"_viewer_aspect_fit_rect", Vector2(4.0, 2.0), Vector2(1000.0, 300.0)
+	)
+	assert(is_equal_approx(fit_rect.size.x / fit_rect.size.y, 2.0))
+	assert(is_equal_approx(fit_rect.size.x, 600.0))
+	assert(is_equal_approx(fit_rect.position.x, 200.0))
 	assert(controls != null and controls.position.y > map_viewport.position.y + map_viewport.size.y)
 	var actual_viewport_size := get_viewport().get_visible_rect().size
 	assert(controls.position.y + controls.size.y <= actual_viewport_size.y + 0.01)
@@ -73,6 +85,8 @@ func _ready() -> void:
 	assert(not viewer_layer.visible and parameter_layer.visible)
 	var preview_shortcuts := parameter_layer.find_child("PreviewShortcuts", true, false) as Label
 	assert(preview_shortcuts != null and preview_shortcuts.text.contains("A/Q/D"))
+	assert(parameter_layer.preview_texture.stretch_mode == TextureRect.STRETCH_KEEP_ASPECT_CENTERED)
+	assert(map_texture.stretch_mode == parameter_layer.preview_texture.stretch_mode)
 	var first_preview := Image.create(4, 2, false, Image.FORMAT_RGBA8)
 	first_preview.fill(Color(0.9, 0.1, 0.1, 1.0))
 	var second_preview := Image.create(4, 2, false, Image.FORMAT_RGBA8)
