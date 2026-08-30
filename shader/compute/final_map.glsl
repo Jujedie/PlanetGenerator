@@ -167,6 +167,28 @@ ivec2 wrappedPosition(ivec2 pos, int w, int h) {
     return ivec2((pos.x % w + w) % w, clamp(pos.y, 0, h - 1));
 }
 
+// Taille d'un échantillon exprimée dans l'espace de la planète. Un pixel à
+// 2048x1024 reste la référence historique ; les cartes 4K/8K augmentent le
+// rayon en pixels au lieu de réduire physiquement le filtre climatique.
+int cryosphereWorldSampleStep(int w, int h) {
+    float scale_x = float(w) / 2048.0;
+    float scale_y = float(h) / 1024.0;
+    return clamp(int(floor(max(scale_x, scale_y) + 0.5)), 1, 16);
+}
+
+// La neige terrestre doit suivre des masses climatiques, pas chaque variation
+// d'un seul texel. Ce filtre n'altère pas climate_texture : il sert uniquement
+// au rendu de la cryosphère et garde une empreinte angulaire constante.
+vec2 smoothedCryosphereClimate(ivec2 pos, int w, int h) {
+    int step_px = cryosphereWorldSampleStep(w, h);
+    vec2 center = imageLoad(climate_texture, wrappedPosition(pos, w, h)).rg;
+    vec2 north = imageLoad(climate_texture, wrappedPosition(pos + ivec2(0, -step_px), w, h)).rg;
+    vec2 south = imageLoad(climate_texture, wrappedPosition(pos + ivec2(0, step_px), w, h)).rg;
+    vec2 west = imageLoad(climate_texture, wrappedPosition(pos + ivec2(-step_px, 0), w, h)).rg;
+    vec2 east = imageLoad(climate_texture, wrappedPosition(pos + ivec2(step_px, 0), w, h)).rg;
+    return center * 0.50 + (north + south + west + east) * 0.125;
+}
+
 float elevationAt(ivec2 pos, int w, int h) {
     return imageLoad(geo_texture, wrappedPosition(pos, w, h)).r;
 }
@@ -349,10 +371,11 @@ vec3 terranClimateSurface(
         smoothstep(-12.0, 34.0, sea_level_temperature)
     );
     float mountain_snow = smoothstep(snow_line - 350.0, snow_line + 700.0, relative_height);
-    float permanent_ice = (
-        1.0 - smoothstep(-16.0, -6.0, temperature)
-    ) * smoothstep(0.22, 0.58, moisture);
-    float snow_cover = max(mountain_snow, permanent_ice);
+    // La glace permanente de basse altitude est ajoutée plus bas par
+    // landCryosphereCoverage() à partir d'un climat lissé en espace monde.
+    // La calculer aussi ici depuis le texel climatique brut réintroduisait une
+    // dépendance à la résolution et produisait des trous dans les calottes 8K.
+    float snow_cover = mountain_snow;
     const vec3 SNOW = vec3(0.89, 0.93, 0.93);
     return mix(surface, SNOW, snow_cover * 0.96);
 }
@@ -654,9 +677,10 @@ void main() {
     // === STEP 4: Land snow/frost from continuous physical conditions ===
     // This is deliberately separate from ice_caps, which remains water-only.
     if (!is_water) {
+        vec2 cryosphere_climate = smoothedCryosphereClimate(pos, w, h);
         float land_ice = landCryosphereCoverage(
-            climate.r,
-            climate.g,
+            cryosphere_climate.r,
+            cryosphere_climate.g,
             max(relative_height, 0.0),
             params.atmosphere_type
         );
