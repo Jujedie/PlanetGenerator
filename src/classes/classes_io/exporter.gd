@@ -30,7 +30,6 @@ var _readback_cache_bytes: int = 0
 var _stage_timings: Dictionary = {}
 var _png_file_timings: Dictionary = {}
 const _ADMIN_STAT_STRIDE := 32
-const _ADMIN_HASH_STRIDE := 4
 const _ADMIN_PAIR_STRIDE := 8
 const _ADMIN_COLOR_ROW_STRIDE := 32
 const _ADMIN_MOMENT_SCALE := 1024
@@ -948,7 +947,7 @@ func _release_admin_extract_resources(gpu: GPUContext, resources: Dictionary) ->
 		if uniform_set.is_valid():
 			gpu.release_rid(uniform_set)
 	for buffer_name in [
-		"stat_hash", "stats", "edge_hash", "edges",
+		"stat_hash", "edge_hash", "edges",
 		"contact_hash", "contacts", "counters",
 	]:
 		var buffer: RID = resources.get(buffer_name, RID())
@@ -968,6 +967,11 @@ func _dispatch_admin_extract_once(gpu: GPUContext, source_texture: String,
 	if not gpu.textures.has("water_mask") or not gpu.textures["water_mask"].is_valid():
 		return {"ok": false, "reason": "water_mask_unavailable"}
 
+	# Keep the sparse tables deliberately below 50% load. Unlike the previous
+	# LOCKED-slot implementation these tables never wait for another workgroup:
+	# each unit claims its id directly, while exact edge/contact pairs are claimed
+	# with two atomic CAS operations. Capacity retries therefore mean real table
+	# pressure rather than scheduler-dependent lock timeouts.
 	var stat_hash_capacity := _next_power_of_two(stat_capacity * 2)
 	var edge_capacity := maxi(stat_capacity * 4, 1024)
 	var edge_hash_capacity := _next_power_of_two(edge_capacity * 2)
@@ -975,27 +979,28 @@ func _dispatch_admin_extract_once(gpu: GPUContext, source_texture: String,
 	var contact_hash_capacity := _next_power_of_two(contact_capacity * 2) if maritime else 1
 
 	var resources: Dictionary = {}
+	# One 32-byte AdminStat lives directly in every stat hash slot. The first
+	# uint is id+1 (zero means empty); the remaining atomics accumulate in place.
+	# Reading the sparse table is only a few MiB for normal worlds and avoids the
+	# cross-workgroup publication lock that caused false OVERFLOW_STATS flags.
 	resources["stat_hash"] = _create_storage_buffer_filled(
-		rd, stat_hash_capacity * _ADMIN_HASH_STRIDE, 0
-	)
-	resources["stats"] = _create_storage_buffer_filled(
-		rd, stat_capacity * _ADMIN_STAT_STRIDE, 0
+		rd, stat_hash_capacity * _ADMIN_STAT_STRIDE, 0
 	)
 	resources["edge_hash"] = _create_storage_buffer_filled(
-		rd, edge_hash_capacity * _ADMIN_HASH_STRIDE, 0
+		rd, edge_hash_capacity * _ADMIN_PAIR_STRIDE, 0
 	)
 	resources["edges"] = _create_storage_buffer_filled(
 		rd, edge_capacity * _ADMIN_PAIR_STRIDE, 0
 	)
 	resources["contact_hash"] = _create_storage_buffer_filled(
-		rd, contact_hash_capacity * _ADMIN_HASH_STRIDE, 0
+		rd, contact_hash_capacity * _ADMIN_PAIR_STRIDE, 0
 	)
 	resources["contacts"] = _create_storage_buffer_filled(
 		rd, contact_capacity * _ADMIN_PAIR_STRIDE, 0
 	)
 	resources["counters"] = _create_storage_buffer_filled(rd, 16, 0)
 	for buffer_name in [
-		"stat_hash", "stats", "edge_hash", "edges",
+		"stat_hash", "edge_hash", "edges",
 		"contact_hash", "contacts", "counters",
 	]:
 		var buffer: RID = resources[buffer_name]
@@ -1011,12 +1016,11 @@ func _dispatch_admin_extract_once(gpu: GPUContext, source_texture: String,
 	], shader, 0)
 	var buffer_set := rd.uniform_set_create([
 		_storage_buffer_uniform(0, resources["stat_hash"]),
-		_storage_buffer_uniform(1, resources["stats"]),
-		_storage_buffer_uniform(2, resources["edge_hash"]),
-		_storage_buffer_uniform(3, resources["edges"]),
-		_storage_buffer_uniform(4, resources["contact_hash"]),
-		_storage_buffer_uniform(5, resources["contacts"]),
-		_storage_buffer_uniform(6, resources["counters"]),
+		_storage_buffer_uniform(1, resources["edge_hash"]),
+		_storage_buffer_uniform(2, resources["edges"]),
+		_storage_buffer_uniform(3, resources["contact_hash"]),
+		_storage_buffer_uniform(4, resources["contacts"]),
+		_storage_buffer_uniform(5, resources["counters"]),
 	], shader, 1)
 	resources["texture_set"] = texture_set
 	resources["buffer_set"] = buffer_set
@@ -1083,8 +1087,11 @@ func _dispatch_admin_extract_once(gpu: GPUContext, source_texture: String,
 	stat_count = mini(stat_count, stat_capacity)
 	edge_count = mini(edge_count, edge_capacity)
 	contact_count = mini(contact_count, contact_capacity)
+	# Stats are sparse hash slots, not a compact prefix. Read the complete table;
+	# edges/contacts remain compact because the lock-free pair insertion knows
+	# exactly which invocation first completed a new pair.
 	var stats_data := _read_buffer_after_sync(
-		rd, resources["stats"], stat_count * _ADMIN_STAT_STRIDE
+		rd, resources["stat_hash"], stat_hash_capacity * _ADMIN_STAT_STRIDE
 	)
 	var edges_data := _read_buffer_after_sync(
 		rd, resources["edges"], edge_count * _ADMIN_PAIR_STRIDE
@@ -1096,7 +1103,7 @@ func _dispatch_admin_extract_once(gpu: GPUContext, source_texture: String,
 		)
 	_release_admin_extract_resources(gpu, resources)
 
-	if stats_data.size() != stat_count * _ADMIN_STAT_STRIDE:
+	if stats_data.size() != stat_hash_capacity * _ADMIN_STAT_STRIDE:
 		return {"ok": false, "reason": "stats_readback_failed"}
 	if edges_data.size() != edge_count * _ADMIN_PAIR_STRIDE:
 		return {"ok": false, "reason": "edges_readback_failed"}
@@ -1108,6 +1115,7 @@ func _dispatch_admin_extract_once(gpu: GPUContext, source_texture: String,
 		"edges": edges_data,
 		"contacts": contacts_data,
 		"stat_count": stat_count,
+		"stat_slot_count": stat_hash_capacity,
 		"edge_count": edge_count,
 		"contact_count": contact_count,
 	}
@@ -1116,6 +1124,7 @@ func _dispatch_admin_extract_once(gpu: GPUContext, source_texture: String,
 func _decode_admin_graph(extracted: Dictionary, width: int, height: int,
 		maritime: bool) -> Dictionary:
 	var stat_count := int(extracted.get("stat_count", 0))
+	var stat_slot_count := int(extracted.get("stat_slot_count", stat_count))
 	var edge_count := int(extracted.get("edge_count", 0))
 	var contact_count := int(extracted.get("contact_count", 0))
 	var stats_data: PackedByteArray = extracted.get("stats", PackedByteArray())
@@ -1133,11 +1142,14 @@ func _decode_admin_graph(extracted: Dictionary, width: int, height: int,
 	var ordering_keys := PackedInt64Array()
 	ordering_keys.resize(stat_count)
 	var ordering_count := 0
-	for stat_index in range(stat_count):
+	for stat_index in range(stat_slot_count):
 		var offset := stat_index * _ADMIN_STAT_STRIDE
-		var unit_id := int(stats_data.decode_u32(offset))
+		var stored_key := int(stats_data.decode_u32(offset))
+		if stored_key == 0:
+			continue
+		var unit_id := int((stored_key - 1) & 0xFFFFFFFF)
 		var count := int(stats_data.decode_u32(offset + 4))
-		if unit_id == 0xFFFFFFFF or count <= 0:
+		if count <= 0:
 			continue
 		# The GPU uses 32-bit atomics. Guard pathological single-department maps
 		# rather than accepting wrapped moments; the caller will use the legacy CPU

@@ -379,7 +379,10 @@ func _validate_palette(biomes: Array, final_data: PackedByteArray, resolution: V
 		" wet_badlands=", wet_badlands,
 		" wet_rainforest=", wet_rainforest
 	)
-	if wet_sand.r <= wet_sand.g or wet_badlands.r <= wet_badlands.g:
+	# Une condition humide peut reverdir les sols, mais les déserts doivent
+	# conserver une signature minérale plus chaude que la forêt. Exiger R > G
+	# recréait précisément l'aplat catégoriel que la composition physique évite.
+	if wet_sand.r - wet_sand.b < 0.06 or wet_badlands.r - wet_badlands.b < 0.06:
 		return false
 	if wet_rainforest.g <= wet_rainforest.r * 1.15:
 		return false
@@ -417,7 +420,7 @@ func _validate_final_map_shader() -> bool:
 		and shader.contains("smoothedBiomeMaterial")
 		and shader.contains("biomeVegetationCapacity")
 		and shader.contains("ephemeral_greenup")
-		and shader.contains("BIOME_TINT_STRENGTH = 0.20")
+		and shader.contains("BIOME_TINT_STRENGTH = 0.07")
 		and shader.contains("mountain_snow")
 		and not shader.contains("contourKind")
 		and not shader.contains("MINOR_INTERVAL")

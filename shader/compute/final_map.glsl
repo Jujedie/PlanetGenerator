@@ -184,15 +184,23 @@ float displayElevation(ivec2 pos, int w, int h) {
 }
 
 float calculateTopoShading(ivec2 pos, int w, int h) {
-    float h_left = displayElevation(pos + ivec2(-1, 0), w, h);
-    float h_right = displayElevation(pos + ivec2(1, 0), w, h);
-    float h_up = displayElevation(pos + ivec2(0, -1), w, h);
-    float h_down = displayElevation(pos + ivec2(0, 1), w, h);
+    // Échantillonner une distance géographique comparable sur les aperçus et
+    // les exports 4K. À haute résolution, le gradient d'un seul pixel devenait
+    // trop faible et le relief disparaissait sous les couleurs climatiques.
+    int relief_step = clamp(
+        int(floor(max(float(w) / 1880.0, float(h) / 940.0) + 0.5)),
+        1,
+        4
+    );
+    float h_left = displayElevation(pos + ivec2(-relief_step, 0), w, h);
+    float h_right = displayElevation(pos + ivec2(relief_step, 0), w, h);
+    float h_up = displayElevation(pos + ivec2(0, -relief_step), w, h);
+    float h_down = displayElevation(pos + ivec2(0, relief_step), w, h);
     
     // Les hauteurs sont en mètres : normaliser le gradient évite que quelques
     // centaines de mètres entre pixels produisent des murs noirs artificiels.
-    float dx = (h_right - h_left) / 2400.0;
-    float dy = (h_down - h_up) / 2400.0;
+    float dx = (h_right - h_left) / 1650.0;
+    float dy = (h_down - h_up) / 1650.0;
     
     vec3 light_dir = normalize(vec3(-1.0, -1.0, 1.0));
     vec3 normal = normalize(vec3(-dx, -dy, 1.0));
@@ -208,32 +216,54 @@ float calculateTopoShading(ivec2 pos, int w, int h) {
 // qu'avec de grands champs climatiques ; ce passe-haut restaure leur lecture
 // sans ajouter de bruit arbitraire à la géographie.
 float localTerrainDetail(ivec2 pos, int w, int h) {
+    int detail_step = clamp(
+        int(floor(max(float(w) / 1880.0, float(h) / 940.0) + 0.5)),
+        1,
+        4
+    );
     float center = elevationAt(pos, w, h);
     float cardinal = (
-        elevationAt(pos + ivec2(-1, 0), w, h)
-        + elevationAt(pos + ivec2(1, 0), w, h)
-        + elevationAt(pos + ivec2(0, -1), w, h)
-        + elevationAt(pos + ivec2(0, 1), w, h)
+        elevationAt(pos + ivec2(-detail_step, 0), w, h)
+        + elevationAt(pos + ivec2(detail_step, 0), w, h)
+        + elevationAt(pos + ivec2(0, -detail_step), w, h)
+        + elevationAt(pos + ivec2(0, detail_step), w, h)
     ) * 0.25;
     float diagonal = (
-        elevationAt(pos + ivec2(-1, -1), w, h)
-        + elevationAt(pos + ivec2(1, -1), w, h)
-        + elevationAt(pos + ivec2(-1, 1), w, h)
-        + elevationAt(pos + ivec2(1, 1), w, h)
+        elevationAt(pos + ivec2(-detail_step, -detail_step), w, h)
+        + elevationAt(pos + ivec2(detail_step, -detail_step), w, h)
+        + elevationAt(pos + ivec2(-detail_step, detail_step), w, h)
+        + elevationAt(pos + ivec2(detail_step, detail_step), w, h)
     ) * 0.25;
     float neighborhood = mix(cardinal, diagonal, 0.34);
     return clamp((center - neighborhood) / 900.0, -1.0, 1.0);
 }
 
-// Palette inspirée des cartes physiques de référence : plaines olive, reliefs
-// sable/saumon et sommets crème. Les transitions restent continues.
+float terrainRuggedness(ivec2 pos, int w, int h) {
+    int sample_step = clamp(
+        int(floor(max(float(w) / 1880.0, float(h) / 940.0) + 0.5)),
+        1,
+        4
+    );
+    float center = elevationAt(pos, w, h);
+    float variation = 0.0;
+    variation += abs(elevationAt(pos + ivec2(-sample_step, 0), w, h) - center);
+    variation += abs(elevationAt(pos + ivec2(sample_step, 0), w, h) - center);
+    variation += abs(elevationAt(pos + ivec2(0, -sample_step), w, h) - center);
+    variation += abs(elevationAt(pos + ivec2(0, sample_step), w, h) - center);
+    variation *= 0.25;
+    return smoothstep(30.0, 430.0, variation);
+}
+
+// Palette rocheuse satellite : terres basses sourdes, reliefs bruns/gris et
+// sommets minéraux. Elle reste volontairement moins claire qu'une hypsométrie
+// scolaire afin de se fondre sous la végétation et l'ombrage.
 vec3 terranLandHypsometry(float relative_height) {
-    const vec3 COAST = vec3(0.66, 0.67, 0.47);
-    const vec3 LOWLAND = vec3(0.62, 0.61, 0.37);
-    const vec3 UPLAND = vec3(0.76, 0.63, 0.43);
-    const vec3 HIGHLAND = vec3(0.91, 0.70, 0.55);
-    const vec3 MOUNTAIN = vec3(0.96, 0.80, 0.66);
-    const vec3 SUMMIT = vec3(0.96, 0.88, 0.75);
+    const vec3 COAST = vec3(0.31, 0.34, 0.20);
+    const vec3 LOWLAND = vec3(0.35, 0.35, 0.21);
+    const vec3 UPLAND = vec3(0.43, 0.38, 0.24);
+    const vec3 HIGHLAND = vec3(0.50, 0.43, 0.31);
+    const vec3 MOUNTAIN = vec3(0.57, 0.52, 0.43);
+    const vec3 SUMMIT = vec3(0.70, 0.69, 0.64);
 
     vec3 color = mix(COAST, LOWLAND, smoothstep(0.0, 220.0, relative_height));
     color = mix(color, UPLAND, smoothstep(220.0, 900.0, relative_height));
@@ -303,7 +333,7 @@ vec3 terranClimateSurface(
     float relative_height,
     float biome_vegetation_capacity
 ) {
-    const float BIOME_TINT_STRENGTH = 0.20;
+    const float BIOME_TINT_STRENGTH = 0.07;
     float moisture = clamp(humidity, 0.0, 1.0);
     float sea_level_temperature = temperature + max(relative_height, 0.0) * 0.0065;
     float heat = smoothstep(7.0, 34.0, sea_level_temperature);
@@ -313,22 +343,24 @@ vec3 terranClimateSurface(
         0.82,
         clamp(biome_vegetation_capacity, 0.0, 1.0)
     );
-    float aridity = max(climate_dryness, biome_dryness * 0.90);
+    // Le climat continu porte l'essentiel de l'aridité. Le biome ne fournit
+    // qu'une mémoire écologique faible, sans créer de grands aplats catégoriels.
+    float aridity = clamp(climate_dryness * 0.84 + biome_dryness * 0.16, 0.0, 1.0);
 
-    const vec3 COOL_SOIL = vec3(0.30, 0.28, 0.19);
-    const vec3 WARM_SOIL = vec3(0.49, 0.34, 0.20);
-    const vec3 ARID_SOIL = vec3(0.76, 0.61, 0.38);
-    const vec3 DESERT_SAND = vec3(0.90, 0.78, 0.55);
+    const vec3 COOL_SOIL = vec3(0.27, 0.26, 0.18);
+    const vec3 WARM_SOIL = vec3(0.42, 0.33, 0.22);
+    const vec3 ARID_SOIL = vec3(0.62, 0.53, 0.36);
+    const vec3 DESERT_SAND = vec3(0.76, 0.66, 0.47);
     vec3 soil = mix(COOL_SOIL, WARM_SOIL, heat);
     soil = mix(soil, ARID_SOIL, smoothstep(0.12, 0.70, aridity));
     float hot_desert = smoothstep(0.66, 0.98, aridity)
         * smoothstep(8.0, 31.0, sea_level_temperature);
     soil = mix(soil, DESERT_SAND, hot_desert * 0.82);
 
-    const vec3 BOREAL = vec3(0.11, 0.21, 0.09);
-    const vec3 GRASSLAND = vec3(0.29, 0.41, 0.15);
-    const vec3 TEMPERATE_FOREST = vec3(0.10, 0.28, 0.08);
-    const vec3 TROPICAL_FOREST = vec3(0.045, 0.20, 0.055);
+    const vec3 BOREAL = vec3(0.13, 0.20, 0.095);
+    const vec3 GRASSLAND = vec3(0.27, 0.34, 0.16);
+    const vec3 TEMPERATE_FOREST = vec3(0.09, 0.235, 0.075);
+    const vec3 TROPICAL_FOREST = vec3(0.040, 0.16, 0.045);
     vec3 open_vegetation = mix(BOREAL, GRASSLAND, smoothstep(-4.0, 16.0, sea_level_temperature));
     vec3 forest = mix(TEMPERATE_FOREST, TROPICAL_FOREST, heat);
     vec3 vegetation_color = mix(open_vegetation, forest, smoothstep(0.34, 0.74, moisture));
@@ -340,17 +372,20 @@ vec3 terranClimateSurface(
     // une faible fraction du sol porte cette végétation. Le maximum conserve
     // cette exception sans laisser l'humidité brute écraser l'identité aride.
     float ephemeral_greenup = smoothstep(0.68, 0.88, moisture) * 0.18;
-    float ecological_capacity = max(
+    float climate_capacity = smoothstep(0.08, 0.72, moisture);
+    float ecological_capacity = mix(
+        climate_capacity,
         clamp(biome_vegetation_capacity, 0.0, 1.0),
-        ephemeral_greenup
+        0.16
     );
+    ecological_capacity = max(ecological_capacity, ephemeral_greenup);
     vegetation_cover *= ecological_capacity;
 
-    vec3 surface = mix(soil, vegetation_color, vegetation_cover * 0.94);
+    vec3 surface = mix(soil, vegetation_color, vegetation_cover * 0.82);
     surface = mix(surface, biome_material, BIOME_TINT_STRENGTH);
 
-    const vec3 COOL_ROCK = vec3(0.38, 0.38, 0.34);
-    const vec3 WARM_ROCK = vec3(0.52, 0.42, 0.31);
+    const vec3 COOL_ROCK = vec3(0.34, 0.34, 0.31);
+    const vec3 WARM_ROCK = vec3(0.47, 0.39, 0.30);
     vec3 exposed_rock = mix(COOL_ROCK, WARM_ROCK, heat);
     float rock_cover = smoothstep(1450.0, 3500.0, relative_height) * 0.56;
     surface = mix(surface, exposed_rock, rock_cover);
@@ -629,9 +664,30 @@ void main() {
         );
     }
 
-    // Renforcer les détails géologiques des types signalés comme flous,
-    // sans modifier le rendu Terran ni le rendu stérile déjà satisfaisant.
-    if (!is_water && params.atmosphere_type >= 1u && params.atmosphere_type <= 4u) {
+    // Sur Terre, les couleurs climatiques sont une couche de couverture. Les
+    // roches, les plateaux et les chaînes doivent rester lisibles dessous,
+    // comme sur une vue satellite plutôt que sur une carte de biomes.
+    if (!is_water && params.atmosphere_type == 0u) {
+        float ruggedness = terrainRuggedness(pos, w, h);
+        float altitude_exposure = smoothstep(180.0, 2850.0, max(relative_height, 0.0));
+        float terrain_visibility = clamp(
+            ruggedness * 0.72 + altitude_exposure * 0.38,
+            0.0,
+            0.86
+        );
+        color = mix(
+            color,
+            terranLandHypsometry(max(relative_height, 0.0)),
+            terrain_visibility
+        );
+        float terrain_detail = localTerrainDetail(pos, w, h);
+        color = clamp(
+            color + vec3(terrain_detail * mix(0.07, 0.20, ruggedness)),
+            vec3(0.0),
+            vec3(1.0)
+        );
+    // Renforcer aussi les détails géologiques des types rocheux non-Terran.
+    } else if (!is_water && params.atmosphere_type >= 1u && params.atmosphere_type <= 4u) {
         float detail_strength = 0.052;
         if (params.atmosphere_type == 2u) detail_strength = 0.066;
         else if (params.atmosphere_type == 3u) detail_strength = 0.085;
@@ -649,6 +705,8 @@ void main() {
     float effective_strength = params.relief_strength;
     if (is_water) {
         effective_strength *= params.water_relief_factor;  // Relief très atténué sur l'eau
+    } else if (params.atmosphere_type == 0u) {
+        effective_strength *= 2.65;
     } else if (params.atmosphere_type == 1u) {
         effective_strength *= 1.10;
     } else if (params.atmosphere_type == 2u) {
@@ -662,7 +720,14 @@ void main() {
     // Une variation additive reste perceptible avec la même intensité sur une
     // forêt sombre, un désert clair ou de la roche grise.
     float relief_light = (shading - 0.5) * 2.0 * effective_strength;
-    color = clamp(color + vec3(relief_light), vec3(0.0), vec3(1.0));
+    if (!is_water && params.atmosphere_type == 0u) {
+        // Un mélange multiplicatif conserve les verts/bruns dans l'ombre au
+        // lieu de les laver en gris ; un petit terme additif accroche les crêtes.
+        color = color * (1.0 + relief_light * 1.45) + vec3(relief_light * 0.28);
+        color = clamp(color, vec3(0.0), vec3(1.0));
+    } else {
+        color = clamp(color + vec3(relief_light), vec3(0.0), vec3(1.0));
+    }
     
     // === STEP 3: Rivers overlay ===
     // Si un biome rivière est assigné, appliquer la colorisation dynamique

@@ -258,6 +258,13 @@ void main() {
     float cylinder_radius = float(params.width) / 6.28318530718;
     
     vec3 domain = coords / max(cylinder_radius, 1.0);
+    float signed_latitude = ((float(pixel.y) + 0.5) / float(params.height) - 0.5) * 2.0;
+    float absolute_latitude = abs(signed_latitude);
+
+    // La zone marginale reste morcelée, mais la banquise doit se souder en
+    // allant vers le pôle. La température garde le dernier mot : ce gradient
+    // ne crée jamais de glace dans une mer polaire localement trop chaude.
+    float polar_compaction = smoothstep(0.54, 0.96, absolute_latitude) * coldness;
 
     // La taille des floes doit diminuer lorsque la carte gagne des pixels.
     // 752x376 est la résolution d'aperçu de référence ; au-delà, la fréquence
@@ -310,10 +317,13 @@ void main() {
         + macro_noise * 0.20
         + floe_noise * 0.050
         + micro_floe_noise * 0.025
+        + polar_compaction * 0.13
         + coast_boost;
-    // Le paramètre agit linéairement, comme avant la régression. sqrt()
-    // surévaluait fortement les petites et moyennes probabilités.
-    float formation_threshold = mix(0.86, 0.28, probability);
+    // Une réponse en S conserve une calotte pleine au réglage nominal, tout en
+    // empêchant les faibles probabilités de profiter presque autant du cœur
+    // polaire compact. Le contrôle redevient visuellement progressif.
+    float probability_response = smoothstep(0.18, 0.90, probability);
+    float formation_threshold = mix(0.90, 0.28, probability_response);
     float coverage = smoothstep(
         formation_threshold - 0.22,
         formation_threshold + 0.20,
@@ -322,9 +332,14 @@ void main() {
 
     // La marge devient un archipel de petits floes. Un second champ plus fin
     // brise les gros polygones sans réduire la concentration du cœur polaire.
-    float floe_structure = floe_noise * 0.72 + micro_floe_noise * 0.28;
+    float marginal_zone = 1.0 - smoothstep(0.30, 0.78, polar_compaction);
+    float floe_structure = floe_noise * mix(0.86, 0.62, polar_compaction)
+        + micro_floe_noise * mix(0.34, 0.10, polar_compaction);
     float floe_mask = smoothstep(-0.18, 0.15, floe_structure + coverage * 0.42);
-    float core_lock = smoothstep(0.58, 0.88, coverage);
+    float core_lock = max(
+        smoothstep(0.58, 0.88, coverage),
+        smoothstep(0.44, 0.90, polar_compaction)
+    );
     float pack_variation = clamp(
         0.74 + floe_noise * 0.10 + micro_floe_noise * 0.08 + surface_noise * 0.05,
         0.50,
@@ -334,11 +349,17 @@ void main() {
     // 0.9 est la valeur de référence historique : son rendu reste inchangé.
     // En dessous, le paramètre contrôle aussi la concentration du pack au
     // lieu de ne déplacer que sa lisière, ce qui le rend visuellement effectif.
-    concentration *= clamp(probability / 0.9, 0.0, 1.0);
+    concentration *= pow(clamp(probability / 0.9, 0.0, 1.0), 1.55);
     float lead_ridge = 1.0 - smoothstep(0.040, 0.185, abs(lead_noise + surface_noise * 0.055));
     float polynya_ridge = 1.0 - smoothstep(0.018, 0.090, abs(polynya_noise - 0.08));
-    float lead_strength = lead_ridge * mix(0.86, 0.62, coldness) * smoothstep(0.16, 0.72, coverage);
-    float polynya_strength = polynya_ridge * mix(0.78, 0.48, coldness) * smoothstep(0.32, 0.88, coverage);
+    float lead_strength = lead_ridge
+        * mix(0.86, 0.62, coldness)
+        * smoothstep(0.16, 0.72, coverage)
+        * mix(0.20, 1.0, marginal_zone);
+    float polynya_strength = polynya_ridge
+        * mix(0.78, 0.48, coldness)
+        * smoothstep(0.32, 0.88, coverage)
+        * mix(0.12, 1.0, marginal_zone);
     concentration *= (1.0 - lead_strength) * (1.0 - polynya_strength);
 
     if (concentration <= 0.10) {
