@@ -14,6 +14,7 @@ func _run() -> void:
 		"resolution": TEST_RESOLUTION,
 		"planet_type": Enum.TYPE_TERRAN,
 		"sea_level": 0.0,
+		"river_affluent_threshold": 8.0,
 	}
 	var gpu := GPUContext.new(TEST_RESOLUTION)
 	if gpu == null or gpu.rd == null:
@@ -39,6 +40,18 @@ func _run() -> void:
 
 	var biome_ids := gpu.readback_texture_raw("biome_id")
 	var biome_colors := gpu.readback_texture_raw("biome_colored")
+	var river_flux_with_network: PackedByteArray = inputs["river_flux"].duplicate()
+	for y in range(TEST_RESOLUTION.y):
+		for x in range(TEST_RESOLUTION.x):
+			# Plusieurs bassins synthétiques traversent toutes les combinaisons
+			# température/humidité et auraient changé de biome avec l'ancien boost.
+			if (x + y * 3) % 41 == 0 or (x - y * 2 + 1024) % 67 == 0:
+				var flux_offset := (y * TEST_RESOLUTION.x + x) * 4
+				river_flux_with_network.encode_float(flux_offset, 128.0)
+	gpu.rd.texture_update(gpu.textures["river_flux"], 0, river_flux_with_network)
+	orchestrator.run_biome_phase(params, TEST_RESOLUTION.x, TEST_RESOLUTION.y)
+	var river_biome_ids := gpu.readback_texture_raw("biome_id")
+	var river_driven_changes := _count_biome_changes(biome_ids, river_biome_ids)
 	var stats := _analyze(biome_ids, inputs["climate"])
 	var preview_path := _save_preview(biome_colors)
 	var pixel_count := TEST_RESOLUTION.x * TEST_RESOLUTION.y
@@ -51,14 +64,26 @@ func _run() -> void:
 		and int(stats.get("cold_biome_violations", 0)) == 0
 		and int(stats.get("extreme_humid_violations", 0)) == 0
 		and int(stats.get("extreme_cool_violations", 0)) == 0
+		and river_driven_changes == 0
 	)
 	print("[DesertBiomeDistribution] stats=", stats)
+	print("[DesertBiomeDistribution] river_driven_changes=", river_driven_changes)
 	print("[DesertBiomeDistribution] preview=", preview_path)
 	if not valid:
 		push_error("Earth-like arid biome distribution contract failed")
 	orchestrator.cleanup()
 	GPUContext.shutdown_shared_device()
 	get_tree().quit(0 if valid else 1)
+
+
+func _count_biome_changes(first: PackedByteArray, second: PackedByteArray) -> int:
+	if first.size() != second.size():
+		return maxi(first.size(), second.size())
+	var changed := 0
+	for offset in range(0, first.size(), 4):
+		if first.decode_u32(offset) != second.decode_u32(offset):
+			changed += 1
+	return changed
 
 
 func _build_climate_matrix() -> Dictionary:

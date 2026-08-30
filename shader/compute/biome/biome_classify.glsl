@@ -21,7 +21,7 @@ layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 layout(set = 0, binding = 0, rgba32f) uniform readonly image2D geo_texture;       // R=height, G=bedrock, B=sediment, A=water_height
 layout(set = 0, binding = 1, rgba32f) uniform readonly image2D climate_texture;   // R=temperature, G=humidity, B=windX, A=windY
 layout(set = 0, binding = 2, r8ui) uniform readonly uimage2D water_mask;          // 0=terre, 1=eau salée, 2=eau douce
-layout(set = 0, binding = 3, r32f) uniform readonly image2D river_flux;           // Intensité flux (pour humidité sol uniquement)
+layout(set = 0, binding = 3, r32f) uniform readonly image2D river_flux;           // Conservé pour compatibilité de binding
 
 // === SET 0 : TEXTURES DE SORTIE ===
 layout(set = 0, binding = 4, r32ui) uniform writeonly uimage2D biome_id;          // ID du biome
@@ -35,7 +35,7 @@ layout(set = 1, binding = 0, std140) uniform BiomeParams {
     uint seed;
     float sea_level;
     float cylinder_radius;
-    float flux_humidity_boost;  // Boost d'humidité près des flux d'eau
+    float flux_humidity_boost;  // Réservé ABI : le biome reste indépendant des rivières
     float river_affluent_threshold; // Échelle physique du réseau de drainage
 };
 
@@ -260,7 +260,6 @@ void main() {
     vec4 geo = imageLoad(geo_texture, pixel);
     vec4 climate = imageLoad(climate_texture, pixel);
     uint water_type = imageLoad(water_mask, pixel).r;
-    float flux = imageLoad(river_flux, pixel).r;
     
     float elevation = geo.r;           // Hauteur en mètres
     float water_height = geo.a;        // Colonne d'eau
@@ -283,19 +282,9 @@ void main() {
         humidity = 0.0;
     }
     
-    // Humidité riparienne uniquement sur le réseau de drainage établi. Le flux
-    // est accumulé et n'est donc pas normalisé dans [0, 1] : le multiplier
-    // directement rendait presque toutes les terres artificiellement humides.
-    if (!waterless_planet && !airless_planet) {
-        float safe_threshold = max(river_affluent_threshold, 0.0001);
-        float river_signal = smoothstep(
-            safe_threshold * 0.45,
-            safe_threshold * 1.60,
-            flux
-        );
-        float flux_boost = river_signal * flux_humidity_boost;
-        humidity = min(humidity + flux_boost, 1.0);
-    }
+    // Le réseau fluvial est une couche hydrologique superposée. Il ne modifie
+    // jamais la classe du biome sous-jacent : les ripisylves et couleurs de
+    // rivière sont rendues plus tard via river_biome_id dans final_map.glsl.
     
     // Déterminer le type d'eau UNIQUEMENT depuis water_mask
     // water_mask est la source de vérité après HydrologySolver:

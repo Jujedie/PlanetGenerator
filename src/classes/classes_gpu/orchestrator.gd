@@ -2742,7 +2742,9 @@ func run_biome_phase(params: Dictionary, w: int, h: int) -> void:
 	var sea_level = float(params.get("sea_level", 0.0))
 	var atmosphere_type = int(params.get("planet_type", 0))
 	var cylinder_radius = float(w) / (2.0 * PI)
-	var flux_humidity_boost = 0.12  # Humidité locale maximale sur le réseau fluvial
+	# Le biome décrit le climat de fond. Le réseau fluvial possède sa propre
+	# couche river_biome_id et ne doit jamais reclassifier le sol sous son tracé.
+	var flux_humidity_boost = 0.0
 	var river_affluent_threshold = float(params.get("river_affluent_threshold", 1.0e20))
 	
 	print("  Seed: ", seed_val, " | Type planète: ", atmosphere_type)

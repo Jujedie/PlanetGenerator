@@ -150,13 +150,11 @@ vec3 getRiverBlendedColor(vec3 terrain_color, vec3 river_color, uint atmo) {
         vec3 polluted_water = mix(vec3(0.27, 0.25, 0.20), river_color, 0.30);
         return mix(terrain_color, polluted_water, 0.50);
     }
-    // TYPE_TERRAN (0) et autres : bleu-vert sombre accordé aux eaux de la
-    // carte physique. Le biome rivière ne sert plus que de variation légère,
-    // afin d'éviter les filaments cyan clair sur les plaines olive.
-    vec3 natural_water = mix(vec3(0.23, 0.40, 0.42), river_color, 0.10);
-    // Équivalent d'un alpha faible sur la carte finale opaque : le terrain
-    // reste dominant et le réseau hydrographique n'apparaît qu'en filigrane.
-    return mix(terrain_color, natural_water, 0.26);
+    // TYPE_TERRAN (0) : même famille bleu marine que les lacs et océans. La
+    // couleur du biome de rivière ne doit pas créer un filament cyan/vert ni
+    // donner l'impression que le biome terrestre change sous le cours d'eau.
+    const vec3 NATURAL_WATER = vec3(0.040, 0.135, 0.205);
+    return mix(terrain_color, NATURAL_WATER, 0.32);
 }
 
 // ============================================================================
@@ -682,7 +680,7 @@ void main() {
         );
         float terrain_detail = localTerrainDetail(pos, w, h);
         color = clamp(
-            color + vec3(terrain_detail * mix(0.07, 0.20, ruggedness)),
+            color + vec3(terrain_detail * mix(0.012, 0.19, ruggedness * ruggedness)),
             vec3(0.0),
             vec3(1.0)
         );
@@ -706,7 +704,10 @@ void main() {
     if (is_water) {
         effective_strength *= params.water_relief_factor;  // Relief très atténué sur l'eau
     } else if (params.atmosphere_type == 0u) {
-        effective_strength *= 2.65;
+        // Les micro-terrasses d'érosion des plaines ne doivent pas devenir des
+        // vagues. Le modelé fort est réservé aux collines et chaînes rugueuses.
+        float relief_ruggedness = terrainRuggedness(pos, w, h);
+        effective_strength *= mix(0.48, 2.65, relief_ruggedness);
     } else if (params.atmosphere_type == 1u) {
         effective_strength *= 1.10;
     } else if (params.atmosphere_type == 2u) {
