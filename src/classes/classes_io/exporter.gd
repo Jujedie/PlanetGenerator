@@ -30,6 +30,7 @@ var _readback_cache_bytes: int = 0
 var _stage_timings: Dictionary = {}
 var _png_file_timings: Dictionary = {}
 const _ADMIN_STAT_STRIDE := 32
+const _ADMIN_HASH_STRIDE := 4
 const _ADMIN_PAIR_STRIDE := 8
 const _ADMIN_COLOR_ROW_STRIDE := 32
 const _ADMIN_MOMENT_SCALE := 1024
@@ -975,19 +976,19 @@ func _dispatch_admin_extract_once(gpu: GPUContext, source_texture: String,
 
 	var resources: Dictionary = {}
 	resources["stat_hash"] = _create_storage_buffer_filled(
-		rd, stat_hash_capacity * _ADMIN_PAIR_STRIDE, 0xFF
+		rd, stat_hash_capacity * _ADMIN_HASH_STRIDE, 0
 	)
 	resources["stats"] = _create_storage_buffer_filled(
 		rd, stat_capacity * _ADMIN_STAT_STRIDE, 0
 	)
 	resources["edge_hash"] = _create_storage_buffer_filled(
-		rd, edge_hash_capacity * _ADMIN_PAIR_STRIDE, 0xFF
+		rd, edge_hash_capacity * _ADMIN_HASH_STRIDE, 0
 	)
 	resources["edges"] = _create_storage_buffer_filled(
 		rd, edge_capacity * _ADMIN_PAIR_STRIDE, 0
 	)
 	resources["contact_hash"] = _create_storage_buffer_filled(
-		rd, contact_hash_capacity * _ADMIN_PAIR_STRIDE, 0xFF
+		rd, contact_hash_capacity * _ADMIN_HASH_STRIDE, 0
 	)
 	resources["contacts"] = _create_storage_buffer_filled(
 		rd, contact_capacity * _ADMIN_PAIR_STRIDE, 0
@@ -1074,6 +1075,9 @@ func _dispatch_admin_extract_once(gpu: GPUContext, source_texture: String,
 			"stat_count": stat_count,
 			"edge_count": edge_count,
 			"contact_count": contact_count,
+			"stat_capacity": stat_capacity,
+			"edge_capacity": edge_capacity,
+			"contact_capacity": contact_capacity,
 		}
 
 	stat_count = mini(stat_count, stat_capacity)
@@ -1122,8 +1126,13 @@ func _decode_admin_graph(extracted: Dictionary, width: int, height: int,
 	var adjacency: Dictionary = {}
 	var saltwater_units: Dictionary = {}
 	var first_seen: Dictionary = {}
-	var ordering: Array = []
 
+	# Pack sortable pairs into native PackedInt64Array buffers. Array.sort_custom()
+	# on hundreds of thousands of two-element Variant arrays was a significant
+	# hidden CPU cost in the first hybrid exporter.
+	var ordering_keys := PackedInt64Array()
+	ordering_keys.resize(stat_count)
+	var ordering_count := 0
 	for stat_index in range(stat_count):
 		var offset := stat_index * _ADMIN_STAT_STRIDE
 		var unit_id := int(stats_data.decode_u32(offset))
@@ -1153,20 +1162,23 @@ func _decode_admin_graph(extracted: Dictionary, width: int, height: int,
 		weights[unit_id] = count
 		adjacency[unit_id] = {}
 		first_seen[unit_id] = first_pixel
-		ordering.append([first_pixel, unit_id])
+		ordering_keys[ordering_count] = (
+			(int(first_pixel) << 32) | (unit_id & 0xFFFFFFFF)
+		)
+		ordering_count += 1
 		if maritime and (flags & 1) != 0:
 			saltwater_units[unit_id] = true
 
-	ordering.sort_custom(func(a, b):
-		if int(a[0]) == int(b[0]):
-			return int(a[1]) < int(b[1])
-		return int(a[0]) < int(b[0])
-	)
+	ordering_keys.resize(ordering_count)
+	ordering_keys.sort()
 	var ids: Array = []
-	for item in ordering:
-		ids.append(int(item[1]))
+	ids.resize(ordering_count)
+	for ordering_index in range(ordering_count):
+		ids[ordering_index] = int(ordering_keys[ordering_index] & 0xFFFFFFFF)
 
-	var edge_pairs: Array = []
+	var edge_keys := PackedInt64Array()
+	edge_keys.resize(edge_count)
+	var valid_edge_count := 0
 	for edge_index in range(edge_count):
 		var edge_offset := edge_index * _ADMIN_PAIR_STRIDE
 		var a := int(edges_data.decode_u32(edge_offset))
@@ -1175,17 +1187,27 @@ func _decode_admin_graph(extracted: Dictionary, width: int, height: int,
 			continue
 		if not adjacency.has(a) or not adjacency.has(b):
 			continue
-		edge_pairs.append([a, b])
-	edge_pairs.sort_custom(func(a, b):
-		if int(a[0]) == int(b[0]):
-			return int(a[1]) < int(b[1])
-		return int(a[0]) < int(b[0])
-	)
-	for pair in edge_pairs:
-		var a := int(pair[0])
-		var b := int(pair[1])
+		var lo := mini(a, b)
+		var hi := maxi(a, b)
+		edge_keys[valid_edge_count] = (
+			(lo << 32) | (hi & 0xFFFFFFFF)
+		)
+		valid_edge_count += 1
+	edge_keys.resize(valid_edge_count)
+	edge_keys.sort()
+	var unique_edge_count := 0
+	var previous_edge := 0
+	var has_previous_edge := false
+	for packed_edge in edge_keys:
+		if has_previous_edge and int(packed_edge) == previous_edge:
+			continue
+		previous_edge = int(packed_edge)
+		has_previous_edge = true
+		var a := int((int(packed_edge) >> 32) & 0xFFFFFFFF)
+		var b := int(int(packed_edge) & 0xFFFFFFFF)
 		(adjacency[a] as Dictionary)[b] = true
 		(adjacency[b] as Dictionary)[a] = true
+		unique_edge_count += 1
 
 	var contacts: Dictionary = {}
 	if maritime:
@@ -1206,7 +1228,7 @@ func _decode_admin_graph(extracted: Dictionary, width: int, height: int,
 		"saltwater_units": saltwater_units,
 		"first_seen": first_seen,
 		"unit_count": ids.size(),
-		"edge_count": edge_pairs.size(),
+		"edge_count": unique_edge_count,
 		"contact_count": contact_count,
 	}
 
@@ -1229,7 +1251,14 @@ func _extract_admin_graph_gpu(gpu: GPUContext, source_texture: String,
 			gpu, source_texture, width, height, maritime, stat_capacity
 		)
 		if bool(extracted.get("ok", false)):
+			var decode_started_usec: int = Time.get_ticks_usec()
 			var decoded := _decode_admin_graph(extracted, width, height, maritime)
+			var decode_ms: float = float(
+				Time.get_ticks_usec() - decode_started_usec
+			) / 1000.0
+			last_metrics["admin_graph_decode_ms"] = float(
+				last_metrics.get("admin_graph_decode_ms", 0.0)
+			) + decode_ms
 			if bool(decoded.get("ok", false)):
 				decoded["attempts"] = attempt + 1
 				last_metrics["admin_graph_units_" + source_texture] = int(
@@ -1238,15 +1267,30 @@ func _extract_admin_graph_gpu(gpu: GPUContext, source_texture: String,
 				last_metrics["admin_graph_edges_" + source_texture] = int(
 					decoded.get("edge_count", 0)
 				)
+				print(
+					(
+						"[Admin Timing] %s graph decode = %.2f ms "
+						+ "(%d units, %d edges, attempt %d)"
+					) % [
+						source_texture, decode_ms,
+						int(decoded.get("unit_count", 0)),
+						int(decoded.get("edge_count", 0)), attempt + 1,
+					]
+				)
 				return decoded
 			return decoded
 		if str(extracted.get("reason", "")) != "capacity_overflow":
 			return extracted
 		print(
-			"[Exporter] Administrative GPU graph capacity retry %d/%d (%s, units=%d)"
-			% [
-				attempt + 1, _ADMIN_EXTRACT_MAX_RETRIES,
-				source_texture, stat_capacity,
+			(
+				"[Exporter] Administrative GPU graph capacity retry %d/%d "
+				+ "(%s, units=%d, flags=0x%X, observed stats/edges/contacts=%d/%d/%d)"
+			) % [
+				attempt + 1, _ADMIN_EXTRACT_MAX_RETRIES, source_texture,
+				stat_capacity, int(extracted.get("overflow", 0)),
+				int(extracted.get("stat_count", 0)),
+				int(extracted.get("edge_count", 0)),
+				int(extracted.get("contact_count", 0)),
 			]
 		)
 		stat_capacity *= 2

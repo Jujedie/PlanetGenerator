@@ -18,20 +18,25 @@ struct AdminStat {
     uint padding;
 };
 
+// Hash tables store one atomic slot state instead of a two-word key. A claimed
+// slot is LOCKED while its compact record is written, then publishes
+// compact_index + 1. Readers compare the exact id/pair in the compact buffer.
+// This removes the race that could duplicate the same boundary pair thousands
+// of times on large maps and falsely overflow the adjacency table.
 layout(set = 1, binding = 0, std430) buffer StatHash {
-    uvec2 entries[];
+    uint entries[];
 } stat_hash;
 layout(set = 1, binding = 1, std430) buffer Stats {
     AdminStat entries[];
 } stats;
 layout(set = 1, binding = 2, std430) buffer EdgeHash {
-    uvec2 entries[];
+    uint entries[];
 } edge_hash;
 layout(set = 1, binding = 3, std430) buffer Edges {
     uvec2 entries[];
 } edges;
 layout(set = 1, binding = 4, std430) buffer ContactHash {
-    uvec2 entries[];
+    uint entries[];
 } contact_hash;
 layout(set = 1, binding = 5, std430) buffer Contacts {
     uvec2 entries[];
@@ -56,12 +61,14 @@ layout(push_constant, std430) uniform Params {
 } params;
 
 const uint INVALID_ID = 0xffffffffu;
-const uint PENDING_INDEX = 0xffffffffu;
-const uint FAILED_INDEX = 0xfffffffeu;
+const uint EMPTY_SLOT = 0u;
+const uint LOCKED_SLOT = 0xffffffffu;
 const uint OVERFLOW_STATS = 1u;
 const uint OVERFLOW_EDGES = 2u;
 const uint OVERFLOW_CONTACTS = 4u;
 const uint FLAG_SALTWATER = 1u;
+const uint MAX_PROBES = 192u;
+const uint MAX_LOCK_SPINS = 256u;
 
 uint mix_u32(uint value) {
     value ^= value >> 16u;
@@ -76,6 +83,33 @@ uint pair_hash(uint a, uint b) {
     return mix_u32(a ^ (mix_u32(b) + 0x9e3779b9u + (a << 6u) + (a >> 2u)));
 }
 
+uint wait_for_stat_slot(uint slot) {
+    uint state = stat_hash.entries[slot];
+    for (uint spin = 0u; spin < MAX_LOCK_SPINS && state == LOCKED_SLOT; ++spin) {
+        memoryBarrierBuffer();
+        state = stat_hash.entries[slot];
+    }
+    return state;
+}
+
+uint wait_for_edge_slot(uint slot) {
+    uint state = edge_hash.entries[slot];
+    for (uint spin = 0u; spin < MAX_LOCK_SPINS && state == LOCKED_SLOT; ++spin) {
+        memoryBarrierBuffer();
+        state = edge_hash.entries[slot];
+    }
+    return state;
+}
+
+uint wait_for_contact_slot(uint slot) {
+    uint state = contact_hash.entries[slot];
+    for (uint spin = 0u; spin < MAX_LOCK_SPINS && state == LOCKED_SLOT; ++spin) {
+        memoryBarrierBuffer();
+        state = contact_hash.entries[slot];
+    }
+    return state;
+}
+
 uint find_or_create_stat(uint id) {
     if (params.stat_hash_capacity == 0u || params.stat_capacity == 0u) {
         atomicOr(counters.values[3], OVERFLOW_STATS);
@@ -83,34 +117,34 @@ uint find_or_create_stat(uint id) {
     }
     uint mask = params.stat_hash_capacity - 1u;
     uint slot = mix_u32(id) & mask;
-    for (uint probe = 0u; probe < 128u; ++probe) {
-        uint previous = atomicCompSwap(stat_hash.entries[slot].x, INVALID_ID, id);
-        if (previous == INVALID_ID) {
+    for (uint probe = 0u; probe < MAX_PROBES; ++probe) {
+        uint state = atomicCompSwap(stat_hash.entries[slot], EMPTY_SLOT, LOCKED_SLOT);
+        if (state == EMPTY_SLOT) {
             uint compact_index = atomicAdd(counters.values[0], 1u);
             if (compact_index >= params.stat_capacity) {
                 atomicOr(counters.values[3], OVERFLOW_STATS);
-                atomicExchange(stat_hash.entries[slot].y, FAILED_INDEX);
+                memoryBarrierBuffer();
+                atomicExchange(stat_hash.entries[slot], EMPTY_SLOT);
                 return INVALID_ID;
             }
-            // The compact stats buffer is zero-filled before dispatch. Only the
-            // ID needs publishing here; all counters/moments can immediately use
-            // atomic operations without racing per-entry initialization.
             stats.entries[compact_index].id = id;
             memoryBarrierBuffer();
-            atomicExchange(stat_hash.entries[slot].y, compact_index);
+            atomicExchange(stat_hash.entries[slot], compact_index + 1u);
             return compact_index;
         }
-        if (previous == id) {
-            uint compact_index = stat_hash.entries[slot].y;
-            for (uint wait_index = 0u; wait_index < 256u && compact_index == PENDING_INDEX; ++wait_index) {
-                memoryBarrierBuffer();
-                compact_index = stat_hash.entries[slot].y;
+        if (state == LOCKED_SLOT) {
+            state = wait_for_stat_slot(slot);
+            if (state == LOCKED_SLOT || state == EMPTY_SLOT) {
+                atomicOr(counters.values[3], OVERFLOW_STATS);
+                return INVALID_ID;
             }
-            if (compact_index < params.stat_capacity) {
+        }
+        uint compact_index = state - 1u;
+        if (compact_index < params.stat_capacity) {
+            memoryBarrierBuffer();
+            if (stats.entries[compact_index].id == id) {
                 return compact_index;
             }
-            atomicOr(counters.values[3], OVERFLOW_STATS);
-            return INVALID_ID;
         }
         slot = (slot + 1u) & mask;
     }
@@ -118,72 +152,96 @@ uint find_or_create_stat(uint id) {
     return INVALID_ID;
 }
 
-void insert_pair(uint a, uint b, bool contact_pair) {
-    if (a == INVALID_ID || b == INVALID_ID) {
+void insert_edge(uint a, uint b) {
+    if (a == INVALID_ID || b == INVALID_ID || a == b) {
         return;
     }
-    if (!contact_pair && a == b) {
+    uint lo = min(a, b);
+    uint hi = max(a, b);
+    if (params.edge_hash_capacity == 0u || params.edge_capacity == 0u) {
+        atomicOr(counters.values[3], OVERFLOW_EDGES);
         return;
     }
-    uint lo = contact_pair ? a : min(a, b);
-    uint hi = contact_pair ? b : max(a, b);
-    uint hash_capacity = contact_pair ? params.contact_hash_capacity : params.edge_hash_capacity;
-    uint compact_capacity = contact_pair ? params.contact_capacity : params.edge_capacity;
-    if (hash_capacity == 0u || compact_capacity == 0u) {
-        atomicOr(counters.values[3], contact_pair ? OVERFLOW_CONTACTS : OVERFLOW_EDGES);
-        return;
-    }
-    uint mask = hash_capacity - 1u;
+    uint mask = params.edge_hash_capacity - 1u;
     uint slot = pair_hash(lo, hi) & mask;
-    for (uint probe = 0u; probe < 128u; ++probe) {
-        uint previous = contact_pair
-            ? atomicCompSwap(contact_hash.entries[slot].x, INVALID_ID, lo)
-            : atomicCompSwap(edge_hash.entries[slot].x, INVALID_ID, lo);
-        if (previous == INVALID_ID) {
-            if (contact_pair) {
-                contact_hash.entries[slot].y = hi;
+    for (uint probe = 0u; probe < MAX_PROBES; ++probe) {
+        uint state = atomicCompSwap(edge_hash.entries[slot], EMPTY_SLOT, LOCKED_SLOT);
+        if (state == EMPTY_SLOT) {
+            uint compact_index = atomicAdd(counters.values[1], 1u);
+            if (compact_index >= params.edge_capacity) {
+                atomicOr(counters.values[3], OVERFLOW_EDGES);
                 memoryBarrierBuffer();
-                uint compact_index = atomicAdd(counters.values[2], 1u);
-                if (compact_index >= compact_capacity) {
-                    atomicOr(counters.values[3], OVERFLOW_CONTACTS);
-                    return;
-                }
-                contacts.entries[compact_index] = uvec2(lo, hi);
-            } else {
-                edge_hash.entries[slot].y = hi;
-                memoryBarrierBuffer();
-                uint compact_index = atomicAdd(counters.values[1], 1u);
-                if (compact_index >= compact_capacity) {
-                    atomicOr(counters.values[3], OVERFLOW_EDGES);
-                    return;
-                }
-                edges.entries[compact_index] = uvec2(lo, hi);
-            }
-            return;
-        }
-        if (previous == lo) {
-            uint existing_hi = contact_pair
-                ? contact_hash.entries[slot].y
-                : edge_hash.entries[slot].y;
-            if (existing_hi == hi) {
+                atomicExchange(edge_hash.entries[slot], EMPTY_SLOT);
                 return;
             }
-            // A second invocation can observe the claimed first word before the
-            // claimant has published the second word. A duplicate compact pair
-            // is harmless, but waiting briefly avoids nearly all such cases.
-            for (uint wait_index = 0u; wait_index < 8u && existing_hi == INVALID_ID; ++wait_index) {
-                memoryBarrierBuffer();
-                existing_hi = contact_pair
-                    ? contact_hash.entries[slot].y
-                    : edge_hash.entries[slot].y;
+            edges.entries[compact_index] = uvec2(lo, hi);
+            memoryBarrierBuffer();
+            atomicExchange(edge_hash.entries[slot], compact_index + 1u);
+            return;
+        }
+        if (state == LOCKED_SLOT) {
+            state = wait_for_edge_slot(slot);
+            if (state == LOCKED_SLOT || state == EMPTY_SLOT) {
+                atomicOr(counters.values[3], OVERFLOW_EDGES);
+                return;
             }
-            if (existing_hi == hi) {
+        }
+        uint compact_index = state - 1u;
+        if (compact_index < params.edge_capacity) {
+            memoryBarrierBuffer();
+            uvec2 existing = edges.entries[compact_index];
+            if (existing.x == lo && existing.y == hi) {
                 return;
             }
         }
         slot = (slot + 1u) & mask;
     }
-    atomicOr(counters.values[3], contact_pair ? OVERFLOW_CONTACTS : OVERFLOW_EDGES);
+    atomicOr(counters.values[3], OVERFLOW_EDGES);
+}
+
+void insert_contact(uint sea_id, uint land_id) {
+    if (sea_id == INVALID_ID || land_id == INVALID_ID) {
+        return;
+    }
+    if (params.contact_hash_capacity == 0u || params.contact_capacity == 0u) {
+        atomicOr(counters.values[3], OVERFLOW_CONTACTS);
+        return;
+    }
+    uint mask = params.contact_hash_capacity - 1u;
+    uint slot = pair_hash(sea_id, land_id) & mask;
+    for (uint probe = 0u; probe < MAX_PROBES; ++probe) {
+        uint state = atomicCompSwap(contact_hash.entries[slot], EMPTY_SLOT, LOCKED_SLOT);
+        if (state == EMPTY_SLOT) {
+            uint compact_index = atomicAdd(counters.values[2], 1u);
+            if (compact_index >= params.contact_capacity) {
+                atomicOr(counters.values[3], OVERFLOW_CONTACTS);
+                memoryBarrierBuffer();
+                atomicExchange(contact_hash.entries[slot], EMPTY_SLOT);
+                return;
+            }
+            contacts.entries[compact_index] = uvec2(sea_id, land_id);
+            memoryBarrierBuffer();
+            atomicExchange(contact_hash.entries[slot], compact_index + 1u);
+            return;
+        }
+        if (state == LOCKED_SLOT) {
+            state = wait_for_contact_slot(slot);
+            if (state == LOCKED_SLOT || state == EMPTY_SLOT) {
+                atomicOr(counters.values[3], OVERFLOW_CONTACTS);
+                return;
+            }
+        }
+        uint compact_index = state - 1u;
+        if (compact_index < params.contact_capacity) {
+            memoryBarrierBuffer();
+            uvec2 existing = contacts.entries[compact_index];
+            if (existing.x == sea_id && existing.y == land_id) {
+                return;
+            }
+        }
+        slot = (slot + 1u) & mask;
+    }
+    atomicOr(counters.values[3], OVERFLOW_CONTACTS);
 }
 
 void main() {
@@ -222,12 +280,12 @@ void main() {
     }
     uint right_id = imageLoad(source_ids, right).r;
     if (right_id != INVALID_ID && right_id != id) {
-        insert_pair(id, right_id, false);
+        insert_edge(id, right_id);
     }
     if (pos.y + 1 < int(params.height)) {
         uint down_id = imageLoad(source_ids, ivec2(pos.x, pos.y + 1)).r;
         if (down_id != INVALID_ID && down_id != id) {
-            insert_pair(id, down_id, false);
+            insert_edge(id, down_id);
         }
     }
 
@@ -253,7 +311,7 @@ void main() {
             }
             uint land_id = imageLoad(land_ids, ivec2(nx, ny)).r;
             if (land_id != INVALID_ID) {
-                insert_pair(id, land_id, true);
+                insert_contact(id, land_id);
             }
         }
     }

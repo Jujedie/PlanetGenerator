@@ -19,6 +19,15 @@ const _ID_LAND: int = 10_000_000
 const _ID_SEA: int = 50_000_000
 const _INVALID_ID: int = 0xFFFFFFFF
 const _DIST_EPSILON: float = 0.000001
+# Exact farthest-point seed selection is O(unit_count * seed_count). That is
+# excellent for small graphs but becomes the dominant export cost once a
+# high-resolution world contains 100k+ departments. Above this pair budget we
+# first build a deterministic spatial candidate set, then run the same farthest
+# selection on that bounded set. Connectivity and final ownership are still
+# resolved on the complete graph by _stable_nearest_groups().
+const _SEED_EXACT_PAIR_BUDGET: int = 8_000_000
+const _SEED_CANDIDATE_FACTOR: int = 4
+const _SEED_MIN_CANDIDATES: int = 4096
 
 
 static func compute_merge_map(_data: PackedByteArray, _w: int, _h: int) -> Dictionary:
@@ -134,6 +143,8 @@ static func build_land_from_graph(info: Array, w: int, h: int,
 	if depts.is_empty():
 		return [{}, {}, {}]
 
+	var land_hierarchy_started_usec: int = Time.get_ticks_usec()
+	var region_level_started_usec: int = land_hierarchy_started_usec
 	var gen := [_ID_LAND]
 	var radius_km := maxf(float(settings.get("planet_radius", REFERENCE_RADIUS_KM)), 1.0)
 	var targets := compute_land_hierarchy_targets(depts.size(), settings)
@@ -163,6 +174,10 @@ static func build_land_from_graph(info: Array, w: int, h: int,
 		total_land_weight / float(target_regions), max_region_factor,
 		w, h, radius_km, gen
 	)
+	var region_level_ms: float = float(
+		Time.get_ticks_usec() - region_level_started_usec
+	) / 1000.0
+	var country_level_started_usec: int = Time.get_ticks_usec()
 	print("    → %d régions" % _unique_values(dept_to_region).size())
 	print("      tailles régions: ", measure_group_weights(dept_to_region, weights))
 
@@ -220,6 +235,10 @@ static func build_land_from_graph(info: Array, w: int, h: int,
 		if moved_regions > 0:
 			print("      enclaves pays absorbées: %d région(s)" % moved_regions)
 
+	var country_level_ms: float = float(
+		Time.get_ticks_usec() - country_level_started_usec
+	) / 1000.0
+	var continent_level_started_usec: int = Time.get_ticks_usec()
 	print("    → %d pays" % _unique_values(region_to_country).size())
 	print("      tailles pays: ", measure_group_weights(region_to_country, region_weights))
 
@@ -263,6 +282,18 @@ static func build_land_from_graph(info: Array, w: int, h: int,
 		var continent: int = country_to_continent.get(country, -1)
 		if continent != -1:
 			dept_to_continent[dept] = continent
+	var continent_level_ms: float = float(
+		Time.get_ticks_usec() - continent_level_started_usec
+	) / 1000.0
+	var land_total_ms: float = float(
+		Time.get_ticks_usec() - land_hierarchy_started_usec
+	) / 1000.0
+	print(
+		(
+			"[Admin Timing] land hierarchy = %.2f ms "
+			+ "(regions=%.2f, countries=%.2f, continents=%.2f)"
+		) % [land_total_ms, region_level_ms, country_level_ms, continent_level_ms]
+	)
 	return [dept_to_region, dept_to_country, dept_to_continent]
 
 
@@ -312,6 +343,8 @@ static func build_sea_from_graph(info: Array, w: int, h: int,
 
 static func _build_sea_from_info_and_eligible(info: Array, eligible: Array,
 		w: int, h: int, settings: Dictionary) -> Array:
+	var sea_hierarchy_started_usec: int = Time.get_ticks_usec()
+	var sea_region_started_usec: int = sea_hierarchy_started_usec
 	var all_depts: Array = info[0]
 	var coords: Dictionary = info[1]
 	var adjacency: Dictionary = info[2]
@@ -330,6 +363,10 @@ static func _build_sea_from_info_and_eligible(info: Array, eligible: Array,
 		eligible, adjacency, coords, weights, target_regions, w, h, radius_km,
 		-1.0, true, gen, 1
 	)
+	var sea_region_ms: float = float(
+		Time.get_ticks_usec() - sea_region_started_usec
+	) / 1000.0
+	var sea_basin_started_usec: int = Time.get_ticks_usec()
 	print("    → %d régions-mer" % _unique_values(dept_to_region).size())
 
 	var region_ids := _unique_values(dept_to_region)
@@ -351,6 +388,10 @@ static func _build_sea_from_info_and_eligible(info: Array, eligible: Array,
 		mini(target_basins, basin_eligible_regions.size()), w, h, radius_km,
 		-1.0, true, gen, 1
 	)
+	var sea_basin_ms: float = float(
+		Time.get_ticks_usec() - sea_basin_started_usec
+	) / 1000.0
+	var sea_ocean_started_usec: int = Time.get_ticks_usec()
 	print("    → %d bassins" % _unique_values(region_to_basin).size())
 
 	var basin_ids := _unique_values(region_to_basin)
@@ -391,6 +432,18 @@ static func _build_sea_from_info_and_eligible(info: Array, eligible: Array,
 		var ocean: int = basin_to_ocean.get(basin, -1)
 		if ocean != -1:
 			dept_to_ocean[dept] = ocean
+	var sea_ocean_ms: float = float(
+		Time.get_ticks_usec() - sea_ocean_started_usec
+	) / 1000.0
+	var sea_total_ms: float = float(
+		Time.get_ticks_usec() - sea_hierarchy_started_usec
+	) / 1000.0
+	print(
+		(
+			"[Admin Timing] sea hierarchy = %.2f ms "
+			+ "(regions=%.2f, basins=%.2f, oceans=%.2f)"
+		) % [sea_total_ms, sea_region_ms, sea_basin_ms, sea_ocean_ms]
+	)
 	return [dept_to_region, dept_to_basin, dept_to_ocean]
 
 
@@ -714,6 +767,28 @@ static func _select_component_seeds(component: Array, quota: int,
 		coords: Dictionary, weights: Dictionary, w: int, h: int) -> Array:
 	if component.is_empty() or quota <= 0:
 		return []
+	var seed_limit: int = mini(quota, component.size())
+	if component.size() * seed_limit <= _SEED_EXACT_PAIR_BUDGET:
+		return _select_component_seeds_exact(
+			component, seed_limit, coords, weights, w, h
+		)
+
+	var candidates: Array = _build_seed_candidates(
+		component, seed_limit, coords, weights, w, h
+	)
+	if candidates.size() < seed_limit:
+		# This should only happen for extremely degenerate coordinate sets. Exact
+		# selection preserves correctness rather than returning too few seeds.
+		return _select_component_seeds_exact(
+			component, seed_limit, coords, weights, w, h
+		)
+	return _select_component_seeds_from_candidates(
+		component, candidates, seed_limit, coords, weights, w, h
+	)
+
+
+static func _select_component_seeds_exact(component: Array, seed_limit: int,
+		coords: Dictionary, weights: Dictionary, w: int, h: int) -> Array:
 	var first := _representative(component, coords, weights, w)
 	var seeds: Array = [first]
 	var selected := {first: true}
@@ -724,7 +799,7 @@ static func _select_component_seeds(component: Array, quota: int,
 			coords.get(unit, Vector2.ZERO), first_position, w, h
 		)
 
-	while seeds.size() < mini(quota, component.size()):
+	while seeds.size() < seed_limit:
 		var best_unit: int = -1
 		var best_score := -1.0
 		for unit in component:
@@ -748,6 +823,162 @@ static func _select_component_seeds(component: Array, quota: int,
 			)
 			if candidate_distance < float(nearest_distance[unit]):
 				nearest_distance[unit] = candidate_distance
+	return seeds
+
+
+static func _build_seed_candidates(component: Array, seed_limit: int,
+		coords: Dictionary, weights: Dictionary, w: int, h: int) -> Array:
+	var desired_bins: int = mini(
+		component.size(),
+		maxi(_SEED_MIN_CANDIDATES, seed_limit * _SEED_CANDIDATE_FACTOR)
+	)
+	if desired_bins >= component.size():
+		return component.duplicate()
+
+	var aspect: float = maxf(float(maxi(w, 1)) / float(maxi(h, 1)), 0.125)
+	var grid_x: int = maxi(1, roundi(sqrt(float(desired_bins) * aspect)))
+	var grid_y: int = maxi(1, ceili(float(desired_bins) / float(grid_x)))
+	var best_by_bin: Dictionary = {}
+	var distance_by_bin: Dictionary = {}
+	var weight_by_bin: Dictionary = {}
+	var fw: float = float(maxi(w, 1))
+	var fh: float = float(maxi(h, 1))
+
+	for unit in component:
+		var position: Vector2 = coords.get(unit, Vector2.ZERO)
+		var normalized_x: float = fposmod(position.x + 0.5, fw) / fw
+		var normalized_y: float = clampf((position.y + 0.5) / fh, 0.0, 0.999999)
+		var bin_x: int = clampi(int(floor(normalized_x * float(grid_x))), 0, grid_x - 1)
+		var bin_y: int = clampi(int(floor(normalized_y * float(grid_y))), 0, grid_y - 1)
+		var bin_key: int = bin_y * grid_x + bin_x
+		var bin_center := Vector2(
+			(float(bin_x) + 0.5) * fw / float(grid_x) - 0.5,
+			(float(bin_y) + 0.5) * fh / float(grid_y) - 0.5
+		)
+		var distance_to_center: float = _map_distance_squared(
+			position, bin_center, w, h
+		)
+		var unit_weight: float = maxf(float(weights.get(unit, 1)), 1.0)
+		if (
+			not best_by_bin.has(bin_key)
+			or distance_to_center < float(distance_by_bin[bin_key]) - _DIST_EPSILON
+			or (
+				absf(distance_to_center - float(distance_by_bin[bin_key])) <= _DIST_EPSILON
+				and unit_weight > float(weight_by_bin[bin_key])
+			)
+		):
+			best_by_bin[bin_key] = unit
+			distance_by_bin[bin_key] = distance_to_center
+			weight_by_bin[bin_key] = unit_weight
+
+	var bin_keys: Array = best_by_bin.keys()
+	bin_keys.sort()
+	var candidates: Array = []
+	var seen: Dictionary = {}
+	for bin_key in bin_keys:
+		var candidate = best_by_bin[bin_key]
+		candidates.append(candidate)
+		seen[candidate] = true
+
+	# Sparse/fragmented land can occupy fewer spatial bins than the seed count.
+	# Fill deterministically from the original component so the candidate path
+	# always has enough choices while remaining O(N).
+	var fill_target: int = mini(
+		component.size(), maxi(seed_limit, seed_limit * 2)
+	)
+	if candidates.size() < fill_target:
+		var stride: float = float(component.size()) / float(maxi(fill_target, 1))
+		var cursor := 0.0
+		var guard := 0
+		while candidates.size() < fill_target and guard < fill_target * 3:
+			var source_index: int = mini(int(floor(cursor)), component.size() - 1)
+			var unit = component[source_index]
+			if not seen.has(unit):
+				seen[unit] = true
+				candidates.append(unit)
+			cursor += stride
+			guard += 1
+		if candidates.size() < fill_target:
+			for unit in component:
+				if not seen.has(unit):
+					seen[unit] = true
+					candidates.append(unit)
+					if candidates.size() >= fill_target:
+						break
+	return candidates
+
+
+static func _select_component_seeds_from_candidates(component: Array,
+		candidates: Array, seed_limit: int, coords: Dictionary,
+		weights: Dictionary, w: int, h: int) -> Array:
+	var first: int = _representative(component, coords, weights, w)
+	var candidate_ids := candidates.duplicate()
+	if not candidate_ids.has(first):
+		candidate_ids.append(first)
+	var candidate_count: int = candidate_ids.size()
+	var positions := PackedVector2Array()
+	positions.resize(candidate_count)
+	var weight_factors := PackedFloat32Array()
+	weight_factors.resize(candidate_count)
+	var nearest := PackedFloat64Array()
+	nearest.resize(candidate_count)
+	var selected := PackedByteArray()
+	selected.resize(candidate_count)
+	selected.fill(0)
+	var first_index := -1
+	for index in range(candidate_count):
+		var unit = candidate_ids[index]
+		positions[index] = coords.get(unit, Vector2.ZERO)
+		weight_factors[index] = pow(
+			maxf(float(weights.get(unit, 1)), 1.0), 0.08
+		)
+		if int(unit) == first:
+			first_index = index
+	if first_index < 0:
+		return _select_component_seeds_exact(
+			component, seed_limit, coords, weights, w, h
+		)
+
+	var seeds: Array = [first]
+	selected[first_index] = 1
+	var first_position: Vector2 = positions[first_index]
+	for index in range(candidate_count):
+		nearest[index] = _map_distance_squared(
+			positions[index], first_position, w, h
+		)
+
+	while seeds.size() < seed_limit:
+		var best_index := -1
+		var best_score := -1.0
+		var best_id := 0x7FFFFFFF
+		for index in range(candidate_count):
+			if selected[index] != 0:
+				continue
+			var score: float = float(nearest[index]) * float(weight_factors[index])
+			var candidate_id := int(candidate_ids[index])
+			if (
+				score > best_score + _DIST_EPSILON
+				or (
+					absf(score - best_score) <= _DIST_EPSILON
+					and candidate_id < best_id
+				)
+			):
+				best_score = score
+				best_index = index
+				best_id = candidate_id
+		if best_index < 0:
+			break
+		selected[best_index] = 1
+		seeds.append(candidate_ids[best_index])
+		var best_position: Vector2 = positions[best_index]
+		for index in range(candidate_count):
+			if selected[index] != 0:
+				continue
+			var candidate_distance: float = _map_distance_squared(
+				positions[index], best_position, w, h
+			)
+			if candidate_distance < nearest[index]:
+				nearest[index] = candidate_distance
 	return seeds
 
 
