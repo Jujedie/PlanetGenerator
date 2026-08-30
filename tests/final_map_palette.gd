@@ -85,9 +85,19 @@ func _run_world_preview(profile: String) -> void:
 		resolution,
 		"final_map_palette_%s_biomes.png" % profile
 	)
-	var valid := not final_path.is_empty() and not biome_path.is_empty()
+	var ice_path := _save_texture(
+		gpu.readback_texture_raw("ice_caps"),
+		resolution,
+		"final_map_palette_%s_ice.png" % profile
+	)
+	var valid := (
+		not final_path.is_empty()
+		and not biome_path.is_empty()
+		and not ice_path.is_empty()
+	)
 	print("[FinalMapPalette] world=", final_path)
 	print("[FinalMapPalette] world_biomes=", biome_path)
+	print("[FinalMapPalette] world_ice=", ice_path)
 	orchestrator.cleanup()
 	GPUContext.shutdown_shared_device()
 	_quit(0 if valid else 1)
@@ -407,7 +417,7 @@ func _validate_final_map_shader() -> bool:
 		and shader.contains("smoothedBiomeMaterial")
 		and shader.contains("biomeVegetationCapacity")
 		and shader.contains("ephemeral_greenup")
-		and shader.contains("BIOME_TINT_STRENGTH = 0.16")
+		and shader.contains("BIOME_TINT_STRENGTH = 0.20")
 		and shader.contains("mountain_snow")
 		and not shader.contains("contourKind")
 		and not shader.contains("MINOR_INTERVAL")

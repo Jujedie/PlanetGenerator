@@ -259,24 +259,44 @@ void main() {
     
     vec3 domain = coords / max(cylinder_radius, 1.0);
 
+    // La taille des floes doit diminuer lorsque la carte gagne des pixels.
+    // 752x376 est la résolution d'aperçu de référence ; au-delà, la fréquence
+    // augmente avec la racine de l'échelle pour ajouter du détail sans faire
+    // disparaître la structure climatique générale de la calotte.
+    float resolution_ratio = max(
+        float(params.width) / 752.0,
+        float(params.height) / 376.0
+    );
+    float detail_scale = resolution_ratio < 1.0
+        ? resolution_ratio * 0.88
+        : sqrt(resolution_ratio);
+    detail_scale = clamp(detail_scale, 0.35, 3.25);
+
     // Domain warping : les deux champs très larges déforment la lisière sans
     // casser la continuité horizontale de la projection cylindrique.
     float warp_x = fbm(domain * 1.35, 3, 0.55, 2.03, params.seed + 17011u);
     float warp_z = fbm(domain * 1.35, 3, 0.55, 2.03, params.seed + 29021u);
     vec3 warped = domain + vec3(warp_x * 0.30, warp_z * 0.12, warp_z * 0.30);
 
-    float macro_noise = fbm(warped * 2.25, 5, 0.55, 2.02, params.seed + 99991u);
-    float floe_noise = fbm(warped * 7.5, 4, 0.56, 2.05, params.seed + 130003u);
-    float surface_noise = fbm(warped * 18.0, 3, 0.52, 2.10, params.seed + 170003u);
+    float macro_noise = fbm(warped * 3.6, 5, 0.55, 2.02, params.seed + 99991u);
+    float floe_noise = fbm(warped * (20.0 * detail_scale), 4, 0.56, 2.05, params.seed + 130003u);
+    float micro_floe_noise = fbm(
+        warped * (42.0 * detail_scale),
+        3,
+        0.54,
+        2.08,
+        params.seed + 150007u
+    );
+    float surface_noise = fbm(warped * (52.0 * detail_scale), 3, 0.52, 2.10, params.seed + 170003u);
     float lead_noise = fbm(
-        warped * 7.8 + vec3(floe_noise * 0.22),
+        warped * (22.0 * detail_scale) + vec3(floe_noise * 0.22),
         4,
         0.56,
         2.03,
         params.seed + 210011u
     );
     float polynya_noise = fbm(
-        warped * 4.6 + vec3(macro_noise * 0.16),
+        warped * (12.0 * detail_scale) + vec3(macro_noise * 0.16),
         4,
         0.55,
         2.05,
@@ -288,7 +308,8 @@ void main() {
     float coast_boost = coastalProximity(pixel) * coldness * 0.09;
     float formation = coldness
         + macro_noise * 0.20
-        + floe_noise * 0.065
+        + floe_noise * 0.050
+        + micro_floe_noise * 0.025
         + coast_boost;
     // Le paramètre agit linéairement, comme avant la régression. sqrt()
     // surévaluait fortement les petites et moyennes probabilités.
@@ -299,11 +320,16 @@ void main() {
         formation
     );
 
-    // La marge devient un archipel de grands floes. Le cœur du pack reste
-    // continu, puis des lignes de niveau très fines ouvrent des chenaux.
-    float floe_mask = smoothstep(-0.22, 0.20, floe_noise + coverage * 0.48);
+    // La marge devient un archipel de petits floes. Un second champ plus fin
+    // brise les gros polygones sans réduire la concentration du cœur polaire.
+    float floe_structure = floe_noise * 0.72 + micro_floe_noise * 0.28;
+    float floe_mask = smoothstep(-0.18, 0.15, floe_structure + coverage * 0.42);
     float core_lock = smoothstep(0.58, 0.88, coverage);
-    float pack_variation = clamp(0.76 + floe_noise * 0.13 + surface_noise * 0.06, 0.52, 0.96);
+    float pack_variation = clamp(
+        0.74 + floe_noise * 0.10 + micro_floe_noise * 0.08 + surface_noise * 0.05,
+        0.50,
+        0.95
+    );
     float concentration = coverage * mix(floe_mask * 0.82, pack_variation, core_lock);
     // 0.9 est la valeur de référence historique : son rendu reste inchangé.
     // En dessous, le paramètre contrôle aussi la concentration du pack au

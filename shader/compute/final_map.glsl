@@ -303,28 +303,38 @@ vec3 terranClimateSurface(
     float relative_height,
     float biome_vegetation_capacity
 ) {
-    const float BIOME_TINT_STRENGTH = 0.16;
+    const float BIOME_TINT_STRENGTH = 0.20;
     float moisture = clamp(humidity, 0.0, 1.0);
     float sea_level_temperature = temperature + max(relative_height, 0.0) * 0.0065;
     float heat = smoothstep(7.0, 34.0, sea_level_temperature);
-    float dryness = 1.0 - smoothstep(0.12, 0.58, moisture);
+    float climate_dryness = 1.0 - smoothstep(0.16, 0.50, moisture);
+    float biome_dryness = 1.0 - smoothstep(
+        0.08,
+        0.82,
+        clamp(biome_vegetation_capacity, 0.0, 1.0)
+    );
+    float aridity = max(climate_dryness, biome_dryness * 0.90);
 
-    const vec3 COOL_SOIL = vec3(0.35, 0.32, 0.23);
-    const vec3 WARM_SOIL = vec3(0.55, 0.39, 0.23);
-    const vec3 SAND = vec3(0.82, 0.68, 0.44);
+    const vec3 COOL_SOIL = vec3(0.30, 0.28, 0.19);
+    const vec3 WARM_SOIL = vec3(0.49, 0.34, 0.20);
+    const vec3 ARID_SOIL = vec3(0.76, 0.61, 0.38);
+    const vec3 DESERT_SAND = vec3(0.90, 0.78, 0.55);
     vec3 soil = mix(COOL_SOIL, WARM_SOIL, heat);
-    soil = mix(soil, SAND, dryness * (0.48 + heat * 0.38));
+    soil = mix(soil, ARID_SOIL, smoothstep(0.12, 0.70, aridity));
+    float hot_desert = smoothstep(0.66, 0.98, aridity)
+        * smoothstep(8.0, 31.0, sea_level_temperature);
+    soil = mix(soil, DESERT_SAND, hot_desert * 0.82);
 
-    const vec3 BOREAL = vec3(0.16, 0.25, 0.14);
-    const vec3 GRASSLAND = vec3(0.34, 0.45, 0.20);
-    const vec3 TEMPERATE_FOREST = vec3(0.15, 0.32, 0.14);
-    const vec3 TROPICAL_FOREST = vec3(0.075, 0.25, 0.10);
+    const vec3 BOREAL = vec3(0.11, 0.21, 0.09);
+    const vec3 GRASSLAND = vec3(0.29, 0.41, 0.15);
+    const vec3 TEMPERATE_FOREST = vec3(0.10, 0.28, 0.08);
+    const vec3 TROPICAL_FOREST = vec3(0.045, 0.20, 0.055);
     vec3 open_vegetation = mix(BOREAL, GRASSLAND, smoothstep(-4.0, 16.0, sea_level_temperature));
     vec3 forest = mix(TEMPERATE_FOREST, TROPICAL_FOREST, heat);
-    vec3 vegetation_color = mix(open_vegetation, forest, smoothstep(0.48, 0.86, moisture));
+    vec3 vegetation_color = mix(open_vegetation, forest, smoothstep(0.34, 0.74, moisture));
     float growing_temperature = smoothstep(-9.0, 5.0, temperature);
-    float vegetation_cover = smoothstep(0.12, 0.58, moisture) * growing_temperature;
-    vegetation_cover *= 1.0 - dryness * 0.62;
+    float vegetation_cover = smoothstep(0.10, 0.52, moisture) * growing_temperature;
+    vegetation_cover *= 1.0 - aridity * 0.70;
 
     // Après une pluie intense, un désert peut brièvement reverdir, mais seule
     // une faible fraction du sol porte cette végétation. Le maximum conserve
@@ -336,29 +346,35 @@ vec3 terranClimateSurface(
     );
     vegetation_cover *= ecological_capacity;
 
-    vec3 surface = mix(soil, vegetation_color, vegetation_cover * 0.91);
+    vec3 surface = mix(soil, vegetation_color, vegetation_cover * 0.94);
     surface = mix(surface, biome_material, BIOME_TINT_STRENGTH);
 
-    const vec3 COOL_ROCK = vec3(0.47, 0.47, 0.44);
-    const vec3 WARM_ROCK = vec3(0.55, 0.44, 0.36);
+    const vec3 COOL_ROCK = vec3(0.38, 0.38, 0.34);
+    const vec3 WARM_ROCK = vec3(0.52, 0.42, 0.31);
     vec3 exposed_rock = mix(COOL_ROCK, WARM_ROCK, heat);
-    float rock_cover = smoothstep(1450.0, 3500.0, relative_height) * 0.64;
+    float rock_cover = smoothstep(1450.0, 3500.0, relative_height) * 0.56;
     surface = mix(surface, exposed_rock, rock_cover);
 
-    // La limite des neiges varie d'environ 1 200 m sous climat froid à plus
-    // de 5 000 m sous les tropiques. Les sommets convergent donc toujours vers
-    // un blanc froid, sans former une bande d'altitude fixe mondiale.
+    // La limite climatique varie avec la température au niveau de la mer,
+    // tandis que le seuil de très haute altitude garantit des sommets enneigés
+    // même dans une chaîne tropicale sèche (Andes/Himalaya).
     float snow_line = mix(
-        1200.0,
-        5200.0,
-        smoothstep(-12.0, 34.0, sea_level_temperature)
+        700.0,
+        4400.0,
+        smoothstep(-10.0, 32.0, sea_level_temperature)
     );
-    float mountain_snow = smoothstep(snow_line - 350.0, snow_line + 700.0, relative_height);
+    float climatic_mountain_snow = smoothstep(
+        snow_line - 500.0,
+        snow_line + 420.0,
+        relative_height
+    );
+    float high_altitude_snow = smoothstep(3300.0, 4700.0, relative_height);
+    float mountain_snow = max(climatic_mountain_snow, high_altitude_snow);
     float permanent_ice = (
         1.0 - smoothstep(-16.0, -6.0, temperature)
     ) * smoothstep(0.22, 0.58, moisture);
     float snow_cover = max(mountain_snow, permanent_ice);
-    const vec3 SNOW = vec3(0.89, 0.93, 0.93);
+    const vec3 SNOW = vec3(0.93, 0.95, 0.945);
     return mix(surface, SNOW, snow_cover * 0.96);
 }
 

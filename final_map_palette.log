@@ -1,0 +1,215 @@
+Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org
+Vulkan 1.4.351 - Forward+ - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4060
+
+✅ RenderingDevice validé et fonctionnel
+✅ Textures GPU d'état créées (5 x 1332 KB)
+[Orchestrator] 🚀 Initialisation...
+[Orchestrator] ✅ RenderingDevice valide
+[Orchestrator] ✅ Résolution: (666, 128)
+[Orchestrator] ✅ Textures d'état: 5 réutilisées, 0 recréées
+[Orchestrator] ✅ Textures créées
+[Orchestrator] 📦 Compilation des shaders et création des pipelines...
+✅ Shader compilé et enregistré dans GPUContext: base_elevation
+    ✅ base_elevation : Shader=RID(3801046056960) | Pipeline=RID(3805341024256)
+✅ Shader compilé et enregistré dans GPUContext: crust_age_jfa
+    ✅ crust_age_jfa : Shader=RID(3809635991553) | Pipeline=RID(3813930958849)
+✅ Shader compilé et enregistré dans GPUContext: crust_age_finalize
+    ✅ crust_age_finalize : Shader=RID(3818225926146) | Pipeline=RID(3822520893442)
+✅ Shader compilé et enregistré dans GPUContext: cratering
+    ✅ cratering : Shader=RID(3826815860739) | Pipeline=RID(3831110828035)
+✅ Shader compilé et enregistré dans GPUContext: erosion_rainfall
+    ✅ erosion_rainfall : Shader=RID(3835405795332) | Pipeline=RID(3839700762628)
+✅ Shader compilé et enregistré dans GPUContext: erosion_flow
+    ✅ erosion_flow : Shader=RID(3843995729925) | Pipeline=RID(3848290697221)
+✅ Shader compilé et enregistré dans GPUContext: erosion_sediment
+    ✅ erosion_sediment : Shader=RID(3852585664518) | Pipeline=RID(3856880631814)
+✅ Shader compilé et enregistré dans GPUContext: erosion_flux_accumulation
+    ✅ erosion_flux_accumulation : Shader=RID(3861175599111) | Pipeline=RID(3865470566407)
+✅ Shader compilé et enregistré dans GPUContext: temperature
+    ✅ temperature : Shader=RID(3869765533704) | Pipeline=RID(3874060501000)
+✅ Shader compilé et enregistré dans GPUContext: precipitation
+    ✅ precipitation : Shader=RID(3878355468297) | Pipeline=RID(3882650435593)
+✅ Shader compilé et enregistré dans GPUContext: clouds
+    ✅ clouds : Shader=RID(3886945402890) | Pipeline=RID(3891240370186)
+✅ Shader compilé et enregistré dans GPUContext: ice_caps
+    ✅ ice_caps : Shader=RID(3895535337483) | Pipeline=RID(3899830304779)
+✅ Shader compilé et enregistré dans GPUContext: petrole
+    ✅ petrole : Shader=RID(3904125272076) | Pipeline=RID(3908420239372)
+✅ Shader compilé et enregistré dans GPUContext: resources
+    ✅ resources : Shader=RID(3912715206669) | Pipeline=RID(3917010173965)
+✅ Shader compilé et enregistré dans GPUContext: water_fill
+    ✅ water_fill : Shader=RID(3921305141262) | Pipeline=RID(3925600108558)
+✅ Shader compilé et enregistré dans GPUContext: river_sources
+    ✅ river_sources : Shader=RID(3929895075855) | Pipeline=RID(3934190043151)
+✅ Shader compilé et enregistré dans GPUContext: river_classify
+    ✅ river_classify : Shader=RID(3938485010448) | Pipeline=RID(3942779977744)
+✅ Shader compilé et enregistré dans GPUContext: river_type_assign
+    ✅ river_type_assign : Shader=RID(3947074945041) | Pipeline=RID(3951369912337)
+✅ Shader compilé et enregistré dans GPUContext: hydrology_water_color
+    ✅ hydrology_water_color : Shader=RID(3955664879634) | Pipeline=RID(3959959846930)
+✅ Shader compilé et enregistré dans GPUContext: region_seed_placement
+    ✅ region_seed_placement : Shader=RID(3964254814227) | Pipeline=RID(3968549781523)
+✅ Shader compilé et enregistré dans GPUContext: region_edge_cost
+    ✅ region_edge_cost : Shader=RID(3972844748820) | Pipeline=RID(3977139716116)
+✅ Shader compilé et enregistré dans GPUContext: region_growth
+    ✅ region_growth : Shader=RID(3981434683413) | Pipeline=RID(3985729650709)
+✅ Shader compilé et enregistré dans GPUContext: region_cleanup
+    ✅ region_cleanup : Shader=RID(3990024618006) | Pipeline=RID(3994319585302)
+✅ Shader compilé et enregistré dans GPUContext: region_finalize
+    ✅ region_finalize : Shader=RID(3998614552599) | Pipeline=RID(4002909519895)
+✅ Shader compilé et enregistré dans GPUContext: ocean_region_seed_placement
+    ✅ ocean_region_seed_placement : Shader=RID(4007204487192) | Pipeline=RID(4011499454488)
+✅ Shader compilé et enregistré dans GPUContext: ocean_region_edge_cost
+    ✅ ocean_region_edge_cost : Shader=RID(4015794421785) | Pipeline=RID(4020089389081)
+✅ Shader compilé et enregistré dans GPUContext: ocean_region_growth
+    ✅ ocean_region_growth : Shader=RID(4024384356378) | Pipeline=RID(4028679323674)
+✅ Shader compilé et enregistré dans GPUContext: ocean_region_cleanup
+    ✅ ocean_region_cleanup : Shader=RID(4032974290971) | Pipeline=RID(4037269258267)
+✅ Shader compilé et enregistré dans GPUContext: ocean_region_finalize
+    ✅ ocean_region_finalize : Shader=RID(4041564225564) | Pipeline=RID(4045859192860)
+✅ Shader compilé et enregistré dans GPUContext: biome_classify
+    ✅ biome_classify : Shader=RID(4050154160157) | Pipeline=RID(4054449127453)
+✅ Shader compilé et enregistré dans GPUContext: biome_smooth
+    ✅ biome_smooth : Shader=RID(4058744094750) | Pipeline=RID(4063039062046)
+✅ Shader compilé et enregistré dans GPUContext: final_map
+    ✅ final_map : Shader=RID(4067334029343) | Pipeline=RID(4071628996639)
+✅ Shader compilé et enregistré dans GPUContext: gas_giant_final
+    ✅ gas_giant_final : Shader=RID(4075923963936) | Pipeline=RID(4080218931232)
+✅ Shader compilé et enregistré dans GPUContext: gas_giant_velocity_init
+    ✅ gas_giant_velocity_init : Shader=RID(4084513898529) | Pipeline=RID(4088808865825)
+✅ Shader compilé et enregistré dans GPUContext: gas_giant_dye_init
+    ✅ gas_giant_dye_init : Shader=RID(4093103833122) | Pipeline=RID(4097398800418)
+✅ Shader compilé et enregistré dans GPUContext: gas_giant_advect
+    ✅ gas_giant_advect : Shader=RID(4101693767715) | Pipeline=RID(4105988735011)
+[Orchestrator] ✅ Shaders compilés
+[DEBUG] Liste des shader RIDs dans GPUContext :
+  Shader 'base_elevation' : RID(3801046056960) (valid:true)
+  Shader 'crust_age_jfa' : RID(3809635991553) (valid:true)
+  Shader 'crust_age_finalize' : RID(3818225926146) (valid:true)
+  Shader 'cratering' : RID(3826815860739) (valid:true)
+  Shader 'erosion_rainfall' : RID(3835405795332) (valid:true)
+  Shader 'erosion_flow' : RID(3843995729925) (valid:true)
+  Shader 'erosion_sediment' : RID(3852585664518) (valid:true)
+  Shader 'erosion_flux_accumulation' : RID(3861175599111) (valid:true)
+  Shader 'temperature' : RID(3869765533704) (valid:true)
+  Shader 'precipitation' : RID(3878355468297) (valid:true)
+  Shader 'clouds' : RID(3886945402890) (valid:true)
+  Shader 'ice_caps' : RID(3895535337483) (valid:true)
+  Shader 'petrole' : RID(3904125272076) (valid:true)
+  Shader 'resources' : RID(3912715206669) (valid:true)
+  Shader 'water_fill' : RID(3921305141262) (valid:true)
+  Shader 'river_sources' : RID(3929895075855) (valid:true)
+  Shader 'river_classify' : RID(3938485010448) (valid:true)
+  Shader 'river_type_assign' : RID(3947074945041) (valid:true)
+  Shader 'hydrology_water_color' : RID(3955664879634) (valid:true)
+  Shader 'region_seed_placement' : RID(3964254814227) (valid:true)
+  Shader 'region_edge_cost' : RID(3972844748820) (valid:true)
+  Shader 'region_growth' : RID(3981434683413) (valid:true)
+  Shader 'region_cleanup' : RID(3990024618006) (valid:true)
+  Shader 'region_finalize' : RID(3998614552599) (valid:true)
+  Shader 'ocean_region_seed_placement' : RID(4007204487192) (valid:true)
+  Shader 'ocean_region_edge_cost' : RID(4015794421785) (valid:true)
+  Shader 'ocean_region_growth' : RID(4024384356378) (valid:true)
+  Shader 'ocean_region_cleanup' : RID(4032974290971) (valid:true)
+  Shader 'ocean_region_finalize' : RID(4041564225564) (valid:true)
+  Shader 'biome_classify' : RID(4050154160157) (valid:true)
+  Shader 'biome_smooth' : RID(4058744094750) (valid:true)
+  Shader 'final_map' : RID(4067334029343) (valid:true)
+  Shader 'gas_giant_final' : RID(4075923963936) (valid:true)
+  Shader 'gas_giant_velocity_init' : RID(4084513898529) (valid:true)
+  Shader 'gas_giant_dye_init' : RID(4093103833122) (valid:true)
+  Shader 'gas_giant_advect' : RID(4101693767715) (valid:true)
+[Orchestrator] 🔧 Création des uniform sets...
+  ✅ Toutes les textures sont valides
+  • Création uniform set: base_elevation
+    ✅ base_elevation textures uniform set créé (geo + plates)
+  • Création uniform set: crust_age_jfa
+    ✅ crust_age_jfa A->B uniform set créé
+    ✅ crust_age_jfa B->A uniform set créé
+  • Création uniform set: crust_age_finalize
+    ✅ crust_age_finalize textures uniform set créé
+  • Création uniform set: cratering
+    ✅ cratering textures uniform set créé
+✅ Textures érosion créées (1x RGBA32F + 2x R32F)
+  • Création uniform set: erosion_rainfall
+    ✅ erosion_rainfall textures uniform set créé
+  • Création uniform set: erosion_flow
+    ✅ erosion_flow textures uniform set créé
+    ✅ erosion_flow swap textures uniform set créé
+  • Création uniform set: erosion_sediment
+    ✅ erosion_sediment textures uniform set créé
+    ✅ erosion_sediment swap textures uniform set créé
+  • Création uniform set: erosion_flux_accumulation
+    ✅ erosion_flux_accumulation textures uniform set créé
+    ✅ erosion_flux_accumulation swap textures uniform set créé
+✅ Textures climat créées (4x RGBA8)
+  • Création uniform set: temperature
+    ✅ temperature textures uniform set créé
+  • Création uniform set: precipitation
+    ✅ precipitation textures uniform set créé
+  • Création uniform set: clouds
+    ✅ clouds textures uniform set créé
+  • ice_caps: uniform set sera créé lors du dispatch (dépendant de water_colored)
+✅ Textures ressources créées (1x RGBA8 + 1x RGBA8UI)
+  • Création uniform set: petrole
+    ✅ petrole textures uniform set créé
+  • Création uniform set: resources
+    ✅ resources textures uniform set créé
+[Orchestrator] ✅ Uniform Sets initialization complete
+[Orchestrator] ✅ Orchestrator initialisé avec succès
+  - Résolution: (666, 128)
+  - Pipelines actifs:
+    • base_elevation
+    • crust_age_jfa
+    • crust_age_finalize
+    • cratering
+    • erosion_rainfall
+    • erosion_flow
+    • erosion_sediment
+    • erosion_flux_accumulation
+    • temperature
+    • precipitation
+    • clouds
+    • ice_caps
+    • petrole
+    • resources
+    • water_fill
+    • river_sources
+    • river_classify
+    • river_type_assign
+    • hydrology_water_color
+    • region_seed_placement
+    • region_edge_cost
+    • region_growth
+    • region_cleanup
+    • region_finalize
+    • ocean_region_seed_placement
+    • ocean_region_edge_cost
+    • ocean_region_growth
+    • ocean_region_cleanup
+    • ocean_region_finalize
+    • biome_classify
+    • biome_smooth
+    • final_map
+    • gas_giant_final
+    • gas_giant_velocity_init
+    • gas_giant_dye_init
+    • gas_giant_advect
+✅ Textures érosion créées (1x RGBA32F + 2x R32F)
+✅ Textures eaux prêtes (3x R8 + 1x R32UI + 1x R32F, sans clear CPU)
+✅ Textures climat créées (4x RGBA8)
+✅ Textures biomes créées (2x R32UI + 2x RGBA8)
+✅ Textures final map prêtes (2x RGBA8, sans clear CPU)
+  [Orchestrator] 🗺️ Génération carte finale...
+[Enum] ✅ Buffer biomes GPU construit: 37 biomes, 2384 bytes
+[Enum] ✅ Buffer biomes rivière GPU construit: 2 biomes, 144 bytes
+  [Orchestrator] ✅ Carte finale générée
+[FinalMapPalette] rendered_midpoint_colors=31
+[FinalMapPalette] temperate_lowland=(0.2157, 0.349, 0.1451, 1.0) summit=(0.8824, 0.9216, 0.9294, 1.0)
+[FinalMapPalette] wet_sand=(0.8275, 0.7059, 0.4706, 1.0) wet_badlands=(0.7569, 0.6118, 0.4078, 1.0) wet_rainforest=(0.1216, 0.2745, 0.1137, 1.0)
+[FinalMapPalette] biomes=37
+[FinalMapPalette] preview=C:/Users/Julie/AppData/Roaming/Godot/app_userdata/Planet Generator/temp/final_map_palette_preview.png
+Final map palette regression: PASS
+[Orchestrator] 🧹 Nettoyage des ressources persistantes...
+✅ Ressources GPU libérées proprement
+[Orchestrator] ✅ Ressources libérées
