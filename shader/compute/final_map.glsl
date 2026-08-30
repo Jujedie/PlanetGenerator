@@ -167,28 +167,6 @@ ivec2 wrappedPosition(ivec2 pos, int w, int h) {
     return ivec2((pos.x % w + w) % w, clamp(pos.y, 0, h - 1));
 }
 
-// Taille d'un échantillon exprimée dans l'espace de la planète. Un pixel à
-// 2048x1024 reste la référence historique ; les cartes 4K/8K augmentent le
-// rayon en pixels au lieu de réduire physiquement le filtre climatique.
-int cryosphereWorldSampleStep(int w, int h) {
-    float scale_x = float(w) / 2048.0;
-    float scale_y = float(h) / 1024.0;
-    return clamp(int(floor(max(scale_x, scale_y) + 0.5)), 1, 16);
-}
-
-// La neige terrestre doit suivre des masses climatiques, pas chaque variation
-// d'un seul texel. Ce filtre n'altère pas climate_texture : il sert uniquement
-// au rendu de la cryosphère et garde une empreinte angulaire constante.
-vec2 smoothedCryosphereClimate(ivec2 pos, int w, int h) {
-    int step_px = cryosphereWorldSampleStep(w, h);
-    vec2 center = imageLoad(climate_texture, wrappedPosition(pos, w, h)).rg;
-    vec2 north = imageLoad(climate_texture, wrappedPosition(pos + ivec2(0, -step_px), w, h)).rg;
-    vec2 south = imageLoad(climate_texture, wrappedPosition(pos + ivec2(0, step_px), w, h)).rg;
-    vec2 west = imageLoad(climate_texture, wrappedPosition(pos + ivec2(-step_px, 0), w, h)).rg;
-    vec2 east = imageLoad(climate_texture, wrappedPosition(pos + ivec2(step_px, 0), w, h)).rg;
-    return center * 0.50 + (north + south + west + east) * 0.125;
-}
-
 float elevationAt(ivec2 pos, int w, int h) {
     return imageLoad(geo_texture, wrappedPosition(pos, w, h)).r;
 }
@@ -282,12 +260,17 @@ vec3 smoothedBiomeMaterial(
     float fallback_vegetation_capacity,
     out float vegetation_capacity
 ) {
+    // Garder une largeur d'écotone comparable sur les aperçus et les exports
+    // 4K/8K. Contrairement à la cryosphère, ce filtre est purement visuel : un
+    // pas plus large évite que les classes de biome réapparaissent comme des
+    // frontières de quelques pixels sur une grande planète.
+    int sample_step = clamp(int(floor(max(float(w) / 2048.0, float(h) / 1024.0) + 0.5)), 1, 4);
     vec3 accumulated = vec3(0.0);
     float accumulated_capacity = 0.0;
     float total_weight = 0.0;
     for (int oy = -3; oy <= 3; ++oy) {
         for (int ox = -3; ox <= 3; ++ox) {
-            ivec2 sample_pos = wrappedPosition(pos + ivec2(ox, oy), w, h);
+            ivec2 sample_pos = wrappedPosition(pos + ivec2(ox, oy) * sample_step, w, h);
             if (imageLoad(water_colored, sample_pos).a > 0.0) {
                 continue;
             }
@@ -326,22 +309,22 @@ vec3 terranClimateSurface(
     float heat = smoothstep(7.0, 34.0, sea_level_temperature);
     float dryness = 1.0 - smoothstep(0.12, 0.58, moisture);
 
-    const vec3 COOL_SOIL = vec3(0.48, 0.45, 0.36);
-    const vec3 WARM_SOIL = vec3(0.64, 0.47, 0.30);
-    const vec3 SAND = vec3(0.78, 0.62, 0.38);
+    const vec3 COOL_SOIL = vec3(0.35, 0.32, 0.23);
+    const vec3 WARM_SOIL = vec3(0.55, 0.39, 0.23);
+    const vec3 SAND = vec3(0.82, 0.68, 0.44);
     vec3 soil = mix(COOL_SOIL, WARM_SOIL, heat);
     soil = mix(soil, SAND, dryness * (0.48 + heat * 0.38));
 
-    const vec3 BOREAL = vec3(0.27, 0.35, 0.25);
-    const vec3 GRASSLAND = vec3(0.43, 0.51, 0.29);
-    const vec3 TEMPERATE_FOREST = vec3(0.25, 0.40, 0.24);
-    const vec3 TROPICAL_FOREST = vec3(0.16, 0.34, 0.19);
+    const vec3 BOREAL = vec3(0.16, 0.25, 0.14);
+    const vec3 GRASSLAND = vec3(0.34, 0.45, 0.20);
+    const vec3 TEMPERATE_FOREST = vec3(0.15, 0.32, 0.14);
+    const vec3 TROPICAL_FOREST = vec3(0.075, 0.25, 0.10);
     vec3 open_vegetation = mix(BOREAL, GRASSLAND, smoothstep(-4.0, 16.0, sea_level_temperature));
     vec3 forest = mix(TEMPERATE_FOREST, TROPICAL_FOREST, heat);
     vec3 vegetation_color = mix(open_vegetation, forest, smoothstep(0.48, 0.86, moisture));
     float growing_temperature = smoothstep(-9.0, 5.0, temperature);
-    float vegetation_cover = smoothstep(0.16, 0.68, moisture) * growing_temperature;
-    vegetation_cover *= 1.0 - dryness * 0.55;
+    float vegetation_cover = smoothstep(0.12, 0.58, moisture) * growing_temperature;
+    vegetation_cover *= 1.0 - dryness * 0.62;
 
     // Après une pluie intense, un désert peut brièvement reverdir, mais seule
     // une faible fraction du sol porte cette végétation. Le maximum conserve
@@ -353,7 +336,7 @@ vec3 terranClimateSurface(
     );
     vegetation_cover *= ecological_capacity;
 
-    vec3 surface = mix(soil, vegetation_color, vegetation_cover * 0.84);
+    vec3 surface = mix(soil, vegetation_color, vegetation_cover * 0.91);
     surface = mix(surface, biome_material, BIOME_TINT_STRENGTH);
 
     const vec3 COOL_ROCK = vec3(0.47, 0.47, 0.44);
@@ -371,21 +354,21 @@ vec3 terranClimateSurface(
         smoothstep(-12.0, 34.0, sea_level_temperature)
     );
     float mountain_snow = smoothstep(snow_line - 350.0, snow_line + 700.0, relative_height);
-    // La glace permanente de basse altitude est ajoutée plus bas par
-    // landCryosphereCoverage() à partir d'un climat lissé en espace monde.
-    // La calculer aussi ici depuis le texel climatique brut réintroduisait une
-    // dépendance à la résolution et produisait des trous dans les calottes 8K.
-    float snow_cover = mountain_snow;
+    float permanent_ice = (
+        1.0 - smoothstep(-16.0, -6.0, temperature)
+    ) * smoothstep(0.22, 0.58, moisture);
+    float snow_cover = max(mountain_snow, permanent_ice);
     const vec3 SNOW = vec3(0.89, 0.93, 0.93);
     return mix(surface, SNOW, snow_cover * 0.96);
 }
 
 vec3 terranWaterHypsometry(float depth, vec3 source_water) {
-    // Vue satellite stylisée : lacs, mers et océans partagent la même famille
-    // bleu-vert. La profondeur ne crée plus un écart cyan/bleu artificiel.
-    const vec3 SHALLOW = vec3(0.30, 0.46, 0.47);
-    const vec3 MID = vec3(0.27, 0.43, 0.45);
-    const vec3 DEEP = vec3(0.24, 0.39, 0.42);
+    // Vue orbitale stylisée : bleu côtier lisible, puis bleu marine profond.
+    // Le rendu reste volontairement un peu plus clair que les pixels d'une
+    // photographie spatiale, avant l'assombrissement appliqué à l'export.
+    const vec3 SHALLOW = vec3(0.10, 0.29, 0.38);
+    const vec3 MID = vec3(0.045, 0.16, 0.29);
+    const vec3 DEEP = vec3(0.018, 0.065, 0.18);
     vec3 color = mix(SHALLOW, MID, smoothstep(80.0, 1200.0, depth));
     color = mix(color, DEEP, smoothstep(1200.0, 5200.0, depth));
     return mix(color, source_water, 0.03);
@@ -677,10 +660,9 @@ void main() {
     // === STEP 4: Land snow/frost from continuous physical conditions ===
     // This is deliberately separate from ice_caps, which remains water-only.
     if (!is_water) {
-        vec2 cryosphere_climate = smoothedCryosphereClimate(pos, w, h);
         float land_ice = landCryosphereCoverage(
-            cryosphere_climate.r,
-            cryosphere_climate.g,
+            climate.r,
+            climate.g,
             max(relative_height, 0.0),
             params.atmosphere_type
         );

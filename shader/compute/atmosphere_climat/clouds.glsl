@@ -132,47 +132,73 @@ void main() {
         return;
     }
     
-    // Coordonnées pour bruit seamless
+    // Coordonnées pour bruit seamless. La fréquence est exprimée dans l'espace
+    // de la planète : une exportation plus grande révèle davantage de détail
+    // au lieu d'agrandir les mêmes taches cotonneuses.
     vec3 coords = getCylindricalCoords(pixel);
-    // Fréquence plus élevée que l'ancien voile global : les amas occupent une
-    // fraction lisible de la carte au lieu de former de grandes nappes.
-    float noise_scale = 7.5 / max(params.cylinder_radius, 1.0);
+    float resolution_scale = clamp(
+        sqrt(max(float(params.width) / 2048.0, float(params.height) / 1024.0)),
+        0.82,
+        2.4
+    );
+    float noise_scale = (9.5 * resolution_scale) / max(params.cylinder_radius, 1.0);
     
     // Latitude pour variation des nuages
     float latitude = (float(pixel.y) / float(params.height) - 0.5) * 2.0;
     float lat = abs(latitude);
 
-    // Domain warp à grande échelle : casse les taches circulaires sans rompre
-    // la couture longitudinale, car toutes les coordonnées restent 3D/cylindriques.
+    // Deux déformations emboîtées donnent aux fronts leurs crochets et leurs
+    // spirales. Toutes les coordonnées restent cylindriques, donc la couture
+    // longitudinale demeure continue.
     vec3 p = coords * noise_scale;
-    vec3 warp = vec3(
-        fbm(p * 0.32, 3, 0.55, 2.0, params.seed + 41000u),
-        fbm(p * 0.32, 3, 0.55, 2.0, params.seed + 42000u),
-        fbm(p * 0.32, 3, 0.55, 2.0, params.seed + 43000u)
+    vec3 broad_warp = vec3(
+        fbm(p * 0.18, 3, 0.55, 2.0, params.seed + 41000u),
+        fbm(p * 0.18, 3, 0.55, 2.0, params.seed + 42000u),
+        fbm(p * 0.18, 3, 0.55, 2.0, params.seed + 43000u)
     );
-    p += (warp - 0.5) * 1.15;
+    p += (broad_warp - 0.5) * 2.25;
+    vec3 curl_warp = vec3(
+        fbm(p * 0.46, 3, 0.56, 2.03, params.seed + 51000u),
+        fbm(p * 0.46, 3, 0.56, 2.03, params.seed + 52000u),
+        fbm(p * 0.46, 3, 0.56, 2.03, params.seed + 53000u)
+    );
+    p += (curl_warp - 0.5) * 0.92;
 
     // Les systèmes frontaux sont étirés zonalement et cisaillés en sens
     // opposés dans chaque hémisphère (circulation générale simplifiée).
     vec3 front_p = p;
-    front_p.y *= 2.4;
-    front_p.xz *= 0.62;
-    front_p.x += latitude * 1.6;
+    front_p.y *= 1.35;
+    front_p.xz *= 0.90;
+    front_p.x += latitude * 0.80;
     
     // === Couche 1 : Grandes structures nuageuses ===
-    float large_clouds = fbm(p * 0.58, 5, 0.52, 2.0, params.seed);
+    float synoptic_moisture = fbm(p * 0.44, 5, 0.52, 2.0, params.seed);
     
     // === Couche 2 : Détails moyens ===
-    float medium_details = fbm(front_p * 1.35, 4, 0.55, 2.15, params.seed + 10000u);
+    float frontal_field = fbm(front_p * 0.92, 5, 0.55, 2.08, params.seed + 10000u);
     
     // === Couche 3 : Petits détails (wisps) ===
-    float fine_details = fbm(p * 4.2, 3, 0.58, 2.0, params.seed + 20000u);
-    float puff_field = fbm(p * 1.9, 4, 0.54, 2.1, params.seed + 26000u);
+    float fine_details = fbm(p * 5.6, 3, 0.58, 2.0, params.seed + 20000u);
+    float cellular_field = fbm(p * 2.25, 4, 0.54, 2.1, params.seed + 26000u);
     
-    // Combiner les couches
-    float frontal_filaments = 1.0 - abs(medium_details * 2.0 - 1.0);
-    float cloud_noise = large_clouds * 0.58 + medium_details * 0.20
-        + fine_details * 0.05 + frontal_filaments * 0.10 + puff_field * 0.07;
+    // Les bandes principales suivent des lignes de niveau étroites du champ
+    // frontal. Le champ synoptique décide où elles peuvent se développer ; le
+    // bruit cellulaire les brise en systèmes distincts au lieu de continents.
+    float front_distance = abs(frontal_field - 0.51);
+    float frontal_filaments = 1.0 - smoothstep(0.035, 0.235, front_distance);
+    float secondary_filaments = 1.0 - smoothstep(
+        0.025,
+        0.135,
+        abs(frontal_field + (fine_details - 0.5) * 0.16 - 0.37)
+    );
+    float moisture_gate = smoothstep(0.31, 0.69, synoptic_moisture);
+    float broken_cells = smoothstep(0.34, 0.72, cellular_field);
+    float cloud_noise = synoptic_moisture * 0.45
+        + frontal_filaments * 0.16
+        + secondary_filaments * 0.04
+        + broken_cells * 0.24
+        + fine_details * 0.11;
+    cloud_noise *= mix(0.58, 1.08, moisture_gate);
     
     // === Modulation par latitude (plus de nuages aux latitudes moyennes) ===
     // Équateur : quelques nuages (ITCZ)
@@ -190,27 +216,48 @@ void main() {
     
     // === Seuillage pour créer des nuages distincts ===
     // Le seuil dépend de la couverture nuageuse souhaitée
-    float threshold = mix(0.79, 0.46, clamp(params.cloud_coverage, 0.0, 1.0));
+    float threshold = mix(0.68, 0.16, clamp(params.cloud_coverage, 0.0, 1.0));
     
     // Appliquer le seuil avec transition douce
-    float cloud_alpha = smoothstep(threshold - 0.035, threshold + 0.09, cloud_noise);
-    float puff_shape = smoothstep(0.43, 0.68, puff_field);
-    cloud_alpha *= mix(0.42, 1.0, puff_shape);
+    float cloud_alpha = smoothstep(threshold - 0.055, threshold + 0.115, cloud_noise);
+    float textured_edge = smoothstep(0.23, 0.76, fine_details * 0.55 + broken_cells * 0.45);
+    cloud_alpha *= mix(0.34, 1.0, textured_edge);
     
     // Moduler par la densité
-    cloud_alpha *= clamp(params.cloud_density, 0.0, 1.0) * 0.72;
+    cloud_alpha *= mix(0.28, 0.92, clamp(params.cloud_density, 0.0, 1.0));
     
     // Ajouter variation de densité interne aux nuages
     if (cloud_alpha > 0.0) {
-        float density_variation = fbm(p * 2.8, 3, 0.5, 2.0, params.seed + 30000u);
-        cloud_alpha *= 0.68 + density_variation * 0.32;
+        float density_variation = fbm(p * 3.4, 3, 0.5, 2.0, params.seed + 30000u);
+        cloud_alpha *= 0.58 + density_variation * 0.42;
     }
     
     // Un seuil franc garantit de vrais pixels transparents dans le ciel clair.
     cloud_alpha = clamp(cloud_alpha, 0.0, 1.0);
     if (cloud_alpha < 0.025) cloud_alpha = 0.0;
     
-    float cloud_luminance = mix(0.84, 1.0, fine_details);
-    vec3 cloud_rgb = cloud_alpha > 0.0 ? vec3(cloud_luminance) : vec3(0.0);
+    // Vue orbitale : les bords fins sont gris bleuté et les noyaux optiquement
+    // épais approchent le blanc. Les autres atmosphères gardent une légère
+    // signature sans modifier l'alpha physique du nuage.
+    float optical_depth = smoothstep(0.06, 0.78, cloud_alpha);
+    vec3 cloud_shadow = vec3(0.66, 0.70, 0.73);
+    vec3 cloud_top = vec3(0.97, 0.98, 0.985);
+    if (params.atmosphere_type == 1u) {
+        cloud_shadow = vec3(0.62, 0.61, 0.48);
+        cloud_top = vec3(0.91, 0.86, 0.66);
+    } else if (params.atmosphere_type == 2u) {
+        cloud_shadow = vec3(0.39, 0.34, 0.32);
+        cloud_top = vec3(0.70, 0.66, 0.61);
+    } else if (params.atmosphere_type == 4u) {
+        cloud_shadow = vec3(0.52, 0.55, 0.53);
+        cloud_top = vec3(0.82, 0.83, 0.79);
+    } else if (params.atmosphere_type == 5u) {
+        cloud_shadow = vec3(0.59, 0.53, 0.47);
+        cloud_top = vec3(0.84, 0.79, 0.72);
+    }
+    float cloud_luminance = clamp(optical_depth * 0.82 + fine_details * 0.18, 0.0, 1.0);
+    vec3 cloud_rgb = cloud_alpha > 0.0
+        ? mix(cloud_shadow, cloud_top, cloud_luminance)
+        : vec3(0.0);
     imageStore(clouds_texture, pixel, vec4(cloud_rgb, cloud_alpha));
 }

@@ -139,49 +139,36 @@ ivec2 wrappedPixel(ivec2 pixel) {
     return ivec2(wrapped_x, clamp(pixel.y, 0, h - 1));
 }
 
-// Les noyaux de climat et de proximité côtière sont exprimés en espace monde,
-// pas en pixels. À 2048x1024, un pas vaut un pixel et le rendu historique est
-// conservé. À 7520x3760, le même voisinage physique vaut environ quatre pixels.
-// Sans cette conversion, augmenter la résolution réduisait artificiellement le
-// lissage thermique et fragmentait les calottes en milliers de petites poches.
-int worldSampleStep() {
-    float scale_x = float(params.width) / 2048.0;
-    float scale_y = float(params.height) / 1024.0;
-    return clamp(int(floor(max(scale_x, scale_y) + 0.5)), 1, 16);
-}
-
-// Le champ climatique contient volontairement des variations régionales. Le
-// filtre en croix conserve exactement la même taille angulaire à toutes les
-// résolutions, ce qui stabilise la limite de gel lors des exports 4K/8K.
+// Le champ climatique contient volontairement des variations régionales.
+// Une petite convolution en croix empêche cependant un pixel chaud/froid
+// isolé de découper la lisière de la banquise en confettis. Le voisinage reste
+// fin en pixels, comme avant f37ffbb, afin qu'un export 4K/8K révèle davantage
+// de détail au lieu de fusionner la glace en grands blocs.
 float smoothedTemperature(ivec2 pixel) {
-    int step_px = worldSampleStep();
     float center = imageLoad(climate_texture, wrappedPixel(pixel)).r;
-    float north = imageLoad(climate_texture, wrappedPixel(pixel + ivec2(0, -step_px))).r;
-    float south = imageLoad(climate_texture, wrappedPixel(pixel + ivec2(0, step_px))).r;
-    float west = imageLoad(climate_texture, wrappedPixel(pixel + ivec2(-step_px, 0))).r;
-    float east = imageLoad(climate_texture, wrappedPixel(pixel + ivec2(step_px, 0))).r;
+    float north = imageLoad(climate_texture, wrappedPixel(pixel + ivec2(0, -1))).r;
+    float south = imageLoad(climate_texture, wrappedPixel(pixel + ivec2(0, 1))).r;
+    float west = imageLoad(climate_texture, wrappedPixel(pixel + ivec2(-1, 0))).r;
+    float east = imageLoad(climate_texture, wrappedPixel(pixel + ivec2(1, 0))).r;
     return center * 0.50 + (north + south + west + east) * 0.125;
 }
 
-// Fraction de terre dans le même voisinage physique que le 5x5 historique.
-// L'échelle augmente avec la résolution afin que la stabilisation côtière ne
-// devienne pas quatre fois plus étroite sur une carte 8K.
+// Fraction de terre dans un voisinage 5x5. Dans les mers froides, une faible
+// bonification stabilise la glace côtière sans créer de calotte continentale.
 float coastalProximity(ivec2 pixel) {
-    int radius_px = worldSampleStep() * 2;
-    const ivec2 directions[8] = ivec2[8](
-        ivec2(-1, -1), ivec2(0, -1), ivec2(1, -1),
-        ivec2(-1, 0),                  ivec2(1, 0),
-        ivec2(-1, 1),  ivec2(0, 1),   ivec2(1, 1)
-    );
     float land_samples = 0.0;
-    for (int i = 0; i < 8; ++i) {
-        vec4 water = imageLoad(
-            water_colored,
-            wrappedPixel(pixel + directions[i] * radius_px)
-        );
-        land_samples += water.a <= 0.0 ? 1.0 : 0.0;
+    float sample_count = 0.0;
+    for (int oy = -2; oy <= 2; oy += 2) {
+        for (int ox = -2; ox <= 2; ox += 2) {
+            if (ox == 0 && oy == 0) {
+                continue;
+            }
+            vec4 water = imageLoad(water_colored, wrappedPixel(pixel + ivec2(ox, oy)));
+            land_samples += water.a <= 0.0 ? 1.0 : 0.0;
+            sample_count += 1.0;
+        }
     }
-    return land_samples * 0.125;
+    return land_samples / max(sample_count, 1.0);
 }
 
 // La substance gelée et son point de transition dépendent du type de monde.
@@ -324,23 +311,8 @@ void main() {
     concentration *= clamp(probability / 0.9, 0.0, 1.0);
     float lead_ridge = 1.0 - smoothstep(0.040, 0.185, abs(lead_noise + surface_noise * 0.055));
     float polynya_ridge = 1.0 - smoothstep(0.018, 0.090, abs(polynya_noise - 0.08));
-    // Les chenaux sont un détail de la zone marginale, pas un moyen de
-    // pulvériser le cœur d'une calotte. Les résolutions élevées révélaient
-    // toutes les isolignes du bruit et transformaient visuellement le pack
-    // compact en dentelle. On conserve les fractures près de la lisière mais
-    // on verrouille progressivement le cœur froid et dense.
-    float compact_pack = smoothstep(0.70, 0.94, coverage)
-        * smoothstep(0.58, 0.92, coldness);
-    float lead_exposure = mix(1.0, 0.16, compact_pack);
-    float polynya_exposure = mix(1.0, 0.08, compact_pack);
-    float lead_strength = lead_ridge
-        * mix(0.86, 0.62, coldness)
-        * smoothstep(0.16, 0.72, coverage)
-        * lead_exposure;
-    float polynya_strength = polynya_ridge
-        * mix(0.78, 0.48, coldness)
-        * smoothstep(0.32, 0.88, coverage)
-        * polynya_exposure;
+    float lead_strength = lead_ridge * mix(0.86, 0.62, coldness) * smoothstep(0.16, 0.72, coverage);
+    float polynya_strength = polynya_ridge * mix(0.78, 0.48, coldness) * smoothstep(0.32, 0.88, coverage);
     concentration *= (1.0 - lead_strength) * (1.0 - polynya_strength);
 
     if (concentration <= 0.10) {
