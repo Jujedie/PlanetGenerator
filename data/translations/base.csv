@@ -257,6 +257,8 @@ GEN_STATUS_CANCELLED_REASON,Cancelled: {reason},Annulée : {reason},Abgebrochen:
 GEN_STATUS_IDLE,Idle • no active generation,Inactif • aucune génération en cours,Leerlauf • keine aktive Generierung
 GEN_STATUS_MEMORY,Raster {width}×{height} • est. active ~{memory},Raster {width}×{height} • actif estimé ~{memory},Raster {width}×{height} • geschätzt aktiv ~{memory}
 GEN_STATUS_MEMORY_TOOLTIP,Estimated active generation memory and elapsed time,Mémoire active estimée et temps écoulé,Geschätzter aktiver Generierungsspeicher und verstrichene Zeit
+GEN_STATUS_TILING_THRESHOLD,Full GPU pipeline up to ~{width}×{height} at this aspect ratio,Pipeline GPU complet jusqu’à environ {width}×{height} pour ce ratio,Vollständige GPU-Pipeline bis etwa {width}×{height} bei diesem Seitenverhältnis
+GEN_STATUS_TILING_THRESHOLD_TOOLTIP,Worlds inside this limit use the same authoritative monolithic GPU pipeline as smaller maps. Larger rasters are rejected for now instead of using the experimental tiled backend.,Les mondes dans cette limite utilisent exactement le même pipeline GPU monolithique de référence que les petites cartes. Les rasters plus grands sont temporairement refusés au lieu d’utiliser le backend tuilé expérimental.,Welten innerhalb dieses Limits verwenden dieselbe maßgebliche monolithische GPU-Pipeline wie kleinere Karten. Größere Raster werden vorerst abgelehnt, statt das experimentelle Kachel-Backend zu verwenden.
 GEN_STATUS_COMPLETE,Complete,Terminée,Abgeschlossen
 GEN_STATUS_COMPLETED_IN,Completed in {seconds} s,Terminée en {seconds} s,Abgeschlossen in {seconds} s
 GEN_STATUS_UNAVAILABLE,Unavailable,Indisponible,Nicht verfügbar

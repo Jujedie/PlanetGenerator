@@ -89,18 +89,52 @@ func _init_gpu_system() -> void:
 	var global_dimensions: Vector2i = generation_params.get(
 		"global_dimensions", generation_params.get("resolution", Vector2i(1024, 512))
 	)
-	use_tiled_global_generation = bool(generation_params.get("tiled_global_generation", false))
-	use_tiled_global_generation = use_tiled_global_generation or TiledGlobalGenerator.should_use_tiled(global_dimensions)
-	# Gas giants keep their dedicated atmospheric path; Milestone 5's maximum
-	# tiled contract applies to solid-surface planets.
-	if int(generation_params.get("planet_type", 0)) == 6:
-		use_tiled_global_generation = false
-	use_gpu_acceleration = true
-	if use_tiled_global_generation:
+	var planet_type := int(generation_params.get("planet_type", 0))
+	var monolithic_supported := TiledGlobalGenerator.fits_monolithic_envelope(
+		global_dimensions
+	)
+	var experimental_tiled := bool(generation_params.get(
+		"experimental_tiled_generation", false
+	))
+
+	# The tiled backend does not yet preserve the same global simulation
+	# invariants as the authoritative monolithic pipeline. Never route production
+	# worlds into it automatically. A developer can still opt in explicitly for
+	# tiled regression work via experimental_tiled_generation.
+	use_tiled_global_generation = (
+		planet_type != 6
+		and not monolithic_supported
+		and experimental_tiled
+		and TiledGlobalGenerator.PRODUCTION_TILED_ENABLED
+	)
+	use_gpu_acceleration = monolithic_supported or use_tiled_global_generation or planet_type == 6
+
+	if planet_type != 6 and monolithic_supported:
+		generation_params["large_monolithic_lifecycle"] = (
+			TiledGlobalGenerator.exceeds_preferred_monolithic_budget(global_dimensions)
+		)
+		generation_params["tiled_global_generation"] = false
+		print(
+			"[PlanetGenerator] Authoritative monolithic GPU backend configured: ",
+			global_dimensions,
+			" (large lifecycle=",
+			generation_params["large_monolithic_lifecycle"],
+			")"
+		)
+	elif use_tiled_global_generation:
 		_tiled_output_root = cheminSauvegarde.path_join("tiled_dataset")
-		print("[PlanetGenerator] Maximum-scale tiled generation enabled: ", global_dimensions)
+		print("[PlanetGenerator] Experimental tiled generation enabled: ", global_dimensions)
+	elif planet_type == 6:
+		use_tiled_global_generation = false
+		print("[PlanetGenerator] Gas giant GPU backend configured: ", generation_params["resolution"])
 	else:
-		print("[PlanetGenerator] Monolithic GPU backend configured for background execution: ", generation_params["resolution"])
+		use_tiled_global_generation = false
+		generation_params["tiled_global_generation"] = false
+		push_error((
+			"[PlanetGenerator] Resolution %s exceeds the safe monolithic GPU envelope. "
+			+ "The experimental tiled backend is disabled because it does not yet preserve "
+			+ "the authoritative global simulation."
+		) % [global_dimensions])
 
 func generate_planet() -> bool:
 	"""Entry point - routes to the bounded tiled path or legacy GPU path."""
@@ -112,6 +146,8 @@ func generate_planet() -> bool:
 		print("[PlanetGenerator] Cancelling generation: GPU acceleration not available")
 		return false
 	_generation_request_id += 1
+	_cached_display_maps.clear()
+	_cached_export_files.clear()
 	if use_tiled_global_generation:
 		print("[PlanetGenerator] Queuing tiled global generation on background GPU worker...")
 		tiled_pipeline = TiledGlobalSimulationPipeline.new(generation_params, _tiled_output_root)
@@ -152,7 +188,8 @@ func _complete_tiled_generation(request_id: int, report: Dictionary) -> void:
 	last_export_metrics = report.duplicate(true)
 	if bool(report.get("ok", false)):
 		last_exported_files = {"tiled_dataset": _tiled_output_root}
-		print("[PlanetGenerator] Tiled global generation complete: ", report.get("manifest", ""))
+		print("[PlanetGenerator] Experimental tiled dataset complete: ", report.get("manifest", ""))
+		emit_signal("generation_progress", "complete", 1, 1)
 		emit_signal("finished")
 	elif bool(report.get("cancelled", false)):
 		last_cancel_reason = str(report.get("reason", "user"))
@@ -303,8 +340,9 @@ func export_to_directory(output_dir: String) -> Dictionary:
 	"""Return/copy completed exports without requiring live GPU resources."""
 	print("[PlanetGenerator] Exporting to: ", output_dir)
 	if use_tiled_global_generation and tiled_pipeline != null:
-		# Tiled generation already owns an authoritative dataset under its generation
-		# root. Avoid copying it onto itself during the M8 acceptance runner.
+		# Experimental tiled mode keeps only its raw authoritative dataset. It is
+		# deliberately excluded from the production PNG path until its global
+		# simulation matches the monolithic backend.
 		if output_dir.simplify_path() != cheminSauvegarde.simplify_path():
 			if not tiled_pipeline.export_dataset(output_dir):
 				push_warning("[PlanetGenerator] Tiled export skipped: dataset is incomplete")
@@ -365,7 +403,7 @@ func cleanup() -> void:
 ## @return Array[String]: Liste des chemins complets vers les fichiers PNG générés.
 func getMaps() -> Array[String]:
 	"""Return maps already exported by the background generation worker."""
-	if _cleaned_up or use_tiled_global_generation:
+	if _cleaned_up:
 		return []
 	return _cached_display_maps.duplicate()
 

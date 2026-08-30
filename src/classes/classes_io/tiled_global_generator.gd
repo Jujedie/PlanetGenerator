@@ -9,6 +9,12 @@ const PREFERRED_VRAM_BUDGET_BYTES := 4 * 1024 * 1024 * 1024
 const DEFAULT_WORKING_BYTES_PER_CELL := 160
 const MAX_TILE_SAMPLE_EDGE := 8192
 
+# The tiled simulator remains available for tests/research, but production
+# generation must not silently switch to it until its global invariants match
+# the monolithic pipeline. Resolutions that still fit the hard monolithic
+# envelope should use the exact same GPU pipeline as smaller planets.
+const PRODUCTION_TILED_ENABLED := false
+
 var dimensions: Vector2i
 var tile_size := PlanetGridContract.DEFAULT_TILE_SIZE
 var hard_vram_budget_bytes := HARD_VRAM_BUDGET_BYTES
@@ -140,17 +146,83 @@ func run_phase(phase_name: String, output_dir: String, halo: int,
 	}
 	return last_report
 
-static func should_use_tiled(global_dimensions: Vector2i,
+static func fits_monolithic_envelope(global_dimensions: Vector2i,
+		working_bytes_per_cell: int = DEFAULT_WORKING_BYTES_PER_CELL,
+		hard_budget: int = HARD_VRAM_BUDGET_BYTES) -> bool:
+	if global_dimensions.x <= 0 or global_dimensions.y <= 0:
+		return false
+	if global_dimensions.x > MAX_TILE_SAMPLE_EDGE or global_dimensions.y > MAX_TILE_SAMPLE_EDGE:
+		return false
+	var estimated: int = (
+		global_dimensions.x
+		* global_dimensions.y
+		* maxi(working_bytes_per_cell, 1)
+	)
+	return estimated <= hard_budget
+
+
+static func exceeds_preferred_monolithic_budget(global_dimensions: Vector2i,
 		working_bytes_per_cell: int = DEFAULT_WORKING_BYTES_PER_CELL,
 		preferred_budget: int = PREFERRED_VRAM_BUDGET_BYTES) -> bool:
 	if global_dimensions.x <= 0 or global_dimensions.y <= 0:
 		return false
-	# A monolithic path is forbidden once either the device-safe texture edge or
-	# the preferred aggregate working-set estimate is exceeded.
-	if global_dimensions.x > MAX_TILE_SAMPLE_EDGE or global_dimensions.y > MAX_TILE_SAMPLE_EDGE:
-		return true
-	var estimated := global_dimensions.x * global_dimensions.y * maxi(working_bytes_per_cell, 1)
+	var estimated: int = (
+		global_dimensions.x
+		* global_dimensions.y
+		* maxi(working_bytes_per_cell, 1)
+	)
 	return estimated > preferred_budget
+
+
+static func should_use_tiled(global_dimensions: Vector2i,
+		working_bytes_per_cell: int = DEFAULT_WORKING_BYTES_PER_CELL,
+		hard_budget: int = HARD_VRAM_BUDGET_BYTES) -> bool:
+	# Keep this method as the out-of-core routing predicate used by tests and by
+	# callers that explicitly opt into the experimental tiled backend. The
+	# production PlanetGenerator no longer enables that backend automatically.
+	return not fits_monolithic_envelope(
+		global_dimensions, working_bytes_per_cell, hard_budget
+	)
+
+
+## Returns the largest raster dimensions, preserving the supplied aspect ratio,
+## that can still use the authoritative monolithic GPU pipeline.
+static func last_monolithic_dimensions_for_aspect(reference_dimensions: Vector2i,
+		working_bytes_per_cell: int = DEFAULT_WORKING_BYTES_PER_CELL,
+		hard_budget: int = HARD_VRAM_BUDGET_BYTES) -> Vector2i:
+	if reference_dimensions.x <= 0 or reference_dimensions.y <= 0:
+		return Vector2i.ZERO
+	var aspect: float = float(reference_dimensions.x) / float(reference_dimensions.y)
+	var low_width: int = 1
+	var high_width: int = MAX_TILE_SAMPLE_EDGE
+	var best_width: int = 0
+	while low_width <= high_width:
+		var middle_width: int = (low_width + high_width) >> 1
+		var middle_height: int = maxi(1, roundi(float(middle_width) / aspect))
+		var candidate := Vector2i(middle_width, middle_height)
+		if fits_monolithic_envelope(candidate, working_bytes_per_cell, hard_budget):
+			best_width = middle_width
+			low_width = middle_width + 1
+		else:
+			high_width = middle_width - 1
+	if best_width <= 0:
+		return Vector2i.ZERO
+	return Vector2i(best_width, maxi(1, roundi(float(best_width) / aspect)))
+
+
+## Backward-compatible alias for UI/tests that still refer to the old tiled
+## threshold. It now returns the first raster outside the monolithic envelope.
+static func first_tiled_dimensions_for_aspect(reference_dimensions: Vector2i,
+		working_bytes_per_cell: int = DEFAULT_WORKING_BYTES_PER_CELL,
+		hard_budget: int = HARD_VRAM_BUDGET_BYTES) -> Vector2i:
+	var last_safe := last_monolithic_dimensions_for_aspect(
+		reference_dimensions, working_bytes_per_cell, hard_budget
+	)
+	if last_safe == Vector2i.ZERO:
+		return Vector2i.ZERO
+	var aspect: float = float(reference_dimensions.x) / float(reference_dimensions.y)
+	var first_width := last_safe.x + 1
+	return Vector2i(first_width, maxi(1, roundi(float(first_width) / aspect)))
 
 func cancel(reason: String = "user") -> void:
 	cancel_token.cancel(reason)

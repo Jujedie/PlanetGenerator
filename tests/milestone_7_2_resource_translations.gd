@@ -6,7 +6,7 @@ extends Node
 func _ready() -> void:
 	var csv := FileAccess.get_file_as_string("res://data/translations/base.csv")
 	var ids: Array[String] = []
-	for name in Exporter.RESOURCE_NAMES:
+	for name in PlanetExporter.RESOURCE_NAMES:
 		ids.append(str(name))
 	ids.append("petrole")
 	var missing: Array[String] = []

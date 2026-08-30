@@ -6,6 +6,20 @@ func _ready() -> void:
 func _run() -> void:
 	var venus := PlanetGridContract.logical_dimensions(6051.8)
 	var selection_ok := TiledGlobalGenerator.should_use_tiled(venus)
+	# 7520×3760 is below both the 8192 texture edge and the 5 GiB hard
+	# working-set envelope. Production must therefore use the exact monolithic
+	# pipeline rather than the experimental tiled approximation.
+	var production_size := Vector2i(7520, 3760)
+	var production_monolithic_ok := (
+		TiledGlobalGenerator.fits_monolithic_envelope(production_size)
+		and not TiledGlobalGenerator.should_use_tiled(production_size)
+	)
+	var production_limit := TiledGlobalGenerator.last_monolithic_dimensions_for_aspect(
+		production_size
+	)
+	production_monolithic_ok = (
+		production_monolithic_ok and production_limit == Vector2i(8192, 4096)
+	)
 	var max_plan := TiledGlobalGenerator.new(venus).build_tile_plan(128)
 	var max_plan_ok := max_plan.size() == 120
 	var budget := TiledGlobalGenerator.new(venus).validate_budget(128, 33)
@@ -62,7 +76,16 @@ func _run() -> void:
 	var cancellation_ok := bool(cancelled.get("cancelled", false)) or str(cancelled.get("reason", "")) == "acceptance_test"
 	cancel_pipeline.cleanup()
 
-	var passed := selection_ok and max_plan_ok and budget_ok and generated_ok and seam_ok and cancellation_ok
+	var passed := (
+		selection_ok
+		and production_monolithic_ok
+		and max_plan_ok
+		and budget_ok
+		and generated_ok
+		and seam_ok
+		and cancellation_ok
+	)
 	print("[Milestone5-Full] max_tiles=",max_plan.size()," budget=",budget,
+		" production_7520_monolithic=",production_monolithic_ok,
 		" generated=",generated_ok," tile_boundary_invariant=",seam_ok," cancellation=",cancellation_ok)
 	get_tree().quit(0 if passed else 1)

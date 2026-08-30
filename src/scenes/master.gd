@@ -1108,7 +1108,7 @@ func _set_generation_memory_text(key: String, args: Dictionary = {}) -> void:
 func _refresh_generation_status_translation() -> void:
 	_set_generation_phase_text(_generation_phase_key, _generation_phase_fallback)
 	_set_generation_memory_text(_generation_memory_key, _generation_memory_args)
-	_generation_memory_label.tooltip_text = tr("GEN_STATUS_MEMORY_TOOLTIP")
+	_generation_memory_label.tooltip_text = tr("GEN_STATUS_TILING_THRESHOLD_TOOLTIP")
 	if _cancel_generation_button != null:
 		_cancel_generation_button.text = tr("GEN_CANCEL").to_upper()
 
@@ -1119,10 +1119,13 @@ func _show_generation_status(params: Dictionary) -> void:
 	_generation_progress_bar.value = 0
 	_set_generation_phase_text("GEN_STATUS_PREPARING")
 	var dims: Vector2i = params.get("global_dimensions", params.get("resolution", Vector2i.ZERO))
-	# Deliberately conservative UI estimate: several authoritative fields plus
-	# working textures coexist in the monolithic path.
-	var estimate := int(dims.x) * int(dims.y) * 64
-	_set_generation_memory_text("GEN_STATUS_MEMORY", {"width": dims.x, "height": dims.y, "memory": UI_POLISH.human_bytes(estimate)})
+	var monolithic_limit: Vector2i = TiledGlobalGenerator.last_monolithic_dimensions_for_aspect(dims)
+	_set_generation_memory_text("GEN_STATUS_TILING_THRESHOLD", {
+		"width": monolithic_limit.x,
+		"height": monolithic_limit.y,
+		"edge": TiledGlobalGenerator.MAX_TILE_SAMPLE_EDGE,
+	})
+	_generation_memory_label.tooltip_text = tr("GEN_STATUS_TILING_THRESHOLD_TOOLTIP")
 	_cancel_generation_button.disabled = false
 
 func _on_generation_progress(phase: String, completed: int, total: int) -> void:

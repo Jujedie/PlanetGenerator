@@ -24,8 +24,8 @@ const TEXTURE_LIFECYCLE := {
 		"ocean_region_map", "biome_id", "river_biome_id", "ocean_reachable",
 	],
 	"temporary": [
-		"temp_buffer", "crust_age", "crust_age_temp", "geo_temp", "flux_temp",
-		"vapor", "vapor_temp", "water_component",
+		"crust_age", "crust_age_temp", "geo_temp", "flux_temp",
+		"water_component",
 		"river_sources", "flow_direction",
 		"region_map_temp", "region_cost",
 		"region_cost_temp", "ocean_region_map_temp", "ocean_region_cost",
@@ -55,13 +55,12 @@ const GAS_EXPORT_TEXTURES := ["final_map"]
 # IDs des textures GPU utilisées dans la pipeline
 # geo : GeoTexture (RGBA32F) - R=height, G=bedrock, B=sediment, A=water_height
 # climate : ClimateTexture (RGBA32F) - R=temperature, G=humidity, B=windX, A=windY
-# temp_buffer : Buffer temporaire pour ping-pong
 # plates : PlateTexture (RGBA32F) - R=plate_id, G=velocity_x, B=velocity_y, A=convergence_type
 # crust_age : CrustAgeTexture (RGBA32F) - R=distance_km, G=age_ma, B=subsidence, A=valid
 # crust_age_temp : Buffer ping-pong du Jump Flooding. Une seconde texture est
 # obligatoire : lire et écrire la même image pendant une passe JFA rend le
 # résultat dépendant de l'ordre d'exécution des workgroups GPU.
-static var TextureID : Array[String] = ["geo", "climate", "temp_buffer", "plates", "crust_age", "crust_age_temp"]
+static var TextureID : Array[String] = ["geo", "climate", "plates", "crust_age", "crust_age_temp"]
 
 # Textures Étape 2 - Érosion Hydraulique
 # geo_temp : Buffer ping-pong pour GeoTexture pendant l'érosion (RGBA32F)
@@ -70,13 +69,11 @@ static var TextureID : Array[String] = ["geo", "climate", "temp_buffer", "plates
 static var TextureID_Erosion : Array[String] = ["geo_temp", "river_flux", "flux_temp"]
 
 # Textures Étape 3 - Atmosphère & Climat
-# vapor : VaporTexture (R32F) - densité de vapeur d'eau pour simulation fluide
-# vapor_temp : VaporTempTexture (R32F) - buffer ping-pong pour advection
 # temperature_colored : (RGBA8) - couleur température pour export direct
 # precipitation_colored : (RGBA8) - couleur précipitation pour export direct
 # clouds : (RGBA8) - nuages en alpha droit (RGB=blanc, A=opacité, ciel transparent)
 # ice_caps : (RGBA8) - banquise maritime uniquement (alpha=concentration)
-static var TextureID_Climat : Array[String] = ["vapor", "vapor_temp", "temperature_colored", "precipitation_colored", "clouds", "ice_caps"]
+static var TextureID_Climat : Array[String] = ["temperature_colored", "precipitation_colored", "clouds", "ice_caps"]
 
 # Textures Étape 5 - Ressources & Pétrole
 # petrole : (RGBA8) - carte de pétrole (noir/transparent)
@@ -209,6 +206,31 @@ func release_rid(rid: RID) -> void:
 		_deferred_free_rids.append(rid)
 	else:
 		rd.free_rid(rid)
+
+
+## Removes textures whose final consumer has completed. On the large
+## monolithic path, synchronizing here is intentional: it bounds peak VRAM
+## before the next group of full-resolution textures is allocated. Small maps
+## continue to batch command lists exactly as before.
+func retire_textures(texture_names: Array[String], sync_now: bool = false,
+		reason: String = "phase_lifecycle") -> int:
+	if not rd or texture_names.is_empty():
+		return 0
+	var retired_bytes := 0
+	for texture_name in texture_names:
+		if not textures.has(texture_name):
+			continue
+		var texture_rid: RID = textures[texture_name]
+		if texture_rid.is_valid():
+			retired_bytes += _texture_size_bytes(texture_rid)
+		textures.erase(texture_name)
+		release_rid(texture_rid)
+	if sync_now and retired_bytes > 0:
+		sync_for_cpu(reason)
+	metrics["released_texture_bytes"] = (
+		int(metrics.get("released_texture_bytes", 0)) + retired_bytes
+	)
+	return retired_bytes
 
 func _flush_deferred_frees() -> void:
 	var freed_ids: Dictionary = {}
@@ -466,18 +488,6 @@ func initialize_climate_textures() -> void:
 	Appelé par l'orchestrateur avant la phase atmosphérique.
 	"""
 	
-	# Format R32F pour textures de vapeur (ping-pong)
-	var format_r32f := RDTextureFormat.new()
-	format_r32f.width = resolution.x
-	format_r32f.height = resolution.y
-	format_r32f.format = FORMAT_R32F
-	format_r32f.usage_bits = (
-		RenderingDevice.TEXTURE_USAGE_STORAGE_BIT |
-		RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT |
-		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
-		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
-	)
-	
 	# Format RGBA8 pour textures colorées (export direct)
 	var format_rgba8 := RDTextureFormat.new()
 	format_rgba8.width = resolution.x
@@ -489,24 +499,6 @@ func initialize_climate_textures() -> void:
 		RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT |
 		RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
 	)
-	
-	# Créer les textures de vapeur (R32F - 4 bytes par pixel)
-	for tex_id in ["vapor", "vapor_temp"]:
-		if textures.has(tex_id):
-			continue  # Déjà créée
-		
-		var data = PackedByteArray()
-		data.resize(resolution.x * resolution.y * 4)  # 4 bytes per pixel (R32F)
-		data.fill(0)
-		
-		var view := RDTextureView.new()
-		var rid := rd.texture_create(format_r32f, view, [data])
-		
-		if not rid.is_valid():
-			push_error("❌ Échec création texture vapeur:", tex_id)
-			continue
-			
-		textures[tex_id] = rid
 	
 	# Créer les textures colorées (RGBA8 - 4 bytes par pixel)
 	for tex_id in ["temperature_colored", "precipitation_colored", "clouds", "ice_caps"]:
@@ -526,7 +518,7 @@ func initialize_climate_textures() -> void:
 			
 		textures[tex_id] = rid
 	
-	print("✅ Textures climat créées (2x R32F + 4x RGBA8)")
+	print("✅ Textures climat créées (4x RGBA8)")
 
 # === CRÉATION DES TEXTURES RESSOURCES (Étape 5) ===
 func initialize_resources_textures() -> void:

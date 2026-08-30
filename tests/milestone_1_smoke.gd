@@ -397,8 +397,10 @@ func _validate_topology_export_contract() -> bool:
 			var elevation := radial_height + relief
 			geo.set_pixel(x, y, Color(elevation, 0.5, 0.0, 80.0 if elevation < 0.0 else 0.0))
 
-	var export_dir := ProjectSettings.globalize_path("user://milestone_1_topology")
-	DirAccess.make_dir_recursive_absolute(export_dir)
+	# The topography exporter now receives a GPUContext and packed RGBA32F
+	# payload. This regression only validates the topology/contour contract, so
+	# keep it GPU-independent and exercise the contour builder directly instead
+	# of coupling the smoke test to the export pipeline signature.
 	var exporter := PlanetExporter.new()
 	exporter.params = {
 		"planet_type": Enum.TYPE_TERRAN,
@@ -408,10 +410,15 @@ func _validate_topology_export_contract() -> bool:
 		"topology_contour_interval_m": 250.0,
 		"topology_major_interval_m": 1000.0,
 	}
-	var exported := exporter._export_topographie_maps(geo, export_dir, WIDTH, HEIGHT)
-	var topology_path := str(exported.get("topology_map", ""))
-	var topology := Image.new()
-	var loaded := not topology_path.is_empty() and topology.load(topology_path) == OK
+	var relative_elevations := PackedFloat32Array()
+	relative_elevations.resize(WIDTH * HEIGHT)
+	for y in range(HEIGHT):
+		for x in range(WIDTH):
+			relative_elevations[y * WIDTH + x] = geo.get_pixel(x, y).r
+	var topology := exporter._build_topology_overlay(
+		relative_elevations, WIDTH, HEIGHT
+	)
+	var loaded := topology != null and not topology.is_empty()
 	var transparent_pixels := 0
 	var visible_pixels := 0
 	var partial_alpha_pixels := 0
@@ -447,9 +454,6 @@ func _validate_topology_export_contract() -> bool:
 		and partial_alpha_pixels > 0
 		and palette_contract
 	)
-	for filepath in exported.values():
-		DirAccess.remove_absolute(str(filepath))
-	DirAccess.remove_absolute(export_dir)
 	return result
 
 func _generate_gas_snapshot() -> Dictionary:

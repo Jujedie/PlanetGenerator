@@ -707,6 +707,9 @@ func run_simulation() -> void:
 	# === ÉTAPE 0.6 : CRATÈRES D'IMPACT (planètes sans atmosphère) ===
 	if not _run_timed_phase("cratering", run_cratering_phase.bind(generation_params, w, h)):
 		return
+	_retire_large_monolithic_textures(
+		["crust_age", "crust_age_temp"], "after_cratering"
+	)
 
 	# === ÉTAPE 1.5 : CLIMAT PRÉLIMINAIRE POUR L'ÉROSION ===
 	# L'érosion lit climate.G pour la pluie et climate.R pour le gel/évaporation.
@@ -717,6 +720,9 @@ func run_simulation() -> void:
 	# === ÉTAPE 2 : ÉROSION HYDRAULIQUE ===
 	if not _run_timed_phase("erosion", run_erosion_phase.bind(generation_params, w, h)):
 		return
+	_retire_large_monolithic_textures(
+		["geo_temp", "flux_temp"], "after_erosion"
+	)
 	
 	# === ÉTAPE 3 : ATMOSPHÈRE & CLIMAT ===
 	# IMPORTANT: Doit être exécuté AVANT la classification des eaux
@@ -727,6 +733,9 @@ func run_simulation() -> void:
 	# === ÉTAPE 2.5 : CLASSIFICATION DES EAUX & RIVIÈRES ===
 	if not _run_timed_phase("water", run_water_phase.bind(generation_params, w, h)):
 		return
+	_retire_large_monolithic_textures(
+		["water_component", "river_sources"], "after_water"
+	)
 	
 	# === ÉTAPE 3.5 : BANQUISE (après eau pour vérifier water_colored) ===
 	if not _run_timed_phase("ice_caps", run_ice_caps_phase.bind(generation_params, w, h)):
@@ -735,14 +744,30 @@ func run_simulation() -> void:
 	# === ÉTAPE 4.1 : BIOMES ===
 	if not _run_timed_phase("biomes", run_biome_phase.bind(generation_params, w, h)):
 		return
+	_retire_large_monolithic_textures(
+		["biome_id_temp", "biome_colored_temp"], "after_biomes"
+	)
 	
 	# === ÉTAPE 4 : RÉGIONS ADMINISTRATIVES ===
 	if not _run_timed_phase("land_regions", run_region_phase.bind(generation_params, w, h)):
 		return
+	_retire_large_monolithic_textures(
+		["region_map_temp", "region_cost", "region_cost_temp"],
+		"after_land_regions"
+	)
 	
 	# === ÉTAPE 4.5 : RÉGIONS OCÉANIQUES ===
 	if not _run_timed_phase("ocean_regions", run_ocean_region_phase.bind(generation_params, w, h)):
 		return
+	_retire_large_monolithic_textures(
+		[
+			"ocean_region_map_temp",
+			"ocean_region_cost",
+			"ocean_region_cost_temp",
+			"administrative_edge_cost",
+		],
+		"after_ocean_regions"
+	)
 	
 	# === ÉTAPE 5 : RESSOURCES & PÉTROLE ===
 	if not _run_timed_phase("resources", run_resources_phase.bind(generation_params, w, h)):
@@ -773,6 +798,21 @@ func run_simulation() -> void:
 	print("=".repeat(60) + "\n")
 
 ## Exécute une phase et conserve sa durée pour les benchmarks déterministes.
+func _retire_large_monolithic_textures(texture_names: Array[String], reason: String) -> void:
+	if not bool(generation_params.get("large_monolithic_lifecycle", false)):
+		return
+	var retired_bytes := gpu.retire_textures(
+		texture_names, true, "large_monolithic:%s" % reason
+	)
+	if retired_bytes > 0:
+		print(
+			"[Orchestrator] VRAM lifecycle release ",
+			reason,
+			": ",
+			"%.1f MiB" % (float(retired_bytes) / 1024.0 / 1024.0)
+		)
+
+
 func _run_timed_phase(phase_name: String, phase_callable: Callable) -> bool:
 	_poll_external_cancel()
 	if was_cancelled:
