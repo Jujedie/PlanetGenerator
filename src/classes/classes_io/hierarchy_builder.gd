@@ -118,7 +118,15 @@ static func compute_land_hierarchy_targets(department_count: int,
 ## Retourne [département→région, département→pays, département→continent].
 static func build_land(data: PackedByteArray, w: int, h: int,
 		merge: Dictionary, settings: Dictionary = {}) -> Array:
-	var info := _scan(data, w, h, merge)
+	return build_land_from_graph(_scan(data, w, h, merge), w, h, settings)
+
+
+## Same hierarchy algorithm as build_land(), but consumes a compact graph that
+## can be extracted on the GPU. `info` is [ids, coords, adjacency, weights].
+static func build_land_from_graph(info: Array, w: int, h: int,
+		settings: Dictionary = {}) -> Array:
+	if info.size() < 4:
+		return [{}, {}, {}]
 	var depts: Array = info[0]
 	var coords: Dictionary = info[1]
 	var adjacency: Dictionary = info[2]
@@ -280,6 +288,31 @@ static func build_sea(data: PackedByteArray, w: int, h: int,
 		print("    %d départements maritimes, aucun ancrage terrestre valide" % all_depts.size())
 		return [{}, {}, {}]
 
+	return _build_sea_from_info_and_eligible(info, eligible, w, h, settings)
+
+
+## GPU-export fast path. Contacts and saltwater membership were extracted in
+## compute shaders, so no full-resolution administrative raster is scanned here.
+static func build_sea_from_graph(info: Array, w: int, h: int,
+		settings: Dictionary, land_hierarchy: Array,
+		contacts: Dictionary, saltwater_units: Dictionary) -> Array:
+	if info.size() < 4:
+		return [{}, {}, {}]
+	var all_depts: Array = info[0]
+	if all_depts.is_empty():
+		return [{}, {}, {}]
+	var eligible := _eligible_sea_units_from_contacts(
+		all_depts, info[2], contacts, saltwater_units, land_hierarchy
+	)
+	if eligible.is_empty():
+		print("    %d départements maritimes, aucun ancrage terrestre valide" % all_depts.size())
+		return [{}, {}, {}]
+	return _build_sea_from_info_and_eligible(info, eligible, w, h, settings)
+
+
+static func _build_sea_from_info_and_eligible(info: Array, eligible: Array,
+		w: int, h: int, settings: Dictionary) -> Array:
+	var all_depts: Array = info[0]
 	var coords: Dictionary = info[1]
 	var adjacency: Dictionary = info[2]
 	var weights: Dictionary = info[3]
@@ -1225,6 +1258,50 @@ static func _aggregate_geometry(group_ids: Array, group_children: Dictionary,
 ## au moins une zone terrestre déjà présente dans la hiérarchie. C'est la
 ## relation côte→terre, et non sa surface ni le nombre total de pays, qui rend
 ## la composante admissible. Les lacs restent exclus par le masque d'eau douce.
+static func _eligible_sea_units_from_contacts(sea_units: Array,
+		sea_adjacency: Dictionary, contacts: Dictionary,
+		saltwater_units: Dictionary, land_hierarchy: Array) -> Array:
+	if land_hierarchy.size() < 2:
+		return []
+	var dept_to_region: Dictionary = land_hierarchy[0]
+	var dept_to_country: Dictionary = land_hierarchy[1]
+	var saltwater_candidates: Array = []
+	for sea_unit in sea_units:
+		if saltwater_units.has(sea_unit):
+			saltwater_candidates.append(sea_unit)
+	var eligible: Array = []
+	var saltwater_components := _connected_components(
+		saltwater_candidates, sea_adjacency
+	)
+	var anchored_components := 0
+	for component_value in saltwater_components:
+		var component: Array = component_value
+		if component.size() < 3:
+			continue
+		var land_regions: Dictionary = {}
+		var land_countries: Dictionary = {}
+		for sea_unit in component:
+			var unit_contacts: Dictionary = contacts.get(sea_unit, {})
+			for land_unit in unit_contacts.keys():
+				var region: int = int(dept_to_region.get(land_unit, -1))
+				var country: int = int(dept_to_country.get(land_unit, -1))
+				if region != -1:
+					land_regions[region] = true
+				if country != -1:
+					land_countries[country] = true
+		if not land_regions.is_empty() and not land_countries.is_empty():
+			anchored_components += 1
+			eligible.append_array(component)
+	print(
+		"      ancrage maritime GPU: salés=%d/%d | composantes=%d | valides=%d"
+		% [
+			saltwater_candidates.size(), sea_units.size(),
+			saltwater_components.size(), anchored_components,
+		]
+	)
+	return eligible
+
+
 static func _eligible_sea_units(sea_units: Array, sea_adjacency: Dictionary,
 		sea_data: PackedByteArray, land_data: PackedByteArray, w: int, h: int,
 		sea_merge: Dictionary, land_merge: Dictionary,

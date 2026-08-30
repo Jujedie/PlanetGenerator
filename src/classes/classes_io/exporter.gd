@@ -28,6 +28,12 @@ var _png_failed_paths: Dictionary = {}
 var _readback_cache: Dictionary = {}
 var _readback_cache_bytes: int = 0
 var _stage_timings: Dictionary = {}
+const _ADMIN_STAT_STRIDE := 32
+const _ADMIN_PAIR_STRIDE := 8
+const _ADMIN_COLOR_ROW_STRIDE := 32
+const _ADMIN_MOMENT_SCALE := 1024
+const _ADMIN_EXTRACT_MAX_RETRIES := 3
+
 const _CACHEABLE_EXPORT_TEXTURES := {
 	"geo": true,
 	"river_biome_id": true,
@@ -201,6 +207,8 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 		["res://shader/compute/export/export_topography.glsl", "export_topography"],
 		["res://shader/compute/export/export_final_map.glsl", "export_final_map"],
 		["res://shader/compute/export/export_id_colorize.glsl", "export_id_colorize"],
+		["res://shader/compute/export/export_admin_extract.glsl", "export_admin_extract"],
+		["res://shader/compute/export/export_admin_hierarchy.glsl", "export_admin_hierarchy"],
 		["res://shader/compute/export/export_resource_map.glsl", "export_resource_map"],
 	]
 	var export_shader_failures: Array[String] = []
@@ -221,7 +229,7 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	last_metrics["gpu_export_shaders_loaded"] = export_shader_loaded
 	last_metrics["gpu_export_shader_failures"] = export_shader_failures.duplicate()
 	if export_shader_failures.is_empty():
-		print("[Exporter] ✅ GPU export shaders ready: 4/4")
+		print("[Exporter] ✅ GPU export shaders ready: %d/%d" % [export_shader_loaded, export_shader_specs.size()])
 	else:
 		push_warning("[Exporter] GPU export shaders unavailable: %s; affected stages will use CPU fallback" % [
 			str(export_shader_failures)
@@ -316,19 +324,16 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	if _abort_export_if_cancelled(export_started_usec):
 		return exported_files
 	
-	# === EXPORT RÉGIONS (Step 4) - Régions administratives ===
+	# === EXPORT ADMINISTRATION (Step 4 + 4.5 + 4.6) ===
+	# Extract the department graph on the GPU, keep political grouping on the CPU,
+	# then render all four land (and four sea) hierarchy levels in one dispatch.
 	stage_started = Time.get_ticks_usec()
-	var region_result = _export_region_map(gpu, output_dir,params.get("region_generation_optimised",true))
-	for key in region_result.keys():
-		exported_files[key] = region_result[key]
-	
-	# === EXPORT RÉGIONS OCÉANIQUES (Step 4.5) ===
-	# Pas de régions océaniques sans eau
-	if planet_type not in [3, 5]:  # TYPE_NO_ATMOS, TYPE_STERILE
-		var ocean_region_result = _export_ocean_region_map(gpu, output_dir,params.get("region_generation_optimised",true))
-		for key in ocean_region_result.keys():
-			exported_files[key] = ocean_region_result[key]
-	_record_stage("department_maps", stage_started)
+	var administrative_result := _export_administrative_maps_hybrid(
+		gpu, output_dir, planet_type not in [3, 5]
+	)
+	for key in administrative_result.keys():
+		exported_files[key] = administrative_result[key]
+	_record_stage("administration", stage_started)
 	if _abort_export_if_cancelled(export_started_usec):
 		return exported_files
 	
@@ -365,13 +370,7 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	if _abort_export_if_cancelled(export_started_usec):
 		return exported_files
 	
-	# === EXPORT HIÉRARCHIE ADMINISTRATIVE (Step 4.6) ===
-	stage_started = Time.get_ticks_usec()
-	var hierarchy_result = _export_hierarchy_maps(gpu, output_dir)
-	for key in hierarchy_result.keys():
-		exported_files[key] = hierarchy_result[key]
-	_record_stage("hierarchy", stage_started)
-	# All repeated export consumers are finished. Drop the session cache before
+	# Administration is already complete. Drop any legacy/readback cache before
 	# streaming 100+ resource PNGs to keep the memory peak bounded.
 	_clear_readback_cache()
 	if _abort_export_if_cancelled(export_started_usec):
@@ -833,6 +832,667 @@ func _render_id_color_map_gpu(gpu: GPUContext, texture_name: String,
 	if output_data.size() != width * height * 4:
 		return null
 	return Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, output_data)
+
+
+func _next_power_of_two(value: int) -> int:
+	var result := 1
+	var target := maxi(value, 1)
+	while result < target:
+		result <<= 1
+	return result
+
+
+func _create_storage_buffer_filled(rd: RenderingDevice, byte_size: int,
+		fill_value: int) -> RID:
+	if byte_size <= 0:
+		return RID()
+	var initial := PackedByteArray()
+	initial.resize(byte_size)
+	initial.fill(clampi(fill_value, 0, 255))
+	return rd.storage_buffer_create(byte_size, initial)
+
+
+func _storage_buffer_uniform(binding: int, buffer: RID) -> RDUniform:
+	var uniform := RDUniform.new()
+	uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	uniform.binding = binding
+	uniform.add_id(buffer)
+	return uniform
+
+
+func _record_admin_buffer_readback(byte_count: int, elapsed_ms: float,
+		compact_graph: bool = true) -> void:
+	last_metrics["readback_time_ms"] = float(last_metrics.get("readback_time_ms", 0.0)) + elapsed_ms
+	last_metrics["readback_bytes"] = int(last_metrics.get("readback_bytes", 0)) + byte_count
+	last_metrics["readback_count"] = int(last_metrics.get("readback_count", 0)) + 1
+	if compact_graph:
+		last_metrics["admin_graph_readback_bytes"] = int(
+			last_metrics.get("admin_graph_readback_bytes", 0)
+		) + byte_count
+	last_metrics["peak_cpu_map_bytes"] = maxi(
+		int(last_metrics.get("peak_cpu_map_bytes", 0)), byte_count
+	)
+	_sample_export_ram()
+
+
+func _read_buffer_after_sync(rd: RenderingDevice, buffer: RID,
+		byte_count: int) -> PackedByteArray:
+	if not buffer.is_valid() or byte_count <= 0:
+		return PackedByteArray()
+	var started_usec := Time.get_ticks_usec()
+	var data: PackedByteArray = rd.buffer_get_data(buffer, 0, byte_count)
+	var elapsed_ms := float(Time.get_ticks_usec() - started_usec) / 1000.0
+	_record_admin_buffer_readback(data.size(), elapsed_ms)
+	return data
+
+
+func _release_admin_extract_resources(gpu: GPUContext, resources: Dictionary) -> void:
+	for set_name in ["texture_set", "buffer_set"]:
+		var uniform_set: RID = resources.get(set_name, RID())
+		if uniform_set.is_valid():
+			gpu.release_rid(uniform_set)
+	for buffer_name in [
+		"stat_hash", "stats", "edge_hash", "edges",
+		"contact_hash", "contacts", "counters",
+	]:
+		var buffer: RID = resources.get(buffer_name, RID())
+		if buffer.is_valid():
+			gpu.release_rid(buffer)
+
+
+func _dispatch_admin_extract_once(gpu: GPUContext, source_texture: String,
+		width: int, height: int, maritime: bool, stat_capacity: int) -> Dictionary:
+	var rd := gpu.rd
+	if rd == null or not gpu.shaders.has("export_admin_extract"):
+		return {"ok": false, "reason": "shader_unavailable"}
+	if not gpu.textures.has(source_texture) or not gpu.textures[source_texture].is_valid():
+		return {"ok": false, "reason": "source_unavailable"}
+	if not gpu.textures.has("region_map") or not gpu.textures["region_map"].is_valid():
+		return {"ok": false, "reason": "land_source_unavailable"}
+	if not gpu.textures.has("water_mask") or not gpu.textures["water_mask"].is_valid():
+		return {"ok": false, "reason": "water_mask_unavailable"}
+
+	var stat_hash_capacity := _next_power_of_two(stat_capacity * 2)
+	var edge_capacity := maxi(stat_capacity * 4, 1024)
+	var edge_hash_capacity := _next_power_of_two(edge_capacity * 2)
+	var contact_capacity := maxi(stat_capacity * 2, 1024) if maritime else 1
+	var contact_hash_capacity := _next_power_of_two(contact_capacity * 2) if maritime else 1
+
+	var resources: Dictionary = {}
+	resources["stat_hash"] = _create_storage_buffer_filled(
+		rd, stat_hash_capacity * _ADMIN_PAIR_STRIDE, 0xFF
+	)
+	resources["stats"] = _create_storage_buffer_filled(
+		rd, stat_capacity * _ADMIN_STAT_STRIDE, 0
+	)
+	resources["edge_hash"] = _create_storage_buffer_filled(
+		rd, edge_hash_capacity * _ADMIN_PAIR_STRIDE, 0xFF
+	)
+	resources["edges"] = _create_storage_buffer_filled(
+		rd, edge_capacity * _ADMIN_PAIR_STRIDE, 0
+	)
+	resources["contact_hash"] = _create_storage_buffer_filled(
+		rd, contact_hash_capacity * _ADMIN_PAIR_STRIDE, 0xFF
+	)
+	resources["contacts"] = _create_storage_buffer_filled(
+		rd, contact_capacity * _ADMIN_PAIR_STRIDE, 0
+	)
+	resources["counters"] = _create_storage_buffer_filled(rd, 16, 0)
+	for buffer_name in [
+		"stat_hash", "stats", "edge_hash", "edges",
+		"contact_hash", "contacts", "counters",
+	]:
+		var buffer: RID = resources[buffer_name]
+		if not buffer.is_valid():
+			_release_admin_extract_resources(gpu, resources)
+			return {"ok": false, "reason": "buffer_allocation_failed"}
+
+	var shader: RID = gpu.shaders["export_admin_extract"]
+	var texture_set := rd.uniform_set_create([
+		gpu.create_texture_uniform(0, gpu.textures[source_texture]),
+		gpu.create_texture_uniform(1, gpu.textures["region_map"]),
+		gpu.create_texture_uniform(2, gpu.textures["water_mask"]),
+	], shader, 0)
+	var buffer_set := rd.uniform_set_create([
+		_storage_buffer_uniform(0, resources["stat_hash"]),
+		_storage_buffer_uniform(1, resources["stats"]),
+		_storage_buffer_uniform(2, resources["edge_hash"]),
+		_storage_buffer_uniform(3, resources["edges"]),
+		_storage_buffer_uniform(4, resources["contact_hash"]),
+		_storage_buffer_uniform(5, resources["contacts"]),
+		_storage_buffer_uniform(6, resources["counters"]),
+	], shader, 1)
+	resources["texture_set"] = texture_set
+	resources["buffer_set"] = buffer_set
+	if not texture_set.is_valid() or not buffer_set.is_valid():
+		_release_admin_extract_resources(gpu, resources)
+		return {"ok": false, "reason": "uniform_set_failed"}
+
+	var push := PackedByteArray()
+	push.resize(48)
+	push.encode_u32(0, width)
+	push.encode_u32(4, height)
+	push.encode_u32(8, stat_hash_capacity)
+	push.encode_u32(12, stat_capacity)
+	push.encode_u32(16, edge_hash_capacity)
+	push.encode_u32(20, edge_capacity)
+	push.encode_u32(24, contact_hash_capacity)
+	push.encode_u32(28, contact_capacity)
+	push.encode_u32(32, 1 if maritime else 0)
+	push.encode_u32(36, _ADMIN_MOMENT_SCALE)
+	push.encode_u32(40, 0)
+	push.encode_u32(44, 0)
+
+	var dispatch_started := Time.get_ticks_usec()
+	var compute_list := rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(
+		compute_list, gpu.pipelines["export_admin_extract"]
+	)
+	rd.compute_list_bind_uniform_set(compute_list, texture_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, buffer_set, 1)
+	rd.compute_list_set_push_constant(compute_list, push, push.size())
+	rd.compute_list_dispatch(
+		compute_list, ceili(width / 16.0), ceili(height / 16.0), 1
+	)
+	rd.compute_list_end()
+	gpu.submit_gpu_work()
+	gpu.sync_for_cpu("export_admin_extract:" + source_texture)
+	var dispatch_ms := float(Time.get_ticks_usec() - dispatch_started) / 1000.0
+	last_metrics["admin_gpu_extract_ms"] = float(
+		last_metrics.get("admin_gpu_extract_ms", 0.0)
+	) + dispatch_ms
+
+	var counters_data := _read_buffer_after_sync(rd, resources["counters"], 16)
+	if counters_data.size() != 16:
+		_release_admin_extract_resources(gpu, resources)
+		return {"ok": false, "reason": "counter_readback_failed"}
+	var stat_count := int(counters_data.decode_u32(0))
+	var edge_count := int(counters_data.decode_u32(4))
+	var contact_count := int(counters_data.decode_u32(8))
+	var overflow_flags := int(counters_data.decode_u32(12))
+	if overflow_flags != 0:
+		_release_admin_extract_resources(gpu, resources)
+		return {
+			"ok": false,
+			"reason": "capacity_overflow",
+			"overflow": overflow_flags,
+			"stat_count": stat_count,
+			"edge_count": edge_count,
+			"contact_count": contact_count,
+		}
+
+	stat_count = mini(stat_count, stat_capacity)
+	edge_count = mini(edge_count, edge_capacity)
+	contact_count = mini(contact_count, contact_capacity)
+	var stats_data := _read_buffer_after_sync(
+		rd, resources["stats"], stat_count * _ADMIN_STAT_STRIDE
+	)
+	var edges_data := _read_buffer_after_sync(
+		rd, resources["edges"], edge_count * _ADMIN_PAIR_STRIDE
+	)
+	var contacts_data := PackedByteArray()
+	if maritime and contact_count > 0:
+		contacts_data = _read_buffer_after_sync(
+			rd, resources["contacts"], contact_count * _ADMIN_PAIR_STRIDE
+		)
+	_release_admin_extract_resources(gpu, resources)
+
+	if stats_data.size() != stat_count * _ADMIN_STAT_STRIDE:
+		return {"ok": false, "reason": "stats_readback_failed"}
+	if edges_data.size() != edge_count * _ADMIN_PAIR_STRIDE:
+		return {"ok": false, "reason": "edges_readback_failed"}
+	if maritime and contacts_data.size() != contact_count * _ADMIN_PAIR_STRIDE:
+		return {"ok": false, "reason": "contacts_readback_failed"}
+	return {
+		"ok": true,
+		"stats": stats_data,
+		"edges": edges_data,
+		"contacts": contacts_data,
+		"stat_count": stat_count,
+		"edge_count": edge_count,
+		"contact_count": contact_count,
+	}
+
+
+func _decode_admin_graph(extracted: Dictionary, width: int, height: int,
+		maritime: bool) -> Dictionary:
+	var stat_count := int(extracted.get("stat_count", 0))
+	var edge_count := int(extracted.get("edge_count", 0))
+	var contact_count := int(extracted.get("contact_count", 0))
+	var stats_data: PackedByteArray = extracted.get("stats", PackedByteArray())
+	var edges_data: PackedByteArray = extracted.get("edges", PackedByteArray())
+	var contacts_data: PackedByteArray = extracted.get("contacts", PackedByteArray())
+	var coords: Dictionary = {}
+	var weights: Dictionary = {}
+	var adjacency: Dictionary = {}
+	var saltwater_units: Dictionary = {}
+	var first_seen: Dictionary = {}
+	var ordering: Array = []
+
+	for stat_index in range(stat_count):
+		var offset := stat_index * _ADMIN_STAT_STRIDE
+		var unit_id := int(stats_data.decode_u32(offset))
+		var count := int(stats_data.decode_u32(offset + 4))
+		if unit_id == 0xFFFFFFFF or count <= 0:
+			continue
+		# The GPU uses 32-bit atomics. Guard pathological single-department maps
+		# rather than accepting wrapped moments; the caller will use the legacy CPU
+		# path in that extremely rare case.
+		if int(count) * maxi(height - 1, 0) > 0xFFFFFFFF:
+			return {"ok": false, "reason": "moment_overflow_risk"}
+		if int(count) * _ADMIN_MOMENT_SCALE > 0x7FFFFFFF:
+			return {"ok": false, "reason": "moment_overflow_risk"}
+		var sum_cos := int(stats_data.decode_s32(offset + 8))
+		var sum_sin := int(stats_data.decode_s32(offset + 12))
+		var sum_y := int(stats_data.decode_u32(offset + 16))
+		var first_rank := int(stats_data.decode_u32(offset + 20))
+		var first_pixel := 0xFFFFFFFF - first_rank
+		var flags := int(stats_data.decode_u32(offset + 24))
+		var angle := atan2(float(sum_sin), float(sum_cos))
+		if angle < 0.0:
+			angle += TAU
+		coords[unit_id] = Vector2(
+			angle * float(width) / TAU - 0.5,
+			float(sum_y) / float(count)
+		)
+		weights[unit_id] = count
+		adjacency[unit_id] = {}
+		first_seen[unit_id] = first_pixel
+		ordering.append([first_pixel, unit_id])
+		if maritime and (flags & 1) != 0:
+			saltwater_units[unit_id] = true
+
+	ordering.sort_custom(func(a, b):
+		if int(a[0]) == int(b[0]):
+			return int(a[1]) < int(b[1])
+		return int(a[0]) < int(b[0])
+	)
+	var ids: Array = []
+	for item in ordering:
+		ids.append(int(item[1]))
+
+	var edge_pairs: Array = []
+	for edge_index in range(edge_count):
+		var edge_offset := edge_index * _ADMIN_PAIR_STRIDE
+		var a := int(edges_data.decode_u32(edge_offset))
+		var b := int(edges_data.decode_u32(edge_offset + 4))
+		if a == 0xFFFFFFFF or b == 0xFFFFFFFF or a == b:
+			continue
+		if not adjacency.has(a) or not adjacency.has(b):
+			continue
+		edge_pairs.append([a, b])
+	edge_pairs.sort_custom(func(a, b):
+		if int(a[0]) == int(b[0]):
+			return int(a[1]) < int(b[1])
+		return int(a[0]) < int(b[0])
+	)
+	for pair in edge_pairs:
+		var a := int(pair[0])
+		var b := int(pair[1])
+		(adjacency[a] as Dictionary)[b] = true
+		(adjacency[b] as Dictionary)[a] = true
+
+	var contacts: Dictionary = {}
+	if maritime:
+		for contact_index in range(contact_count):
+			var contact_offset := contact_index * _ADMIN_PAIR_STRIDE
+			var sea_id := int(contacts_data.decode_u32(contact_offset))
+			var land_id := int(contacts_data.decode_u32(contact_offset + 4))
+			if sea_id == 0xFFFFFFFF or land_id == 0xFFFFFFFF:
+				continue
+			if not contacts.has(sea_id):
+				contacts[sea_id] = {}
+			(contacts[sea_id] as Dictionary)[land_id] = true
+
+	return {
+		"ok": true,
+		"info": [ids, coords, adjacency, weights],
+		"contacts": contacts,
+		"saltwater_units": saltwater_units,
+		"first_seen": first_seen,
+		"unit_count": ids.size(),
+		"edge_count": edge_pairs.size(),
+		"contact_count": contact_count,
+	}
+
+
+func _extract_admin_graph_gpu(gpu: GPUContext, source_texture: String,
+		width: int, height: int, maritime: bool) -> Dictionary:
+	if (
+		not gpu.pipelines.has("export_admin_extract")
+		or not gpu.shaders.has("export_admin_extract")
+	):
+		return {"ok": false, "reason": "shader_unavailable"}
+	var pixel_count := width * height
+	# Administrative normalization targets at least tens of pixels per unit. A
+	# 1/64 initial estimate keeps temporary SSBOs small; overflow causes a bounded
+	# retry with twice the capacity without ever accepting truncated graph data.
+	var initial_units := maxi(1024, ceili(float(pixel_count) / 64.0))
+	var stat_capacity := _next_power_of_two(initial_units)
+	for attempt in range(_ADMIN_EXTRACT_MAX_RETRIES):
+		var extracted := _dispatch_admin_extract_once(
+			gpu, source_texture, width, height, maritime, stat_capacity
+		)
+		if bool(extracted.get("ok", false)):
+			var decoded := _decode_admin_graph(extracted, width, height, maritime)
+			if bool(decoded.get("ok", false)):
+				decoded["attempts"] = attempt + 1
+				last_metrics["admin_graph_units_" + source_texture] = int(
+					decoded.get("unit_count", 0)
+				)
+				last_metrics["admin_graph_edges_" + source_texture] = int(
+					decoded.get("edge_count", 0)
+				)
+				return decoded
+			return decoded
+		if str(extracted.get("reason", "")) != "capacity_overflow":
+			return extracted
+		print(
+			"[Exporter] Administrative GPU graph capacity retry %d/%d (%s, units=%d)"
+			% [
+				attempt + 1, _ADMIN_EXTRACT_MAX_RETRIES,
+				source_texture, stat_capacity,
+			]
+		)
+		stat_capacity *= 2
+	return {"ok": false, "reason": "capacity_overflow"}
+
+
+func _build_admin_level_colors(hierarchy: Array) -> Array:
+	var colors: Array = []
+	for level_index in range(3):
+		var mapping: Dictionary = hierarchy[level_index] if level_index < hierarchy.size() else {}
+		if mapping.is_empty():
+			colors.append({})
+			continue
+		colors.append(_assign_administrative_colors(HierarchyBuilder._unique_values(mapping)))
+	return colors
+
+
+func _admin_hierarchy_output_mask(hierarchy: Array) -> Array:
+	var mask: Array = [true]
+	for level_index in range(3):
+		var mapping: Dictionary = hierarchy[level_index] if level_index < hierarchy.size() else {}
+		mask.append(not mapping.is_empty())
+	return mask
+
+
+func _build_admin_color_table(unit_ids: Array, department_colors: Dictionary,
+		hierarchy: Array, level_colors: Array) -> PackedByteArray:
+	var ordered_ids := unit_ids.duplicate()
+	ordered_ids.sort()
+	var table := PackedByteArray()
+	table.resize(ordered_ids.size() * _ADMIN_COLOR_ROW_STRIDE)
+	for index in range(ordered_ids.size()):
+		var unit_id := int(ordered_ids[index])
+		var offset := index * _ADMIN_COLOR_ROW_STRIDE
+		table.encode_u32(offset, unit_id)
+		var department_color: Color = department_colors.get(
+			unit_id, Color.TRANSPARENT
+		)
+		table.encode_u32(offset + 4, _pack_color_rgba8(department_color))
+		for level_index in range(3):
+			var mapping: Dictionary = hierarchy[level_index] if level_index < hierarchy.size() else {}
+			var colors: Dictionary = level_colors[level_index] if level_index < level_colors.size() else {}
+			var group_id := int(mapping.get(unit_id, -1))
+			var color: Color = Color.TRANSPARENT
+			if group_id != -1 and colors.has(group_id):
+				color = colors[group_id]
+			table.encode_u32(offset + 8 + level_index * 4, _pack_color_rgba8(color))
+		# Remaining 12 bytes are padding for predictable std430 struct stride.
+		table.encode_u32(offset + 20, 0)
+		table.encode_u32(offset + 24, 0)
+		table.encode_u32(offset + 28, 0)
+	return table
+
+
+func _render_admin_family_gpu(gpu: GPUContext, source_texture: String,
+		color_table: PackedByteArray, row_count: int, width: int, height: int,
+		output_dir: String, filenames: Array, result_keys: Array,
+		enabled_outputs: Array) -> Dictionary:
+	var result: Dictionary = {}
+	if row_count <= 0 or color_table.is_empty():
+		return result
+	if (
+		not gpu.pipelines.has("export_admin_hierarchy")
+		or not gpu.shaders.has("export_admin_hierarchy")
+		or not gpu.textures.has(source_texture)
+	):
+		return result
+	var rd := gpu.rd
+	var shader: RID = gpu.shaders["export_admin_hierarchy"]
+	var outputs: Array[RID] = []
+	for _index in range(4):
+		var output := _create_export_rgba8_texture(gpu, width, height)
+		if not output.is_valid():
+			for existing in outputs:
+				gpu.release_rid(existing)
+			return result
+		outputs.append(output)
+	var table_buffer := rd.storage_buffer_create(color_table.size(), color_table)
+	if not table_buffer.is_valid():
+		for output in outputs:
+			gpu.release_rid(output)
+		return result
+	var texture_uniforms: Array[RDUniform] = [
+		gpu.create_texture_uniform(0, gpu.textures[source_texture]),
+	]
+	for output_index in range(outputs.size()):
+		texture_uniforms.append(gpu.create_texture_uniform(
+			output_index + 1, outputs[output_index]
+		))
+	var texture_set := rd.uniform_set_create(texture_uniforms, shader, 0)
+	var table_set := rd.uniform_set_create([
+		_storage_buffer_uniform(0, table_buffer),
+	], shader, 1)
+	if not texture_set.is_valid() or not table_set.is_valid():
+		gpu.release_rid(texture_set)
+		gpu.release_rid(table_set)
+		gpu.release_rid(table_buffer)
+		for output in outputs:
+			gpu.release_rid(output)
+		return result
+
+	var push := PackedByteArray()
+	push.resize(16)
+	push.encode_u32(0, width)
+	push.encode_u32(4, height)
+	push.encode_u32(8, row_count)
+	push.encode_u32(12, 0)
+	var dispatch_started := Time.get_ticks_usec()
+	var compute_list := rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(
+		compute_list, gpu.pipelines["export_admin_hierarchy"]
+	)
+	rd.compute_list_bind_uniform_set(compute_list, texture_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, table_set, 1)
+	rd.compute_list_set_push_constant(compute_list, push, push.size())
+	rd.compute_list_dispatch(
+		compute_list, ceili(width / 16.0), ceili(height / 16.0), 1
+	)
+	rd.compute_list_end()
+	gpu.submit_gpu_work()
+	gpu.sync_for_cpu("export_admin_render:" + source_texture)
+	last_metrics["admin_gpu_render_ms"] = float(
+		last_metrics.get("admin_gpu_render_ms", 0.0)
+	) + float(Time.get_ticks_usec() - dispatch_started) / 1000.0
+
+	var expected_bytes := width * height * 4
+	var family_ok := true
+	for output_index in range(outputs.size()):
+		if output_index < enabled_outputs.size() and not bool(enabled_outputs[output_index]):
+			continue
+		var read_started := Time.get_ticks_usec()
+		var data: PackedByteArray = rd.texture_get_data(outputs[output_index], 0)
+		var read_ms := float(Time.get_ticks_usec() - read_started) / 1000.0
+		_record_admin_buffer_readback(data.size(), read_ms, false)
+		if data.size() != expected_bytes:
+			family_ok = false
+			continue
+		var image := Image.create_from_data(
+			width, height, false, Image.FORMAT_RGBA8, data
+		)
+		var filepath: String = output_dir.path_join(str(filenames[output_index]))
+		var save_error: Error = _save_png(image, filepath)
+		if save_error == OK:
+			result[str(result_keys[output_index])] = filepath
+		else:
+			family_ok = false
+
+	gpu.release_rid(texture_set)
+	gpu.release_rid(table_set)
+	gpu.release_rid(table_buffer)
+	for output in outputs:
+		gpu.release_rid(output)
+	if not family_ok:
+		push_warning("[Exporter] Administrative GPU family render was incomplete: " + source_texture)
+	return result
+
+
+func _export_administrative_maps_legacy(gpu: GPUContext, output_dir: String,
+		include_sea: bool) -> Dictionary:
+	var result: Dictionary = {}
+	var land_result := _export_region_map(
+		gpu, output_dir, bool(params.get("region_generation_optimised", true))
+	)
+	for key in land_result.keys():
+		result[key] = land_result[key]
+	if include_sea:
+		var sea_result := _export_ocean_region_map(
+			gpu, output_dir, bool(params.get("region_generation_optimised", true))
+		)
+		for key in sea_result.keys():
+			result[key] = sea_result[key]
+	var hierarchy_result := _export_hierarchy_maps(gpu, output_dir)
+	for key in hierarchy_result.keys():
+		result[key] = hierarchy_result[key]
+	return result
+
+
+func _export_administrative_maps_hybrid(gpu: GPUContext, output_dir: String,
+		include_sea: bool) -> Dictionary:
+	var cursor_before := _admin_color_cursor
+	if (
+		not gpu.pipelines.has("export_admin_extract")
+		or not gpu.pipelines.has("export_admin_hierarchy")
+	):
+		push_warning("[Exporter] Administrative compute shaders unavailable; using legacy CPU scan")
+		return _export_administrative_maps_legacy(gpu, output_dir, include_sea)
+	if not gpu.textures.has("region_map") or not gpu.textures["region_map"].is_valid():
+		return {}
+	var format := gpu.rd.texture_get_format(gpu.textures["region_map"])
+	var width := int(format.width)
+	var height := int(format.height)
+
+	print("[Exporter] 🏛️ Administrative export: GPU graph → CPU hierarchy → GPU multi-map")
+	var land_graph := _extract_admin_graph_gpu(
+		gpu, "region_map", width, height, false
+	)
+	if not bool(land_graph.get("ok", false)):
+		push_warning("[Exporter] Land graph GPU extraction failed (%s); using legacy path" % [
+			str(land_graph.get("reason", "unknown"))
+		])
+		_admin_color_cursor = cursor_before
+		return _export_administrative_maps_legacy(gpu, output_dir, include_sea)
+
+	var sea_graph: Dictionary = {}
+	if include_sea and gpu.textures.has("ocean_region_map") and gpu.textures["ocean_region_map"].is_valid():
+		sea_graph = _extract_admin_graph_gpu(
+			gpu, "ocean_region_map", width, height, true
+		)
+		if not bool(sea_graph.get("ok", false)):
+			push_warning("[Exporter] Sea graph GPU extraction failed (%s); using legacy path" % [
+				str(sea_graph.get("reason", "unknown"))
+			])
+			_admin_color_cursor = cursor_before
+			return _export_administrative_maps_legacy(gpu, output_dir, include_sea)
+
+	var land_info: Array = land_graph["info"]
+	var land_ids: Array = land_info[0]
+	if land_ids.is_empty():
+		return {}
+	print("    GPU graph: %d land departments, %d adjacency edges" % [
+		land_ids.size(), int(land_graph.get("edge_count", 0))
+	])
+	var hierarchy_started := Time.get_ticks_usec()
+	var land_hierarchy := HierarchyBuilder.build_land_from_graph(
+		land_info, width, height, params
+	)
+	var sea_hierarchy: Array = [{}, {}, {}]
+	var sea_ids: Array = []
+	if not sea_graph.is_empty():
+		var sea_info: Array = sea_graph["info"]
+		sea_ids = sea_info[0]
+		var extracted_saltwater: Dictionary = sea_graph.get("saltwater_units", {})
+		if not sea_ids.is_empty() and extracted_saltwater.is_empty():
+			# Preserve the legacy re-export compatibility path that can reconstruct
+			# saltwater labels from geo when an old in-memory generation converted
+			# every water-mask value to freshwater.
+			push_warning("[Exporter] No saltwater labels in GPU graph; using legacy recovery path")
+			_admin_color_cursor = cursor_before
+			return _export_administrative_maps_legacy(gpu, output_dir, include_sea)
+		print("    GPU graph: %d sea departments, %d adjacency edges, %d coast contacts" % [
+			sea_ids.size(), int(sea_graph.get("edge_count", 0)),
+			int(sea_graph.get("contact_count", 0))
+		])
+		var sea_contacts: Dictionary = sea_graph.get("contacts", {})
+		sea_hierarchy = HierarchyBuilder.build_sea_from_graph(
+			sea_info, width, height, params, land_hierarchy,
+			sea_contacts, extracted_saltwater
+		)
+	last_metrics["admin_cpu_hierarchy_ms"] = float(
+		Time.get_ticks_usec() - hierarchy_started
+	) / 1000.0
+
+	# Preserve the legacy shared-color namespace order: land departments, sea
+	# departments, then the three land and three sea hierarchy levels.
+	var land_department_colors := _assign_administrative_colors(land_ids)
+	var sea_department_colors: Dictionary = {}
+	if not sea_ids.is_empty():
+		sea_department_colors = _assign_administrative_colors(sea_ids)
+	var land_level_colors := _build_admin_level_colors(land_hierarchy)
+	var sea_level_colors: Array = [{}, {}, {}]
+	if not sea_ids.is_empty():
+		sea_level_colors = _build_admin_level_colors(sea_hierarchy)
+
+	var result: Dictionary = {}
+	var land_table := _build_admin_color_table(
+		land_ids, land_department_colors, land_hierarchy, land_level_colors
+	)
+	var land_rendered := _render_admin_family_gpu(
+		gpu, "region_map", land_table, land_ids.size(), width, height,
+		output_dir,
+		["departement_map.png", "region_map.png", "pays_map.png", "continent_map.png"],
+		["region_colored", "Régions terrestres", "Pays", "Continents"],
+		_admin_hierarchy_output_mask(land_hierarchy)
+	)
+	for key in land_rendered.keys():
+		result[key] = land_rendered[key]
+
+	if not sea_ids.is_empty():
+		var sea_table := _build_admin_color_table(
+			sea_ids, sea_department_colors, sea_hierarchy, sea_level_colors
+		)
+		var sea_rendered := _render_admin_family_gpu(
+			gpu, "ocean_region_map", sea_table, sea_ids.size(), width, height,
+			output_dir,
+			[
+				"departement_mer_map.png", "region_mer_map.png",
+				"bassin_map.png", "ocean_map.png",
+			],
+			["ocean_region_colored", "Régions maritimes", "Bassins", "Océans"],
+			_admin_hierarchy_output_mask(sea_hierarchy)
+		)
+		for key in sea_rendered.keys():
+			result[key] = sea_rendered[key]
+
+	last_metrics["admin_hybrid_used"] = true
+	last_metrics["admin_land_departments"] = land_ids.size()
+	last_metrics["admin_sea_departments"] = sea_ids.size()
+	print("[Exporter] ✅ Administrative hybrid export queued: %d maps" % result.size())
+	return result
+
+
 
 
 func _create_resource_export_renderer(gpu: GPUContext, width: int, height: int) -> Dictionary:
