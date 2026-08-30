@@ -64,16 +64,20 @@ func solve_surface_and_water(
 	var geo_bits := geo_data.to_int32_array()
 	var original := PackedFloat32Array()
 	var routing_parent := PackedInt32Array()
-	var routing_child_count := PackedInt32Array()
 	var flow_direction := PackedByteArray()
 	var priority_keys := PackedInt64Array()
 	original.resize(pixel_count)
 	routing_parent.resize(pixel_count)
-	routing_child_count.resize(pixel_count)
 	flow_direction.resize(pixel_count)
 	priority_keys.resize(pixel_count)
+	# Priority-Flood discovers every routed land cell after its parent. Recording
+	# that discovery sequence gives us an exact topological order for free: the
+	# reverse sequence is children-before-parent. It replaces the later Kahn
+	# indegree copy + full-size queue during flow accumulation.
+	var routing_order := PackedInt32Array()
+	routing_order.resize(pixel_count)
+	var routing_order_count := 0
 	routing_parent.fill(-1)
-	routing_child_count.fill(0)
 	flow_direction.fill(DIR_SINK)
 	var priority_key_count := 0
 	for index in range(pixel_count):
@@ -134,6 +138,12 @@ func solve_surface_and_water(
 			if initial_water_mask[index] > WATER_NONE or polar_outlet:
 				visited[index] = 1
 				visited_count += 1
+				# Dry polar cells are legitimate open drainage sinks. Put them at
+				# the beginning of discovery order so they are processed last when
+				# the order is traversed backwards. Ocean outlets need no entry.
+				if polar_outlet and initial_water_mask[index] == WATER_NONE:
+					routing_order[routing_order_count] = index
+					routing_order_count += 1
 
 	# Only outlet cells touching an unvisited cell need to enter the priority
 	# queue. On an Earth-like planet this changes the initial heap from tens or
@@ -338,7 +348,8 @@ func solve_surface_and_water(
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
-			routing_child_count[current] += 1
+			routing_order[routing_order_count] = neighbor
+			routing_order_count += 1
 			flow_direction[neighbor] = 7
 			if current_x == 0:
 				seam_children.append(neighbor)
@@ -363,7 +374,8 @@ func solve_surface_and_water(
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
-			routing_child_count[current] += 1
+			routing_order[routing_order_count] = neighbor
+			routing_order_count += 1
 			flow_direction[neighbor] = 6
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
@@ -386,7 +398,8 @@ func solve_surface_and_water(
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
-			routing_child_count[current] += 1
+			routing_order[routing_order_count] = neighbor
+			routing_order_count += 1
 			flow_direction[neighbor] = 5
 			if current_x + 1 == width:
 				seam_children.append(neighbor)
@@ -411,7 +424,8 @@ func solve_surface_and_water(
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
-			routing_child_count[current] += 1
+			routing_order[routing_order_count] = neighbor
+			routing_order_count += 1
 			flow_direction[neighbor] = 4
 			if current_x == 0:
 				seam_children.append(neighbor)
@@ -436,7 +450,8 @@ func solve_surface_and_water(
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
-			routing_child_count[current] += 1
+			routing_order[routing_order_count] = neighbor
+			routing_order_count += 1
 			flow_direction[neighbor] = 3
 			if current_x + 1 == width:
 				seam_children.append(neighbor)
@@ -461,7 +476,8 @@ func solve_surface_and_water(
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
-			routing_child_count[current] += 1
+			routing_order[routing_order_count] = neighbor
+			routing_order_count += 1
 			flow_direction[neighbor] = 2
 			if current_x == 0:
 				seam_children.append(neighbor)
@@ -486,7 +502,8 @@ func solve_surface_and_water(
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
-			routing_child_count[current] += 1
+			routing_order[routing_order_count] = neighbor
+			routing_order_count += 1
 			flow_direction[neighbor] = 1
 			neighbor_level = original[neighbor]
 			if neighbor_level <= current_level:
@@ -509,7 +526,8 @@ func solve_surface_and_water(
 			visited[neighbor] = 1
 			visited_count += 1
 			routing_parent[neighbor] = current
-			routing_child_count[current] += 1
+			routing_order[routing_order_count] = neighbor
+			routing_order_count += 1
 			flow_direction[neighbor] = 0
 			if current_x + 1 == width:
 				seam_children.append(neighbor)
@@ -531,6 +549,7 @@ func solve_surface_and_water(
 
 	if visited_count != pixel_count:
 		push_error("[Hydrology] Priority flood did not visit the complete map")
+	routing_order.resize(routing_order_count)
 	var priority_flood_ms: float = float(Time.get_ticks_usec() - flood_start_usec) / 1000.0
 	priority_keys = PackedInt64Array()
 	queued = PackedByteArray()
@@ -564,13 +583,21 @@ func solve_surface_and_water(
 	var lake_components_start_usec: int = Time.get_ticks_usec()
 	var lake_component_stats := _retain_lake_components(
 		candidate_mask, water_mask, width, height, max(min_lake_cells, 1),
-		routing_parent, routing_child_count, flow_direction,
+		flow_direction,
 	)
 	var lake_components_ms: float = float(Time.get_ticks_usec() - lake_components_start_usec) / 1000.0
+	candidate_mask = PackedByteArray()
 
+	# Every initial-water cell came directly from the sea-level shader, so an
+	# eventual component touches the ocean iff it contains at least one cell from
+	# initial_water_mask. Using that byte mask is exactly equivalent to probing
+	# original_height < sea_level, but removes random float reads and lets the two
+	# ~108 MiB surface arrays die before connected-water classification at 8K.
+	filled = PackedFloat32Array()
+	original = PackedFloat32Array()
 	var water_components_start_usec: int = Time.get_ticks_usec()
 	var water_stats := _classify_water_components(
-		water_mask, original, width, height, sea_level,
+		water_mask, initial_water_mask, width, height,
 		max(saltwater_min_cells, 1),
 	)
 	var water_components_ms: float = float(Time.get_ticks_usec() - water_components_start_usec) / 1000.0
@@ -586,6 +613,7 @@ func solve_surface_and_water(
 
 	var stats := {
 		"priority_flood_visited_cells": visited_count,
+		"routing_order_cells": routing_order_count,
 		"priority_flood_outlet_frontier_cells": outlet_frontier_cells,
 		"priority_flood_heap_pops": heap_pop_count,
 		"priority_flood_pit_pops": pit_pop_count,
@@ -608,13 +636,17 @@ func solve_surface_and_water(
 	# unrolled discovery direction is not a unique geometric D8 direction. These
 	# tiny diagnostic resolutions use the compatibility reconstruction path.
 	if width < 3:
-		routing_child_count = PackedInt32Array()
 		flow_direction = PackedByteArray()
+		routing_order = PackedInt32Array()
 
 	return {
 		"water_mask": water_mask,
 		"routing_parent": routing_parent,
-		"routing_child_count": routing_child_count,
+		# Reverse discovery order is authoritative for the normal path. Keep an
+		# empty compatibility field so older direct callers fall back to rebuilding
+		# indegrees rather than paying one child-count write per generated pixel.
+		"routing_child_count": PackedByteArray(),
+		"routing_order": routing_order,
 		"flow_direction": flow_direction,
 		"routing_seam_links": routing_seam_links,
 		"stats": stats,
@@ -629,9 +661,10 @@ func accumulate_flow(
 	local_flux_data: PackedByteArray,
 	width: int,
 	height: int,
-	precomputed_child_count: PackedInt32Array = PackedInt32Array(),
+	precomputed_child_count: PackedByteArray = PackedByteArray(),
 	precomputed_flow_direction: PackedByteArray = PackedByteArray(),
 	precomputed_seam_links: int = -1,
+	precomputed_routing_order: PackedInt32Array = PackedInt32Array(),
 ) -> Dictionary:
 	var pixel_count := width * height
 	if (
@@ -642,6 +675,17 @@ func accumulate_flow(
 		push_error("[Hydrology] Invalid input sizes for flow accumulation")
 		return {}
 
+	var has_priority_order := (
+		precomputed_routing_order.size() > 0
+		and precomputed_flow_direction.size() == pixel_count
+	)
+	if has_priority_order:
+		return _accumulate_flow_reverse_priority_order(
+			routing_parent, water_mask, local_flux_data, width, height,
+			precomputed_flow_direction, precomputed_seam_links,
+			precomputed_routing_order
+		)
+
 	# R32F -> PackedFloat32Array is a native bulk conversion; the final upload
 	# uses the inverse native conversion instead of N encode_float() calls.
 	var flux := local_flux_data.to_float32_array()
@@ -649,7 +693,7 @@ func accumulate_flow(
 		precomputed_child_count.size() == pixel_count
 		and precomputed_flow_direction.size() == pixel_count
 	)
-	var indegree := PackedInt32Array()
+	var indegree := PackedByteArray()
 	var flow_direction := PackedByteArray()
 	if use_precomputed:
 		# Priority-Flood discovers every child from an already-visited parent. Its
@@ -797,6 +841,91 @@ func accumulate_flow(
 		},
 	}
 
+func _accumulate_flow_reverse_priority_order(
+	routing_parent: PackedInt32Array,
+	water_mask: PackedByteArray,
+	local_flux_data: PackedByteArray,
+	width: int,
+	height: int,
+	flow_direction: PackedByteArray,
+	precomputed_seam_links: int,
+	routing_order: PackedInt32Array,
+) -> Dictionary:
+	# Priority-Flood visits a parent before it discovers any child. Therefore a
+	# single reverse traversal is already a topological accumulation order. This
+	# removes a pixel_count-sized indegree duplicate and Kahn queue, along with
+	# millions of queue writes/reads on 4K/8K worlds, without changing routing.
+	var pixel_count := width * height
+	var flux := local_flux_data.to_float32_array()
+	var land_cells := 0
+	var local_precipitation := 0.0
+	var terminal_flux := 0.0
+	var max_land_flux := 0.0
+	var routing_invalid_parents := 0
+	var nonpolar_land_sinks := 0
+	var seam_flow_links := maxi(precomputed_seam_links, 0)
+
+	# This validation/statistics pass was already required by Kahn. Keep it, but
+	# do not materialize another full-map indegree array or queue.
+	for index in range(pixel_count):
+		var local_flux: float = maxf(flux[index], 0.0)
+		if local_flux != flux[index]:
+			flux[index] = local_flux
+		if water_mask[index] != WATER_NONE:
+			terminal_flux += local_flux
+			continue
+		land_cells += 1
+		local_precipitation += local_flux
+		var parent := int(routing_parent[index])
+		if parent < 0:
+			var sink_y := int(index / width)
+			if sink_y >= 2 and sink_y < height - 2:
+				routing_invalid_parents += 1
+				nonpolar_land_sinks += 1
+		elif parent >= pixel_count or flow_direction[index] == DIR_SINK:
+			routing_invalid_parents += 1
+			nonpolar_land_sinks += 1
+
+	var processed_land_cells := 0
+	for order_offset in range(routing_order.size() - 1, -1, -1):
+		var current := int(routing_order[order_offset])
+		if current < 0 or current >= pixel_count or water_mask[current] != WATER_NONE:
+			continue
+		processed_land_cells += 1
+		max_land_flux = maxf(max_land_flux, flux[current])
+		var target := int(routing_parent[current])
+		if target < 0 or target >= pixel_count:
+			terminal_flux += flux[current]
+			continue
+		flux[target] += flux[current]
+		if water_mask[target] != WATER_NONE:
+			terminal_flux += flux[current]
+
+	var unresolved_land_cells := land_cells - processed_land_cells
+	var mass_error: float = absf(terminal_flux - local_precipitation)
+	var relative_mass_error: float = mass_error / maxf(local_precipitation, 0.000001)
+	return {
+		"flux_data": flux.to_byte_array(),
+		"flow_direction": flow_direction,
+		"max_land_flux": max_land_flux,
+		"stats": {
+			"accumulation_mode": "reverse_priority_flood_order",
+			"routing_order_cells": routing_order.size(),
+			"land_cells": land_cells,
+			"processed_land_cells": processed_land_cells,
+			"unresolved_land_cells": unresolved_land_cells,
+			"nonpolar_land_sinks": nonpolar_land_sinks,
+			"seam_flow_links": seam_flow_links,
+			"routing_invalid_parents": routing_invalid_parents,
+			"routing_seam_links": seam_flow_links,
+			"local_precipitation": local_precipitation,
+			"terminal_flux": terminal_flux,
+			"mass_error": mass_error,
+			"relative_mass_error": relative_mass_error,
+		},
+	}
+
+
 func _priority_key_from_bits(raw_bits_signed: int, index: int) -> int:
 	var raw_bits := raw_bits_signed & 0xFFFFFFFF
 	# -0.0 and +0.0 compared equal in the previous heap.
@@ -816,8 +945,6 @@ func _retain_lake_components(
 	width: int,
 	height: int,
 	minimum_size: int,
-	routing_parent: PackedInt32Array,
-	routing_child_count: PackedInt32Array,
 	flow_direction: PackedByteArray,
 ) -> Dictionary:
 	var runs := _build_binary_runs_8(candidates, width, height)
@@ -846,9 +973,9 @@ func _retain_lake_components(
 		else:
 			removed_cells += size
 
-	# First materialize every retained lake cell as water. Then detach its edge
-	# from a remaining land parent. This is the same two-phase ordering as the BFS
-	# implementation and therefore preserves Kahn indegrees exactly.
+	# Materialize every retained lake cell as water. Flow accumulation now walks
+	# the Priority-Flood discovery order backwards, so no Kahn child-count array
+	# needs to be maintained or patched when a former land cell becomes a lake.
 	for run_index in range(run_count):
 		if retained_root[root_by_run[run_index]] == 0:
 			continue
@@ -857,15 +984,6 @@ func _retain_lake_components(
 			var cell := row + x
 			water_mask[cell] = WATER_FRESH
 			flow_direction[cell] = DIR_SINK
-	for run_index in range(run_count):
-		if retained_root[root_by_run[run_index]] == 0:
-			continue
-		var row := run_rows[run_index] * width
-		for x in range(run_starts[run_index], run_ends[run_index] + 1):
-			var cell := row + x
-			var parent := int(routing_parent[cell])
-			if parent >= 0 and water_mask[parent] == WATER_NONE:
-				routing_child_count[parent] -= 1
 
 	return {
 		"lake_candidate_components": candidate_components,
@@ -877,10 +995,9 @@ func _retain_lake_components(
 
 func _classify_water_components(
 	water_mask: PackedByteArray,
-	original_height: PackedFloat32Array,
+	initial_water_mask: PackedByteArray,
 	width: int,
 	height: int,
-	sea_level: float,
 	saltwater_min_cells: int,
 ) -> Dictionary:
 	var runs := _build_binary_runs_8(water_mask, width, height)
@@ -890,21 +1007,21 @@ func _classify_water_components(
 	var root_by_run: PackedInt32Array = runs["root_by_run"]
 	var root_sizes: PackedInt32Array = runs["root_sizes"]
 	var run_count := run_starts.size()
-	var root_touches_subsea := PackedByteArray()
-	root_touches_subsea.resize(run_count)
-	root_touches_subsea.fill(0)
+	var root_touches_ocean := PackedByteArray()
+	root_touches_ocean.resize(run_count)
+	root_touches_ocean.fill(0)
 
-	# Once a component has one original cell below sea level, no further height
-	# probes are required for its later runs. Large oceans therefore usually pay
-	# only a handful of comparisons instead of one per water cell.
+	# The initial mask is the exact output of water_fill: every set cell is
+	# thermally valid and below sea level. A retained lake can therefore become
+	# saltwater only by sharing its connected component with one of these cells.
 	for run_index in range(run_count):
 		var root := int(root_by_run[run_index])
-		if root_touches_subsea[root] != 0:
+		if root_touches_ocean[root] != 0:
 			continue
 		var row := run_rows[run_index] * width
 		for x in range(run_starts[run_index], run_ends[run_index] + 1):
-			if original_height[row + x] < sea_level:
-				root_touches_subsea[root] = 1
+			if initial_water_mask[row + x] != WATER_NONE:
+				root_touches_ocean[root] = 1
 				break
 
 	var root_water_type := PackedByteArray()
@@ -919,7 +1036,7 @@ func _classify_water_components(
 		if size <= 0:
 			continue
 		var water_type := WATER_FRESH
-		if root_touches_subsea[root] != 0 and size >= saltwater_min_cells:
+		if root_touches_ocean[root] != 0 and size >= saltwater_min_cells:
 			water_type = WATER_SALT
 			salt_components += 1
 		else:

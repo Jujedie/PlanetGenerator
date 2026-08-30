@@ -28,6 +28,7 @@ var _png_failed_paths: Dictionary = {}
 var _readback_cache: Dictionary = {}
 var _readback_cache_bytes: int = 0
 var _stage_timings: Dictionary = {}
+var _png_file_timings: Dictionary = {}
 const _ADMIN_STAT_STRIDE := 32
 const _ADMIN_PAIR_STRIDE := 8
 const _ADMIN_COLOR_ROW_STRIDE := 32
@@ -121,6 +122,7 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	_readback_cache.clear()
 	_readback_cache_bytes = 0
 	_stage_timings.clear()
+	_png_file_timings.clear()
 	last_metrics = {
 		"worker_count": _nb_threads,
 		"png_worker_count": _png_worker_limit,
@@ -526,23 +528,29 @@ func _save_png(image: Image, filepath: String) -> Error:
 	while _png_jobs.size() >= _png_worker_limit:
 		_finish_oldest_png_job()
 	FileChecksumCache.invalidate(filepath)
+	var queued_usec := Time.get_ticks_usec()
 	var thread := Thread.new()
-	var start_error := thread.start(_png_worker.bind(image, filepath))
+	var start_error: Error = thread.start(_png_worker.bind(image, filepath))
 	if start_error != OK:
 		# Thread creation can fail under OS pressure. Preserve correctness with a
 		# synchronous fallback instead of dropping an export.
 		var sync_result: Dictionary = _png_worker(image, filepath)
-		_consume_png_result(filepath, sync_result)
+		_consume_png_result(filepath, sync_result, queued_usec)
 		return int(sync_result.get("error", FAILED))
-	_png_jobs.append({"thread": thread, "path": filepath})
+	_png_jobs.append({
+		"thread": thread,
+		"path": filepath,
+		"queued_usec": queued_usec,
+	})
 	last_metrics["png_jobs"] = int(last_metrics.get("png_jobs", 0)) + 1
 	_sample_export_ram()
 	return OK
 
 
 func _png_worker(image: Image, filepath: String) -> Dictionary:
-	var compression_started := Time.get_ticks_usec()
-	var error := image.save_png(filepath)
+	var worker_started_usec := Time.get_ticks_usec()
+	var compression_started := worker_started_usec
+	var error: Error = image.save_png(filepath)
 	var compression_ms := float(Time.get_ticks_usec() - compression_started) / 1000.0
 	var checksum := ""
 	var checksum_ms := 0.0
@@ -550,10 +558,14 @@ func _png_worker(image: Image, filepath: String) -> Dictionary:
 		var checksum_started := Time.get_ticks_usec()
 		checksum = FileAccess.get_sha256(filepath)
 		checksum_ms = float(Time.get_ticks_usec() - checksum_started) / 1000.0
+	var worker_finished_usec := Time.get_ticks_usec()
 	return {
 		"error": error,
 		"compression_ms": compression_ms,
 		"checksum_ms": checksum_ms,
+		"worker_wall_ms": float(worker_finished_usec - worker_started_usec) / 1000.0,
+		"worker_started_usec": worker_started_usec,
+		"worker_finished_usec": worker_finished_usec,
 		"sha256": checksum,
 	}
 
@@ -569,18 +581,41 @@ func _finish_oldest_png_job() -> void:
 		float(Time.get_ticks_usec() - wait_started) / 1000.0
 	)
 	if worker_result is Dictionary:
-		_consume_png_result(str(job["path"]), worker_result)
+		_consume_png_result(
+			str(job["path"]),
+			worker_result,
+			int(job.get("queued_usec", 0)),
+		)
 	else:
 		_png_failed_paths[str(job["path"])] = FAILED
 
 
-func _consume_png_result(filepath: String, worker_result: Dictionary) -> void:
+func _consume_png_result(filepath: String, worker_result: Dictionary, queued_usec: int = 0) -> void:
 	var error := int(worker_result.get("error", FAILED))
-	last_metrics["png_compression_ms"] = float(last_metrics.get("png_compression_ms", 0.0)) + float(
-		worker_result.get("compression_ms", 0.0)
-	)
-	last_metrics["png_checksum_ms"] = float(last_metrics.get("png_checksum_ms", 0.0)) + float(
-		worker_result.get("checksum_ms", 0.0)
+	var compression_ms := float(worker_result.get("compression_ms", 0.0))
+	var checksum_ms := float(worker_result.get("checksum_ms", 0.0))
+	var worker_wall_ms := float(worker_result.get(
+		"worker_wall_ms", compression_ms + checksum_ms
+	))
+	var finished_usec := int(worker_result.get("worker_finished_usec", 0))
+	var queue_to_ready_ms := worker_wall_ms
+	if queued_usec > 0 and finished_usec >= queued_usec:
+		queue_to_ready_ms = float(finished_usec - queued_usec) / 1000.0
+	last_metrics["png_compression_ms"] = float(last_metrics.get("png_compression_ms", 0.0)) + compression_ms
+	last_metrics["png_checksum_ms"] = float(last_metrics.get("png_checksum_ms", 0.0)) + checksum_ms
+	var display_path := filepath.get_file()
+	_png_file_timings[display_path] = {
+		"encode_ms": compression_ms,
+		"checksum_ms": checksum_ms,
+		"worker_wall_ms": worker_wall_ms,
+		"queue_to_ready_ms": queue_to_ready_ms,
+	}
+	print(
+		"[Export Timing] PNG ", display_path,
+		" = ", snappedf(worker_wall_ms, 0.01), " ms",
+		" (encode=", snappedf(compression_ms, 0.01),
+		" ms, checksum=", snappedf(checksum_ms, 0.01),
+		" ms, queued→ready=", snappedf(queue_to_ready_ms, 0.01), " ms)",
 	)
 	FileChecksumCache.invalidate(filepath)
 	if error == OK:
@@ -609,6 +644,7 @@ func _remove_failed_export_paths(exported_files: Dictionary) -> void:
 func _record_stage(stage_name: String, started_usec: int) -> void:
 	var elapsed_ms := float(Time.get_ticks_usec() - started_usec) / 1000.0
 	_stage_timings[stage_name] = float(_stage_timings.get(stage_name, 0.0)) + elapsed_ms
+	print("[Export Timing] ", stage_name, " = ", snappedf(elapsed_ms, 0.01), " ms")
 
 func _sample_export_ram() -> void:
 	last_metrics["peak_system_ram_bytes"] = maxi(
@@ -629,6 +665,25 @@ func _finalize_metrics(export_started_usec: int) -> void:
 		0.0
 	)
 	last_metrics["stage_ms"] = _stage_timings.duplicate(true)
+	last_metrics["png_file_ms"] = _png_file_timings.duplicate(true)
+	print("[Export Timing] --- Export stage summary ---")
+	for stage_name in _stage_timings.keys():
+		print(
+			"[Export Timing] ", stage_name, " = ",
+			snappedf(float(_stage_timings[stage_name]), 0.01), " ms"
+		)
+	print("[Export Timing] --- PNG file summary ---")
+	var png_names: Array = _png_file_timings.keys()
+	png_names.sort()
+	for png_name in png_names:
+		var png_timing: Dictionary = _png_file_timings[png_name]
+		print(
+			"[Export Timing] ", png_name, " = ",
+			snappedf(float(png_timing.get("worker_wall_ms", 0.0)), 0.01), " ms",
+			" (encode=", snappedf(float(png_timing.get("encode_ms", 0.0)), 0.01),
+			" ms, checksum=", snappedf(float(png_timing.get("checksum_ms", 0.0)), 0.01), " ms)"
+		)
+	print("[Export Timing] total_export = ", snappedf(total_ms, 0.01), " ms")
 	_sample_export_ram()
 
 func _create_export_rgba8_texture(gpu: GPUContext, width: int, height: int) -> RID:
@@ -2480,7 +2535,7 @@ func _export_water_classification(gpu: GPUContext, output_dir: String, width: in
 	# Synchroniser le GPU
 
 	
-	# Vérifier que water_colored existe (généré par water_to_color.glsl)
+	# Vérifier que water_colored existe (généré par hydrology_water_color.glsl)
 	if not gpu.textures.has("water_colored") or not gpu.textures["water_colored"].is_valid():
 		push_error("[Exporter] ❌ water_colored texture not available - run water phase first")
 		return result

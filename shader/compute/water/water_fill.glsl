@@ -7,7 +7,6 @@
 // Étape 1 du système d'eau :
 // - Identifie uniquement les pixels sous le niveau de la mer (eau potentielle)
 // - Vérifie la plage thermique du fluide propre au type de planète
-// - Initialise les seeds JFA pour la détection des composantes connexes
 //
 // Les lacs sont construits après le Priority-Flood à partir de la profondeur
 // et de l'aire réelles des bassins, jamais à partir d'un minimum local isolé.
@@ -18,7 +17,6 @@
 //
 // Sorties :
 // - water_mask (R8UI) : 0=terre, 1=eau (sera reclassifié après)
-// - water_component (RG32I) : Coordonnées seed pour JFA (-1,-1 si terre)
 // ============================================================================
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
@@ -31,11 +29,8 @@ layout(set = 0, binding = 0, rgba32f) uniform readonly image2D geo_texture;
 // Masque d'eau en écriture (R8UI)
 layout(set = 0, binding = 1, r8ui) uniform writeonly uimage2D water_mask;
 
-// Composantes connexes JFA (RG32I) - seed initial
-layout(set = 0, binding = 2, rg32i) uniform writeonly iimage2D water_component;
-
 // Texture climat en lecture (R=température en °C)
-layout(set = 0, binding = 3, rgba32f) uniform readonly image2D climate_texture;
+layout(set = 0, binding = 2, rgba32f) uniform readonly image2D climate_texture;
 
 // Uniform Buffer : Paramètres
 layout(set = 1, binding = 0, std140) uniform WaterParams {
@@ -131,10 +126,4 @@ void main() {
     uint water_type = is_water ? WATER_POTENTIAL : WATER_NONE;
     imageStore(water_mask, pixel, uvec4(water_type, 0u, 0u, 0u));
     
-    // Label pour composantes connexes :
-    // - Chaque pixel d'eau commence avec son propre ID unique = y * width + x
-    // - L'algorithme de propagation fera converger vers le minimum
-    // - (-1, -1) pour les pixels de terre
-    int label = is_water ? (pixel.y * w + pixel.x) : -1;
-    imageStore(water_component, pixel, ivec4(label, pixel.y, 0, 0));
 }

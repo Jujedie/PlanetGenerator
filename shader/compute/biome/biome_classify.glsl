@@ -298,7 +298,7 @@ void main() {
     }
     
     // Déterminer le type d'eau UNIQUEMENT depuis water_mask
-    // water_mask est la source de vérité après water_to_color:
+    // water_mask est la source de vérité après HydrologySolver:
     // - 0 = terre
     // - 1 = eau salée
     // - 2 = eau douce

@@ -170,7 +170,6 @@ func _compile_all_shaders() -> bool:
 		{"path": "res://shader/compute/biome/biome_smooth.glsl", "name": "biome_smooth", "critical": false},
 		# Shaders Final Map (Étape 6)
 		{"path": "res://shader/compute/final_map.glsl", "name": "final_map", "critical": false},
-		{"path": "res://shader/compute/water/water_to_color.glsl", "name": "water_to_color", "critical": false},
 		# Shader Gas Giant Final Map (Type 6 - Gazeuse)
 		{"path": "res://shader/compute/gas_giant_final.glsl", "name": "gas_giant_final", "critical": false},
 		{"path": "res://shader/compute/gas_giant/gas_giant_velocity_init.glsl", "name": "gas_giant_velocity_init", "critical": false},
@@ -733,9 +732,8 @@ func run_simulation() -> void:
 	# === ÉTAPE 2.5 : CLASSIFICATION DES EAUX & RIVIÈRES ===
 	if not _run_timed_phase("water", run_water_phase.bind(generation_params, w, h)):
 		return
-	_retire_large_monolithic_textures(
-		["water_component", "river_sources"], "after_water"
-	)
+	# Legacy JFA/source textures are no longer allocated by the exact hydrology
+	# path, so there is nothing temporary to retire here.
 	
 	# === ÉTAPE 3.5 : BANQUISE (après eau pour vérifier water_colored) ===
 	if not _run_timed_phase("ice_caps", run_ice_caps_phase.bind(generation_params, w, h)):
@@ -2213,13 +2211,22 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	var sea_level := float(params.get("sea_level", 0.0))
 	var atmosphere_type := int(params.get("planet_type", 0))
 
+	# Keep wall-clock timings for every CPU/GPU dependency in this phase. The
+	# compute dispatches themselves are asynchronous, so the following readback
+	# bucket intentionally includes the wait for the preceding GPU fill.
+	var texture_init_started := Time.get_ticks_usec()
+	gpu.initialize_water_textures()
+	gpu.initialize_final_map_textures()
+	var texture_init_ms := float(Time.get_ticks_usec() - texture_init_started) / 1000.0
+
 	# Les textures restent initialisées même lorsqu'un type de planète ne peut
 	# pas avoir d'eau liquide, car les phases finales les référencent.
 	# water_colored appartient au groupe final_map.
-	gpu.initialize_water_textures()
-	gpu.initialize_final_map_textures()
 	if atmosphere_type in [Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE]:
-		last_hydrology_stats = {"skipped_no_liquid_water": true}
+		last_hydrology_stats = {
+			"skipped_no_liquid_water": true,
+			"texture_init_ms": texture_init_ms,
+		}
 		print("  ⏭️ Planète sans eau liquide (type=", atmosphere_type, ")")
 		return
 
@@ -2235,17 +2242,27 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	# 1. Le premier masque ne contient que l'océan thermiquement liquide.
 	# Les lacs seront dérivés ensuite de la profondeur réelle des bassins.
 	print("  • Initialisation du masque océanique...")
+	var fill_and_input_started := Time.get_ticks_usec()
 	_dispatch_water_fill(w, h, groups_x, groups_y, sea_level, 0.0, atmosphere_type)
+
+	# One sync is paid by the first readback; the next two texture_get_data calls
+	# reuse that completed GPU state. Keep the buffers named so their lifetime is
+	# explicit and measurable instead of hiding three huge temporaries in a call.
+	var geo_data := gpu.readback_texture_raw("geo")
+	var climate_data := gpu.readback_texture_raw("climate")
+	var initial_water_mask := gpu.readback_texture_raw("water_mask")
+	var fill_and_input_ms := float(Time.get_ticks_usec() - fill_and_input_started) / 1000.0
 
 	# 2. Priority-Flood exact : convergence par épuisement de la file de
 	# priorité, sans nombre de passes arbitraire. Le solveur classe ensuite les
 	# composantes d'eau exactes avec wrap horizontal.
 	print("  • Priority-Flood convergent et classification des bassins...")
+	var surface_started := Time.get_ticks_usec()
 	var solver := HydrologySolver.new()
 	var surface_result := solver.solve_surface_and_water(
-		gpu.readback_texture_raw("geo"),
-		gpu.readback_texture_raw("climate"),
-		gpu.readback_texture_raw("water_mask"),
+		geo_data,
+		climate_data,
+		initial_water_mask,
 		w,
 		h,
 		sea_level,
@@ -2254,24 +2271,40 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 		saltwater_min_size,
 		atmosphere_type,
 	)
+	var surface_wall_ms := float(Time.get_ticks_usec() - surface_started) / 1000.0
+	# Geo/climate are no longer needed on CPU after the exact surface solve.
+	geo_data = PackedByteArray()
+	climate_data = PackedByteArray()
+	initial_water_mask = PackedByteArray()
 	if surface_result.is_empty():
 		push_error("[Orchestrator] Hydrology surface solve failed")
 		return
 
 	var water_mask_data: PackedByteArray = surface_result["water_mask"]
 	var routing_parent: PackedInt32Array = surface_result["routing_parent"]
-	var routing_child_count: PackedInt32Array = surface_result["routing_child_count"]
+	var routing_child_count: PackedByteArray = surface_result["routing_child_count"]
+	var routing_order: PackedInt32Array = surface_result.get("routing_order", PackedInt32Array())
 	var precomputed_flow_direction: PackedByteArray = surface_result["flow_direction"]
 	var routing_seam_links := int(surface_result.get("routing_seam_links", 0))
+
+	var mask_upload_started := Time.get_ticks_usec()
 	rd.texture_update(gpu.textures["water_mask"], 0, water_mask_data)
 	# Colorization is a trivial GPU pass over the final classified mask. Keeping
 	# it on-device avoids a full GDScript RGBA construction plus texture upload.
 	_dispatch_hydrology_water_color(w, h, groups_x, groups_y, atmosphere_type)
+	var mask_upload_queue_ms := float(Time.get_ticks_usec() - mask_upload_started) / 1000.0
 	last_hydrology_stats = Dictionary(surface_result["stats"]).duplicate()
+	last_hydrology_stats["texture_init_ms"] = texture_init_ms
+	last_hydrology_stats["initial_fill_and_input_readback_ms"] = fill_and_input_ms
+	last_hydrology_stats["surface_solver_wall_ms"] = surface_wall_ms
+	last_hydrology_stats["mask_upload_color_queue_ms"] = mask_upload_queue_ms
 
 	print(
-		"    [Hydrology timing] surface=", snappedf(float(last_hydrology_stats.get("surface_total_ms", 0.0)), 0.01), " ms",
+		"    [Hydrology timing] total-surface=", snappedf(float(last_hydrology_stats.get("surface_total_ms", 0.0)), 0.01), " ms",
+		" | decode/keys=", snappedf(float(last_hydrology_stats.get("surface_decode_ms", 0.0)), 0.01), " ms",
+		" | sort=", snappedf(float(last_hydrology_stats.get("priority_sort_ms", 0.0)), 0.01), " ms",
 		" | flood=", snappedf(float(last_hydrology_stats.get("priority_flood_ms", 0.0)), 0.01), " ms",
+		" | lake-filter=", snappedf(float(last_hydrology_stats.get("lake_candidate_ms", 0.0)), 0.01), " ms",
 		" | lake-components=", snappedf(float(last_hydrology_stats.get("lake_components_ms", 0.0)), 0.01), " ms",
 		" | water-components=", snappedf(float(last_hydrology_stats.get("water_components_ms", 0.0)), 0.01), " ms",
 	)
@@ -2298,34 +2331,45 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  • Directions D8 dérivées de la forêt Priority-Flood")
 
 	# 4. Chaque cellule terrestre reçoit exactement une contribution locale.
+	var source_and_readback_started := Time.get_ticks_usec()
 	_dispatch_river_sources(w, h, groups_x, groups_y, sea_level, river_precip_scale)
+	var local_flux_data := gpu.readback_texture_raw("river_flux")
+	var source_and_readback_ms := float(Time.get_ticks_usec() - source_and_readback_started) / 1000.0
 
-	# 5. Accumulation topologique exacte. river_iterations n'est volontairement
-	# plus lu : le réseau ne dépend d'aucun compteur de propagation.
+	# 5. Priority-Flood recorded parent-before-child discovery order. Reversing
+	# it is already a topological order, so large maps avoid the old full-size
+	# Kahn indegree copy and queue. Direct/legacy callers still retain the Kahn
+	# fallback when no order is provided.
 	print("  • Accumulation topologique conservatrice...")
 	var accumulation_start_usec: int = Time.get_ticks_usec()
 	var accumulation_result := solver.accumulate_flow(
 		routing_parent,
 		water_mask_data,
-		gpu.readback_texture_raw("river_flux"),
+		local_flux_data,
 		w,
 		h,
 		routing_child_count,
 		precomputed_flow_direction,
 		routing_seam_links,
+		routing_order,
 	)
+	local_flux_data = PackedByteArray()
+	routing_order = PackedInt32Array()
+	routing_child_count = PackedByteArray()
 	if accumulation_result.is_empty():
 		push_error("[Orchestrator] Hydrology flow accumulation failed")
 		return
 
 	var accumulated_flux: PackedByteArray = accumulation_result["flux_data"]
 	var flow_direction_data: PackedByteArray = accumulation_result["flow_direction"]
-	rd.texture_update(gpu.textures["river_flux"], 0, accumulated_flux)
-	rd.texture_update(gpu.textures["flow_direction"], 0, flow_direction_data)
-	last_hydrology_stats.merge(Dictionary(accumulation_result["stats"]), true)
 	var accumulation_ms: float = float(Time.get_ticks_usec() - accumulation_start_usec) / 1000.0
+	last_hydrology_stats.merge(Dictionary(accumulation_result["stats"]), true)
 	last_hydrology_stats["flow_accumulation_ms"] = accumulation_ms
-	print("    [Hydrology timing] flow-accumulation=", snappedf(accumulation_ms, 0.01), " ms")
+	last_hydrology_stats["river_source_and_readback_ms"] = source_and_readback_ms
+	print(
+		"    [Hydrology timing] flow-accumulation=", snappedf(accumulation_ms, 0.01), " ms",
+		" | mode=", last_hydrology_stats.get("accumulation_mode", "kahn"),
+	)
 	var max_flux := float(accumulation_result["max_land_flux"])
 	last_hydrology_stats["max_land_flux"] = max_flux
 
@@ -2373,6 +2417,10 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 		" / ", river_riviere_threshold,
 		" / ", river_fleuve_threshold,
 	)
+
+	var finalize_started := Time.get_ticks_usec()
+	rd.texture_update(gpu.textures["river_flux"], 0, accumulated_flux)
+	rd.texture_update(gpu.textures["flow_direction"], 0, flow_direction_data)
 	_dispatch_river_type_assign(
 		w,
 		h,
@@ -2383,7 +2431,17 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 		river_fleuve_threshold,
 	)
 	_dispatch_river_classify(w, h, groups_x, groups_y, atmosphere_type)
+	var finalize_queue_ms := float(Time.get_ticks_usec() - finalize_started) / 1000.0
+	last_hydrology_stats["final_upload_and_classify_queue_ms"] = finalize_queue_ms
 
+	print(
+		"    [Water Timing] texture-init=", snappedf(texture_init_ms, 0.01), " ms",
+		" | fill+input-readback=", snappedf(fill_and_input_ms, 0.01), " ms",
+		" | surface=", snappedf(surface_wall_ms, 0.01), " ms",
+		" | source+readback=", snappedf(source_and_readback_ms, 0.01), " ms",
+		" | accumulation=", snappedf(accumulation_ms, 0.01), " ms",
+		" | finalize-queue=", snappedf(finalize_queue_ms, 0.01), " ms",
+	)
 	print("[Orchestrator] ✅ Phase 2.5 : Hydrologie terminée")
 
 ## Dispatch le shader d'identification des zones d'eau
@@ -2404,15 +2462,10 @@ func _dispatch_water_fill(w: int, h: int, groups_x: int, groups_y: int,
 	mask_uniform.add_id(gpu.textures["water_mask"])
 	tex_uniforms.append(mask_uniform)
 	
-	# water_component (RG32I)
-	var comp_uniform = RDUniform.new()
-	comp_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	comp_uniform.binding = 2
-	comp_uniform.add_id(gpu.textures["water_component"])
-	tex_uniforms.append(comp_uniform)
-	
-	# climate_texture (RGBA32F) - pour vérification température eau liquide
-	tex_uniforms.append(gpu.create_texture_uniform(3, gpu.textures["climate"]))
+	# climate_texture (RGBA32F) - pour vérification température eau liquide.
+	# Binding 2 used to be a dead RG32I JFA label texture; the exact CPU
+	# hydrology solver has owned component classification for several milestones.
+	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["climate"]))
 	
 	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["water_fill"], 0)
 	
@@ -2477,78 +2530,6 @@ func _dispatch_hydrology_water_color(w: int, h: int, groups_x: int,
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	gpu.submit_gpu_work()
-	gpu.release_rid(tex_set)
-
-func _dispatch_water_to_color(w: int, h: int, groups_x: int, groups_y: int, pass_type: int, sea_level: float, atmosphere_type: int, freshwater_max_size: int, counter_buffer: RID) -> void:
-	if not gpu.shaders.has("water_to_color") or not gpu.shaders["water_to_color"].is_valid():
-		push_error("Shader water_to_color non disponible")
-		return
-	
-	var tex_uniforms: Array[RDUniform] = []
-	
-	# binding 0 : water_component (rg32i) - lecture seule
-	var comp_uniform = RDUniform.new()
-	comp_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	comp_uniform.binding = 0
-	comp_uniform.add_id(gpu.textures["water_component"])
-	tex_uniforms.append(comp_uniform)
-	
-	# binding 1 : water_mask (r8ui) - lecture seule
-	var mask_uniform = RDUniform.new()
-	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	mask_uniform.binding = 1
-	mask_uniform.add_id(gpu.textures["water_mask"])
-	tex_uniforms.append(mask_uniform)
-	
-	# binding 2 : geo_texture (rgba32f) - lecture seule
-	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["geo"]))
-	
-	# binding 3 : water_colored (rgba8) - écriture
-	var color_uniform = RDUniform.new()
-	color_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	color_uniform.binding = 3
-	color_uniform.add_id(gpu.textures["water_colored"])
-	tex_uniforms.append(color_uniform)
-	
-	# binding 4 : SSBO comptage
-	var ssbo_uniform = RDUniform.new()
-	ssbo_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-	ssbo_uniform.binding = 4
-	ssbo_uniform.add_id(counter_buffer)
-	tex_uniforms.append(ssbo_uniform)
-	
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["water_to_color"], 0)
-	
-	# UBO (32 bytes, std140)
-	var buffer_bytes = PackedByteArray()
-	buffer_bytes.resize(32)
-	buffer_bytes.encode_u32(0, w)                      # width
-	buffer_bytes.encode_u32(4, h)                      # height
-	buffer_bytes.encode_u32(8, pass_type)             # pass_type (0=comptage, 1=coloration)
-	buffer_bytes.encode_u32(12, freshwater_max_size)  # freshwater_max_size
-	buffer_bytes.encode_float(16, sea_level)          # sea_level
-	buffer_bytes.encode_u32(20, atmosphere_type)      # atmosphere_type
-	buffer_bytes.encode_float(24, 0.0)                # padding1
-	buffer_bytes.encode_float(28, 0.0)                # padding2
-	
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["water_to_color"], 1)
-	
-	var compute_list = rd.compute_list_begin()
-	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["water_to_color"])
-	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
-	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
-	rd.compute_list_end()
-	
-	gpu.submit_gpu_work()
-	
-	gpu.release_rid(param_set)
-	gpu.release_rid(param_buffer)
 	gpu.release_rid(tex_set)
 
 func _dispatch_river_sources(w: int, h: int, groups_x: int, groups_y: int, sea_level: float, precip_scale: float) -> void:
@@ -4753,49 +4734,16 @@ func run_final_map_phase(params: Dictionary, w: int, h: int) -> void:
 	print("[Orchestrator] ✅ Phase 6 terminée")
 
 ## Exécute le shader de coloration des eaux
-func _run_water_to_color_phase(params: Dictionary, w: int, h: int) -> void:
-	# HydrologySolver a deja produit water_mask et water_colored avec la
-	# classification exacte des composantes (0=terre, 1=mer, 2=eau douce).
-	# Rejouer ici l'ancien shader de classification utilisait des labels JFA
-	# obsoletes et pouvait convertir toute la mer en eau douce juste avant
-	# l'export. La carte finale doit seulement reutiliser ce resultat.
-	if not last_hydrology_stats.is_empty():
-		print("  [Orchestrator] 💧 Classification des eaux conservée (hydrologie exacte)")
+func _run_water_to_color_phase(_params: Dictionary, _w: int, _h: int) -> void:
+	# HydrologySolver is now the only authoritative component classifier and
+	# _dispatch_hydrology_water_color() already materializes water_colored during
+	# run_water_phase(). The legacy JFA/counting recolor path was unreachable in
+	# successful generations and required a 8-byte-per-pixel water_component
+	# texture. Keep this hook for tests/final-map sequencing, but never reclassify.
+	if last_hydrology_stats.is_empty():
+		push_warning("[Orchestrator] ⚠️ No authoritative hydrology classification available")
 		return
-	if not rd or not gpu.pipelines.has("water_to_color") or not gpu.pipelines["water_to_color"].is_valid():
-		push_warning("[Orchestrator] ⚠️ water_to_color pipeline not ready, skipping")
-		return
-	
-	print("  [Orchestrator] 💧 Coloration des eaux...")
-	
-	var groups_x = int(ceil(float(w) / 16.0))
-	var groups_y = int(ceil(float(h) / 16.0))
-	
-	var sea_level = float(params.get("sea_level", 0.0))
-	var atmosphere_type = int(params.get("planet_type", 0))
-	var freshwater_max_size = int(params.get("freshwater_max_size", 999))
-	
-	# Créer le buffer de comptage pour les composantes d'eau
-	var buffer_size = w * h * 4  # uint par pixel
-	var counter_data = PackedByteArray()
-	counter_data.resize(buffer_size)
-	counter_data.fill(0)
-	
-	var counter_buffer = rd.storage_buffer_create(buffer_size, counter_data)
-	if not counter_buffer.is_valid():
-		push_error("[Orchestrator] ❌ Failed to create water counter buffer")
-		return
-	
-	# === PASSE 1 : COMPTAGE ===
-	_dispatch_water_to_color(w, h, groups_x, groups_y, 0, sea_level, atmosphere_type, freshwater_max_size, counter_buffer)
-	
-	# === PASSE 2 : COLORATION ===
-	_dispatch_water_to_color(w, h, groups_x, groups_y, 1, sea_level, atmosphere_type, freshwater_max_size, counter_buffer)
-	
-	# Nettoyer le buffer de comptage
-	gpu.release_rid(counter_buffer)
-	
-	print("  [Orchestrator] ✅ Eaux colorées")
+	print("  [Orchestrator] 💧 Classification des eaux conservée (hydrologie exacte)")
 
 ## Exécute le shader de génération de la carte finale
 func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
