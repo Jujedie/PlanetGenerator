@@ -91,15 +91,22 @@ void main() {
             1.0
         );
     } else {
-        // Pixel d'eau : TOUTE EAU DOIT AVOIR UNE RÉGION
-        // Si pas de région assignée, en créer une unique
+        // Ne JAMAIS fabriquer un ID unique pour un pixel resté non assigné :
+        // l'ancien fallback créait précisément des micro-départements visuels.
+        // Une petite composante d'eau volontairement exclue par la normalisation
+        // reste neutre, exactement comme une zone sans administration maritime.
         if (region_id == 0xFFFFFFFFu) {
-            region_id = uint(pixel.x) + uint(pixel.y) * params.width;
+            final_color = vec4(
+                float(params.land_color_r) / 255.0,
+                float(params.land_color_g) / 255.0,
+                float(params.land_color_b) / 255.0,
+                1.0
+            );
+        } else {
+            uint color_index = hashForColor(region_id);
+            vec3 rgb = oceanRegionIdToColor(color_index);
+            final_color = vec4(rgb, 1.0);
         }
-        
-        uint color_index = hashForColor(region_id);
-        vec3 rgb = oceanRegionIdToColor(color_index);
-        final_color = vec4(rgb, 1.0);
     }
     
     imageStore(ocean_region_colored, pixel, final_color);

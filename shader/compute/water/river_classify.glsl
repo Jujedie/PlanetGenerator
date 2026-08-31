@@ -4,14 +4,14 @@
 // ============================================================================
 // RIVER CLASSIFY SHADER - Attribution de biomes aux rivieres
 // ============================================================================
-// Lit le type de riviere promu (apres river_type_promote) et assigne
+// Lit le type de riviere deja classe par seuil de flux et assigne
 // le biome riviere correspondant en fonction du type et de la temperature.
 //
 // Types d'entree :
 // - 0 = Affluent, 1 = Riviere, 2 = Fleuve, 255 = pas de riviere
 //
 // Entrees :
-// - river_type (R8UI) : Type promu (apres promotion du chenal principal)
+// - river_type (R8UI) : Type hydrologique final (affluent/riviere/fleuve)
 // - climate_texture (RGBA32F) : R=temperature
 // - RiverBiomeLUT (SSBO) : Biomes riviere avec couleurs et plages de temperature
 //

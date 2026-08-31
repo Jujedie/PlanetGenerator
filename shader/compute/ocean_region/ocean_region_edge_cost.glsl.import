@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://ca2wy7uukfucb"
+path="res://.godot/imported/ocean_region_edge_cost.glsl-47caefdfba6c0907241dc1581c357ee2.res"
+
+[deps]
+
+source_file="res://shader/compute/ocean_region/ocean_region_edge_cost.glsl"
+dest_files=["res://.godot/imported/ocean_region_edge_cost.glsl-47caefdfba6c0907241dc1581c357ee2.res"]
+
+[params]
+

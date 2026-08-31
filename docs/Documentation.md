@@ -158,17 +158,23 @@ Ces paramètres s'appliquent principalement aux planètes **Sans Atmosphère** (
 | Paramètre | Défaut | Plage | Rôle |
 |-----------|--------|-------|------|
 | **Couverture nuageuse** (`cloud_coverage`) | 50% | 0–100% | Fraction de la surface couverte par des nuages. `100%` = planète totalement voilée (type Vénus). |
-| **Densité nuageuse** (`cloud_density`) | 80% | 0–100% | Opacité des nuages sur la carte de prévisualisation finale. N'affecte pas la simulation climatique, uniquement le rendu visuel. |
+| **Densité nuageuse** (`cloud_density`) | 80% | 0–100% | Opacité maximale des amas nuageux. Le PNG est exporté en RGBA8 avec un alpha nul dans le ciel clair et peut être utilisé directement comme texture transparente. N'affecte pas la simulation climatique. |
 
 ---
 
 ### 3.6 Régions terrestres
 
-La carte des régions divise la surface terrestre en territoires distincts (analogue à des États ou provinces géologiques) en utilisant un algorithme de Voronoï pondéré.
+La carte des régions divise la surface terrestre en territoires distincts.
+Des cellules organiques à croissance locale sont regroupées uniquement par
+adjacence selon la hiérarchie départements → régions → pays → continents.
+Elles ne traversent jamais le masque maritime. Le nombre demandé définit une
+densité de référence à 150 km de rayon ; les nombres et surfaces des quatre
+niveaux sont ensuite recalculés depuis la surface physique de la planète,
+indépendamment de la résolution de texture.
 
 | Paramètre | Défaut | Rôle |
 |-----------|--------|------|
-| **Nombre de régions** (`nb_cases_regions`) | 50 | Nombre de régions terrestres générées. Un grand nombre crée des territoires plus petits et plus variés. |
+| **Taille des départements** (`nb_cases_regions`) | 50 | Surface moyenne visée, en cases terrestres, pour chaque département. Une valeur de 15 vise donc environ 15 cases par département. |
 | **Coût terrain plat** (`region_cost_flat`) | 1.0 | Résistance à la traversée d'une zone plate. Un coût faible étend facilement les régions sur les plaines. |
 | **Coût terrain vallonné** (`region_cost_hill`) | 2.0 | Résistance à la traversée d'une zone montagneuse. Un coût élevé fait des montagnes des frontières naturelles. |
 | **Coût rivière** (`region_cost_river`) | 3.0 | Résistance à la traversée d'une rivière. Un coût très élevé fait des rivières des frontières quasi-infranchissables. |
@@ -180,7 +186,11 @@ La carte des régions divise la surface terrestre en territoires distincts (anal
 
 ### 3.7 Régions océaniques
 
-Fonctionne de manière identique aux régions terrestres, mais pour les zones sous-marines.
+Fonctionne de manière analogue aux régions terrestres, mais pour les zones
+sous-marines. La hiérarchie départements marins → régions marines → bassins
+→ océans reste strictement connexe, sans saut à travers une côte ni enclave
+maritime déconnectée. Ses densités sont également dérivées de la surface
+physique du monde.
 
 | Paramètre | Défaut | Rôle |
 |-----------|--------|------|
@@ -282,7 +292,7 @@ Le paramètre **Humidité globale** (`global_humidity`) décale linéairement l'
 Les biomes sont déterminés par le **Diagramme de Whittaker** :  
 chaque pixel est classé selon sa **température (°C)**, son **humidité (0–1)** et son **élévation (m)**.
 
-Le shader sélectionne le biome dont le centre de plage est le plus proche des valeurs climatiques du pixel (score de proximité). Un bruit Simplex léger rend les frontières organiques.
+Le shader sélectionne le biome dont le centre de plage est le plus proche des valeurs climatiques du pixel (score de proximité). Les perturbations de température et d'humidité sont continues et exprimées en coordonnées angulaires, donc indépendantes de la résolution. La sélection est déterministe, couvre chaque pixel et respecte strictement terre, eau douce et eau salée. Deux passes conservatrices retirent seulement les pixels isolés sans homogénéiser les écorégions.
 
 ---
 
@@ -458,23 +468,24 @@ Le shader sélectionne le biome dont le centre de plage est le plus proche des v
 
 | Nom de fichier | Clé interne | Description |
 |----------------|-------------|-------------|
-| `topographie_map.png` | `MAP_TOPOGRAPHIE` | Carte d'élévation colorée selon `COULEURS_ELEVATIONS` |
-| `topographie_map_grey.png` | `MAP_TOPOGRAPHIE_GREY` | Carte d'élévation en niveaux de gris (plus sombre = plus bas) |
+| `topographie_map.png` | `MAP_TOPOGRAPHIE` | Visualisation hypsométrique continue, calculée directement depuis l'altitude relative brute sans lissage ni recalcul dans l'exporteur |
+| `topographie_map_grey.png` | `MAP_TOPOGRAPHIE_GREY` | Visualisation continue en niveaux de gris (plus sombre = plus bas) |
+| `topology_map.png` | `MAP_TOPOLOGY` | Courbes de niveau seules en RGBA8, sur fond entièrement transparent |
 | `eaux_map.png` | `MAP_EAUX` | Masque eau : blanc = océan, noir = terre |
 | `plaques_map.png` | `MAP_PLAQUES` | Coloration des plaques tectoniques |
 | `plaques_bordures_map.png` | `MAP_PLAQUES_BORDURES` | Frontières de plaques tectoniques |
 | `temperature_map.png` | `MAP_TEMPERATURE` *(via preview)* | Carte de température, palette violette-verte-rouge |
 | `precipitation_map.png` | `MAP_PRECIPITATION` | Carte de précipitations, palette magenta-bleue |
-| `clouds_map.png` | `MAP_CLOUDS` | Distribution des nuages |
+| `clouds_map.png` | `MAP_CLOUDS` | Amas nuageux RGBA8 : ciel clair transparent, nuages blancs avec opacité variable |
 | `ice_caps_map.png` | `MAP_ICE` | Calottes glaciaires et zones de glace |
 | `water_map.png` | `MAP_WATER` | Eau de surface (lacs, mers, rivières) |
 | `river_map.png` | `MAP_RIVERS` | Réseau hydrographique (rivières et fleuves) |
 | `biome_map.png` | `MAP_BIOMES` | Classification biomatique colorée |
-| `region_map.png` | `MAP_REGIONS` | Régions terrestres (Voronoï pondéré) |
-| `ocean_region_map.png` | `MAP_OCEAN_REGIONS` | Régions sous-marines |
+| `region_map.png` | `MAP_REGIONS` | Régions terrestres issues de cellules perturbées regroupées par adjacence |
+| `ocean_region_map.png` | `MAP_OCEAN_REGIONS` | Régions sous-marines regroupées par adjacence |
 | `petrole_map.png` | `MAP_PETROLE` | Gisements pétroliers |
 | `ressource_map.png` | `MAP_RESOURCES` | Toutes les ressources minérales |
-| `final_map.png` | `MAP_FINAL` | Rendu final composite avec végétation réaliste |
+| `final_map.png` | `MAP_FINAL` | Carte physique stylisée : hypsométrie olive/sable/saumon, modulation écologique des biomes, eaux bleu-vert, courbes de niveau, cours d'eau discrets et banquise bleu-gris |
 | `preview.png` | `MAP_PREVIEW` | Aperçu rapide pour l'interface |
 
 ---
@@ -518,7 +529,21 @@ Cobalt, Lithium, Niobium, Plomb
 > Le multiplicateur **Richesse globale** (`global_richness`) s'applique à toutes les catégories uniformément.  
 > Les **gisements pétroliers** sont générés séparément avec les paramètres `petrole_probability` et `petrole_deposit_size`.
 
+## 9. Optimisation et export
+
+- La simulation GPU utilise une seule file contrôlée. Les synchronisations ne
+  se produisent qu'aux dépendances CPU réelles (hydrologie, lecture ou export).
+- Les cartes sont lues et compressées une par une afin de ne pas conserver
+  plusieurs cartes RGBA32F complètes en mémoire système.
+- Les cartes de ressources utilisent un stockage RGBA8UI compact, puis sont
+  matérialisées individuellement pendant l'export PNG.
+- Le paramètre **Workers export PNG** vaut `0` par défaut (sélection
+  automatique). Une valeur explicite ne concerne que la conversion et
+  l'export CPU, jamais la génération GPU.
+- Le rapport de performance distingue simulation, synchronisation, lecture
+  GPU, conversion CPU, compression PNG, pic VRAM, pic RAM et temps total.
+
 ---
 
 *Documentation générée pour PlanetGenerator Final-Upgrade — Godot 4.x / Vulkan Compute Shaders*  
-*Dernière mise à jour : février 2026*
+*Dernière mise à jour : août 2026*

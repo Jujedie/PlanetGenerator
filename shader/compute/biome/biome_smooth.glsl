@@ -4,13 +4,13 @@
 // ============================================================================
 // BIOME SMOOTH SHADER
 // ============================================================================
-// Lisse la carte des biomes par vote majoritaire et ajoute de l'irrégularité
-// aux bordures pour un rendu naturel.
+// Supprime seulement les pixels réellement isolés. Les écotones organiques
+// viennent du classifieur ; un vote majoritaire agressif les arrondirait.
 //
 // Technique : 
-// 1. Vote majoritaire dans un kernel 3x3
+// 1. Vote conservateur dans un kernel 3x3
 // 2. Préservation des transitions eau/terre
-// 3. Bruit Simplex pour irrégularité des bordures
+// 3. Préservation des frontières cohérentes, même irrégulières
 // ============================================================================
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
@@ -154,10 +154,13 @@ void main() {
         }
     }
     
-    // Trouver le biome avec le plus de votes
+    // Trouver le biome avec le plus de votes et mesurer le soutien local du
+    // biome central. Une frontière 5/4 est valide : seuls les îlots 1-2 pixels
+    // entourés par une super-majorité doivent disparaître.
     uint best_biome = center_biome;
     vec4 best_color = center_color;
     uint max_votes = 0u;
+    uint center_votes = 0u;
     
     for (uint i = 0u; i < num_unique; i++) {
         if (vote_counts[i] > max_votes) {
@@ -165,36 +168,22 @@ void main() {
             best_biome = vote_biomes[i];
             best_color = vote_colors[i];
         }
-    }
-    
-    // Ajouter de l'irrégularité aux bordures avec du bruit
-    // Seulement si on est près d'une frontière (plusieurs biomes différents)
-    if (num_unique > 1u && border_noise > 0.0) {
-        vec2 noise_pos = vec2(pixel) * 0.1 + vec2(float(seed) * 0.1, float(pass_index) * 100.0);
-        float noise = snoise(noise_pos);
-        
-        // Si le bruit est assez fort, on peut changer le biome
-        // vers le second plus fréquent
-        if (noise > (1.0 - border_noise)) {
-            // Trouver le second meilleur
-            uint second_best_biome = best_biome;
-            vec4 second_best_color = best_color;
-            uint second_max_votes = 0u;
-            
-            for (uint i = 0u; i < num_unique; i++) {
-                if (vote_biomes[i] != best_biome && vote_counts[i] > second_max_votes) {
-                    second_max_votes = vote_counts[i];
-                    second_best_biome = vote_biomes[i];
-                    second_best_color = vote_colors[i];
-                }
-            }
-            
-            // Permuter si on a trouvé une alternative
-            if (second_max_votes > 0u) {
-                best_biome = second_best_biome;
-                best_color = second_best_color;
-            }
+        if (vote_biomes[i] == center_biome) {
+            center_votes = vote_counts[i];
         }
+    }
+
+    uint required_majority = pass_index == 0u ? 6u : 7u;
+    uint maximum_center_support = pass_index == 0u ? 2u : 1u;
+    if (
+        best_biome != center_biome
+        && (max_votes < required_majority || center_votes > maximum_center_support)
+    ) {
+        best_biome = center_biome;
+        best_color = center_color;
+    } else if (best_biome == center_biome) {
+        // Conserver la couleur exacte du centre au lieu de celle d'un voisin.
+        best_color = center_color;
     }
     
     // Écrire les résultats

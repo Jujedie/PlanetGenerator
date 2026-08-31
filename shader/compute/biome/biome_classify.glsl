@@ -21,7 +21,7 @@ layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 layout(set = 0, binding = 0, rgba32f) uniform readonly image2D geo_texture;       // R=height, G=bedrock, B=sediment, A=water_height
 layout(set = 0, binding = 1, rgba32f) uniform readonly image2D climate_texture;   // R=temperature, G=humidity, B=windX, A=windY
 layout(set = 0, binding = 2, r8ui) uniform readonly uimage2D water_mask;          // 0=terre, 1=eau salée, 2=eau douce
-layout(set = 0, binding = 3, r32f) uniform readonly image2D river_flux;           // Intensité flux (pour humidité sol uniquement)
+layout(set = 0, binding = 3, r32f) uniform readonly image2D river_flux;           // Conservé pour compatibilité de binding
 
 // === SET 0 : TEXTURES DE SORTIE ===
 layout(set = 0, binding = 4, r32ui) uniform writeonly uimage2D biome_id;          // ID du biome
@@ -35,8 +35,8 @@ layout(set = 1, binding = 0, std140) uniform BiomeParams {
     uint seed;
     float sea_level;
     float cylinder_radius;
-    float flux_humidity_boost;  // Boost d'humidité près des flux d'eau
-    float padding;
+    float flux_humidity_boost;  // Réservé ABI : le biome reste indépendant des rivières
+    float river_affluent_threshold; // Échelle physique du réseau de drainage
 };
 
 // === SET 2 : SSBO BIOMES DATA ===
@@ -122,6 +122,15 @@ float snoise(vec2 v) {
     g.x = a0.x * x0.x + h.x * x0.y;
     g.yz = a0.yz * x12.xz + h.yz * x12.yw;
     return 130.0 * dot(m, g);
+}
+
+// Bruit 2D périodique sur la longitude. Deux projections du cylindre sont
+// combinées afin que les microclimats restent continus à la couture de carte.
+float periodicClimateNoise(float angle, float signed_latitude, float scale, vec2 offset) {
+    vec2 projected_cos = vec2(cos(angle), signed_latitude) * scale + offset;
+    vec2 projected_sin = vec2(sin(angle), signed_latitude) * scale
+        + vec2(offset.y + 17.3, offset.x - 9.7);
+    return (snoise(projected_cos) + snoise(projected_sin)) * 0.5;
 }
 
 // Calcule un score de correspondance pour un biome donné
@@ -251,7 +260,6 @@ void main() {
     vec4 geo = imageLoad(geo_texture, pixel);
     vec4 climate = imageLoad(climate_texture, pixel);
     uint water_type = imageLoad(water_mask, pixel).r;
-    float flux = imageLoad(river_flux, pixel).r;
     
     float elevation = geo.r;           // Hauteur en mètres
     float water_height = geo.a;        // Colonne d'eau
@@ -274,15 +282,12 @@ void main() {
         humidity = 0.0;
     }
     
-    // Boost d'humidité près des flux d'eau (zones humides, pas rivières)
-    // Seulement si la planète a de l'eau et une atmosphère
-    if (!waterless_planet && !airless_planet) {
-        float flux_boost = min(flux * flux_humidity_boost, 0.3);
-        humidity = min(humidity + flux_boost, 1.0);
-    }
+    // Le réseau fluvial est une couche hydrologique superposée. Il ne modifie
+    // jamais la classe du biome sous-jacent : les ripisylves et couleurs de
+    // rivière sont rendues plus tard via river_biome_id dans final_map.glsl.
     
     // Déterminer le type d'eau UNIQUEMENT depuis water_mask
-    // water_mask est la source de vérité après water_to_color:
+    // water_mask est la source de vérité après HydrologySolver:
     // - 0 = terre
     // - 1 = eau salée
     // - 2 = eau douce
@@ -305,22 +310,60 @@ void main() {
         effective_elevation = elevation;  // Garder la profondeur réelle
     }
     
-    // Ajouter un peu de bruit pour les frontières naturelles
-    vec2 noise_pos = vec2(pixel) * 0.02 + vec2(float(seed) * 0.1);
-    float noise = snoise(noise_pos) * 5.0;  // ±5°C de variation
-    float temp_with_noise = temperature + noise * 0.1;
+    // Microclimats multi-échelles, exprimés dans le domaine cylindrique plutôt
+    // qu'en pixels. Les détails gardent ainsi la même taille géographique à
+    // 512 px ou 4K et les frontières ne deviennent pas de gros lobes arrondis.
+    float longitude_angle = ((float(pixel.x) + 0.5) / float(width)) * 6.28318530718;
+    float signed_latitude = ((float(pixel.y) + 0.5) / float(height) - 0.5) * 2.0;
+    vec2 seed_offset = vec2(float(seed % 4093u) * 0.071, float(seed % 6151u) * 0.053);
+    float broad_microclimate = periodicClimateNoise(
+        longitude_angle, signed_latitude, 2.8, seed_offset
+    );
+    float regional_microclimate = periodicClimateNoise(
+        longitude_angle, signed_latitude, 7.2, seed_offset + vec2(31.7, -18.2)
+    );
+    float local_microclimate = periodicClimateNoise(
+        longitude_angle, signed_latitude, 16.5, seed_offset + vec2(-63.1, 44.8)
+    );
+    float boundary_detail = periodicClimateNoise(
+        longitude_angle, signed_latitude, 31.0, seed_offset + vec2(91.4, 12.6)
+    );
+    float microclimate = broad_microclimate * 0.48
+        + regional_microclimate * 0.30
+        + local_microclimate * 0.16
+        + boundary_detail * 0.06;
+    float temp_with_noise = temperature + microclimate * 3.4;
     
     // Pour les planètes sans atmosphère, pas de bruit d'humidité
     float humid_with_noise = humidity;
     if (!airless_planet) {
-        float humid_noise = snoise(noise_pos * 0.5 + vec2(100.0)) * 0.05;
+        float humid_broad = periodicClimateNoise(
+            longitude_angle,
+            signed_latitude,
+            4.6,
+            seed_offset + vec2(-47.0, 83.0)
+        );
+        float humid_regional = periodicClimateNoise(
+            longitude_angle,
+            signed_latitude,
+            12.8,
+            seed_offset + vec2(72.5, -36.2)
+        );
+        float humid_detail = periodicClimateNoise(
+            longitude_angle,
+            signed_latitude,
+            27.0,
+            seed_offset + vec2(-11.3, 119.7)
+        );
+        float humid_noise = (
+            humid_broad * 0.56 + humid_regional * 0.31 + humid_detail * 0.13
+        ) * 0.095;
         humid_with_noise = clamp(humidity + humid_noise, 0.0, 1.0);
     }
     
     // === RECHERCHE DES MEILLEURS BIOMES (TOP N CANDIDATS) ===
-    // Au lieu de sélectionner un unique "meilleur" biome, on collecte les N meilleurs
-    // candidats et on utilise du bruit spatial multi-échelle pour choisir parmi eux.
-    // Cela crée de la diversité naturelle tout en gardant des ensembles continus.
+    // Conserver quelques candidats permet de modeler les écotones, mais le
+    // classement physique reste prioritaire.
     const uint NO_BIOME_FOUND = 0xFFFFFFFFu;
     const vec4 ERROR_COLOR = vec4(1.0, 0.0, 0.0, 1.0);  // ROUGE = erreur/pas de biome
     const int MAX_CANDIDATES = 5;
@@ -400,20 +443,45 @@ void main() {
                 if (biome_sw && is_freshwater) continue;
             }
             
-            // Distance normalisée au centre de chaque plage
+            // Distance jusqu'à la frontière de chaque plage. L'ancienne
+            // distance au centre, divisée par la largeur de l'intervalle,
+            // avantageait fortement les biomes aux plages immenses : un pixel
+            // tropical sans candidat exact pouvait ainsi devenir polaire.
             float temp_center = (biome.temp_min + biome.temp_max) * 0.5;
             float humid_center = (biome.humid_min + biome.humid_max) * 0.5;
             float elev_center = (biome.elev_min + biome.elev_max) * 0.5;
-            
+
             float temp_range = max(biome.temp_max - biome.temp_min, 1.0);
             float humid_range = max(biome.humid_max - biome.humid_min, 0.01);
             float elev_range = max(biome.elev_max - biome.elev_min, 1.0);
-            
-            float td = abs(temp_with_noise - temp_center) / temp_range;
-            float hd = abs(humid_with_noise - humid_center) / humid_range;
-            float ed = abs(effective_elevation - elev_center) / elev_range;
-            
-            float dist = td + hd + ed;
+
+            float temp_outside = max(
+                max(biome.temp_min - temp_with_noise, temp_with_noise - biome.temp_max),
+                0.0
+            );
+            float humid_outside = max(
+                max(biome.humid_min - humid_with_noise, humid_with_noise - biome.humid_max),
+                0.0
+            );
+            float elev_outside = max(
+                max(biome.elev_min - effective_elevation, effective_elevation - biome.elev_max),
+                0.0
+            );
+
+            // Échelles correspondant à une différence climatique ou
+            // topographique significative. Un très léger terme de centre ne
+            // sert qu'à départager deux intervalles équidistants.
+            float boundary_dist = (
+                temp_outside / 18.0
+                + humid_outside / 0.18
+                + elev_outside / 2500.0
+            );
+            float center_tiebreak = (
+                abs(temp_with_noise - temp_center) / temp_range
+                + abs(humid_with_noise - humid_center) / humid_range
+                + abs(effective_elevation - elev_center) / elev_range
+            ) * 0.01;
+            float dist = boundary_dist + center_tiebreak;
             
             if (dist < best_fallback_dist) {
                 best_fallback_dist = dist;
@@ -439,64 +507,59 @@ void main() {
         best_color = candidate_colors[0];
     }
     else {
-        // Plusieurs candidats : utiliser du bruit spatial multi-échelle
-        // pour sélectionner parmi eux, créant des territoires naturels
-        
-        // Bruit à grande échelle (territoires de biomes, ~continent)
-        vec2 large_pos = vec2(pixel) * 0.002 + vec2(float(seed) * 0.137);
-        float large_noise = snoise(large_pos);
-        
-        // Bruit à moyenne échelle (régions, ~pays)
-        vec2 medium_pos = vec2(pixel) * 0.008 + vec2(float(seed) * 0.891);
-        float medium_noise = snoise(medium_pos);
-        
-        // Bruit à petite échelle (frontières irrégulières)
-        vec2 small_pos = vec2(pixel) * 0.025 + vec2(float(seed) * 0.432);
-        float small_noise = snoise(small_pos);
-        
-        // Combinaison : grande échelle domine pour la continuité spatiale
-        float selection_noise = large_noise * 0.50 + medium_noise * 0.28 + small_noise * 0.12;
-        
-        // Variation par pixel (hash) pour casser les zones trop uniformes
-        // quand plusieurs biomes ont des scores proches
-        float pixel_jitter = hash(vec2(pixel) + vec2(float(seed) * 0.731));
-        selection_noise += (pixel_jitter - 0.5) * 0.10;
-        
-        // Normaliser le bruit vers [0, 1]
-        float selection = clamp(selection_noise * 0.5 + 0.5, 0.0, 1.0);
-        
-        // Déterminer le nombre de candidats viables (score suffisamment proche du meilleur)
-        float top_score = candidate_scores[0];
+        // Le meilleur score physique reste la décision principale. L'ancien
+        // tirage pondéré pouvait choisir le cinquième biome compatible au cœur
+        // d'une région et produisait une mosaïque arbitraire. Un champ cohérent
+        // ne départage désormais que les deux candidats réellement proches :
+        // il déforme les écotones sans repeindre l'intérieur des biomes.
+        float top_score = max(candidate_scores[0], 0.001);
+        float second_score = max(candidate_scores[1], 0.0);
+        float ambiguity = 1.0 - clamp(
+            (top_score - second_score) / top_score,
+            0.0,
+            1.0
+        );
         int viable_count = 1;
         for (int j = 1; j < num_candidates; j++) {
-            // Un candidat est viable si son score est au moins 40% du meilleur
-            // Cela permet aux biomes proches en score de se battre pour le territoire
-            if (candidate_scores[j] >= top_score * 0.4) {
+            if (candidate_scores[j] >= top_score * 0.72) {
                 viable_count = j + 1;
             }
         }
-        
-        // Sélection pondérée par score parmi les candidats viables
-        // On calcule des poids normalisés et on utilise le bruit pour choisir
-        float total_weight = 0.0;
-        for (int j = 0; j < viable_count; j++) {
-            total_weight += candidate_scores[j];
-        }
-        
-        // Utiliser le bruit pour parcourir les poids cumulés
-        float threshold = selection * total_weight;
-        float cumulative = 0.0;
+
         int selected = 0;
-        
+        float selected_score = -1e20;
         for (int j = 0; j < viable_count; j++) {
-            cumulative += candidate_scores[j];
-            if (threshold <= cumulative) {
+            float candidate_phase = float(candidate_ids[j]) * 13.731;
+            vec2 candidate_offset = seed_offset + vec2(
+                candidate_phase,
+                -candidate_phase * 0.617
+            );
+            float territory = periodicClimateNoise(
+                longitude_angle,
+                signed_latitude,
+                4.1,
+                candidate_offset
+            ) * 0.64;
+            territory += periodicClimateNoise(
+                longitude_angle,
+                signed_latitude,
+                13.5,
+                candidate_offset + vec2(39.2, -71.4)
+            ) * 0.27;
+            territory += periodicClimateNoise(
+                longitude_angle,
+                signed_latitude,
+                29.0,
+                candidate_offset + vec2(-84.6, 25.1)
+            ) * 0.09;
+            float adjusted_score = candidate_scores[j]
+                + territory * top_score * 0.16 * ambiguity;
+            if (adjusted_score > selected_score) {
+                selected_score = adjusted_score;
                 selected = j;
-                break;
             }
-            selected = j;  // Dernier viable si on dépasse
         }
-        
+
         best_biome_id = candidate_ids[selected];
         best_color = candidate_colors[selected];
     }

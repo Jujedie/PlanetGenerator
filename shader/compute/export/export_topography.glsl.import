@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bwj1b2mlow4ee"
+path="res://.godot/imported/export_topography.glsl-af2d324e390eba0197e15b13c425329e.res"
+
+[deps]
+
+source_file="res://shader/compute/export/export_topography.glsl"
+dest_files=["res://.godot/imported/export_topography.glsl-af2d324e390eba0197e15b13c425329e.res"]
+
+[params]
+

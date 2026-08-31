@@ -43,8 +43,8 @@ layout(set = 1, binding = 0) uniform Params {
     float spreading_rate;    // km/Ma (typiquement 20-80)
     float planet_radius;     // km (Terre = 6371)
     float max_age;           // Ma (typiquement 200 Ma max pour croûte océanique)
-    float subsidence_coeff;  // Coefficient de subsidence (2500-3000)
-    float padding1;
+    float subsidence_coeff;  // Subsidence à 100 Ma, en mètres
+    float sea_level;
     float padding2;
 } params;
 
@@ -73,37 +73,64 @@ float randOcean(uint h) {
     return float(h) / 4294967295.0;
 }
 
-// Bruit de valeur 2D simple pour relief océanique
-float oceanNoise2D(vec2 p, uint seed) {
-    vec2 i = floor(p);
+// Modulo positif pour l'axe périodique. Le bruit bathymétrique est évalué
+// dans un domaine [0, period_x) où la cellule suivant period_x - 1 est la
+// cellule 0. Cela ferme réellement le bruit à la couture longitudinale au lieu
+// de seulement wrapper les lectures de textures après coup.
+int positiveModulo(int value, int modulus) {
+    int result = value % modulus;
+    return result < 0 ? result + modulus : result;
+}
+
+// Bruit de valeur 2D périodique sur X et non périodique sur Y. Pour les
+// cellules qui ne touchent pas la couture, les mêmes indices/hash que
+// l'ancienne version sont conservés ; seule l'interpolation de fermeture relie
+// la dernière cellule longitudinale à la première.
+float oceanNoise2DPeriodic(vec2 p, uint seed, int period_x) {
+    ivec2 cell = ivec2(floor(p));
     vec2 f = fract(p);
     vec2 u = f * f * (3.0 - 2.0 * f);
-    
-    uint ix = uint(i.x + 1000.0);
-    uint iy = uint(i.y + 1000.0);
-    
-    float a = randOcean(hashOcean(ix + seed) ^ hashOcean(iy));
-    float b = randOcean(hashOcean(ix + 1u + seed) ^ hashOcean(iy));
-    float c = randOcean(hashOcean(ix + seed) ^ hashOcean(iy + 1u));
-    float d = randOcean(hashOcean(ix + 1u + seed) ^ hashOcean(iy + 1u));
-    
+
+    int safe_period_x = max(period_x, 1);
+    int wrapped_x0 = positiveModulo(cell.x, safe_period_x);
+    int wrapped_x1 = positiveModulo(cell.x + 1, safe_period_x);
+
+    uint ix0 = uint(wrapped_x0 + 1000);
+    uint ix1 = uint(wrapped_x1 + 1000);
+    uint iy0 = uint(cell.y + 1000);
+    uint iy1 = uint(cell.y + 1001);
+
+    float a = randOcean(hashOcean(ix0 + seed) ^ hashOcean(iy0));
+    float b = randOcean(hashOcean(ix1 + seed) ^ hashOcean(iy0));
+    float c = randOcean(hashOcean(ix0 + seed) ^ hashOcean(iy1));
+    float d = randOcean(hashOcean(ix1 + seed) ^ hashOcean(iy1));
+
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 2.0 - 1.0;
 }
 
-// fBm simple pour variation bathymétrique
-float oceanFbm(vec2 p, int octaves, uint seed) {
+// fBm bathymétrique périodique. La période double avec la fréquence de chaque
+// octave afin que toutes les octaves se referment exactement à la même
+// longitude. Le champ reste déterministe et conserve la fréquence historique
+// de 15 cellules sur la circonférence à l'octave de base.
+float oceanFbmPeriodic(vec2 p, int octaves, uint seed, int period_x) {
     float value = 0.0;
     float amplitude = 1.0;
     float frequency = 1.0;
     float total = 0.0;
-    
+    int octave_period_x = max(period_x, 1);
+
     for (int i = 0; i < octaves; i++) {
-        value += amplitude * oceanNoise2D(p * frequency, seed + uint(i) * 1000u);
+        value += amplitude * oceanNoise2DPeriodic(
+            p * frequency,
+            seed + uint(i) * 1000u,
+            octave_period_x
+        );
         total += amplitude;
         amplitude *= 0.5;
         frequency *= 2.0;
+        octave_period_x *= 2;
     }
-    
+
     return value / total;
 }
 
@@ -163,37 +190,40 @@ void main() {
     // spreading_rate est en km/Ma (kilomètres par million d'années)
     // Pour une dorsale symétrique, chaque côté s'éloigne à spreading_rate/2
     // Donc age = distance / (spreading_rate / 2) = 2 * distance / spreading_rate
-    float age_ma = (2.0 * dist_km) / params.spreading_rate;
+    float safe_spreading_rate = max(params.spreading_rate, 0.001);
+    float safe_max_age = max(params.max_age, 0.0);
+    float safe_subsidence_coeff = max(params.subsidence_coeff, 0.0);
+    float age_ma = (2.0 * dist_km) / safe_spreading_rate;
     
     // Plafonner l'âge (la croûte océanique ne dépasse pas ~200 Ma avant subduction)
-    age_ma = min(age_ma, params.max_age);
+    age_ma = min(age_ma, safe_max_age);
     
     // === CALCUL DE LA SUBSIDENCE THERMIQUE ===
     
-    // Modèle de Parsons & Sclater (1977) - Formule GÉOLOGIQUE CORRECTE:
-    // depth(t) = 2600 + 365 * sqrt(t)  où t est en Ma
-    //
-    // À la dorsale (t=0): depth = 2600m (reference)
-    // À 100 Ma: depth = 2600 + 365*10 = 6250m
-    // 
-    // La subsidence est la différence par rapport à la dorsale
-    // subsidence = 365 * sqrt(t)
+    // Le paramètre utilisateur représente la subsidence à 100 Ma. L'ancienne
+    // implémentation ignorait complètement ce paramètre et imposait 365*sqrt(t).
     
     float subsidence = 0.0;
     if (age_ma > 0.0) {
-        // Formule de Parsons & Sclater exacte
-        // 365 m/Ma^0.5 est le coefficient empirique vérifié
-        subsidence = 365.0 * sqrt(age_ma);
-        
-        // Plafond de subsidence réaliste
-        // Croûte de 180 Ma: 365 * sqrt(180) ≈ 4900m de subsidence
-        // Depth max: 2600 + 4900 = 7500m (fosses océaniques)
-        float max_subsidence = 365.0 * sqrt(180.0);  // ~4900m
+        subsidence = safe_subsidence_coeff * sqrt(age_ma / 100.0);
+
+        // Utiliser le même modèle paramétré pour le plafond, au lieu d'une
+        // seconde constante indépendante de l'interface.
+        float max_subsidence = safe_subsidence_coeff * sqrt(safe_max_age / 100.0);
         subsidence = min(subsidence, max_subsidence);
     }
     
-    // === ÉCRITURE DU RÉSULTAT ===
-    
+    // Charger la croûte locale avant d'écrire le résultat. Les cellules
+    // émergées restent explicitement continentales dans la carte d'âge.
+    vec4 geo = imageLoad(geo_texture, pixel);
+    float height = geo.r;
+
+    if (height >= params.sea_level) {
+        imageStore(crust_age_texture, pixel, vec4(-1.0, -1.0, 0.0, 0.0));
+        return;
+    }
+
+    // === ÉCRITURE DU RÉSULTAT OCÉANIQUE ===
     vec4 result = vec4(
         dist_km,         // R: distance en km
         age_ma,          // G: âge en Ma
@@ -201,76 +231,55 @@ void main() {
         1.0              // A: marqueur de validité
     );
     imageStore(crust_age_texture, pixel, result);
-    
+
     // === APPLIQUER LA SUBSIDENCE À LA GEO_TEXTURE ===
     
-    vec4 geo = imageLoad(geo_texture, pixel);
-    float height = geo.r;
-    
-    // CORRECTION MAJEURE: Application de la subsidence aux zones océaniques
-    // Conditions élargies pour créer correctement les bassins océaniques:
-    // (1) Zone océanique (sous le niveau de la mer OU faible altitude)
-    // (2) Âge valide
-    // (3) Âge < 180 Ma (croûte plus vieille est subduite)
-    if (height < 300.0 && age_ma > 0.0 && age_ma < 180.0) {
+    // La subsidence océanique ne doit jamais convertir une plaine continentale
+    // basse en fond marin. Elle ne s'applique qu'aux cellules déjà immergées.
+    if (height < params.sea_level && age_ma > 0.0 && age_ma <= params.max_age) {
         // La subsidence REMPLACE l'élévation de base pour les zones océaniques
         // Référence: dorsale à -2600m, puis subsidence ajoute de la profondeur
-        float ridge_depth = -2600.0;
+        float ridge_depth = params.sea_level - 2600.0;
         
         // === TRANSITION GRADUELLE PLATEAU CONTINENTAL ===
         // shelf_factor: 0 = océan profond, 1 = terre émergée
-        float shelf_factor = smoothstep(-200.0, 150.0, height);
+        float shelf_factor = smoothstep(params.sea_level - 200.0, params.sea_level, height);
         
-        // Pour les zones vraiment océaniques (sous le niveau de la mer)
-        if (height < 0.0) {
-            // Calcul de la profondeur totale selon Parsons & Sclater
-            float ocean_depth = ridge_depth - subsidence;
-            
-            // Mélanger avec la hauteur existante pour lisser la transition
-            // Plus l'âge est grand, plus on fait confiance au modèle de subsidence
-            float age_factor = smoothstep(0.0, 50.0, age_ma);
-            
-            // Application progressive avec shelf_factor pour transition douce
-            float blend_factor = age_factor * 0.7 * (1.0 - shelf_factor * 0.5);
-            height = mix(height, ocean_depth, blend_factor);
-            
-            // === CRÉATION PLATEAU CONTINENTAL [-200m, -50m] ===
-            // Les zones côtières peu profondes restent peu profondes
-            if (height > -250.0 && height < -20.0) {
-                // Ramener vers profondeur shelf typique (-80m à -120m)
-                float shelf_target = -100.0;
-                float coastal_blend = smoothstep(-250.0, -80.0, height);
-                height = mix(height, shelf_target, coastal_blend * 0.4);
+        // Calcul de la profondeur totale selon le modèle de refroidissement.
+        float ocean_depth = ridge_depth - subsidence;
+
+        // Mélanger avec la hauteur existante pour lisser la transition. La
+        // confiance dans l'âge croît progressivement loin de la dorsale.
+        float age_factor = smoothstep(0.0, 50.0, age_ma);
+        float blend_factor = age_factor * 0.62 * (1.0 - shelf_factor * 0.75);
+        height = mix(height, ocean_depth, blend_factor);
+
+        // Conserver un plateau continental peu profond près du niveau marin.
+        if (height > params.sea_level - 250.0 && height < params.sea_level - 20.0) {
+            float shelf_target = params.sea_level - 100.0;
+            float coastal_blend = smoothstep(params.sea_level - 250.0, params.sea_level - 80.0, height);
+            height = mix(height, shelf_target, coastal_blend * 0.4);
+        }
+
+        // Relief bathymétrique uniquement sur le plancher océanique profond.
+        if (height < params.sea_level - 500.0) {
+            vec2 ocean_uv = vec2(float(pixel.x) / float(params.width),
+                                 float(pixel.y) / float(params.height));
+            // 15.0 est un nombre entier de cellules longitudinales. La même
+            // valeur définit donc aussi la période exacte du bruit sur X.
+            float ocean_relief = oceanFbmPeriodic(ocean_uv * 15.0, 4, 12345u, 15);
+            height += ocean_relief * 300.0;
+
+            // Le canal A est maintenant un signal divergent localisé.
+            float boundary_signal = imageLoad(plates_texture, pixel).a;
+            if (boundary_signal < -0.3) {
+                height += 220.0 * clamp((-boundary_signal - 0.3) / 0.7, 0.0, 1.0);
             }
-            
-            // === RELIEF OCÉANIQUE (variation bathymétrique) ===
-            // Ajoute du relief au fond océanique pour dorsales et abysses
-            if (height < -500.0) {
-                vec2 ocean_uv = vec2(float(pixel.x) / float(params.width), 
-                                     float(pixel.y) / float(params.height));
-                // Bruit grande échelle pour dorsales et bassins
-                float ocean_relief = oceanFbm(ocean_uv * 15.0, 4, 12345u);
-                // Amplitude: 400m de variation au fond océanique
-                height += ocean_relief * 400.0;
-                
-                // Bonus pour zones proches des dorsales (divergence)
-                vec4 plate_data = imageLoad(plates_texture, pixel);
-                float convergence_type = plate_data.a;
-                if (convergence_type < -0.3) {
-                    // Dorsale: élever légèrement (+300m effet localisé)
-                    height += 300.0 * (-convergence_type - 0.3) / 0.7;
-                }
-            }
-        } else {
-            // Zones côtières/shelf: subsidence atténuée avec transition douce
-            float shelf_subsidence = subsidence * 0.2 * (1.0 - shelf_factor);
-            height -= shelf_subsidence;
         }
         
         // Mettre à jour la colonne d'eau
-        float sea_level = 0.0;
-        if (height < sea_level) {
-            geo.a = sea_level - height;
+        if (height < params.sea_level) {
+            geo.a = params.sea_level - height;
         }
         
         geo.r = height;

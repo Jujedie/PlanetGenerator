@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://dhudka2qd1bny"
+path="res://.godot/imported/tiled_climate.glsl-b9ddcc98f866a3bef9c26bfc133f6cd1.res"
+
+[deps]
+
+source_file="res://shader/compute/tiled_global/tiled_climate.glsl"
+dest_files=["res://.godot/imported/tiled_climate.glsl-b9ddcc98f866a3bef9c26bfc133f6cd1.res"]
+
+[params]
+

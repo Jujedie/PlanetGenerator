@@ -2,10 +2,11 @@ key,en,fr,de
 LEAVE,LEAVE,QUITTER,VERLASSEN
 NAME,Planet name,Nom de la planète,Planetname
 TERRAIN_SCALE,Additional elevation : {val},Élévation additionnelle : {val},Zusätzliche Erhöhung : {val}
-THREAD_NUMBER,Number of threads : {val},Nombre de threads : {val},Anzahl der Threads : {val}
+THREAD_NUMBER,PNG export workers (0 = automatic): {val},Workers export PNG (0 = automatique) : {val},PNG-Export-Threads (0 = automatisch): {val}
 PLANET_TYPE,Planet type,Type de planète,Planetentyp
 SAUVEGARDER,SAVE,SAUVEGARDER,SPEICHERN
 GENERER,GENERATE,GENERER,GENERIEREN
+RANDOMISE,RANDOMIZE,RANDOMISER,ZUFÄLLIG
 
 TYPE_DEFAUT,Default,Défaut,Standard
 TYPE_TOXIQUE,Toxic,Toxique,Giftig
@@ -19,6 +20,8 @@ CREATING,Creating,Création en cours,Erstellung
 
 MAP_TOPOGRAPHIE,Topography,Topographie,Topographie
 MAP_TOPOGRAPHIE_GREY,Topography (Grey),Topographie (Gris),Topographie (Grau)
+MAP_TOPOLOGY,Contour lines,Courbes de niveau,Höhenlinien
+MAP_CARTHOGRAPHIC,Cartographic map,Carte cartographique,Kartographische Karte
 MAP_EAUX,Water map,Carte des eaux,Wasserkarte
 MAP_PLAQUES,Tectonic plates,Plaques tectoniques,Tektonische Platten
 MAP_PLAQUES_BORDURES,Plate boundaries,Bordures de plaques,Plattengrenzen
@@ -41,6 +44,7 @@ MAP_DEPARTEMENT_MER,Departments sea,Mer des départements,Departementsmeer
 MAP_OCEAN_REGIONS,Ocean regions,Régions océaniques,Ozeanregionen
 MAP_BASSIN,Basins,Bassins,Becken
 MAP_OCEAN,Ocean,Océan,Ozean
+MAP_GRID_OVERLAY,Grid Overlay,Superposition de grille,Gitterüberlagerung
 MAP_PREVIEW,Preview,Aperçu,Vorschau
 OCEAN_RATIO,Ocean coverage : {val},Couverture océanique : {val},Ozeanbedeckung : {val}
 
@@ -70,6 +74,7 @@ SUBSIDENCE_COEFFICIENT,Subsidence coefficient : {val},Coefficient d'affaissement
 CRATER_CATEGORIE,Crater category,Catégorie cratère,Kraterkategorie
 CRATER_DENSITY,Crater density : {val},Densité de cratères : {val},Kraterdichte : {val}
 CRATER_MIN_RADIUS,Crater min radius : {val},Rayon min du cratère : {val},Min. Kraterradius : {val}
+CRATER_MAX_RADIUS,Crater max radius : {val},Rayon max du cratère : {val},Max. Kraterradius : {val}
 CRATER_DEPTH_RATIO,Crater depth ratio : {val},Rapport profondeur/diamètre : {val},Verhältnis Tiefe/Durchmesser : {val}
 CRATER_EJECTA_EXTENT,Crater ejecta extent : {val},Étendue de l'éjecta : {val},Auswurfweite : {val}
 CRATER_EJECTA_DECAY,Crater ejecta decay : {val},Décroissance de l'éjecta : {val},Abklingverhalten des Auswurfs : {val}
@@ -93,7 +98,7 @@ CLOUD_COVERAGE,Cloud coverage : {val},Couverture nuageuse : {val},Bedeckung : {v
 CLOUD_DENSITY,Cloud density : {val},Densité des nuages : {val},Wolkendichte : {val}
 
 REGION_CATEGORIE,Region category,Catégorie région,Regionkategorie
-NB_CASES_REGIONS,Number of region tiles : {val},Nombre de cases régions : {val},Anzahl der Regionenfelder : {val}
+NB_CASES_REGIONS,Department target size : {val} tiles,Taille cible d'un département : {val} cases,Zielgröße des Bezirks : {val} Felder
 REGION_COST_FLAT,Region cost (flat) : {val},Coût région (plat) : {val},Regionenkosten (flach) : {val}
 REGION_COST_HILL,Region cost (hill) : {val},Coût région (colline) : {val},Regionenkosten (Hügel) : {val}
 REGION_COST_RIVER,Region cost (river) : {val},Coût région (rivière) : {val},Regionenkosten (Fluss) : {val}
@@ -107,6 +112,14 @@ OCEAN_COST_FLAT,Ocean cost (flat) : {val},Coût océan (plat) : {val},Ozeankoste
 OCEAN_COST_DEEPER,Ocean cost (deeper) : {val},Coût océan (profond) : {val},Ozeankosten (tief) : {val}
 OCEAN_NOISE_STRENGTH,Ocean noise strength : {val},Force du bruit océan : {val},Ozeanrauschstärke : {val}
 
+GAS_GIANT_CATEGORIE,Gas giant atmosphere,Atmosphère de géante gazeuse,Gasriesenatmosphäre
+GAS_GIANT_NUM_BANDS,Atmospheric bands : {val},Bandes atmosphériques : {val},Atmosphärische Bänder : {val}
+GAS_GIANT_JET_STRENGTH,Jet strength : {val},Force des jets : {val},Jet-Stärke : {val}
+GAS_GIANT_EDDY_STRENGTH,Eddy strength : {val},Force des tourbillons : {val},Wirbelstärke : {val}
+GAS_GIANT_ADVECTION_DT,Advection step : {val},Pas d'advection : {val},Advektionsschritt : {val}
+GAS_GIANT_ADVECTION_ITERATIONS,Advection iterations : {val},Itérations d'advection : {val},Advektionsiterationen : {val}
+GAS_GIANT_TARGET_SHARPEN,Cloud contrast retention : {val},Conservation du contraste nuageux : {val},Wolkenkontrasterhalt : {val}
+
 RESSOURCES_CATEGORIE,Resources category,Catégorie ressources,Ressourcenkategorie
 PETROLE_PROBABILITY,Petroleum probability : {val},Probabilité de pétrole : {val},Ölwahrscheinlichkeit : {val}
 PETROLE_DEPOSIT_SIZE,Petroleum deposit size : {val},Taille du dépôt de pétrole : {val},Größe der Ölvorkommen : {val}
@@ -115,3 +128,413 @@ PARAMETRES,Parameters,Paramètres,Parameter
 
 LOAD_PRESET,LOAD PRESET,CHARGER PRESET,PRESET LADER
 SAVE_PRESET,SAVE PRESET,SAUVEGARDER PRESET,PRESET SPEICHERN
+
+# RESOURCE MAP NAMES - M7.2 UI
+RESOURCE_PETROLE,Petroleum,Pétrole,Erdöl
+RESOURCE_SILICIUM,Silicon,Silicium,Silizium
+RESOURCE_ALUMINIUM,Aluminium,Aluminium,Aluminium
+RESOURCE_FER,Iron,Fer,Eisen
+RESOURCE_CALCIUM,Calcium,Calcium,Kalzium
+RESOURCE_MAGNESIUM,Magnesium,Magnésium,Magnesium
+RESOURCE_POTASSIUM,Potassium,Potassium,Kalium
+RESOURCE_TITANE,Titanium,Titane,Titan
+RESOURCE_PHOSPHATE,Phosphate,Phosphate,Phosphat
+RESOURCE_MANGANESE,Manganese,Manganèse,Mangan
+RESOURCE_SOUFRE,Sulfur,Soufre,Schwefel
+RESOURCE_CHARBON,Coal,Charbon,Kohle
+RESOURCE_CALCAIRE,Limestone,Calcaire,Kalkstein
+RESOURCE_BARYUM,Barium,Baryum,Barium
+RESOURCE_STRONTIUM,Strontium,Strontium,Strontium
+RESOURCE_ZIRCONIUM,Zirconium,Zirconium,Zirkonium
+RESOURCE_VANADIUM,Vanadium,Vanadium,Vanadium
+RESOURCE_CHROME,Chromium,Chrome,Chrom
+RESOURCE_NICKEL,Nickel,Nickel,Nickel
+RESOURCE_ZINC,Zinc,Zinc,Zink
+RESOURCE_CUIVRE,Copper,Cuivre,Kupfer
+RESOURCE_SEL,Salt,Sel,Salz
+RESOURCE_FLUORINE,Fluorine,Fluor,Fluor
+RESOURCE_COBALT,Cobalt,Cobalt,Kobalt
+RESOURCE_LITHIUM,Lithium,Lithium,Lithium
+RESOURCE_NIOBIUM,Niobium,Niobium,Niob
+RESOURCE_PLOMB,Lead,Plomb,Blei
+RESOURCE_BORE,Boron,Bore,Bor
+RESOURCE_THORIUM,Thorium,Thorium,Thorium
+RESOURCE_GRAPHITE,Graphite,Graphite,Graphit
+RESOURCE_ETAIN,Tin,Étain,Zinn
+RESOURCE_BERYLLIUM,Beryllium,Béryllium,Beryllium
+RESOURCE_ARSENIC,Arsenic,Arsenic,Arsen
+RESOURCE_GERMANIUM,Germanium,Germanium,Germanium
+RESOURCE_URANIUM,Uranium,Uranium,Uran
+RESOURCE_MOLYBDENE,Molybdenum,Molybdène,Molybdän
+RESOURCE_TUNGSTENE,Tungsten,Tungstène,Wolfram
+RESOURCE_ANTIMOINE,Antimony,Antimoine,Antimon
+RESOURCE_TANTALE,Tantalum,Tantale,Tantal
+RESOURCE_ARGENT,Silver,Argent,Silber
+RESOURCE_CADMIUM,Cadmium,Cadmium,Cadmium
+RESOURCE_MERCURE,Mercury,Mercure,Quecksilber
+RESOURCE_SELENIUM,Selenium,Sélénium,Selen
+RESOURCE_INDIUM,Indium,Indium,Indium
+RESOURCE_BISMUTH,Bismuth,Bismuth,Wismut
+RESOURCE_TELLURE,Tellurium,Tellure,Tellur
+RESOURCE_OR,Gold,Or,Gold
+RESOURCE_PLATINE,Platinum,Platine,Platin
+RESOURCE_PALLADIUM,Palladium,Palladium,Palladium
+RESOURCE_RHODIUM,Rhodium,Rhodium,Rhodium
+RESOURCE_IRIDIUM,Iridium,Iridium,Iridium
+RESOURCE_OSMIUM,Osmium,Osmium,Osmium
+RESOURCE_RUTHENIUM,Ruthenium,Ruthénium,Ruthenium
+RESOURCE_RHENIUM,Rhenium,Rhénium,Rhenium
+RESOURCE_CERIUM,Cerium,Cérium,Cer
+RESOURCE_LANTHANE,Lanthanum,Lanthane,Lanthan
+RESOURCE_NEODYME,Neodymium,Néodyme,Neodym
+RESOURCE_YTTRIUM,Yttrium,Yttrium,Yttrium
+RESOURCE_PRASEODYME,Praseodymium,Praséodyme,Praseodym
+RESOURCE_SAMARIUM,Samarium,Samarium,Samarium
+RESOURCE_GADOLINIUM,Gadolinium,Gadolinium,Gadolinium
+RESOURCE_DYSPROSIUM,Dysprosium,Dysprosium,Dysprosium
+RESOURCE_ERBIUM,Erbium,Erbium,Erbium
+RESOURCE_EUROPIUM,Europium,Europium,Europium
+RESOURCE_TERBIUM,Terbium,Terbium,Terbium
+RESOURCE_HOLMIUM,Holmium,Holmium,Holmium
+RESOURCE_THULIUM,Thulium,Thulium,Thulium
+RESOURCE_YTTERBIUM,Ytterbium,Ytterbium,Ytterbium
+RESOURCE_LUTETIUM,Lutetium,Lutétium,Lutetium
+RESOURCE_SCANDIUM,Scandium,Scandium,Scandium
+RESOURCE_GAZ_NATUREL,Natural gas,Gaz naturel,Erdgas
+RESOURCE_LIGNITE,Lignite,Lignite,Braunkohle
+RESOURCE_ANTHRACITE,Anthracite,Anthracite,Anthrazit
+RESOURCE_TOURBE,Peat,Tourbe,Torf
+RESOURCE_SCHISTE_BITUMINEUX,Oil shale,Schiste bitumineux,Ölschiefer
+RESOURCE_METHANE_HYDRATE,Methane hydrate,Hydrate de méthane,Methanhydrat
+RESOURCE_DIAMANT,Diamond,Diamant,Diamant
+RESOURCE_EMERAUDE,Emerald,Émeraude,Smaragd
+RESOURCE_RUBIS,Ruby,Rubis,Rubin
+RESOURCE_SAPHIR,Sapphire,Saphir,Saphir
+RESOURCE_TOPAZE,Topaz,Topaze,Topas
+RESOURCE_AMETHYSTE,Amethyst,Améthyste,Amethyst
+RESOURCE_OPALE,Opal,Opale,Opal
+RESOURCE_TURQUOISE,Turquoise,Turquoise,Türkis
+RESOURCE_GRENAT,Garnet,Grenat,Granat
+RESOURCE_PERIDOT,Peridot,Péridot,Peridot
+RESOURCE_JADE,Jade,Jade,Jade
+RESOURCE_LAPIS_LAZULI,Lapis lazuli,Lapis-lazuli,Lapislazuli
+RESOURCE_QUARTZ,Quartz,Quartz,Quarz
+RESOURCE_FELDSPATH,Feldspar,Feldspath,Feldspat
+RESOURCE_MICA,Mica,Mica,Glimmer
+RESOURCE_ARGILE,Clay,Argile,Ton
+RESOURCE_KAOLIN,Kaolin,Kaolin,Kaolin
+RESOURCE_GYPSE,Gypsum,Gypse,Gips
+RESOURCE_TALC,Talc,Talc,Talk
+RESOURCE_BAUXITE,Bauxite,Bauxite,Bauxit
+RESOURCE_MARBRE,Marble,Marbre,Marmor
+RESOURCE_GRANIT,Granite,Granit,Granit
+RESOURCE_ARDOISE,Slate,Ardoise,Schiefer
+RESOURCE_GRES,Sandstone,Grès,Sandstein
+RESOURCE_SABLE,Sand,Sable,Sand
+RESOURCE_GRAVIER,Gravel,Gravier,Kies
+RESOURCE_BASALTE,Basalt,Basalte,Basalt
+RESOURCE_OBSIDIENNE,Obsidian,Obsidienne,Obsidian
+RESOURCE_PIERRE_PONCE,Pumice,Pierre ponce,Bimsstein
+RESOURCE_AMIANTE,Asbestos,Amiante,Asbest
+RESOURCE_VERMICULITE,Vermiculite,Vermiculite,Vermiculit
+RESOURCE_PERLITE,Perlite,Perlite,Perlit
+RESOURCE_BENTONITE,Bentonite,Bentonite,Bentonit
+RESOURCE_ZEOLITE,Zeolite,Zéolite,Zeolith
+RESOURCE_HAFNIUM,Hafnium,Hafnium,Hafnium
+RESOURCE_GALLIUM,Gallium,Gallium,Gallium
+RESOURCE_CESIUM,Cesium,Césium,Cäsium
+RESOURCE_RUBIDIUM,Rubidium,Rubidium,Rubidium
+RESOURCE_HELIUM,Helium,Hélium,Helium
+RESOURCE_TERRES_RARES_MELANGEES,Mixed rare earths,Terres rares mélangées,Gemischte Seltene Erden
+
+LOAD_PLANET,Load planet,Charger planète,Planet laden
+GEN_CANCEL,Cancel,Annuler,Abbrechen
+GEN_STATUS_READY,Ready,Prêt,Bereit
+GEN_STATUS_PREPARING,Preparing generation…,Préparation de la génération…,Generierung wird vorbereitet…
+GEN_STATUS_CANCELLING,Cancelling at the next safe boundary…,Annulation à la prochaine étape sûre…,Abbruch an der nächsten sicheren Grenze…
+GEN_STATUS_CANCELLED,Cancelled,Annulée,Abgebrochen
+GEN_STATUS_CANCELLED_REASON,Cancelled: {reason},Annulée : {reason},Abgebrochen: {reason}
+GEN_STATUS_IDLE,Idle • no active generation,Inactif • aucune génération en cours,Leerlauf • keine aktive Generierung
+GEN_STATUS_MEMORY,Raster {width}×{height} • est. active ~{memory},Raster {width}×{height} • actif estimé ~{memory},Raster {width}×{height} • geschätzt aktiv ~{memory}
+GEN_STATUS_MEMORY_TOOLTIP,Estimated active generation memory and elapsed time,Mémoire active estimée et temps écoulé,Geschätzter aktiver Generierungsspeicher und verstrichene Zeit
+GEN_STATUS_TILING_THRESHOLD,Full GPU pipeline up to ~{width}×{height} at this aspect ratio,Pipeline GPU complet jusqu’à environ {width}×{height} pour ce ratio,Vollständige GPU-Pipeline bis etwa {width}×{height} bei diesem Seitenverhältnis
+GEN_STATUS_TILING_THRESHOLD_TOOLTIP,Worlds inside this limit use the same authoritative monolithic GPU pipeline as smaller maps. Larger rasters are rejected for now instead of using the experimental tiled backend.,Les mondes dans cette limite utilisent exactement le même pipeline GPU monolithique de référence que les petites cartes. Les rasters plus grands sont temporairement refusés au lieu d’utiliser le backend tuilé expérimental.,Welten innerhalb dieses Limits verwenden dieselbe maßgebliche monolithische GPU-Pipeline wie kleinere Karten. Größere Raster werden vorerst abgelehnt, statt das experimentelle Kachel-Backend zu verwenden.
+GEN_STATUS_STEP_DETAIL_TOOLTIP,What the generator is doing during the current step,Ce que le générateur réalise pendant l’étape en cours,Was der Generator im aktuellen Schritt ausführt
+GEN_STATUS_STEP_ACTIVE,Working on: {phase},En cours : {phase},Aktuell: {phase}
+GEN_STEP_PREPARING,Checking settings and preparing the map layers,Vérification des paramètres et préparation des couches,Parameter werden geprüft und Kartenebenen vorbereitet
+GEN_STEP_GPU_INITIALIZATION,Preparing the graphics processor and map textures,Préparation du processeur graphique et des textures,Vorbereitung des Grafikprozessors und der Kartentexturen
+GEN_STEP_BASE_ELEVATION,Drawing continents oceans and the base relief,Création des continents des océans et du relief de base,Kontinente Ozeane und Grundrelief werden erstellt
+GEN_STEP_CRUST_AGE,Simulating crust age and seafloor structure,Simulation de l’âge de la croûte et des fonds marins,Simulation von Krustenalter und Meeresbodenstruktur
+GEN_STEP_CRATERING,Adding impact craters allowed by the planet type,Ajout des cratères d’impact adaptés au type de planète,Einschlagkrater passend zum Planetentyp werden hinzugefügt
+GEN_STEP_PRE_EROSION_CLIMATE,Estimating the climate before terrain erosion,Estimation du climat avant l’érosion du terrain,Klima vor der Geländeerosion wird geschätzt
+GEN_STEP_EROSION,Carving terrain drainage and river networks,Érosion du relief et création des réseaux de drainage,Erosion von Gelände und Entwässerungsnetzen
+GEN_STEP_FINAL_CLIMATE,Calculating temperature winds and precipitation,Calcul des températures des vents et des précipitations,Temperatur Winde und Niederschlag werden berechnet
+GEN_STEP_WATER,Classifying oceans lakes and rivers,Classification des océans des lacs et des rivières,Ozeane Seen und Flüsse werden klassifiziert
+GEN_STEP_ICE_CAPS,Building sea ice and polar coverage,Création de la banquise et de la couverture polaire,Meereis und polare Bedeckung werden erstellt
+GEN_STEP_BIOMES,Assigning and blending ecological regions,Attribution et mélange des régions écologiques,Ökologische Regionen werden zugewiesen und gemischt
+GEN_STEP_LAND_REGIONS,Building the land administrative regions,Création des régions administratives terrestres,Verwaltungsregionen an Land werden erstellt
+GEN_STEP_OCEAN_REGIONS,Building the ocean administrative regions,Création des régions administratives maritimes,Verwaltungsregionen im Meer werden erstellt
+GEN_STEP_RESOURCES,Distributing geological resources,Distribution des ressources géologiques,Geologische Ressourcen werden verteilt
+GEN_STEP_FINAL_MAP,Combining terrain climate rivers and ice,Assemblage du relief du climat des rivières et de la glace,Gelände Klima Flüsse und Eis werden zusammengeführt
+GEN_STEP_EXPORT,Creating and saving the PNG map files,Création et enregistrement des cartes PNG,PNG-Karten werden erstellt und gespeichert
+GEN_STEP_COMPLETE,All map layers have been generated,Toutes les couches de la carte ont été générées,Alle Kartenebenen wurden erzeugt
+GEN_STEP_GLOBAL_HYDROLOGY_CONTEXT,Preparing seamless global drainage,Préparation du drainage global sans raccord visible,Nahtlose globale Entwässerung wird vorbereitet
+GEN_STEP_TERRAIN_TECTONICS,Generating terrain and tectonic tiles,Génération des tuiles de terrain et de tectonique,Gelände- und Tektonikkacheln werden erzeugt
+GEN_STEP_CLIMATE,Generating climate layers across the planet,Génération des couches climatiques de la planète,Klimaebenen des Planeten werden erzeugt
+GEN_STEP_HYDROLOGY,Generating lakes rivers and water layers,Génération des lacs des rivières et des couches d’eau,Seen Flüsse und Wasserebenen werden erzeugt
+GEN_STEP_CLASSIFICATION,Assigning biomes and geographic regions,Attribution des biomes et des régions géographiques,Biome und geografische Regionen werden zugewiesen
+GEN_STEP_CANCELLING,Finishing the current safe operation before stopping,Fin de l’opération sûre en cours avant l’arrêt,Der aktuelle sichere Vorgang wird vor dem Abbruch beendet
+GEN_STATUS_COMPLETE,Complete,Terminée,Abgeschlossen
+GEN_STATUS_COMPLETED_IN,Completed in {seconds} s,Terminée en {seconds} s,Abgeschlossen in {seconds} s
+GEN_STATUS_UNAVAILABLE,Unavailable,Indisponible,Nicht verfügbar
+GEN_STATUS_GPU_START_FAILED,GPU generation could not start,La génération GPU n'a pas pu démarrer,GPU-Generierung konnte nicht gestartet werden
+LOAD_PLANET_DIALOG_TITLE,Load Planet Project,Charger un projet de planète,Planetenprojekt laden
+GEN_PHASE_GPU_INITIALIZATION,GPU initialization,Initialisation GPU,GPU-Initialisierung
+GEN_PHASE_BASE_ELEVATION,Base elevation,Relief de base,Basisrelief
+GEN_PHASE_CRUST_AGE,Crust age,Âge de la croûte,Krustenalter
+GEN_PHASE_CRATERING,Cratering,Cratérisation,Kraterbildung
+GEN_PHASE_PRE_EROSION_CLIMATE,Pre-erosion climate,Climat pré-érosion,Klima vor Erosion
+GEN_PHASE_EROSION,Erosion,Érosion,Erosion
+GEN_PHASE_FINAL_CLIMATE,Final climate,Climat final,Endklima
+GEN_PHASE_WATER,Hydrology,Hydrologie,Hydrologie
+GEN_PHASE_ICE_CAPS,Ice caps,Banquise,Eiskappen
+GEN_PHASE_BIOMES,Biomes,Biomes,Biome
+GEN_PHASE_LAND_REGIONS,Land administration,Administration terrestre,Landverwaltung
+GEN_PHASE_OCEAN_REGIONS,Ocean administration,Administration maritime,Meeresverwaltung
+GEN_PHASE_RESOURCES,Resources,Ressources,Ressourcen
+GEN_PHASE_FINAL_MAP,Final map,Carte finale,Endkarte
+GEN_PHASE_EXPORT,Export,Export,Export
+GEN_PHASE_COMPLETE,Complete,Terminée,Abgeschlossen
+GEN_PHASE_GLOBAL_HYDROLOGY_CONTEXT,Global hydrology context,Contexte hydrologique global,Globaler Hydrologiekontext
+GEN_PHASE_TERRAIN_TECTONICS,Terrain & tectonics,Terrain et tectonique,Gelände und Tektonik
+GEN_PHASE_CLIMATE,Climate,Climat,Klima
+GEN_PHASE_HYDROLOGY,Hydrology,Hydrologie,Hydrologie
+GEN_PHASE_CLASSIFICATION,Classification,Classification,Klassifizierung
+MAP_VIEWER_TITLE,Map viewer,Visionneuse de carte,Kartenansicht
+VIEWER_PREVIEW,Planet preview,Aperçu de la planète,Planetenvorschau
+MAP_VIEWER_BASE,Base map,Carte,Basiskarte
+MAP_VIEWER_OVERLAY,Overlay,Superposition,Überlagerung
+MAP_VIEWER_BASE_TOOLTIP,Choose the base map without regenerating the planet. Shortcuts: Left/Right or A/Q/D.,Choisir la carte de base sans régénérer la planète. Raccourcis : Gauche/Droite ou A/Q/D.,Basiskarte auswählen ohne den Planeten neu zu generieren. Tastenkürzel: Links/Rechts oder A/Q/D.
+MAP_VIEWER_OVERLAY_TOOLTIP,Blend another exported map over the base layer. Shortcuts: Shift + Left/Right or Shift + A/Q/D.,Superposer une autre carte exportée à la carte de base. Raccourcis : Maj + Gauche/Droite ou Maj + A/Q/D.,Eine weitere exportierte Karte über die Basiskarte legen. Tastenkürzel: Umschalt + Links/Rechts oder Umschalt + A/Q/D.
+MAP_VIEWER_NO_OVERLAY,No overlay,Aucune superposition,Keine Überlagerung
+MAP_VIEWER_OVERLAY_OPACITY,Overlay opacity,Opacité de la superposition,Deckkraft der Überlagerung
+MAP_VIEWER_ZOOM,Zoom {percent}%,Zoom {percent} %,Zoom {percent} %
+MAP_VIEWER_RESET,Reset view,Réinitialiser la vue,Ansicht zurücksetzen
+VIEWER_EMPTY_TITLE,NO PLANET LOADED,AUCUNE PLANÈTE CHARGÉE,KEIN PLANET GELADEN
+VIEWER_EMPTY_HINT,Open a planet project or configure a new generation.,Chargez un projet de planète ou configurez une nouvelle génération.,Öffnen Sie ein Planetenprojekt oder konfigurieren Sie eine neue Generierung.
+MAP_VIEWER_SHORTCUTS,Map: ← / → or A/Q/D • Overlay: Shift + same keys,Carte : ← / → ou A/Q/D • Superposition : Maj + mêmes touches,Karte: ← / → oder A/Q/D • Overlay: Umschalt + gleiche Tasten
+PARAMETER_PREVIEW_SHORTCUTS,Preview map: ← / → or A/Q/D,Aperçu : ← / → ou A/Q/D,Vorschau: ← / → oder A/Q/D
+VIEWER_HELP,Wheel: zoom • Middle drag: pan • Left click: inspect • Ctrl+0: reset,Molette : zoom • Clic milieu : déplacer • Clic gauche : inspecter • Ctrl+0 : réinitialiser,Mausrad: Zoom • Mittlere Taste: Verschieben • Linksklick: Prüfen • Strg+0: Zurücksetzen
+MAP_VIEWER_INSPECT_HINT,Click the map to inspect a coordinate.,Cliquer sur la carte pour inspecter une coordonnée.,Auf die Karte klicken um eine Koordinate zu prüfen.
+MAP_VIEWER_INSPECT_VALUE,"Cell {x},{y} • Lon {lon}° Lat {lat}°
+RGBA {r} / {g} / {b} / {a}","Cellule {x},{y} • Lon {lon}° Lat {lat}°
+RGBA {r} / {g} / {b} / {a}","Zelle {x},{y} • Lon {lon}° Lat {lat}°
+RGBA {r} / {g} / {b} / {a}"
+TEMPLATE_APPLY,Apply template,Appliquer modèle,Vorlage anwenden
+TEMPLATE_SMART_RANDOM,Smart random,Aléatoire cohérent,Intelligenter Zufall
+TEMPLATE_TOOLTIP,Choose a coherent starting parameter set.,Choisir un ensemble cohérent de paramètres de départ.,Einen kohärenten Startparametersatz auswählen.
+TEMPLATE_SMART_RANDOM_TOOLTIP,Pick a coherent template then apply modest correlated variation.,Choisit un modèle cohérent puis applique une variation corrélée modérée.,Wählt eine kohärente Vorlage und variiert ihre Werte moderat und zusammenhängend.
+TEMPLATE_EARTH_LIKE,Earth-like,Type Terre,Erdähnlich
+TEMPLATE_ARCHIPELAGO,Archipelago,Archipel,Archipel
+TEMPLATE_SUPERCONTINENT,Supercontinent,Supercontinent,Superkontinent
+TEMPLATE_OCEAN_WORLD,Ocean World,Monde océanique,Ozeanwelt
+TEMPLATE_DRY_WORLD,Dry World,Monde aride,Trockene Welt
+TEMPLATE_FROZEN_WORLD,Frozen World,Monde gelé,Eiswelt
+TEMPLATE_MARS_LIKE,Mars-like,Type Mars,Marsähnlich
+TEMPLATE_VENUS_LIKE,Venus-like,Type Vénus,Venusähnlich
+TEMPLATE_VOLCANIC_WORLD,Volcanic World,Monde volcanique,Vulkanwelt
+TEMPLATE_LAVA_OCEAN,Lava Ocean,Océan de lave,Lavaozean
+TEMPLATE_DEAD_WORLD,Dead World,Monde mort,Tote Welt
+TEMPLATE_IRRADIATED_WASTELAND,Irradiated Wasteland,Désert irradié,Verstrahltes Ödland
+TEMPLATE_GAS_GIANT,Gas Giant,Géante gazeuse,Gasriese
+TEMPLATE_HOT_JUPITER,Hot Jupiter,Jupiter chaud,Heißer Jupiter
+TEMPLATE_ICE_GIANT,Ice Giant,Géante de glace,Eisriese
+TEMPLATE_STORM_GIANT,Storm Giant,Géante tempétueuse,Sturm-Gasriese
+TEMPLATE_HIGH_TECTONICS,High Tectonics,Forte tectonique,Starke Tektonik
+TEMPLATE_LOW_RELIEF,Low Relief,Faible relief,Geringes Relief
+TEMPLATE_MOUNTAIN_WORLD,Mountain World,Monde montagneux,Gebirgswelt
+BATCH_BUTTON,Batch,Batch,Stapel
+BATCH_TITLE,BATCH / BENCHMARK,BATCH / BENCHMARK,STAPEL / BENCHMARK
+BATCH_COUNT,Planets,Planètes,Planeten
+BATCH_FIRST_SEED,First seed,Première graine,Erster Seed
+BATCH_START,Start batch,Lancer le batch,Stapel starten
+BATCH_CANCEL,Cancel batch,Annuler le batch,Stapel abbrechen
+BATCH_READY,Ready,Prêt,Bereit
+BATCH_STARTING,Starting batch…,Démarrage du batch…,Stapel wird gestartet…
+BATCH_START_FAILED,Unable to start batch.,Impossible de lancer le batch.,Stapel konnte nicht gestartet werden.
+BATCH_CANCELLING,Cancelling after the current safe phase…,Annulation à la prochaine phase sûre…,Abbruch nach der aktuellen sicheren Phase…
+BATCH_PROGRESS_GENERATING,{completed}/{total} • seed {seed} • generating,{completed}/{total} • graine {seed} • génération,{completed}/{total} • Seed {seed} • Generierung
+BATCH_PROGRESS_EXPORTING,{completed}/{total} • seed {seed} • exporting,{completed}/{total} • graine {seed} • export,{completed}/{total} • Seed {seed} • Export
+BATCH_PROGRESS_COMPLETE,{completed}/{total} • seed {seed} • complete,{completed}/{total} • graine {seed} • terminée,{completed}/{total} • Seed {seed} • abgeschlossen
+BATCH_PROGRESS_INTEGRITY_FAIL,{completed}/{total} • seed {seed} • integrity failed,{completed}/{total} • graine {seed} • intégrité échouée,{completed}/{total} • Seed {seed} • Integrität fehlgeschlagen
+BATCH_PROGRESS_FAILED,{completed}/{total} • seed {seed} • failed,{completed}/{total} • graine {seed} • échec,{completed}/{total} • Seed {seed} • fehlgeschlagen
+BATCH_RESULT,{successful}/{completed} successful • report: {report},{successful}/{completed} réussies • rapport : {report},{successful}/{completed} erfolgreich • Bericht: {report}
+EXPORT_PRESET_STANDARD,Export: Standard,Export : Standard,Export: Standard
+EXPORT_PRESET_COMPLETE,Export: Complete,Export : Complet,Export: Vollständig
+EXPORT_PRESET_MINIMAL,Export: Minimal,Export : Minimal,Export: Minimal
+EXPORT_PRESET_DEVELOPMENT,Export: Development,Export : Développement,Export: Entwicklung
+UI_TOOLTIP_GENERATE,Generate with the current parameters.,Générer avec les paramètres actuels.,Mit den aktuellen Parametern generieren.
+UI_TOOLTIP_RANDOM,Unrestricted randomization of parameters.,Randomisation libre des paramètres.,Uneingeschränkte Zufallswerte für Parameter.
+UI_TOOLTIP_LOAD_PRESET,Load a saved parameter preset.,Charger un preset de paramètres.,Ein gespeichertes Parameter-Preset laden.
+UI_TOOLTIP_SAVE_PRESET,Save the current parameters as a preset.,Sauvegarder les paramètres actuels comme preset.,Die aktuellen Parameter als Preset speichern.
+UI_TOOLTIP_VIEWER,Open the map viewer. Shortcut: V.,Ouvrir la visionneuse de carte. Raccourci : V.,Kartenansicht öffnen. Tastenkürzel: V.
+UI_TOOLTIP_BATCH,Open Batch / Benchmark. Shortcut: B.,Ouvrir Batch / Benchmark. Raccourci : B.,Batch / Benchmark öffnen. Tastenkürzel: B.
+UI_TOOLTIP_SAVE_PLANET,Save/export the current planet.,Sauvegarder/exporter la planète actuelle.,Den aktuellen Planeten speichern/exportieren.
+UI_TOOLTIP_EXPORT_PRESET,Choose which generated files are kept in the export.,Choisir quels fichiers générés sont conservés dans l’export.,"Auswählen, welche erzeugten Dateien im Export behalten werden."
+UI_TOOLTIP_PARAMETERS,Return to generation parameters. Shortcut: V.,Revenir aux paramètres de génération. Raccourci : V.,Zu den Generierungsparametern zurückkehren. Tastenkürzel: V.
+UI_TOOLTIP_LOAD_PLANET,Load an existing planet project.,Charger un projet de planète existant.,Ein vorhandenes Planetenprojekt laden.
+UI_TOOLTIP_RESET_VIEW,Reset zoom and pan. Shortcut: Ctrl+0.,Réinitialiser le zoom et le déplacement. Raccourci : Ctrl+0.,Zoom und Verschiebung zurücksetzen. Tastenkürzel: Strg+0.
+UI_TOOLTIP_RANDOM_NAME,Generate a random planet name.,Générer un nom de planète aléatoire.,Einen zufälligen Planetennamen erzeugen.
+UI_TOOLTIP_RANDOM_SEED,Generate a random seed.,Générer une graine aléatoire.,Einen zufälligen Seed erzeugen.
+UI_THEME_AMBER,Amber,Ambre,Bernstein
+UI_THEME_OCEAN,Ocean,Océan,Ozean
+UI_THEME_HIGH_CONTRAST,High contrast,Contraste élevé,Hoher Kontrast
+UI_THEME_TOOLTIP,UI theme,Thème de l’interface,UI-Theme
+MAP_VIEWER_INSPECT_POSITION,POSITION,POSITION,POSITION
+MAP_VIEWER_INSPECT_WORLD,WORLD,MONDE,WELT
+MAP_VIEWER_INSPECT_SURFACE,SURFACE,SURFACE,OBERFLÄCHE
+MAP_VIEWER_INSPECT_CLIMATE,CLIMATE,CLIMAT,KLIMA
+MAP_VIEWER_INSPECT_HYDROLOGY,HYDROLOGY,HYDROLOGIE,HYDROLOGIE
+MAP_VIEWER_INSPECT_ADMIN,ADMINISTRATION,ADMINISTRATION,VERWALTUNG
+MAP_VIEWER_INSPECT_TECTONICS,TECTONICS,TECTONIQUE,TEKTONIK
+MAP_VIEWER_INSPECT_LAYER,LAYERS,COUCHES,EBENEN
+MAP_VIEWER_INSPECT_RESOURCES,RESOURCES,RESSOURCES,RESSOURCEN
+MAP_VIEWER_INSPECT_CELL,Cell,Cellule,Zelle
+MAP_VIEWER_INSPECT_UV,UV,UV,UV
+MAP_VIEWER_INSPECT_PLANET,Planet,Planète,Planet
+MAP_VIEWER_INSPECT_SEED,Seed,Graine,Seed
+MAP_VIEWER_INSPECT_RADIUS,Radius,Rayon,Radius
+MAP_VIEWER_INSPECT_SEA_LEVEL,Sea level,Niveau marin,Meeresspiegel
+MAP_VIEWER_INSPECT_BASE,Base,Base,Basis
+MAP_VIEWER_INSPECT_OVERLAY,Overlay,Superposition,Überlagerung
+MAP_VIEWER_INSPECT_BIOME,Biome,Biome,Biom
+MAP_VIEWER_INSPECT_BIOME_PROFILE,Biome profile,Profil du biome,Biomprofil
+MAP_VIEWER_INSPECT_TEMPERATURE,Temperature,Température,Temperatur
+MAP_VIEWER_INSPECT_PRECIPITATION,Precipitation,Précipitations,Niederschlag
+MAP_VIEWER_INSPECT_ELEVATION,Elevation,Élévation,Höhe
+MAP_VIEWER_INSPECT_WATER,Water,Eau,Wasser
+MAP_VIEWER_INSPECT_RIVER,River biome,Biome de rivière,Flussbiom
+MAP_VIEWER_INSPECT_RIVER_TYPE,River type,Type de rivière,Flusstyp
+MAP_VIEWER_INSPECT_ICE,Surface ice,Glace de surface,Oberflächeneis
+MAP_VIEWER_INSPECT_CLOUDS,Cloud signal,Signal nuageux,Wolkensignal
+MAP_VIEWER_INSPECT_PLATE,Plate,Plaque,Platte
+MAP_VIEWER_INSPECT_PLATE_BORDER,Plate boundary,Frontière de plaque,Plattengrenze
+MAP_VIEWER_INSPECT_DEPARTMENT,Department,Département,Bezirk
+MAP_VIEWER_INSPECT_REGION,Region,Région,Region
+MAP_VIEWER_INSPECT_COUNTRY,Country,Pays,Land
+MAP_VIEWER_INSPECT_CONTINENT,Continent,Continent,Kontinent
+MAP_VIEWER_INSPECT_SEA_DEPARTMENT,Sea department,Département maritime,Meeresbezirk
+MAP_VIEWER_INSPECT_SEA_REGION,Sea region,Région maritime,Meeresregion
+MAP_VIEWER_INSPECT_BASIN,Basin,Bassin,Becken
+MAP_VIEWER_INSPECT_OCEAN,Ocean,Océan,Ozean
+MAP_VIEWER_INSPECT_REQUIRES_WATER,water-dependent,dépendant de l’eau,wasserabhängig
+MAP_VIEWER_INSPECT_FRESHWATER,freshwater,eau douce,Süßwasser
+MAP_VIEWER_INSPECT_RIVER_ONLY,river-only,rivière uniquement,nur Fluss
+MAP_VIEWER_INSPECT_NONE,none,aucun,keine
+MAP_VIEWER_INSPECT_UNKNOWN,unknown,inconnu,unbekannt
+MAP_VIEWER_INSPECT_YES,yes,oui,ja
+MAP_VIEWER_INSPECT_NO,no,non,nein
+MAP_VIEWER_WATER_SALT,saltwater,eau salée,Salzwasser
+MAP_VIEWER_WATER_FRESH,freshwater,eau douce,Süßwasser
+MAP_VIEWER_RIVER_TRIBUTARY,tributary,affluent,Nebenfluss
+MAP_VIEWER_RIVER_RIVER,river,rivière,Fluss
+MAP_VIEWER_RIVER_MAJOR,major river,fleuve,Strom
+MAP_VIEWER_PLATE_CONVERGENT,convergent,convergente,konvergent
+MAP_VIEWER_PLATE_DIVERGENT,divergent,divergente,divergent
+MAP_VIEWER_PLATE_TRANSFORM,transform/other,transformante/autre,Transform/sonstige
+PLANET_TYPE_TERRAN,Terran,Tellurique,Terranisch
+PLANET_TYPE_TOXIC,Toxic,Toxique,Toxisch
+PLANET_TYPE_VOLCANIC,Volcanic,Volcanique,Vulkanisch
+PLANET_TYPE_NO_ATMOS,Airless,Sans atmosphère,Atmosphärenlos
+PLANET_TYPE_DEAD,Dead / irradiated,Morte / irradiée,Tot / verstrahlt
+PLANET_TYPE_STERILE,Barren,Stérile,Steril
+PLANET_TYPE_GAS,Gas giant,Gazeuse,Gasriese
+BIOME_ABYSSES,Abyss,Abysses,Abgrund
+BIOME_PLAINE_ABYSSALE,Abyssal Plain,Plaine abyssale,Abyssalebene
+BIOME_OCEAN_PROFOND,Deep Ocean,Océan profond,Tiefer Ozean
+BIOME_PLATEAU_CONTINENTAL,Continental Shelf,Plateau continental,Kontinentalschelf
+BIOME_RECIF_CORALLIEN,Coral Reef,Récif corallien,Korallenriff
+BIOME_LAGON_TROPICAL,Tropical Lagoon,Lagon tropical,Tropische Lagune
+BIOME_FJORD_GLACE,Glacial Fjord,Fjord glacé,Gletscherfjord
+BIOME_LITTORAL_PLAGE,Coast / Beach,Littoral / Plage,Küste / Strand
+BIOME_MANGROVE_SALEE,Salt Mangrove,Mangrove (salée),Salzmangrove
+BIOME_DELTA_FLUVIAL,River Delta,Delta fluvial,Flussdelta
+BIOME_CALOTTE_GLACIAIRE,Ice Cap,Calotte glaciaire,Eiskappe
+BIOME_DESERT_POLAIRE,Polar Desert,Désert polaire,Polarwüste
+BIOME_TOUNDRA,Tundra,Toundra,Tundra
+BIOME_TOUNDRA_ALPINE,Alpine Tundra,Toundra alpine,Alpine Tundra
+BIOME_TAIGA_FORET_BOREALE,Taiga (Boreal Forest),Taïga (forêt boréale),Taiga (Borealer Wald)
+BIOME_PRAIRIE_ALPINE_ALPAGE,Alpine Meadow,Prairie alpine (alpage),Almwiese
+BIOME_FORET_DE_MONTAGNE,Mountain Forest,Forêt de montagne,Bergwald
+BIOME_FORET_TEMPEREE_DECIDUE,Temperate Deciduous Forest,Forêt tempérée (décidue),Gemäßigter Laubwald
+BIOME_FORET_DE_SEQUOIAS,Redwood Forest,Forêt de séquoias,Mammutbaumwald
+BIOME_FORET_HUMIDE_RAINFOREST,Temperate Rainforest,Forêt humide,Gemäßigter Regenwald
+BIOME_PRAIRIE_VERDOYANTE,Lush Grassland,Prairie verdoyante,Üppiges Grasland
+BIOME_MAQUIS_MEDITERRANEEN,Mediterranean Scrub,Maquis méditerranéen,Mediterrane Macchie
+BIOME_STEPPES_SECHES,Dry Steppe,Steppes sèches,Trockene Steppe
+BIOME_STEPPES_TEMPEREES,Temperate Steppe,Steppes tempérées,Gemäßigte Steppe
+BIOME_MARECAGE_TEMPERE,Temperate Swamp,Marécage tempéré,Gemäßigter Sumpf
+BIOME_JUNGLE_TROPICALE,Tropical Jungle,Jungle tropicale,Tropischer Dschungel
+BIOME_SAVANE,Savanna,Savane,Savanne
+BIOME_BROUSSE_BUSH,Bushland,Brousse,Buschland
+BIOME_DESERT_SEMI_ARIDE,Semi-arid Desert,Désert semi-aride,Halbtrockene Wüste
+BIOME_DESERT_DE_SABLE,Sand Desert,Désert de sable,Sandwüste
+BIOME_DESERT_ROCHEUX_BADLANDS,Rocky Desert (Badlands),Désert rocheux (Badlands),Felswüste (Badlands)
+BIOME_DESERT_EXTREME,Extreme Desert,Désert extrême,Extremwüste
+BIOME_OASIS,Oasis,Oasis,Oase
+BIOME_CENOTE_GOUFFRE,Cenote (Sinkhole),Cénote (gouffre),Cenote (Doline)
+BIOME_BAYOU_MARAIS_CHAUD,Bayou (Warm Swamp),Bayou (marais chaud),Bayou (Warmer Sumpf)
+BIOME_RIVIERE,River,Rivière,Fluss
+BIOME_LAC_D_EAU_DOUCE,Freshwater Lake,Lac d'eau douce,Süßwassersee
+BIOME_LAC_GELE,Frozen Lake,Lac gelé,Gefrorener See
+BIOME_RIVIERE_GLACIAIRE,Glacial River,Rivière glaciaire,Gletscherfluss
+BIOME_OCEAN_ACIDE,Acid Ocean,Océan acide,Säureozean
+BIOME_LAGON_DE_BOUE_TOXIQUE,Toxic Mud Lagoon,Lagon de boue toxique,Giftige Schlammlagune
+BIOME_DESERT_DE_SOUFRE,Sulfur Desert,Désert de soufre,Schwefelwüste
+BIOME_DESERT_EXTREME_DE_SOUFRE,Extreme Sulfur Desert,Désert extrême de soufre,Extreme Schwefelwüste
+BIOME_FORET_FONGIQUE_CHAMPIGNONS,Fungal Forest,Forêt fongique (champignons),Pilzwald
+BIOME_PLAINES_DE_SPORES,Spore Plains,Plaines de spores,Sporenebenen
+BIOME_MARECAGES_ACIDES,Acid Marshes,Marécages acides,Säuremarschen
+BIOME_GLACIER_VERT_METHANE,Green Methane Glacier,Glacier vert (méthane),Grüner Methangletscher
+BIOME_PLAINES_VENTEUSES_TOXIQUES,Toxic Windy Plains,Plaines venteuses toxiques,Giftige Windebenen
+BIOME_CRATERES_ACIDES,Acid Craters,Cratères acides,Säurekrater
+BIOME_RIVIERE_ACIDE,Acid River,Rivière acide,Säurefluss
+BIOME_LAC_D_ACIDE,Acid Lake,Lac d'acide,Säuresee
+BIOME_OCEAN_DE_MAGMA,Magma Ocean,Océan de magma,Magmaozean
+BIOME_MER_DE_LAVE_EN_FUSION,Molten Lava Sea,Mer de lave en fusion,Geschmolzenes Lavameer
+BIOME_CROUTE_BASALTIQUE_REFROIDIE,Cooled Basaltic Crust,Croûte basaltique refroidie,Abgekühlte Basaltkruste
+BIOME_GLACE_VOLCANIQUE,Volcanic Ice,Glace volcanique,Vulkanisches Eis
+BIOME_TOUNDRA_VOLCANIQUE,Volcanic Tundra,Toundra volcanique,Vulkanische Tundra
+BIOME_PLAINES_DE_CENDRES,Ash Plains,Plaines de cendres,Ascheebenen
+BIOME_CHAMPS_DE_GEYSERS,Geyser Fields,Champs de geysers,Geysirfelder
+BIOME_VOLCAN_ACTIF_SOMMET,Active Volcano (Summit),Volcan actif (sommet),Aktiver Vulkan (Gipfel)
+BIOME_OBSIDIENNE_VERRE_VOLCANIQUE,Obsidian (Volcanic Glass),Obsidienne (verre volcanique),Obsidian (Vulkanglas)
+BIOME_DESERT_DE_SOUFRE_JAUNE,Yellow Sulfur Desert,Désert de soufre jaune,Gelbe Schwefelwüste
+BIOME_CALDEIRA_FUMANTE,Smoking Caldera,Caldeira fumante,Rauchende Caldera
+BIOME_RIVIERE_DE_LAVE,Lava River,Rivière de lave,Lavafluss
+BIOME_LAC_DE_LAVE,Lava Lake,Lac de lave,Lavasee
+BIOME_MARE_MER_LUNAIRE_BASALTE,Mare (Lunar Basalt Sea),Mare (mer lunaire - basalte),Mare (Lunarbasaltmeer)
+BIOME_REGOLITHE_GRIS,Grey Regolith,Régolithe gris,Grauer Regolith
+BIOME_CRATERE_D_IMPACT,Impact Crater,Cratère d'impact,Einschlagskrater
+BIOME_HAUTS_PLATEAUX_LUNAIRES,Lunar Highlands,Hauts plateaux lunaires,Mondhochland
+BIOME_GLACE_DE_CRATERE_POLAIRE,Polar Crater Ice,Glace de cratère polaire,Polares Kratereis
+BIOME_OCEAN_MORT_GRIS,Dead Ocean (Grey),Océan mort (gris),Toter Ozean (Grau)
+BIOME_MARECAGE_LUMINESCENT,Luminescent Swamp,Marécage luminescent,Leuchtender Sumpf
+BIOME_TERRES_DESOLEES_WASTELAND,Wasteland,Terres désolées,Ödland
+BIOME_DESERT_DE_SEL,Salt Desert,Désert de sel,Salzwüste
+BIOME_FORET_MORTE_ARBRES_NOIRS,Dead Forest (Black Trees),Forêt morte (arbres noirs),Toter Wald (Schwarze Bäume)
+BIOME_CRATERE_NUCLEAIRE,Nuclear Crater,Cratère nucléaire,Nuklearkrater
+BIOME_PLAINES_DE_CENDRES_GRISES,Grey Ash Plains,Plaines de cendres grises,Graue Ascheebenen
+BIOME_DESERT_RADIOACTIF,Radioactive Desert,Désert radioactif,Radioaktive Wüste
+BIOME_MONTAGNES_MORTES,Dead Mountains,Montagnes mortes,Tote Berge
+BIOME_RIVIERE_DE_BOUE,Mud River,Rivière de boue,Schlammfluss
+BIOME_RIVIERE_POLLUEE,Polluted River,Rivière polluée,Verschmutzter Fluss
+BIOME_LAC_IRRADIE,Irradiated Lake,Lac irradié,Verstrahlter See
+BIOME_DESERT_STERILE,Barren Desert,Désert stérile,Sterile Wüste
+BIOME_PLAINE_ROCHEUSE,Rocky Plain,Plaine rocheuse,Felsebene
+BIOME_MONTAGNES_ROCHEUSES,Rocky Mountains,Montagnes rocheuses,Felsgebirge
+BIOME_VALLEES_PROFONDES,Deep Valleys,Vallées profondes,Tiefe Täler
+BIOME_DESERT_DE_PIERRE,Stone Desert,Désert de pierre,Steinwüste
+BIOME_GLACIERS_STERILES,Barren Glaciers,Glaciers stériles,Sterile Gletscher
+BIOME_PLATEAUX_ERODES,Eroded Plateaus,Plateaux érodés,Erodierte Plateaus
+BIOME_CRATERES_SECS,Dry Craters,Cratères secs,Trockene Krater

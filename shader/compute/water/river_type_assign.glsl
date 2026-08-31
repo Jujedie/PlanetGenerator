@@ -10,8 +10,9 @@
 //   2 = Fleuve    (flux >= fleuve_threshold)
 // 255 = Pas de riviere
 //
-// Ce type initial sera ensuite promu par river_type_promote pour creer
-// des entites fluviales coherentes (le chenal principal herite du type aval).
+// Le flux topologique est monotone vers l'aval. Ces seuils produisent donc
+// directement la hiérarchie affluent -> rivière -> fleuve sans propagation
+// supplémentaire dépendante d'un nombre de passes.
 //
 // Entrees :
 // - river_flux (R32F) : Flux accumule
