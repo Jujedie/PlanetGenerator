@@ -29,6 +29,16 @@ var cancellation_probe: Callable = Callable()
 var _phase_counter: int = 0
 var _phase_total: int = 0
 
+# The exact hydrology solver already materializes the authoritative R8 water
+# mask on the CPU before uploading it. Land and maritime administration run
+# later in the same generation and only need that immutable mask, so retain the
+# packed bytes until both phases have consumed them instead of downloading the
+# same texture twice from VRAM.
+var _administrative_water_mask: PackedByteArray = PackedByteArray()
+var _administrative_water_mask_size: Vector2i = Vector2i.ZERO
+var _administrative_water_cells: int = -1
+var _administrative_water_mask_cache_hits: int = 0
+
 # Administrative Bellman-Ford relaxation is exact but usually converges far
 # before max(width, height). Submit a small even batch at a time, then inspect a
 # compact per-workgroup change map. Even batches keep the authoritative result
@@ -153,6 +163,7 @@ func _compile_all_shaders() -> bool:
 		{"path": "res://shader/compute/water/river_classify.glsl", "name": "river_classify", "critical": false},
 		{"path": "res://shader/compute/water/river_type_assign.glsl", "name": "river_type_assign", "critical": false},
 		{"path": "res://shader/compute/water/hydrology_water_color.glsl", "name": "hydrology_water_color", "critical": false},
+		{"path": "res://shader/compute/water/disabled_hydrology_clear.glsl", "name": "disabled_hydrology_clear", "critical": false},
 		# Shaders Régions Administratives (Étape 4)
 		{"path": "res://shader/compute/region/region_seed_placement.glsl", "name": "region_seed_placement", "critical": false},
 		{"path": "res://shader/compute/region/region_edge_cost.glsl", "name": "region_edge_cost", "critical": false},
@@ -663,6 +674,7 @@ func run_simulation() -> void:
 	var h = resolution.y
 	last_phase_timings_ms.clear()
 	last_performance_report.clear()
+	_clear_administrative_water_mask_cache()
 	was_cancelled = false
 	_cancel_reason = ""
 	_phase_counter = 0
@@ -2204,6 +2216,7 @@ func _get_or_create_linear_sampler() -> RID:
 func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	print("[Orchestrator] 💧 Phase 2.5 : Hydrologie déterministe")
 	last_hydrology_stats.clear()
+	_clear_administrative_water_mask_cache()
 
 	var groups_x := ceili(float(w) / 16.0)
 	var groups_y := ceili(float(h) / 16.0)
@@ -2223,9 +2236,24 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	# pas avoir d'eau liquide, car les phases finales les référencent.
 	# water_colored appartient au groupe final_map.
 	if atmosphere_type in [Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE]:
+		# RenderingDevice allocations contain undefined VRAM. Every downstream
+		# phase still binds the hydrology layers, so explicitly establish the
+		# no-liquid contract before biome/admin/final-map dispatches consume them.
+		var cleared_on_gpu := _dispatch_disabled_hydrology_clear(
+			w, h, groups_x, groups_y
+		)
+		if not cleared_on_gpu:
+			_upload_disabled_hydrology_defaults(w, h)
+		# These worlds still run land administration. Its authoritative mask is a
+		# zero-filled water texture, so keep that result without a later readback.
+		_administrative_water_mask.resize(w * h)
+		_administrative_water_mask.fill(0)
+		_administrative_water_mask_size = Vector2i(w, h)
+		_administrative_water_cells = 0
 		last_hydrology_stats = {
 			"skipped_no_liquid_water": true,
 			"texture_init_ms": texture_init_ms,
+			"disabled_hydrology_gpu_clear": cleared_on_gpu,
 		}
 		print("  ⏭️ Planète sans eau liquide (type=", atmosphere_type, ")")
 		return
@@ -2281,6 +2309,11 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 		return
 
 	var water_mask_data: PackedByteArray = surface_result["water_mask"]
+	_administrative_water_mask = water_mask_data
+	_administrative_water_mask_size = Vector2i(w, h)
+	_administrative_water_cells = int(
+		Dictionary(surface_result["stats"]).get("total_water_cells", -1)
+	)
 	var routing_parent: PackedInt32Array = surface_result["routing_parent"]
 	var routing_child_count: PackedByteArray = surface_result["routing_child_count"]
 	var routing_order: PackedInt32Array = surface_result.get("routing_order", PackedInt32Array())
@@ -2443,6 +2476,66 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 		" | finalize-queue=", snappedf(finalize_queue_ms, 0.01), " ms",
 	)
 	print("[Orchestrator] ✅ Phase 2.5 : Hydrologie terminée")
+
+
+func _dispatch_disabled_hydrology_clear(_w: int, _h: int,
+		groups_x: int, groups_y: int) -> bool:
+	if (
+		not gpu.shaders.has("disabled_hydrology_clear")
+		or not gpu.pipelines.has("disabled_hydrology_clear")
+		or not gpu.shaders["disabled_hydrology_clear"].is_valid()
+		or not gpu.pipelines["disabled_hydrology_clear"].is_valid()
+	):
+		return false
+	for texture_name in [
+		"water_mask", "flow_direction", "ocean_reachable",
+		"river_biome_id", "river_flux", "water_colored",
+	]:
+		if not gpu.textures.has(texture_name) or not gpu.textures[texture_name].is_valid():
+			return false
+	var uniforms: Array[RDUniform] = []
+	var texture_names := [
+		"water_mask", "flow_direction", "ocean_reachable",
+		"river_biome_id", "river_flux", "water_colored",
+	]
+	for binding_index in range(texture_names.size()):
+		uniforms.append(gpu.create_texture_uniform(
+			binding_index, gpu.textures[texture_names[binding_index]]
+		))
+	var texture_set := rd.uniform_set_create(
+		uniforms, gpu.shaders["disabled_hydrology_clear"], 0
+	)
+	if not texture_set.is_valid():
+		return false
+	var compute_list := rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(
+		compute_list, gpu.pipelines["disabled_hydrology_clear"]
+	)
+	rd.compute_list_bind_uniform_set(compute_list, texture_set, 0)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	gpu.submit_gpu_work()
+	gpu.release_rid(texture_set)
+	return true
+
+
+func _upload_disabled_hydrology_defaults(w: int, h: int) -> void:
+	# Correctness fallback for a platform that cannot compile the clear shader.
+	# Reuse one buffer so peak host memory remains four bytes per pixel.
+	var pixel_count := w * h
+	var payload := PackedByteArray()
+	payload.resize(pixel_count)
+	payload.fill(0)
+	rd.texture_update(gpu.textures["water_mask"], 0, payload)
+	payload.fill(255)
+	rd.texture_update(gpu.textures["flow_direction"], 0, payload)
+	rd.texture_update(gpu.textures["ocean_reachable"], 0, payload)
+	payload.resize(pixel_count * 4)
+	payload.fill(0)
+	rd.texture_update(gpu.textures["river_flux"], 0, payload)
+	rd.texture_update(gpu.textures["water_colored"], 0, payload)
+	payload.fill(255)
+	rd.texture_update(gpu.textures["river_biome_id"], 0, payload)
 
 ## Dispatch le shader d'identification des zones d'eau
 func _dispatch_water_fill(w: int, h: int, groups_x: int, groups_y: int,
@@ -2951,6 +3044,28 @@ func _dispatch_biome_smooth(w: int, h: int, groups_x: int, groups_y: int,
 # ÉTAPE 4 : RÉGIONS ADMINISTRATIVES
 # ============================================================================
 
+func _clear_administrative_water_mask_cache() -> void:
+	_administrative_water_mask = PackedByteArray()
+	_administrative_water_mask_size = Vector2i.ZERO
+	_administrative_water_cells = -1
+	_administrative_water_mask_cache_hits = 0
+
+
+func _water_mask_for_administration(w: int, h: int) -> PackedByteArray:
+	var expected_size := w * h
+	if (
+		_administrative_water_mask_size == Vector2i(w, h)
+		and _administrative_water_mask.size() == expected_size
+	):
+		_administrative_water_mask_cache_hits += 1
+		return _administrative_water_mask
+	var water_mask_data := gpu.readback_texture_raw("water_mask")
+	if water_mask_data.size() == expected_size:
+		_administrative_water_mask = water_mask_data
+		_administrative_water_mask_size = Vector2i(w, h)
+		_administrative_water_cells = -1
+	return water_mask_data
+
 ## Génère les régions administratives sur la terre uniquement.
 ##
 ## Cette phase remplace conceptuellement RegionMapGenerator.gd (version CPU).
@@ -2988,7 +3103,7 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	# passes ne définit pas la taille politique : il ne fait qu'assurer la
 	# couverture topologique de la projection.
 	var max_dim = max(w, h)
-	var water_mask_data := gpu.readback_texture_raw("water_mask")
+	var water_mask_data := _water_mask_for_administration(w, h)
 	# Un même prédicat de terre pilote le comptage, les shaders et la
 	# normalisation : le masque hydrologique final fait foi. `geo` n'est plus lu
 	# ici : build_land_mask ignorait déjà l'altitude, donc ce readback RGBA32F
@@ -2998,6 +3113,8 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	)
 	var land_mask: PackedByteArray = PackedByteArray(land_mask_result["mask"])
 	var actual_land_cells := int(land_mask_result["active_cells"])
+	if _administrative_water_cells < 0:
+		_administrative_water_cells = maxi(w * h - actual_land_cells, 0)
 	# "nb_cases_regions" contrôle la surface locale visible d'un département.
 	# Il ne doit pas être réinterprété comme un nombre global de graines : avec
 	# une valeur de 15, une zone doit couvrir environ 15 cases de terre, quelle
@@ -3201,9 +3318,9 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	# === PASSE 3 : FINALISATION ET COLORATION ===
 	print("  • Finalisation et coloration...")
 	_dispatch_region_finalize(w, h, groups_x, groups_y, seed_val, sea_level)
-	# Keep phase timing honest without downloading region_map a second time. The
-	# normalized bytes above are already the authoritative IDs used by finalize.
-	gpu.sync_for_cpu("land_region_finalize")
+	# The next administrative dispatch uses the same RenderingDevice queue, so it
+	# observes finalization in order. Avoid a standalone phase-boundary sync; the
+	# next convergence readback remains the real CPU dependency.
 	var department_stats: Dictionary = _measure_normalized_partition_stats(
 		normalization, normalized_data, target_department_cells
 	)
@@ -3216,6 +3333,7 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	department_stats["growth_batch_size"] = growth_batch_size
 	department_stats["cleanup_executed_passes"] = cleanup_passes
 	department_stats["cleanup_unassigned_cells"] = cleanup_unassigned
+	department_stats["water_mask_cache_hits"] = _administrative_water_mask_cache_hits
 	print(
 		"    [Administration timing] readback=", snappedf(region_readback_ms, 0.01),
 		" ms | normalization=", snappedf(normalization_ms, 0.01), " ms"
@@ -3506,11 +3624,15 @@ func _read_growth_batch_status(
 	var flags := rd.buffer_get_data(stats_buffer, 0, byte_count)
 	if flags.size() != byte_count:
 		return {"changed": true, "unassigned": -1}
+	# Native bulk reinterpretation is substantially cheaper than two byte-array
+	# decode calls per workgroup on 4K/8K maps. Values are at most 256 per group,
+	# so signed PackedInt32 storage is equivalent here.
+	var values := flags.to_int32_array()
 	var changed := false
 	var unassigned := 0
-	for offset in range(0, byte_count, 8):
-		changed = changed or flags.decode_u32(offset) != 0
-		unassigned += int(flags.decode_u32(offset + 4))
+	for value_index in range(0, values.size(), 2):
+		changed = changed or values[value_index] != 0
+		unassigned += int(values[value_index + 1])
 	return {"changed": changed, "unassigned": unassigned}
 
 func _dispatch_region_growth_batch(w: int, h: int, groups_x: int, groups_y: int,
@@ -3725,14 +3847,21 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	# Même contrat que les départements terrestres : nb_cases_ocean_regions est
 	# la TAILLE MOYENNE CIBLE d'un département maritime en pixels, et non un
 	# nombre global de régions transformé ensuite selon la surface de la planète.
-	var water_mask_data := gpu.readback_texture_raw("water_mask")
-	var water_mask_result: Dictionary = DepartmentNormalizer.build_surface_mask(
-		water_mask_data, w, h, true
-	)
-	var water_department_mask: PackedByteArray = PackedByteArray(water_mask_result["mask"])
-	var actual_water_cells := int(water_mask_result["active_cells"])
+	var water_mask_data := _water_mask_for_administration(w, h)
+	# normalize() treats every non-zero mask value as active, so the classified
+	# hydrology bytes (1=salt, 2=fresh) are already the exact maritime mask. This
+	# removes another full-map allocation and conversion pass.
+	var water_department_mask: PackedByteArray = water_mask_data
+	var actual_water_cells := _administrative_water_cells
+	if actual_water_cells < 0:
+		actual_water_cells = 0
+		for water_value in water_mask_data:
+			if water_value > 0:
+				actual_water_cells += 1
+		_administrative_water_cells = actual_water_cells
 	if actual_water_cells <= 0:
 		print("  • Aucune cellule d'eau : phase maritime ignorée")
+		_clear_administrative_water_mask_cache()
 		return
 
 	var physical_targets := HierarchyBuilder.compute_physical_targets(
@@ -3946,6 +4075,7 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	department_stats["growth_batch_size"] = growth_batch_size
 	department_stats["cleanup_executed_passes"] = cleanup_passes
 	department_stats["cleanup_unassigned_cells"] = cleanup_unassigned
+	department_stats["water_mask_cache_hits"] = _administrative_water_mask_cache_hits
 	print(
 		"    [Administration timing] readback=", snappedf(ocean_readback_ms, 0.01),
 		" ms | normalization=", snappedf(normalization_ms, 0.01), " ms"
@@ -3970,6 +4100,7 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	# === PASSE 3 : FINALISATION ET COLORATION ===
 	print("  • Finalisation et coloration...")
 	_dispatch_ocean_region_finalize(w, h, groups_x, groups_y, seed_val)
+	_clear_administrative_water_mask_cache()
 	
 	print("[Orchestrator] ✅ Phase 4.5 : Régions océaniques terminées")
 
@@ -4292,7 +4423,7 @@ func run_resources_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	var seed_val = int(params.get("seed", 12345))
 	var sea_level = float(params.get("sea_level", 0.0))
-	var atmosphere_type = int(params.get("atmosphere_type", 0))
+	var atmosphere_type = int(params.get("planet_type", Enum.TYPE_TERRAN))
 	var cylinder_radius = float(w) / (2.0 * PI)
 	
 	# Paramètres de pétrole (depuis enum.gd)
@@ -4977,6 +5108,7 @@ func cleanup() -> void:
 	if _cleaned_up:
 		return
 	_cleaned_up = true
+	_clear_administrative_water_mask_cache()
 
 	if not rd:
 		gpu = null

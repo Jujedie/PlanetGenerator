@@ -37,6 +37,20 @@ static func render_full_map(geo_data: PackedByteArray, water_data: PackedByteArr
 	var has_biome := biome_data.size() == pixel_count * 4
 	var view := str(options.get("view", VIEW_PLANET))
 	var intervals := contour_intervals(view)
+	var waterless_surface := bool(options.get("waterless_surface", false))
+	var waterless_min := float(options.get("waterless_min_elevation", INF))
+	var waterless_max := float(options.get("waterless_max_elevation", -INF))
+	if waterless_surface and (
+		not is_finite(waterless_min)
+		or not is_finite(waterless_max)
+		or waterless_max <= waterless_min
+	):
+		waterless_min = INF
+		waterless_max = -INF
+		for index in range(pixel_count):
+			var relative_height := geo_data.decode_float(index * 16) - sea_level
+			waterless_min = minf(waterless_min, relative_height)
+			waterless_max = maxf(waterless_max, relative_height)
 	var output := PackedByteArray()
 	output.resize(pixel_count * 4)
 	var label_placements: Array = []
@@ -46,7 +60,12 @@ static func render_full_map(geo_data: PackedByteArray, water_data: PackedByteArr
 			var index := y * dimensions.x + x
 			var height_m := geo_data.decode_float(index * 16)
 			var water_type := int(water_data[index])
-			var color := _base_color(height_m, water_type, palette, sea_level)
+			var palette_height := height_m
+			if waterless_surface:
+				palette_height = _waterless_palette_elevation(
+					height_m - sea_level, waterless_min, waterless_max
+				)
+			var color := _base_color(palette_height, water_type, palette, sea_level)
 			if water_type == 0:
 				var shade := _hillshade(geo_data, x, y, dimensions, radius_km)
 				var strength := palette.hillshade_strength
@@ -56,7 +75,8 @@ static func render_full_map(geo_data: PackedByteArray, water_data: PackedByteArr
 					color = _modulate_biome(color, biome_id, palette.biome_modulation_strength)
 
 			var contour_kind := _contour_kind(geo_data, x, y, dimensions,
-				height_m, water_type, sea_level, intervals)
+				height_m, water_type, sea_level, intervals,
+				waterless_surface, waterless_min)
 			if contour_kind == 2:
 				color = color.lerp(palette.major_contour, 0.72)
 			elif contour_kind == 1:
@@ -120,6 +140,16 @@ static func _base_color(height_m: float, water_type: int,
 		return palette.freshwater
 	return palette.color_for_elevation(height_m)
 
+
+static func _waterless_palette_elevation(relative_height: float,
+		minimum_height: float, maximum_height: float) -> float:
+	var normalized := clampf(
+		(relative_height - minimum_height) / maxf(maximum_height - minimum_height, 1.0),
+		0.0,
+		1.0
+	)
+	return lerpf(20.0, 6000.0, pow(normalized, 0.88))
+
 static func _height(geo_data: PackedByteArray, x: int, y: int,
 		dimensions: Vector2i) -> float:
 	var px := posmod(x, dimensions.x)
@@ -144,13 +174,22 @@ static func _hillshade(geo_data: PackedByteArray, x: int, y: int,
 
 static func _contour_kind(geo_data: PackedByteArray, x: int, y: int,
 		dimensions: Vector2i, height_m: float, water_type: int, sea_level: float,
-		intervals: Vector2) -> int:
-	var relative := absf(height_m - sea_level) if water_type != 0 else maxf(height_m - sea_level, 0.0)
+		intervals: Vector2, waterless_surface: bool = false,
+		waterless_minimum: float = 0.0) -> int:
+	var relative := (
+		height_m - sea_level - waterless_minimum
+		if waterless_surface
+		else (absf(height_m - sea_level) if water_type != 0 else maxf(height_m - sea_level, 0.0))
+	)
 	var minor_band := floori(relative / intervals.x)
 	var major_band := floori(relative / intervals.y)
 	for offset in [Vector2i.RIGHT, Vector2i.DOWN]:
 		var neighbor_height := _height(geo_data, x + offset.x, y + offset.y, dimensions)
-		var neighbor_relative := absf(neighbor_height - sea_level) if water_type != 0 else maxf(neighbor_height - sea_level, 0.0)
+		var neighbor_relative := (
+			neighbor_height - sea_level - waterless_minimum
+			if waterless_surface
+			else (absf(neighbor_height - sea_level) if water_type != 0 else maxf(neighbor_height - sea_level, 0.0))
+		)
 		if floori(neighbor_relative / intervals.y) != major_band:
 			return 2
 		if floori(neighbor_relative / intervals.x) != minor_band:
