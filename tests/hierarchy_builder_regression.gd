@@ -171,22 +171,134 @@ func _run() -> void:
 		and int(isthmus_cleaned.get(1, -1)) == 300
 	)
 
+	# Graphe terrestre régulier : chaque niveau doit conserver une vraie échelle
+	# et rester continu. Les ratios réduits rendent le cas compact tout en
+	# produisant plusieurs pays et continents dans ce test CPU.
+	var scale_info := _grid_graph(24, 10)
+	var scale_hierarchy := HierarchyBuilder.build_land_from_graph(
+		scale_info, 24, 10, {
+			"planet_radius": 150.0,
+			"ocean_ratio": 55.0,
+			"admin_reference_land_regions": 24.0,
+			"admin_departments_per_region": 10.0,
+			"admin_regions_per_country": 4.0,
+			"admin_countries_per_continent": 3.0,
+			"admin_min_regions_per_country": 2,
+			"admin_min_countries_per_continent": 2,
+		}
+	)
+	var scale_region_to_country := _group_mapping(
+		scale_hierarchy[0], scale_hierarchy[1]
+	)
+	var scale_country_to_continent := _group_mapping(
+		scale_hierarchy[1], scale_hierarchy[2]
+	)
+	var scale_region_ids := HierarchyBuilder._unique_values(scale_hierarchy[0])
+	var scale_region_children := HierarchyBuilder._invert(scale_hierarchy[0])
+	var scale_region_adjacency := HierarchyBuilder._adj_children(
+		scale_region_ids, scale_region_children, scale_info[2]
+	)
+	var scale_country_ids := HierarchyBuilder._unique_values(scale_region_to_country)
+	var scale_country_children := HierarchyBuilder._invert(scale_region_to_country)
+	var scale_country_adjacency := HierarchyBuilder._adj_children(
+		scale_country_ids, scale_country_children, scale_region_adjacency
+	)
+	var scale_counts := [
+		(scale_info[0] as Array).size(),
+		scale_region_ids.size(),
+		HierarchyBuilder._unique_values(scale_region_to_country).size(),
+		HierarchyBuilder._unique_values(scale_country_to_continent).size(),
+	]
+	var strict_land_scales: bool = (
+		scale_counts[0] > scale_counts[1]
+		and scale_counts[1] > scale_counts[2]
+		and scale_counts[2] > scale_counts[3]
+		and _minimum_group_children(scale_region_to_country) >= 2
+		and _minimum_group_children(scale_country_to_continent) >= 2
+	)
+	var land_groups_contiguous := (
+		HierarchyBuilder.groups_are_contiguous(scale_hierarchy[0], scale_info[2])
+		and HierarchyBuilder.groups_are_contiguous(
+			scale_region_to_country, scale_region_adjacency
+		)
+		and HierarchyBuilder.groups_are_contiguous(
+			scale_country_to_continent, scale_country_adjacency
+		)
+	)
+	var land_groups_without_enclaves := (
+		HierarchyBuilder.groups_have_no_land_enclaves(
+			scale_hierarchy[0], scale_info[2]
+		)
+		and HierarchyBuilder.groups_have_no_land_enclaves(
+			scale_region_to_country, scale_region_adjacency
+		)
+		and HierarchyBuilder.groups_have_no_land_enclaves(
+			scale_country_to_continent, scale_country_adjacency
+		)
+	)
+	var island_mapping := {1: 10, 2: 10, 3: 10, 4: 10}
+	var island_adjacency := {
+		1: {2: true}, 2: {1: true}, 3: {4: true}, 4: {3: true},
+	}
+	var island_allowed := (
+		not HierarchyBuilder.groups_are_contiguous(
+			island_mapping, island_adjacency
+		)
+		and HierarchyBuilder.groups_have_no_land_enclaves(
+			island_mapping, island_adjacency
+		)
+	)
+	var land_enclave_rejected := not HierarchyBuilder.groups_have_no_land_enclaves(
+		{1: 10, 2: 20, 3: 10},
+		{1: {2: true}, 2: {1: true, 3: true}, 3: {2: true}}
+	)
+	# Un petit groupe ne doit jamais être fusionné au groupe géographiquement
+	# proche s'il n'a aucune frontière avec lui. Cette situation reproduit les
+	# enclaves intercontinentales observées sur l'ancienne carte.
+	var adjacency_merge_mapping := {1: 10, 2: 20, 3: 30}
+	var adjacency_merge_graph := {
+		1: {2: true}, 2: {1: true, 3: true}, 3: {2: true},
+	}
+	var adjacency_merge_coords := {
+		1: Vector2(10, 10), 2: Vector2(100, 10), 3: Vector2(11, 10),
+	}
+	var adjacency_merge_weights := {1: 1, 2: 10, 3: 10}
+	var adjacency_merged := HierarchyBuilder._merge_undersized_groups(
+		adjacency_merge_mapping, adjacency_merge_graph,
+		adjacency_merge_coords, adjacency_merge_weights,
+		120, 60, 2.0, 1, 20.0
+	)
+	var adjacency_only_merge := (
+		int(adjacency_merged.get(1, -1))
+		== int(adjacency_merged.get(2, -2))
+		and int(adjacency_merged.get(1, -1))
+		!= int(adjacency_merged.get(3, -1))
+	)
+
 	var passed: bool = (
 		land_counts[0] > land_counts[1]
 		and land_counts[1] > land_counts[2]
-		and land_counts[2] >= land_counts[3]
+		and land_counts[2] > land_counts[3]
 		and sea_counts[0] > sea_counts[1]
 		and sea_counts[1] > sea_counts[2]
 		and sea_counts[2] >= sea_counts[3]
 		and sea_counts[3] > 0
 		and not freshwater_propagated
-		and float(region_stats.get("max_to_mean", 999.0)) <= 3.0
+		# Un département source est indivisible ; la fixture en contient un de
+		# presque quatre fois la moyenne des régions.
+		and float(region_stats.get("max_to_mean", 999.0)) <= 4.0
 		and float(country_stats.get("max_to_mean", 999.0)) <= 3.0
 		and float(continent_stats.get("min_to_mean", 0.0)) >= 0.20
 		and resolution_invariant_targets
 		and small_enclave_absorbed
 		and remote_island_preserved
 		and isthmus_pocket_absorbed
+		and strict_land_scales
+		and land_groups_contiguous
+		and land_groups_without_enclaves
+		and island_allowed
+		and land_enclave_rejected
+		and adjacency_only_merge
 	)
 	print("[HierarchyRegression] land_counts=", land_counts)
 	print("[HierarchyRegression] sea_counts=", sea_counts)
@@ -199,6 +311,13 @@ func _run() -> void:
 	print("[HierarchyRegression] small_enclave_absorbed=", small_enclave_absorbed)
 	print("[HierarchyRegression] remote_island_preserved=", remote_island_preserved)
 	print("[HierarchyRegression] isthmus_pocket_absorbed=", isthmus_pocket_absorbed)
+	print("[HierarchyRegression] scale_counts=", scale_counts)
+	print("[HierarchyRegression] strict_land_scales=", strict_land_scales)
+	print("[HierarchyRegression] land_groups_contiguous=", land_groups_contiguous)
+	print("[HierarchyRegression] land_groups_without_enclaves=", land_groups_without_enclaves)
+	print("[HierarchyRegression] island_allowed=", island_allowed)
+	print("[HierarchyRegression] land_enclave_rejected=", land_enclave_rejected)
+	print("[HierarchyRegression] adjacency_only_merge=", adjacency_only_merge)
 	if not passed:
 		push_error("Hierarchy size/sea propagation regression failed")
 	get_tree().quit(0 if passed else 1)
@@ -229,3 +348,36 @@ func _group_mapping(lower_mapping: Dictionary, upper_mapping: Dictionary) -> Dic
 		if upper_mapping.has(child):
 			result[lower_mapping[child]] = upper_mapping[child]
 	return result
+
+
+func _minimum_group_children(mapping: Dictionary) -> int:
+	var minimum := 0x7FFFFFFF
+	for children_value in HierarchyBuilder._invert(mapping).values():
+		minimum = mini(minimum, (children_value as Array).size())
+	return 0 if minimum == 0x7FFFFFFF else minimum
+
+
+func _grid_graph(width: int, height: int) -> Array:
+	var units: Array = []
+	var coords: Dictionary = {}
+	var adjacency: Dictionary = {}
+	var weights: Dictionary = {}
+	for y in range(height):
+		for x in range(width):
+			var unit := y * width + x
+			units.append(unit)
+			coords[unit] = Vector2(x, y)
+			weights[unit] = 1
+			adjacency[unit] = {}
+	for y in range(height):
+		for x in range(width):
+			var unit := y * width + x
+			for offset in [Vector2i(1, 0), Vector2i(0, 1)]:
+				var nx: int = x + offset.x
+				var ny: int = y + offset.y
+				if nx >= width or ny >= height:
+					continue
+				var neighbor: int = ny * width + nx
+				(adjacency[unit] as Dictionary)[neighbor] = true
+				(adjacency[neighbor] as Dictionary)[unit] = true
+	return [units, coords, adjacency, weights]

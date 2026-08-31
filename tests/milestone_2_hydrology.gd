@@ -337,8 +337,8 @@ func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 			"countries": country_stats,
 			"continents": continent_stats,
 		}
-		var land_targets := HierarchyBuilder.compute_physical_targets(
-			params, false, int(department_stats.get("cells", 1))
+		var land_targets := HierarchyBuilder.compute_land_hierarchy_targets(
+			land_counts[0], params
 		)
 		var land_cells := maxf(float(department_stats.get("cells", 1)), 1.0)
 		var physical_region_weight := land_cells / float(maxi(int(land_targets["regions"]), 1))
