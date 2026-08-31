@@ -73,37 +73,64 @@ float randOcean(uint h) {
     return float(h) / 4294967295.0;
 }
 
-// Bruit de valeur 2D simple pour relief océanique
-float oceanNoise2D(vec2 p, uint seed) {
-    vec2 i = floor(p);
+// Modulo positif pour l'axe périodique. Le bruit bathymétrique est évalué
+// dans un domaine [0, period_x) où la cellule suivant period_x - 1 est la
+// cellule 0. Cela ferme réellement le bruit à la couture longitudinale au lieu
+// de seulement wrapper les lectures de textures après coup.
+int positiveModulo(int value, int modulus) {
+    int result = value % modulus;
+    return result < 0 ? result + modulus : result;
+}
+
+// Bruit de valeur 2D périodique sur X et non périodique sur Y. Pour les
+// cellules qui ne touchent pas la couture, les mêmes indices/hash que
+// l'ancienne version sont conservés ; seule l'interpolation de fermeture relie
+// la dernière cellule longitudinale à la première.
+float oceanNoise2DPeriodic(vec2 p, uint seed, int period_x) {
+    ivec2 cell = ivec2(floor(p));
     vec2 f = fract(p);
     vec2 u = f * f * (3.0 - 2.0 * f);
-    
-    uint ix = uint(i.x + 1000.0);
-    uint iy = uint(i.y + 1000.0);
-    
-    float a = randOcean(hashOcean(ix + seed) ^ hashOcean(iy));
-    float b = randOcean(hashOcean(ix + 1u + seed) ^ hashOcean(iy));
-    float c = randOcean(hashOcean(ix + seed) ^ hashOcean(iy + 1u));
-    float d = randOcean(hashOcean(ix + 1u + seed) ^ hashOcean(iy + 1u));
-    
+
+    int safe_period_x = max(period_x, 1);
+    int wrapped_x0 = positiveModulo(cell.x, safe_period_x);
+    int wrapped_x1 = positiveModulo(cell.x + 1, safe_period_x);
+
+    uint ix0 = uint(wrapped_x0 + 1000);
+    uint ix1 = uint(wrapped_x1 + 1000);
+    uint iy0 = uint(cell.y + 1000);
+    uint iy1 = uint(cell.y + 1001);
+
+    float a = randOcean(hashOcean(ix0 + seed) ^ hashOcean(iy0));
+    float b = randOcean(hashOcean(ix1 + seed) ^ hashOcean(iy0));
+    float c = randOcean(hashOcean(ix0 + seed) ^ hashOcean(iy1));
+    float d = randOcean(hashOcean(ix1 + seed) ^ hashOcean(iy1));
+
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 2.0 - 1.0;
 }
 
-// fBm simple pour variation bathymétrique
-float oceanFbm(vec2 p, int octaves, uint seed) {
+// fBm bathymétrique périodique. La période double avec la fréquence de chaque
+// octave afin que toutes les octaves se referment exactement à la même
+// longitude. Le champ reste déterministe et conserve la fréquence historique
+// de 15 cellules sur la circonférence à l'octave de base.
+float oceanFbmPeriodic(vec2 p, int octaves, uint seed, int period_x) {
     float value = 0.0;
     float amplitude = 1.0;
     float frequency = 1.0;
     float total = 0.0;
-    
+    int octave_period_x = max(period_x, 1);
+
     for (int i = 0; i < octaves; i++) {
-        value += amplitude * oceanNoise2D(p * frequency, seed + uint(i) * 1000u);
+        value += amplitude * oceanNoise2DPeriodic(
+            p * frequency,
+            seed + uint(i) * 1000u,
+            octave_period_x
+        );
         total += amplitude;
         amplitude *= 0.5;
         frequency *= 2.0;
+        octave_period_x *= 2;
     }
-    
+
     return value / total;
 }
 
@@ -238,7 +265,9 @@ void main() {
         if (height < params.sea_level - 500.0) {
             vec2 ocean_uv = vec2(float(pixel.x) / float(params.width),
                                  float(pixel.y) / float(params.height));
-            float ocean_relief = oceanFbm(ocean_uv * 15.0, 4, 12345u);
+            // 15.0 est un nombre entier de cellules longitudinales. La même
+            // valeur définit donc aussi la période exacte du bruit sur X.
+            float ocean_relief = oceanFbmPeriodic(ocean_uv * 15.0, 4, 12345u, 15);
             height += ocean_relief * 300.0;
 
             // Le canal A est maintenant un signal divergent localisé.

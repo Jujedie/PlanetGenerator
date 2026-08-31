@@ -55,6 +55,8 @@ func _run() -> void:
 		and int(stats["precipitation_color_count"]) > 180
 		and float(stats["temperature_seam_delta"]) < 3.0
 		and float(stats["precipitation_seam_delta"]) < 0.12
+		and float(stats["precipitation_seam_delta_max"]) < 0.12
+		and float(stats["precipitation_fetch_step_delta_max"]) < 0.12
 		and deterministic
 	)
 	print("[ClimateGeneration] stats=", stats)
@@ -80,10 +82,17 @@ func _build_synthetic_geo() -> Dictionary:
 			var u := (float(x) + 0.5) / float(TEST_RESOLUTION.x)
 			var west_coast := 0.18 + sin(v * TAU * 3.0) * 0.018
 			var east_coast := 0.82 + sin(v * TAU * 2.0 + 1.2) * 0.016
-			var is_land := u > west_coast and u < east_coast
+			# Une bande terrestre traverse explicitement la couture. L'ancien test
+			# laissait les deux bords en océan profond, ce qui masquait précisément
+			# les lectures hors limites du fetch orographique sur les continents.
+			var seam_distance := minf(u, 1.0 - u)
+			var seam_land := seam_distance < 0.075 and v > 0.28 and v < 0.72
+			var is_land := (u > west_coast and u < east_coast) or seam_land
 			var ridge := 5200.0 * exp(-pow((u - 0.50) / 0.032, 2.0))
 			var rolling_relief := 260.0 * sin(u * TAU * 5.0) * cos(v * TAU * 3.0)
 			var elevation := 180.0 + maxf(rolling_relief, -120.0) + ridge if is_land else -1600.0
+			if seam_land:
+				elevation = 1650.0 + cos(v * TAU * 4.0) * 120.0
 			var pixel_index := y * TEST_RESOLUTION.x + x
 			var offset := pixel_index * 16
 			geo.encode_float(offset, elevation)
@@ -115,6 +124,8 @@ func _analyze(
 	var precipitation_colors: Dictionary = {}
 	var temperature_seam_delta := 0.0
 	var precipitation_seam_delta := 0.0
+	var precipitation_seam_delta_max := 0.0
+	var precipitation_fetch_step_delta_max := 0.0
 	for y in range(TEST_RESOLUTION.y):
 		var v := (float(y) + 0.5) / float(TEST_RESOLUTION.y)
 		var latitude := absf(v * 2.0 - 1.0)
@@ -155,7 +166,19 @@ func _analyze(
 		temperature_seam_delta += absf(left_temperature - right_temperature)
 		var left_precipitation := climate.decode_float(y * TEST_RESOLUTION.x * 16 + 4)
 		var right_precipitation := climate.decode_float((y * TEST_RESOLUTION.x + TEST_RESOLUTION.x - 1) * 16 + 4)
-		precipitation_seam_delta += absf(left_precipitation - right_precipitation)
+		var precipitation_delta := absf(left_precipitation - right_precipitation)
+		precipitation_seam_delta += precipitation_delta
+		precipitation_seam_delta_max = maxf(precipitation_seam_delta_max, precipitation_delta)
+		if v > 0.28 and v < 0.72:
+			for boundary_x in range(3, 25, 3):
+				var before_offset := (y * TEST_RESOLUTION.x + boundary_x - 1) * 16 + 4
+				var after_offset := (y * TEST_RESOLUTION.x + boundary_x) * 16 + 4
+				var fetch_step_delta := absf(
+					climate.decode_float(before_offset) - climate.decode_float(after_offset)
+				)
+				precipitation_fetch_step_delta_max = maxf(
+					precipitation_fetch_step_delta_max, fetch_step_delta
+				)
 	return {
 		"finite": finite,
 		"humidity_min": humidity_min,
@@ -172,6 +195,8 @@ func _analyze(
 		"precipitation_color_count": precipitation_colors.size(),
 		"temperature_seam_delta": temperature_seam_delta / float(TEST_RESOLUTION.y),
 		"precipitation_seam_delta": precipitation_seam_delta / float(TEST_RESOLUTION.y),
+		"precipitation_seam_delta_max": precipitation_seam_delta_max,
+		"precipitation_fetch_step_delta_max": precipitation_fetch_step_delta_max,
 	}
 
 

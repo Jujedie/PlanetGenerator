@@ -202,11 +202,23 @@ vec3 getCylindricalCoords(ivec2 pixel, uint w, uint h, float radius) {
     );
 }
 
+// imageLoad() n'applique aucun mode d'adressage : la coordonnée doit être
+// valide avant l'accès. Utiliser la taille réelle de l'image évite qu'un
+// éventuel décalage entre l'UBO et la texture transforme les samples ouest en
+// lectures hors limites. Le modulo ne reçoit jamais d'opérande négatif.
+int wrapTerrainX(int x, int width) {
+    if (x < 0) {
+        return width - 1 - ((-x - 1) % width);
+    }
+    return x % width;
+}
+
 ivec2 wrappedPixel(ivec2 pixel) {
-    int w = int(params.width);
-    int h = int(params.height);
-    int wrapped_x = ((pixel.x % w) + w) % w;
-    return ivec2(wrapped_x, clamp(pixel.y, 0, h - 1));
+    ivec2 terrain_size = imageSize(geo_texture);
+    return ivec2(
+        wrapTerrainX(pixel.x, terrain_size.x),
+        clamp(pixel.y, 0, terrain_size.y - 1)
+    );
 }
 
 float terrainHeight(ivec2 pixel) {
@@ -336,6 +348,11 @@ void main() {
     // =========================================================================
     vec4 geo = imageLoad(geo_texture, pixel);
     float height = geo.r;
+    // L'atmosphère suit la surface libre de l'océan, pas le plancher marin.
+    // Utiliser geo.r directement sous sea_level transformait les dorsales et
+    // plaines abyssales en montagnes atmosphériques, créant de faux lift/rain
+    // shadows qui pouvaient se manifester comme une couture longitudinale.
+    float atmospheric_surface = max(height, params.sea_level);
     // Vents dominants simplifiés : alizés, vents d'ouest, vents polaires.
     // Les cellules se chevauchent sur une large bande. Une sélection abrupte
     // de la direction créait des cassures horizontales visibles dans le fetch.
@@ -359,8 +376,8 @@ void main() {
     float fetch_from_west = 0.0;
     float fetch_from_east = 0.0;
     float fetch_weight = 0.0;
-    float peak_from_west = height;
-    float peak_from_east = height;
+    float peak_from_west = atmospheric_surface;
+    float peak_from_east = atmospheric_surface;
     for (int step_index = 1; step_index <= 8; step_index++) {
         int distance_px = step_index * 3;
         float west_height = terrainHeight(pixel - ivec2(distance_px, 0));
@@ -369,8 +386,8 @@ void main() {
         fetch_from_west += oceanAvailability(west_height) * weight;
         fetch_from_east += oceanAvailability(east_height) * weight;
         fetch_weight += weight;
-        peak_from_west = max(peak_from_west, west_height);
-        peak_from_east = max(peak_from_east, east_height);
+        peak_from_west = max(peak_from_west, max(west_height, params.sea_level));
+        peak_from_east = max(peak_from_east, max(east_height, params.sea_level));
     }
     fetch_from_west /= max(fetch_weight, 0.0001);
     fetch_from_east /= max(fetch_weight, 0.0001);
@@ -379,14 +396,14 @@ void main() {
     float bilateral_fetch = (fetch_from_west + fetch_from_east) * 0.5;
     float ocean_fetch = mix(bilateral_fetch, directional_fetch, 0.56);
     float near_upwind_height = mix(
-        terrainHeight(pixel + ivec2(3, 0)),
-        terrainHeight(pixel - ivec2(3, 0)),
+        max(terrainHeight(pixel + ivec2(3, 0)), params.sea_level),
+        max(terrainHeight(pixel - ivec2(3, 0)), params.sea_level),
         eastward_share
     );
     float upstream_peak = mix(peak_from_east, peak_from_west, eastward_share);
     float altitude_above_sea = max(0.0, height - params.sea_level);
-    float orographic_lift = smoothstep(80.0, 1800.0, height - near_upwind_height);
-    float rain_shadow = smoothstep(250.0, 2800.0, upstream_peak - height);
+    float orographic_lift = smoothstep(80.0, 1800.0, atmospheric_surface - near_upwind_height);
+    float rain_shadow = smoothstep(250.0, 2800.0, upstream_peak - atmospheric_surface);
     float altitude_drying = smoothstep(2200.0, 7000.0, altitude_above_sea);
     vec4 climate = imageLoad(climate_texture, pixel);
     float warm_evaporation = smoothstep(-12.0, 28.0, climate.r);

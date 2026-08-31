@@ -161,8 +161,28 @@ vec3 getRiverBlendedColor(vec3 terrain_color, vec3 river_color, uint atmo) {
 // HILLSHADE CALCULATION
 // ============================================================================
 
+// imageLoad() does not apply sampler addressing. Keep every X coordinate
+// explicitly inside the real storage image before hillshade/ecotone reads.
+// Avoid a signed remainder with a negative left operand: the same class of
+// edge access previously produced the precipitation seam on the first columns.
+int wrapMapX(int x, int width) {
+    int safe_width = max(width, 1);
+    if (x < 0) {
+        return safe_width - 1 - ((-x - 1) % safe_width);
+    }
+    return x % safe_width;
+}
+
 ivec2 wrappedPosition(ivec2 pos, int w, int h) {
-    return ivec2((pos.x % w + w) % w, clamp(pos.y, 0, h - 1));
+    // All final-map input layers are allocated at the same resolution. Geo is
+    // permanent and therefore the authoritative storage extent for wrapping.
+    ivec2 map_size = imageSize(geo_texture);
+    int map_width = max(map_size.x, 1);
+    int map_height = max(map_size.y, 1);
+    return ivec2(
+        wrapMapX(pos.x, map_width),
+        clamp(pos.y, 0, map_height - 1)
+    );
 }
 
 float elevationAt(ivec2 pos, int w, int h) {

@@ -993,7 +993,16 @@ func load_compute_shader(glsl_path: String, shader_name: String) -> bool:
 	#	push_error("❌ SHADER NOT FOUND: " + glsl_path)
 	#	return false
 
-	var shader_file = load(glsl_path)
+	# Les shaders GLSL sont fréquemment réimportés pendant les itérations de
+	# génération. `load()` réutilise l'instance RDShaderFile en cache et peut
+	# donc conserver un ancien SPIR-V dans un processus Godot déjà lancé.
+	# Remplacer l'entrée du cache garantit que le pipeline recréé lit bien la
+	# ressource importée la plus récente.
+	var shader_file = ResourceLoader.load(
+		glsl_path,
+		"",
+		ResourceLoader.CACHE_MODE_REPLACE
+	)
 	if not shader_file:
 		push_error("❌ Échec chargement fichier: " + glsl_path)
 		return false
