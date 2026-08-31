@@ -374,6 +374,44 @@ static func _check_hydrology(checks: Array[Dictionary], metrics: Dictionary,
 		water: PackedByteArray, flow: PackedByteArray, flux: PackedByteArray,
 		pixel_count: int, planet_type: int) -> void:
 	if planet_type in [3, 5]:
+		var invalid_water := 0
+		var invalid_direction := 0
+		var invalid_flux := 0
+		if water.size() == pixel_count:
+			for value in water:
+				if value != 0:
+					invalid_water += 1
+		if flow.size() == pixel_count:
+			for value in flow:
+				if value != 255:
+					invalid_direction += 1
+		if flux.size() == pixel_count * 4:
+			for value in flux.to_float32_array():
+				if not is_zero_approx(float(value)):
+					invalid_flux += 1
+		var disabled_available := (
+			water.size() == pixel_count
+			and flow.size() == pixel_count
+			and flux.size() == pixel_count * 4
+		)
+		var disabled_valid := (
+			disabled_available
+			and invalid_water == 0
+			and invalid_direction == 0
+			and invalid_flux == 0
+		)
+		metrics["disabled_hydrology"] = {
+			"available": disabled_available,
+			"nonzero_water_pixels": invalid_water,
+			"non_sentinel_flow_pixels": invalid_direction,
+			"nonzero_flux_pixels": invalid_flux,
+		}
+		_add(checks, "hydrology.disabled_contract",
+			"PASS" if disabled_valid else "FAIL",
+			"Disabled hydrology layers contain canonical zero/sentinel values."
+				if disabled_valid
+				else "A disabled hydrology layer contains undefined or non-canonical values.",
+			metrics["disabled_hydrology"])
 		_add(checks, "hydrology.values", "SKIP", "Hydrology is disabled for this planet type.")
 		return
 	var bad_direction := 0

@@ -30,6 +30,7 @@ var _readback_cache_bytes: int = 0
 var _stage_timings: Dictionary = {}
 var _png_file_timings: Dictionary = {}
 var _export_stage_plan: Dictionary = {}
+var _waterless_elevation_range := Vector2(INF, -INF)
 const _ADMIN_STAT_STRIDE := 32
 const _ADMIN_PAIR_STRIDE := 8
 const _ADMIN_COLOR_ROW_STRIDE := 32
@@ -124,6 +125,7 @@ func export_maps(gpu : GPUContext, output_dir: String, generation_params: Dictio
 	_readback_cache_bytes = 0
 	_stage_timings.clear()
 	_png_file_timings.clear()
+	_waterless_elevation_range = Vector2(INF, -INF)
 	last_metrics = {
 		"worker_count": _nb_threads,
 		"png_worker_count": _png_worker_limit,
@@ -853,13 +855,17 @@ func _create_export_rgba8_texture(gpu: GPUContext, width: int, height: int) -> R
 	return gpu.rd.texture_create(format, RDTextureView.new())
 
 
-func _build_topography_palette_buffer() -> PackedByteArray:
+func _build_topography_palette_buffer(
+		waterless_min_elevation: float, waterless_max_elevation: float
+) -> PackedByteArray:
 	var color_thresholds: Array = Enum.COULEURS_ELEVATIONS.keys()
 	var grey_thresholds: Array = Enum.COULEURS_ELEVATIONS_GREY.keys()
 	color_thresholds.sort()
 	grey_thresholds.sort()
 	var bytes := PackedByteArray()
-	bytes.resize((color_thresholds.size() + grey_thresholds.size()) * 16)
+	# One trailing vec4 carries the waterless relief range. This avoids changing
+	# the long-established 32-byte export shader push-constant ABI.
+	bytes.resize((color_thresholds.size() + grey_thresholds.size() + 1) * 16)
 	var cursor := 0
 	for threshold in color_thresholds:
 		var color: Color = Enum.COULEURS_ELEVATIONS[threshold]
@@ -875,10 +881,15 @@ func _build_topography_palette_buffer() -> PackedByteArray:
 		bytes.encode_float(cursor + 8, color.g)
 		bytes.encode_float(cursor + 12, color.b)
 		cursor += 16
+	bytes.encode_float(cursor, waterless_min_elevation)
+	bytes.encode_float(cursor + 4, waterless_max_elevation)
+	bytes.encode_float(cursor + 8, 0.0)
+	bytes.encode_float(cursor + 12, 0.0)
 	return bytes
 
 
-func _render_topography_gpu(gpu: GPUContext, width: int, height: int) -> Array:
+func _render_topography_gpu(gpu: GPUContext, width: int, height: int,
+		waterless_min_elevation: float, waterless_max_elevation: float) -> Array:
 	if not gpu.pipelines.has("export_topography") or not gpu.textures.has("geo"):
 		return []
 	var rd := gpu.rd
@@ -898,7 +909,9 @@ func _render_topography_gpu(gpu: GPUContext, width: int, height: int) -> Array:
 		gpu.create_texture_uniform(3, outputs[2]),
 	]
 	var texture_set := rd.uniform_set_create(texture_uniforms, shader, 0)
-	var palette_bytes := _build_topography_palette_buffer()
+	var palette_bytes := _build_topography_palette_buffer(
+		waterless_min_elevation, waterless_max_elevation
+	)
 	var palette_buffer := rd.storage_buffer_create(palette_bytes.size(), palette_bytes)
 	var palette_uniform := RDUniform.new()
 	palette_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
@@ -1856,14 +1869,27 @@ func _export_topographie_maps(gpu: GPUContext, geo_data: PackedByteArray,
 	var relative_elevations := PackedFloat32Array()
 	relative_elevations.resize(pixel_count)
 	var sea_level := float(params.get("sea_level", 0.0))
+	var minimum_relative_elevation := INF
+	var maximum_relative_elevation := -INF
 	for pixel_index in range(pixel_count):
-		relative_elevations[pixel_index] = geo_values[pixel_index * 4] - sea_level
+		var relative_elevation := geo_values[pixel_index * 4] - sea_level
+		relative_elevations[pixel_index] = relative_elevation
+		minimum_relative_elevation = minf(minimum_relative_elevation, relative_elevation)
+		maximum_relative_elevation = maxf(maximum_relative_elevation, relative_elevation)
+	_waterless_elevation_range = Vector2(
+		minimum_relative_elevation, maximum_relative_elevation
+	)
 
-	var images := _render_topography_gpu(gpu, width, height)
+	var images := _render_topography_gpu(
+		gpu, width, height, minimum_relative_elevation, maximum_relative_elevation
+	)
 	var expected_images := 3 if int(params.get("planet_type", 0)) in [3, 5] else 2
 	if images.size() != expected_images:
 		push_warning("[Exporter] ⚠️ GPU topography conversion unavailable; using packed CPU fallback")
-		images = _build_topography_cpu_fallback(geo_values, width, height, sea_level)
+		images = _build_topography_cpu_fallback(
+			geo_values, width, height, sea_level,
+			minimum_relative_elevation, maximum_relative_elevation
+		)
 	if images.size() < expected_images:
 		return result
 
@@ -1894,7 +1920,8 @@ func _export_topographie_maps(gpu: GPUContext, geo_data: PackedByteArray,
 
 
 func _build_topography_cpu_fallback(geo_values: PackedFloat32Array, width: int,
-		height: int, sea_level: float) -> Array:
+		height: int, sea_level: float, minimum_relative_elevation: float,
+		maximum_relative_elevation: float) -> Array:
 	var pixel_count := width * height
 	var colored := PackedByteArray()
 	var grey := PackedByteArray()
@@ -1903,10 +1930,21 @@ func _build_topography_cpu_fallback(geo_values: PackedFloat32Array, width: int,
 	grey.resize(pixel_count * 4)
 	water.resize(pixel_count * 4)
 	var has_water := int(params.get("planet_type", 0)) not in [3, 5]
+	var waterless_span := maxf(
+		maximum_relative_elevation - minimum_relative_elevation, 1.0
+	)
 	for pixel_index in range(pixel_count):
 		var base := pixel_index * 4
 		var elevation_int := roundi(geo_values[base] - sea_level)
-		var color: Color = Enum.getElevationColor(elevation_int, false)
+		var colored_elevation := elevation_int
+		if not has_water:
+			var normalized := clampf(
+				(float(elevation_int) - minimum_relative_elevation) / waterless_span,
+				0.0,
+				1.0
+			)
+			colored_elevation = roundi(lerpf(20.0, 6000.0, pow(normalized, 0.88)))
+		var color: Color = Enum.getElevationColor(colored_elevation, false)
 		var grey_color: Color = Enum.getElevationColor(elevation_int, true)
 		colored[base] = clampi(roundi(color.r * 255.0), 0, 255)
 		colored[base + 1] = clampi(roundi(color.g * 255.0), 0, 255)
@@ -3185,6 +3223,11 @@ func _export_cartographic_map(gpu: GPUContext, output_dir: String) -> Dictionary
 		float(params.get("sea_level", 0.0)), palette, {
 			"view": str(params.get("cartography_view", CartographicRenderer.VIEW_PLANET)),
 			"markers": params.get("cartography_markers", []),
+			"waterless_surface": int(params.get("planet_type", 0)) in [
+				Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE,
+			],
+			"waterless_min_elevation": _waterless_elevation_range.x,
+			"waterless_max_elevation": _waterless_elevation_range.y,
 		}
 	)
 	geo_data = PackedByteArray()

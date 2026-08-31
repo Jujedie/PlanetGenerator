@@ -766,4 +766,6 @@ When modifying the generator:
 
 ## License
 
-See the repository license file, if present, for the current licensing terms.
+See the repository license file for the current licensing terms.
+
+v3.1.0

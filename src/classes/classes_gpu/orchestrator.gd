@@ -163,6 +163,7 @@ func _compile_all_shaders() -> bool:
 		{"path": "res://shader/compute/water/river_classify.glsl", "name": "river_classify", "critical": false},
 		{"path": "res://shader/compute/water/river_type_assign.glsl", "name": "river_type_assign", "critical": false},
 		{"path": "res://shader/compute/water/hydrology_water_color.glsl", "name": "hydrology_water_color", "critical": false},
+		{"path": "res://shader/compute/water/disabled_hydrology_clear.glsl", "name": "disabled_hydrology_clear", "critical": false},
 		# Shaders Régions Administratives (Étape 4)
 		{"path": "res://shader/compute/region/region_seed_placement.glsl", "name": "region_seed_placement", "critical": false},
 		{"path": "res://shader/compute/region/region_edge_cost.glsl", "name": "region_edge_cost", "critical": false},
@@ -2235,6 +2236,14 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 	# pas avoir d'eau liquide, car les phases finales les référencent.
 	# water_colored appartient au groupe final_map.
 	if atmosphere_type in [Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE]:
+		# RenderingDevice allocations contain undefined VRAM. Every downstream
+		# phase still binds the hydrology layers, so explicitly establish the
+		# no-liquid contract before biome/admin/final-map dispatches consume them.
+		var cleared_on_gpu := _dispatch_disabled_hydrology_clear(
+			w, h, groups_x, groups_y
+		)
+		if not cleared_on_gpu:
+			_upload_disabled_hydrology_defaults(w, h)
 		# These worlds still run land administration. Its authoritative mask is a
 		# zero-filled water texture, so keep that result without a later readback.
 		_administrative_water_mask.resize(w * h)
@@ -2244,6 +2253,7 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 		last_hydrology_stats = {
 			"skipped_no_liquid_water": true,
 			"texture_init_ms": texture_init_ms,
+			"disabled_hydrology_gpu_clear": cleared_on_gpu,
 		}
 		print("  ⏭️ Planète sans eau liquide (type=", atmosphere_type, ")")
 		return
@@ -2466,6 +2476,66 @@ func run_water_phase(params: Dictionary, w: int, h: int) -> void:
 		" | finalize-queue=", snappedf(finalize_queue_ms, 0.01), " ms",
 	)
 	print("[Orchestrator] ✅ Phase 2.5 : Hydrologie terminée")
+
+
+func _dispatch_disabled_hydrology_clear(_w: int, _h: int,
+		groups_x: int, groups_y: int) -> bool:
+	if (
+		not gpu.shaders.has("disabled_hydrology_clear")
+		or not gpu.pipelines.has("disabled_hydrology_clear")
+		or not gpu.shaders["disabled_hydrology_clear"].is_valid()
+		or not gpu.pipelines["disabled_hydrology_clear"].is_valid()
+	):
+		return false
+	for texture_name in [
+		"water_mask", "flow_direction", "ocean_reachable",
+		"river_biome_id", "river_flux", "water_colored",
+	]:
+		if not gpu.textures.has(texture_name) or not gpu.textures[texture_name].is_valid():
+			return false
+	var uniforms: Array[RDUniform] = []
+	var texture_names := [
+		"water_mask", "flow_direction", "ocean_reachable",
+		"river_biome_id", "river_flux", "water_colored",
+	]
+	for binding_index in range(texture_names.size()):
+		uniforms.append(gpu.create_texture_uniform(
+			binding_index, gpu.textures[texture_names[binding_index]]
+		))
+	var texture_set := rd.uniform_set_create(
+		uniforms, gpu.shaders["disabled_hydrology_clear"], 0
+	)
+	if not texture_set.is_valid():
+		return false
+	var compute_list := rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(
+		compute_list, gpu.pipelines["disabled_hydrology_clear"]
+	)
+	rd.compute_list_bind_uniform_set(compute_list, texture_set, 0)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	gpu.submit_gpu_work()
+	gpu.release_rid(texture_set)
+	return true
+
+
+func _upload_disabled_hydrology_defaults(w: int, h: int) -> void:
+	# Correctness fallback for a platform that cannot compile the clear shader.
+	# Reuse one buffer so peak host memory remains four bytes per pixel.
+	var pixel_count := w * h
+	var payload := PackedByteArray()
+	payload.resize(pixel_count)
+	payload.fill(0)
+	rd.texture_update(gpu.textures["water_mask"], 0, payload)
+	payload.fill(255)
+	rd.texture_update(gpu.textures["flow_direction"], 0, payload)
+	rd.texture_update(gpu.textures["ocean_reachable"], 0, payload)
+	payload.resize(pixel_count * 4)
+	payload.fill(0)
+	rd.texture_update(gpu.textures["river_flux"], 0, payload)
+	rd.texture_update(gpu.textures["water_colored"], 0, payload)
+	payload.fill(255)
+	rd.texture_update(gpu.textures["river_biome_id"], 0, payload)
 
 ## Dispatch le shader d'identification des zones d'eau
 func _dispatch_water_fill(w: int, h: int, groups_x: int, groups_y: int,
@@ -4353,7 +4423,7 @@ func run_resources_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	var seed_val = int(params.get("seed", 12345))
 	var sea_level = float(params.get("sea_level", 0.0))
-	var atmosphere_type = int(params.get("atmosphere_type", 0))
+	var atmosphere_type = int(params.get("planet_type", Enum.TYPE_TERRAN))
 	var cylinder_radius = float(w) / (2.0 * PI)
 	
 	# Paramètres de pétrole (depuis enum.gd)
