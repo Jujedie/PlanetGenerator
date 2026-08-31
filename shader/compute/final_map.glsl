@@ -81,33 +81,6 @@ layout(set = 2, binding = 0, std430) readonly buffer BiomeLUT {
     BiomeData biomes[];
 };
 
-// === SET 3: RIVER BIOMES SSBO (VEGETATION COLORS) ===
-// Structure alignée std430 (64 bytes par biome rivière)
-struct RiverBiomeData {
-    vec4 color;              // RGB + alpha (couleur végétation rivière) - 16 bytes
-    float temp_min;          // Température minimale (°C) - 4 bytes
-    float temp_max;          // Température maximale (°C) - 4 bytes
-    float humid_min;         // (non utilisé) - 4 bytes
-    float humid_max;         // (non utilisé) - 4 bytes
-    float elev_min;          // (non utilisé) - 4 bytes
-    float elev_max;          // (non utilisé) - 4 bytes
-    uint water_need;         // (non utilisé) - 4 bytes
-    uint planet_type_mask;   // Bitmask des types de planètes valides - 4 bytes
-    uint river_type;         // 0=Affluent, 1=Rivière, 2=Fleuve, 3=Lac, etc. - 4 bytes
-    uint rpad1;              // Alignement - 4 bytes
-    uint rpad2;              // Alignement - 4 bytes
-    uint rpad3;              // Alignement - 4 bytes
-    // Total: 64 bytes
-};
-
-layout(set = 3, binding = 0, std430) readonly buffer RiverBiomeLUT {
-    uint river_biome_count;
-    uint river_header_padding1;
-    uint river_header_padding2;
-    uint river_header_padding3;
-    RiverBiomeData river_biomes[];
-};
-
 // ============================================================================
 // CRYOSPHERE FALLBACK COLOR BY ATMOSPHERE
 // ============================================================================
@@ -129,32 +102,14 @@ vec3 getCryosphereColor(uint atmo) {
 }
 
 // ============================================================================
-// RIVER COLOR BY ATMOSPHERE - Mélange dynamique selon le type de planète
+// FRESHWATER SOURCE COLOR - identique à hydrology_water_color.glsl
 // ============================================================================
 
-/// Calcule la couleur finale de la rivière en fonction du terrain et du type d'atmosphère
-/// Chaque type de planète utilise un mode de mélange adapté à son esthétique
-vec3 getRiverBlendedColor(vec3 terrain_color, vec3 river_color, uint atmo) {
-    // TYPE_VOLCANIC (2) : Rivières de lave - elles brillent et dominent le terrain
-    if (atmo == 2u) {
-        vec3 lava = mix(vec3(0.70, 0.24, 0.06), river_color, 0.45);
-        return mix(terrain_color, lava, 0.66);
-    }
-    // TYPE_TOXIC (1) : Rivières acides - très visibles, teinte acide dominante
-    if (atmo == 1u) {
-        vec3 acid = mix(vec3(0.36, 0.42, 0.18), river_color, 0.30);
-        return mix(terrain_color, acid, 0.58);
-    }
-    // TYPE_DEAD (4) : Rivières polluées/boueuses - se fondent plus avec le terrain
-    if (atmo == 4u) {
-        vec3 polluted_water = mix(vec3(0.27, 0.25, 0.20), river_color, 0.30);
-        return mix(terrain_color, polluted_water, 0.50);
-    }
-    // TYPE_TERRAN (0) et autres : restaurer la nuance bleu-vert précédente.
-    // Le biome terrestre reste indépendant du flux ; seule cette superposition
-    // visuelle de la rivière retrouve son ancien rendu.
-    vec3 natural_water = mix(vec3(0.23, 0.40, 0.42), river_color, 0.10);
-    return mix(terrain_color, natural_water, 0.26);
+vec3 freshwaterSourceColor(uint atmo) {
+    if (atmo == 1u) return vec3(99.0, 108.0, 58.0) / 255.0;
+    if (atmo == 2u) return vec3(184.0, 73.0, 27.0) / 255.0;
+    if (atmo == 4u) return vec3(76.0, 79.0, 66.0) / 255.0;
+    return vec3(69.0, 132.0, 210.0) / 255.0;
 }
 
 // ============================================================================
@@ -796,18 +751,23 @@ void main() {
         color = clamp(color + vec3(relief_light), vec3(0.0), vec3(1.0));
     }
     
-    // === STEP 3: Rivers overlay ===
-    // Si un biome rivière est assigné, appliquer la colorisation dynamique
-    // selon le type d'atmosphère de la planète
-    if (is_river && river_bid < river_biome_count) {
-        vec3 river_veg_color = river_biomes[river_bid].color.rgb;
-        // Mélange adapté au type de planète (lave, acide, boue, eau...)
-        color = getRiverBlendedColor(color, river_veg_color, params.atmosphere_type);
+    // === STEP 3: Rivers use the same surface palette as freshwater lakes ===
+    // Une rivière n'est plus mélangée au terrain. À profondeur nulle, elle suit
+    // exactement la même palette planétaire et le même relief atténué qu'un lac.
+    if (is_river) {
+        color = planetaryWaterSurface(
+            0.0,
+            freshwaterSourceColor(params.atmosphere_type),
+            params.atmosphere_type
+        );
+        float river_relief_light = (shading - 0.5) * 2.0
+            * params.relief_strength * params.water_relief_factor;
+        color = clamp(color + vec3(river_relief_light), vec3(0.0), vec3(1.0));
     }
     
     // === STEP 4: Land snow/frost from continuous physical conditions ===
     // This is deliberately separate from ice_caps, which remains water-only.
-    if (!is_water) {
+    if (!is_water && !is_river) {
         float land_ice = landCryosphereCoverage(
             climate.r,
             display_humidity,
@@ -835,7 +795,7 @@ void main() {
         color = mix(color, cryosphere_color, ice_opacity);
     }
 
-    if (!is_water) {
+    if (!is_water && !is_river) {
         color = clamp(color + vec3(landColorDither(pos)), vec3(0.0), vec3(1.0));
     }
     

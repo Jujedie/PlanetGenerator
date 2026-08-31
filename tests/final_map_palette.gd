@@ -191,6 +191,9 @@ func _run() -> void:
 	gpu.initialize_biome_textures()
 	gpu.initialize_final_map_textures()
 	var inputs := _build_inputs(terran_biomes, resolution)
+	var water_river_probe := _inject_water_river_probe(
+		inputs, terran_biomes, resolution
+	)
 	gpu.rd.texture_update(gpu.textures["geo"], 0, inputs["geo"])
 	gpu.rd.texture_update(gpu.textures["climate"], 0, inputs["climate"])
 	gpu.rd.texture_update(gpu.textures["biome_colored"], 0, inputs["biome_color"])
@@ -209,6 +212,9 @@ func _run() -> void:
 	var preview_path := _save_preview(final_data, resolution)
 	var valid := (
 		_validate_palette(terran_biomes, final_data, resolution)
+		and _validate_water_river_match(
+			final_data, resolution, water_river_probe
+		)
 		and _validate_final_map_shader()
 	)
 	print("[FinalMapPalette] biomes=", terran_biomes.size())
@@ -303,6 +309,54 @@ func _encode_color(data: PackedByteArray, offset: int, color: Color) -> void:
 	data[offset + 1] = int(round(color.g * 255.0))
 	data[offset + 2] = int(round(color.b * 255.0))
 	data[offset + 3] = int(round(color.a * 255.0))
+
+
+func _inject_water_river_probe(inputs: Dictionary, biomes: Array,
+		resolution: Vector2i) -> Dictionary:
+	var land_biome_index := -1
+	for index in range(biomes.size()):
+		if not (biomes[index] as Biome).get_water_need():
+			land_biome_index = index
+			break
+	if land_biome_index < 0:
+		return {}
+	var y := PREVIEW_HEIGHT / 2
+	var lake := Vector2i(
+		land_biome_index * PREVIEW_WIDTH_PER_BIOME + 7, y
+	)
+	var river := Vector2i(lake.x + 1, y)
+	var lake_offset := (lake.y * resolution.x + lake.x) * 4
+	var river_offset := (river.y * resolution.x + river.x) * 4
+	var water: PackedByteArray = inputs["water"]
+	var river_flux: PackedByteArray = inputs["river_flux"]
+	var river_biome_id: PackedByteArray = inputs["river_biome_id"]
+	_encode_color(water, lake_offset, Color8(69, 132, 210, 255))
+	river_flux.encode_float(river_offset, 1_000_000.0)
+	river_biome_id.encode_u32(river_offset, 0)
+	inputs["water"] = water
+	inputs["river_flux"] = river_flux
+	inputs["river_biome_id"] = river_biome_id
+	return {"lake": lake, "river": river}
+
+
+func _validate_water_river_match(data: PackedByteArray,
+		resolution: Vector2i, probe: Dictionary) -> bool:
+	if not probe.has("lake") or not probe.has("river"):
+		return false
+	var lake: Vector2i = probe["lake"]
+	var river: Vector2i = probe["river"]
+	var lake_color := _rendered_color(data, resolution, lake.x, lake.y)
+	var river_color := _rendered_color(data, resolution, river.x, river.y)
+	var difference := Vector3(
+		lake_color.r - river_color.r,
+		lake_color.g - river_color.g,
+		lake_color.b - river_color.b
+	).length()
+	print(
+		"[FinalMapPalette] freshwater_lake=", lake_color,
+		" river=", river_color, " difference=", difference
+	)
+	return difference <= 2.0 / 255.0
 
 
 func _validate_palette(biomes: Array, final_data: PackedByteArray, resolution: Vector2i) -> bool:
@@ -432,6 +486,9 @@ func _validate_final_map_shader() -> bool:
 		and orchestrator_script.contains(
 			"lerpf(river_threshold, major_river_threshold, 0.35)"
 		)
+		and shader.contains("freshwaterSourceColor")
+		and not shader.contains("getRiverBlendedColor")
+		and not shader.contains("RiverBiomeLUT")
 		and shader.contains("biomeVegetationCapacity")
 		and shader.contains("ephemeral_greenup")
 		and shader.contains("BIOME_TINT_STRENGTH = 0.07")

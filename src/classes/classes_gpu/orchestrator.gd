@@ -4860,7 +4860,7 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 	u_biome_id.add_id(gpu.textures["biome_id"])
 	tex_uniforms.append(u_biome_id)
 	
-	# Binding 7: river_biome_id (R32UI) - IDs des biomes rivière pour lookup SSBO rivière
+	# Binding 7: river_biome_id (R32UI) - présence/classification des rivières
 	var u_river_biome_id = RDUniform.new()
 	u_river_biome_id.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
 	u_river_biome_id.binding = 7
@@ -4903,40 +4903,17 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 	
 	var ssbo_set = rd.uniform_set_create([ssbo_uniform], gpu.shaders["final_map"], 2)
 	
-	# Créer le SSBO des biomes rivière pour set 3
-	var river_biomes_data = Enum.build_river_biomes_gpu_buffer(atmosphere_type, true)  # is_vegetation = true
-	var river_biomes_ssbo = rd.storage_buffer_create(river_biomes_data.size(), river_biomes_data)
-	
-	if not river_biomes_ssbo.is_valid():
-		push_error("[Orchestrator] ❌ Failed to create river biomes SSBO for final_map")
-		gpu.release_rid(ssbo_set)
-		gpu.release_rid(biomes_veg_ssbo)
-		gpu.release_rid(param_set)
-		gpu.release_rid(tex_set)
-		gpu.release_rid(param_buffer)
-		return
-	
-	var river_ssbo_uniform = RDUniform.new()
-	river_ssbo_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-	river_ssbo_uniform.binding = 0
-	river_ssbo_uniform.add_id(river_biomes_ssbo)
-	
-	var river_ssbo_set = rd.uniform_set_create([river_ssbo_uniform], gpu.shaders["final_map"], 3)
-	
 	# Dispatcher
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["final_map"])
 	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
 	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
 	rd.compute_list_bind_uniform_set(compute_list, ssbo_set, 2)
-	rd.compute_list_bind_uniform_set(compute_list, river_ssbo_set, 3)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	gpu.submit_gpu_work()
 	
 	# Nettoyer
-	gpu.release_rid(river_ssbo_set)
-	gpu.release_rid(river_biomes_ssbo)
 	gpu.release_rid(ssbo_set)
 	gpu.release_rid(biomes_veg_ssbo)
 	gpu.release_rid(param_set)
