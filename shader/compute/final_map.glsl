@@ -150,11 +150,11 @@ vec3 getRiverBlendedColor(vec3 terrain_color, vec3 river_color, uint atmo) {
         vec3 polluted_water = mix(vec3(0.27, 0.25, 0.20), river_color, 0.30);
         return mix(terrain_color, polluted_water, 0.50);
     }
-    // TYPE_TERRAN (0) : même famille bleu marine que les lacs et océans. La
-    // couleur du biome de rivière ne doit pas créer un filament cyan/vert ni
-    // donner l'impression que le biome terrestre change sous le cours d'eau.
-    const vec3 NATURAL_WATER = vec3(0.040, 0.135, 0.205);
-    return mix(terrain_color, NATURAL_WATER, 0.32);
+    // TYPE_TERRAN (0) et autres : restaurer la nuance bleu-vert précédente.
+    // Le biome terrestre reste indépendant du flux ; seule cette superposition
+    // visuelle de la rivière retrouve son ancien rendu.
+    vec3 natural_water = mix(vec3(0.23, 0.40, 0.42), river_color, 0.10);
+    return mix(terrain_color, natural_water, 0.26);
 }
 
 // ============================================================================
@@ -415,9 +415,9 @@ vec3 terranWaterHypsometry(float depth, vec3 source_water) {
     // Vue orbitale stylisée : bleu côtier lisible, puis bleu marine profond.
     // Le rendu reste volontairement un peu plus clair que les pixels d'une
     // photographie spatiale, avant l'assombrissement appliqué à l'export.
-    const vec3 SHALLOW = vec3(0.10, 0.29, 0.38);
-    const vec3 MID = vec3(0.045, 0.16, 0.29);
-    const vec3 DEEP = vec3(0.018, 0.065, 0.18);
+    const vec3 SHALLOW = vec3(0.090, 0.270, 0.355);
+    const vec3 MID = vec3(0.040, 0.145, 0.265);
+    const vec3 DEEP = vec3(0.015, 0.058, 0.165);
     vec3 color = mix(SHALLOW, MID, smoothstep(80.0, 1200.0, depth));
     color = mix(color, DEEP, smoothstep(1200.0, 5200.0, depth));
     return mix(color, source_water, 0.03);
