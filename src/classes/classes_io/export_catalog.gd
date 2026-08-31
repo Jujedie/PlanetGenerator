@@ -4,9 +4,9 @@ extends RefCounted
 ## Milestone 7.2 — Export System v2
 ##
 ## Keeps generated data, user-facing maps, overlays and development views in a
-## predictable on-disk layout. The exporter still produces its authoritative
-## maps first; this catalog stage only filters/organizes finished files, so it
-## cannot change simulation results.
+## predictable on-disk layout. PlanetExporter uses the same retention contract
+## to skip unrequested presentation stages before GPU readback/compression; this
+## final catalog pass still validates and organizes every file that survives.
 
 const CATALOG_VERSION := 4
 const PRESET_MINIMAL := "minimal"

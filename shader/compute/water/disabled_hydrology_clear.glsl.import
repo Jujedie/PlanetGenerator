@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://qvooohmsrb71"
+path="res://.godot/imported/disabled_hydrology_clear.glsl-a3f620827a024ccabf367e35dbc06efb.res"
+
+[deps]
+
+source_file="res://shader/compute/water/disabled_hydrology_clear.glsl"
+dest_files=["res://.godot/imported/disabled_hydrology_clear.glsl-a3f620827a024ccabf367e35dbc06efb.res"]
+
+[params]
+

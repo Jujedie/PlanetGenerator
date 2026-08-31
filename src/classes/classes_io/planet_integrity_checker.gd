@@ -19,7 +19,7 @@ const ADMIN_EXPORT_KEYS := [
 ]
 
 static func run(gpu: GPUContext, generation_params: Dictionary,
-		exported_files: Dictionary) -> Dictionary:
+		exported_files: Dictionary, preloaded_layers: Dictionary = {}) -> Dictionary:
 	var started := Time.get_ticks_usec()
 	var checks: Array[Dictionary] = []
 	var metrics: Dictionary = {}
@@ -35,11 +35,16 @@ static func run(gpu: GPUContext, generation_params: Dictionary,
 	if pixel_count <= 0:
 		return _finish(checks, metrics, started)
 
-	var water := _read_texture(gpu, "water_mask")
-	var land_ids := _read_texture(gpu, "region_map")
-	var sea_ids := _read_texture(gpu, "ocean_region_map")
-	var flow_direction := _read_texture(gpu, "flow_direction")
-	var river_flux := _read_texture(gpu, "river_flux")
+	var water := _read_texture(gpu, "water_mask", preloaded_layers)
+	var land_ids := _read_texture(gpu, "region_map", preloaded_layers)
+	var sea_ids := _read_texture(gpu, "ocean_region_map", preloaded_layers)
+	var flow_direction := _read_texture(gpu, "flow_direction", preloaded_layers)
+	var river_flux := _read_texture(gpu, "river_flux", preloaded_layers)
+	var reused_layers: Array[String] = []
+	for layer_name in ["water_mask", "region_map", "ocean_region_map", "flow_direction", "river_flux"]:
+		if preloaded_layers.has(layer_name):
+			reused_layers.append(layer_name)
+	metrics["preloaded_layers"] = reused_layers
 
 	_check_raw_sizes(checks, water, land_ids, sea_ids, flow_direction, river_flux, pixel_count)
 	_check_land_water_coverage(checks, metrics, water, land_ids, sea_ids, width, height,
@@ -51,9 +56,10 @@ static func run(gpu: GPUContext, generation_params: Dictionary,
 	_check_hydrology(checks, metrics, water, flow_direction, river_flux, pixel_count,
 		int(generation_params.get("planet_type", 0)))
 	_check_exports(checks, metrics, exported_files, width, height,
-		int(generation_params.get("planet_type", 0)), sea_ids.size() == pixel_count * 4)
+		int(generation_params.get("planet_type", 0)), sea_ids.size() == pixel_count * 4,
+		generation_params)
 	_check_river_export_consistency(checks, metrics, exported_files,
-		int(generation_params.get("planet_type", 0)))
+		int(generation_params.get("planet_type", 0)), generation_params)
 	_check_administrative_colors(checks, metrics, exported_files)
 
 	return _finish(checks, metrics, started)
@@ -117,7 +123,12 @@ static func _resolve_dimensions(gpu: GPUContext, params: Dictionary,
 	return Vector2i.ZERO
 
 
-static func _read_texture(gpu: GPUContext, texture_name: String) -> PackedByteArray:
+static func _read_texture(gpu: GPUContext, texture_name: String,
+		preloaded_layers: Dictionary = {}) -> PackedByteArray:
+	if preloaded_layers.has(texture_name):
+		var preloaded = preloaded_layers[texture_name]
+		if preloaded is PackedByteArray:
+			return preloaded
 	if gpu == null or gpu.rd == null:
 		return PackedByteArray()
 	if not gpu.textures.has(texture_name):
@@ -363,6 +374,44 @@ static func _check_hydrology(checks: Array[Dictionary], metrics: Dictionary,
 		water: PackedByteArray, flow: PackedByteArray, flux: PackedByteArray,
 		pixel_count: int, planet_type: int) -> void:
 	if planet_type in [3, 5]:
+		var invalid_water := 0
+		var invalid_direction := 0
+		var invalid_flux := 0
+		if water.size() == pixel_count:
+			for value in water:
+				if value != 0:
+					invalid_water += 1
+		if flow.size() == pixel_count:
+			for value in flow:
+				if value != 255:
+					invalid_direction += 1
+		if flux.size() == pixel_count * 4:
+			for value in flux.to_float32_array():
+				if not is_zero_approx(float(value)):
+					invalid_flux += 1
+		var disabled_available := (
+			water.size() == pixel_count
+			and flow.size() == pixel_count
+			and flux.size() == pixel_count * 4
+		)
+		var disabled_valid := (
+			disabled_available
+			and invalid_water == 0
+			and invalid_direction == 0
+			and invalid_flux == 0
+		)
+		metrics["disabled_hydrology"] = {
+			"available": disabled_available,
+			"nonzero_water_pixels": invalid_water,
+			"non_sentinel_flow_pixels": invalid_direction,
+			"nonzero_flux_pixels": invalid_flux,
+		}
+		_add(checks, "hydrology.disabled_contract",
+			"PASS" if disabled_valid else "FAIL",
+			"Disabled hydrology layers contain canonical zero/sentinel values."
+				if disabled_valid
+				else "A disabled hydrology layer contains undefined or non-canonical values.",
+			metrics["disabled_hydrology"])
 		_add(checks, "hydrology.values", "SKIP", "Hydrology is disabled for this planet type.")
 		return
 	var bad_direction := 0
@@ -395,7 +444,7 @@ static func _check_hydrology(checks: Array[Dictionary], metrics: Dictionary,
 
 static func _check_exports(checks: Array[Dictionary], metrics: Dictionary,
 		exported_files: Dictionary, width: int, height: int, planet_type: int,
-		has_ocean_region_layer: bool) -> void:
+		has_ocean_region_layer: bool, generation_params: Dictionary) -> void:
 	var wrong_size: Array[String] = []
 	var missing: Array[String] = []
 	var png_count := 0
@@ -414,17 +463,30 @@ static func _check_exports(checks: Array[Dictionary], metrics: Dictionary,
 		if dimensions.x != width or dimensions.y != height:
 			wrong_size.append(str(key))
 	# Validate the keys actually returned by PlanetExporter, not obsolete aliases.
-	var required := ["topographie_map", "biome_colored", "final_map", "region_colored"]
+	var required_candidates := [
+		["topographie_map", "topographie_map.png"],
+		["biome_colored", "biome_map.png"],
+		["final_map", "final_map.png"],
+		["region_colored", "departement_map.png"],
+	]
 	if planet_type == 6:
-		required = ["final_map"]
+		required_candidates = [["final_map", "final_map.png"]]
 	elif planet_type not in [3, 5]:
-		required.append_array(["eaux_map", "river_map", "river_type_map"])
+		required_candidates.append_array([
+			["eaux_map", "eaux_map.png"],
+			["river_map", "river_map.png"],
+			["river_type_map", "river_type_map.png"],
+		])
 		# Completely dry planets intentionally skip maritime administration and do
 		# not create ocean_region_map/ocean_region_colored. The raw-layer checks
 		# already fail if a maritime domain should exist but its authoritative layer
 		# is missing, so only require this export when that layer actually exists.
 		if has_ocean_region_layer:
-			required.append("ocean_region_colored")
+			required_candidates.append(["ocean_region_colored", "departement_mer_map.png"])
+	var required: Array[String] = []
+	for candidate in required_candidates:
+		if ExportCatalog.should_keep(str(candidate[0]), generation_params, str(candidate[1])):
+			required.append(str(candidate[0]))
 	var required_missing: Array[String] = []
 	for key in required:
 		if not exported_files.has(key) or not FileAccess.file_exists(str(exported_files[key])):
@@ -464,10 +526,20 @@ static func _png_header_dimensions(path: String) -> Vector2i:
 
 
 static func _check_river_export_consistency(checks: Array[Dictionary], metrics: Dictionary,
-		exported_files: Dictionary, planet_type: int) -> void:
+		exported_files: Dictionary, planet_type: int, generation_params: Dictionary) -> void:
 	if planet_type in [3, 5, 6]:
 		_add(checks, "hydrology.river_export_consistency", "SKIP",
 			"This planet type has no exported surface river network.")
+		return
+	var wants_river := ExportCatalog.should_keep(
+		"river_map", generation_params, "river_map.png"
+	)
+	var wants_type := ExportCatalog.should_keep(
+		"river_type_map", generation_params, "river_type_map.png"
+	)
+	if not wants_river or not wants_type:
+		_add(checks, "hydrology.river_export_consistency", "SKIP",
+			"The selected export preset does not request both river presentation maps.")
 		return
 	if not exported_files.has("river_map") or not exported_files.has("river_type_map"):
 		_add(checks, "hydrology.river_export_consistency", "FAIL",

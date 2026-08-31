@@ -12,6 +12,16 @@ Implemented low-risk optimizations:
 - keep tiled read caches on a tiny FIFO without allocating `Dictionary.keys()` arrays at every eviction;
 - keep the checksum cache bounded so long batch/tiled runs cannot turn the optimization into a memory leak.
 
+The final export/water/administration pass also keeps authoritative data unchanged while removing duplicated work:
+
+- build a preset-aware export stage plan before loading shaders or reading GPU textures, including stale-output pruning for reused destinations;
+- combine the river colour and river-type conversions into one packed scan and reuse cached water/flux readbacks during integrity validation;
+- retain the exact hydrology water mask produced on the CPU for both administrative phases, eliminating two later VRAM downloads and a second maritime-mask conversion;
+- bulk-decode administrative convergence counters and rely on RenderingDevice queue ordering instead of an unnecessary land-finalization sync;
+- keep hierarchy extraction authoritative while downloading/compressing only the administrative levels selected by the export preset.
+
+The Vulkan integration fixture verifies that Standard and Minimal produce byte-identical PNGs for all five maps retained by Minimal. On the 128×64 deterministic fixture, Minimal used 8 readbacks and 5 PNG jobs versus Standard's 31 readbacks and 23 jobs; measured export wall time was 70.5 ms versus 158.5 ms. These timings are diagnostic rather than release thresholds—the byte equality, deterministic layer hash, topology, hydrology continuity, integrity, and lifecycle checks are the quality gates.
+
 `FinalOptimizationGuard` compares an M8 baseline `release_candidate_report.json` with a post-M8.1 report. It requires identical deterministic layer hashes and rejects performance regressions above the configured tolerance. The guard reports median wall/sync/readback/export times and peak RAM/VRAM.
 
 A final 1.0 candidate should therefore be tested in this order:

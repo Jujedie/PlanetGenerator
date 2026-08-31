@@ -58,7 +58,31 @@ void main() {
 
     vec4 geo = imageLoad(geo_texture, pos);
     int relative_elevation = roundLikeGDScript(geo.r - params.sea_level);
-    vec3 colored = paletteColor(relative_elevation, 0u, params.color_count);
+    int colored_elevation = relative_elevation;
+    if (params.has_water == 0u) {
+        // The dry relief range follows the two palettes in their existing
+        // storage buffer. Keeping it there preserves the original 32-byte
+        // push-constant ABI used by Godot's cached Vulkan pipeline reflection.
+        vec2 waterless_range = palette.entries[
+            params.grey_offset + params.grey_count
+        ].xy;
+        float span = max(
+            waterless_range.y - waterless_range.x,
+            1.0
+        );
+        float normalized = clamp(
+            (float(relative_elevation) - waterless_range.x) / span,
+            0.0,
+            1.0
+        );
+        // A dry basin below the arbitrary elevation datum is still land. Map
+        // the full dry relief into the positive land palette instead of using
+        // ocean blues; the greyscale map keeps the physical signed elevation.
+        colored_elevation = roundLikeGDScript(
+            mix(20.0, 6000.0, pow(normalized, 0.88))
+        );
+    }
+    vec3 colored = paletteColor(colored_elevation, 0u, params.color_count);
     vec3 grey = paletteColor(relative_elevation, params.grey_offset, params.grey_count);
     imageStore(elevation_colored, pos, vec4(colored, 1.0));
     imageStore(elevation_grey, pos, vec4(grey, 1.0));

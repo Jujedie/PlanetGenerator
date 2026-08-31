@@ -206,7 +206,9 @@ float fbm(vec3 p, int octaves, float gain, float lacunarity, uint seed_offset) {
     return value / maxValue;
 }
 
-// Cellular noise pour distribution en clusters
+// Cellular noise used as a sparse host body. The domain is anisotropically
+// transformed per resource below, so its surface intersection is a lens or
+// lode rather than a circular spot.
 float cellularNoise(vec3 p, uint seed_offset) {
     vec3 i = floor(p);
     vec3 f = fract(p);
@@ -231,6 +233,16 @@ float cellularNoise(vec3 p, uint seed_offset) {
     }
     
     return minDist;
+}
+
+vec3 rotateAroundY(vec3 p, float angle) {
+    float c = cos(angle);
+    float s = sin(angle);
+    return vec3(c * p.x - s * p.z, p.y, s * p.x + c * p.z);
+}
+
+float ridgeFromNoise(float value) {
+    return 1.0 - abs(value * 2.0 - 1.0);
 }
 
 // Coordonnées cylindriques pour seamless horizontal
@@ -367,26 +379,58 @@ void main() {
         float size = min(base_size, 400.0) * mix(0.6, 1.0, rand(hash(resource_seed + 999u)));
         float resource_scale = noise_scale * (60.0 / max(size, 1.0));
         
-        // === DÉPÔTS PRINCIPAUX (clusters) ===
-        float cell_dist_main = cellularNoise(warped_coords * resource_scale, resource_seed);
-        float presence_main = 1.0 - smoothstep(0.0, 0.45, cell_dist_main);
-        
-        float presence = presence_main;
-        
-        // === FILONS SECONDAIRES (plus petits, plus nombreux) ===
-        // Seulement calculé hors des dépôts principaux pour économiser du calcul
-        if (presence < 0.15) {
-            float vein_scale = resource_scale * 3.0;
-            float cell_dist_vein = cellularNoise(warped_coords * vein_scale, resource_seed + 30000u);
-            float presence_vein = (1.0 - smoothstep(0.0, 0.30, cell_dist_vein)) * 0.45;
-            presence = max(presence, presence_vein);
+        // === CORPS GÉOLOGIQUES IRRÉGULIERS ===
+        // Each resource gets a stable strike, elongation and fold field. The
+        // anisotropic cellular body makes lenses/lodes; ridged fBm adds fault-
+        // following veins and branches. This removes the former round stamps
+        // while staying seamless because every field lives on the cylinder.
+        float strike = rand(hash(resource_seed + 17011u)) * TAU;
+        float elongation = mix(1.7, 4.4, rand(hash(resource_seed + 17027u)));
+        float vertical_ratio = mix(0.72, 1.65, rand(hash(resource_seed + 17041u)));
+        vec3 oriented = rotateAroundY(warped_coords, strike);
+        vec3 lens_domain = oriented * resource_scale;
+        lens_domain *= vec3(1.0 / elongation, vertical_ratio, 0.82);
+
+        float structure = fbm(
+            warped_coords * resource_scale * 0.72,
+            3, 0.54, 2.07, resource_seed + 10000u
+        );
+        float branching = fbm(
+            warped_coords * resource_scale * 1.65 + vec3(structure * 1.7),
+            2, 0.58, 2.13, resource_seed + 30000u
+        );
+        float boundary_warp = (structure - 0.5) * 0.34
+            + (branching - 0.5) * 0.16;
+        float cell_dist_main = cellularNoise(lens_domain, resource_seed);
+        float lens = 1.0 - smoothstep(0.16, 0.52, cell_dist_main + boundary_warp);
+
+        float primary_ridge = ridgeFromNoise(structure);
+        float branch_ridge = ridgeFromNoise(branching);
+        float vein = smoothstep(0.82, 0.985, primary_ridge);
+        vein *= mix(0.28, 1.0, smoothstep(0.34, 0.72, branching));
+        vein = max(
+            vein,
+            smoothstep(0.90, 0.995, branch_ridge)
+                * smoothstep(0.46, 0.76, structure) * 0.58
+        );
+
+        // Sedimentary/plain resources form broader lenses. Mountain and
+        // volcanic resources preferentially occupy narrow structural veins.
+        float lens_weight = 0.82;
+        float vein_weight = 0.68;
+        if (geo_type == 1 || geo_type == 4 || geo_type == 5) {
+            lens_weight = 1.0;
+            vein_weight = 0.52;
+        } else if (geo_type == 2 || geo_type == 3) {
+            lens_weight = 0.72;
+            vein_weight = 1.0;
         }
-        
-        if (presence < 0.03) continue;
-        
-        // Variation de détail (fBm à 3 octaves)
-        float detail = fbm(warped_coords * resource_scale * 1.2, 3, 0.5, 2.0, resource_seed + 10000u);
-        presence *= mix(0.5, 1.0, detail);
+        float presence = max(lens * lens_weight, vein * vein_weight);
+        if (presence < 0.025) continue;
+
+        // Preserve rich cores while allowing noisy erosion to perforate edges.
+        float edge_detail = smoothstep(0.20, 0.82, branching);
+        presence *= mix(0.42, 1.0, edge_detail);
         
         // Appliquer facteurs
         presence *= geo_factor;
@@ -405,7 +449,11 @@ void main() {
         if (raw_intensity > 0.01 && raw_intensity > best_intensity) {
             best_intensity = raw_intensity;
             best_resource_id = i;
-            best_cluster_id = cell_dist_main * 1000.0;
+            best_cluster_id = clamp(
+                cell_dist_main * 0.72 + (1.0 - primary_ridge) * 0.28,
+                0.0,
+                1.0
+            );
         }
     }
     
@@ -434,7 +482,7 @@ void main() {
         imageStore(resources_texture, pixel, uvec4(
             uint(best_resource_id),
             uint(round(noisy_intensity * 255.0)),
-            uint(round(clamp(best_cluster_id / 1000.0, 0.0, 1.0) * 255.0)),
+            uint(round(best_cluster_id * 255.0)),
             uint(round(alpha * 255.0))
         ));
     } else {
