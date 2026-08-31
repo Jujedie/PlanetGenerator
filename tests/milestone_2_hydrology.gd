@@ -369,6 +369,9 @@ func _generate_snapshot(obsolete_river_iterations: int) -> Dictionary:
 				legacy_water_mask[index] = 2
 		gpu.rd.texture_update(gpu.textures["water_mask"], 0, legacy_water_mask)
 		var hierarchy_files := exporter._export_hierarchy_maps(gpu, export_dir)
+		# `_export_hierarchy_maps` queues PNG compression just like the public
+		# export pipeline. Wait for its worker before asserting on disk state.
+		exporter._flush_png_jobs()
 		gpu.rd.texture_update(gpu.textures["water_mask"], 0, water_data)
 		var expected_hierarchy_labels := [
 			"Régions terrestres", "Pays", "Continents",

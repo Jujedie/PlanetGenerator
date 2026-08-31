@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run Planet Generator's M1–M8.1 regression scenes as isolated Godot processes.
+"""Run all Planet Generator regression scenes as isolated Godot processes.
 
 Usage:
     python tools/run_m8_regression_suite.py /path/to/godot
@@ -13,11 +13,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import subprocess
+import sys
 import time
 
 SCENES = [
+    "res://tests/admin_color_uniqueness.tscn",
+    "res://tests/climate_generation.tscn",
+    "res://tests/department_generation_regression.tscn",
+    "res://tests/desert_biome_distribution.tscn",
+    "res://tests/final_map_palette.tscn",
+    "res://tests/hierarchy_builder_regression.tscn",
+    "res://tests/ice_caps_generation.tscn",
     "res://tests/milestone_1_smoke.tscn",
     "res://tests/milestone_2_hydrology.tscn",
     "res://tests/milestone_3_optimization.tscn",
@@ -28,6 +37,7 @@ SCENES = [
     "res://tests/milestone_7_integrity.tscn",
     "res://tests/milestone_7_1_planet_project.tscn",
     "res://tests/milestone_7_2_export_system.tscn",
+    "res://tests/milestone_7_2_resource_translations.tscn",
     "res://tests/milestone_7_3_ui_progress.tscn",
     "res://tests/milestone_7_4_map_viewer.tscn",
     "res://tests/milestone_7_5_templates.tscn",
@@ -35,6 +45,9 @@ SCENES = [
     "res://tests/milestone_7_7_ui_polish.tscn",
     "res://tests/milestone_8_release_stabilization.tscn",
     "res://tests/milestone_8_1_optimization.tscn",
+    "res://tests/reference_viewer_ui_smoke.tscn",
+    "res://tests/ui_theme_system.tscn",
+    "res://tests/world_type_palette_contract.tscn",
 ]
 
 
@@ -62,6 +75,11 @@ def _write_report(path: pathlib.Path, results: list[dict[str, object]]) -> None:
 
 
 def main() -> int:
+    # Windows terminals commonly use a legacy code page. Test diagnostics may
+    # contain Unicode symbols, which must never make the runner itself fail.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
+
     parser = argparse.ArgumentParser()
     parser.add_argument("godot", help="Godot 4 executable")
     parser.add_argument("--headless", action="store_true")
@@ -74,6 +92,15 @@ def main() -> int:
     if not out.is_absolute():
         out = project / out
     results: list[dict[str, object]] = []
+    subprocess_options: dict[str, object] = {}
+    if os.name == "nt":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
+        subprocess_options = {
+            "creationflags": subprocess.CREATE_NO_WINDOW,
+            "startupinfo": startupinfo,
+        }
     for index, scene in enumerate(SCENES, 1):
         cmd = [args.godot, "--path", str(project)]
         if args.headless:
@@ -91,6 +118,7 @@ def main() -> int:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 timeout=args.timeout,
+                **subprocess_options,
             )
             output = _output_text(proc.stdout)
             fatal_markers = (

@@ -53,9 +53,11 @@ func _run() -> void:
 	var first := TiledGlobalSimulationPipeline.new(first_params, root_a)
 	var report_a := first.generate()
 	first.cleanup()
+	first = null
 	var second := TiledGlobalSimulationPipeline.new(second_params, root_b)
 	var report_b := second.generate()
 	second.cleanup()
+	second = null
 	var generated_ok := bool(report_a.get("ok", false)) and bool(report_b.get("ok", false))
 	var seam_ok := generated_ok
 	if generated_ok:
@@ -75,6 +77,8 @@ func _run() -> void:
 	var cancelled := cancel_pipeline.generate()
 	var cancellation_ok := bool(cancelled.get("cancelled", false)) or str(cancelled.get("reason", "")) == "acceptance_test"
 	cancel_pipeline.cleanup()
+	cancel_pipeline = null
+	GPUContext.shutdown_shared_device()
 
 	var passed := (
 		selection_ok
