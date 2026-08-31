@@ -297,7 +297,11 @@ void main() {
     float continental = fbm(warped_coords * noise_base * 0.75, 5, 0.52, 2.02, params.seed + 1000u);
     float regional = fbm(warped_coords * noise_base * 2.4, 4, 0.52, 2.04, params.seed + 2000u);
     float local_detail = fbm(coords * noise_base * 7.0, 3, 0.48, 2.08, params.seed + 3000u);
-    float noise = continental * 0.22 + regional * 0.14 + local_detail * 0.05;
+    // Le détail local était assez fort pour produire des isolignes ondulées
+    // lorsqu'il traversait les seuils de végétation de final_map. Les masses
+    // continentales et régionales portent déjà la diversité climatique : le
+    // dernier octave ne sert plus que de variation très discrète.
+    float noise = continental * 0.22 + regional * 0.14 + local_detail * 0.012;
     
     // =========================================================================
     // MODULATION LATITUDINALE - Cellules de Hadley modulées par du bruit

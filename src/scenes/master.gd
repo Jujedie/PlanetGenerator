@@ -84,6 +84,30 @@ const GENERATION_PHASE_TRANSLATION_KEYS := {
 	"classification": "GEN_PHASE_CLASSIFICATION",
 }
 
+const GENERATION_PHASE_DETAIL_TRANSLATION_KEYS := {
+	"gpu_initialization": "GEN_STEP_GPU_INITIALIZATION",
+	"base_elevation": "GEN_STEP_BASE_ELEVATION",
+	"crust_age": "GEN_STEP_CRUST_AGE",
+	"cratering": "GEN_STEP_CRATERING",
+	"pre_erosion_climate": "GEN_STEP_PRE_EROSION_CLIMATE",
+	"erosion": "GEN_STEP_EROSION",
+	"final_climate": "GEN_STEP_FINAL_CLIMATE",
+	"water": "GEN_STEP_WATER",
+	"ice_caps": "GEN_STEP_ICE_CAPS",
+	"biomes": "GEN_STEP_BIOMES",
+	"land_regions": "GEN_STEP_LAND_REGIONS",
+	"ocean_regions": "GEN_STEP_OCEAN_REGIONS",
+	"resources": "GEN_STEP_RESOURCES",
+	"final_map": "GEN_STEP_FINAL_MAP",
+	"export": "GEN_STEP_EXPORT",
+	"complete": "GEN_STEP_COMPLETE",
+	"global_hydrology_context": "GEN_STEP_GLOBAL_HYDROLOGY_CONTEXT",
+	"terrain_tectonics": "GEN_STEP_TERRAIN_TECTONICS",
+	"climate": "GEN_STEP_CLIMATE",
+	"hydrology": "GEN_STEP_HYDROLOGY",
+	"classification": "GEN_STEP_CLASSIFICATION",
+}
+
 const MAP_NAME_TO_KEY = {
 	"topographie_map.png": "MAP_TOPOGRAPHIE",
 	"topographie_map_grey.png": "MAP_TOPOGRAPHIE_GREY",
@@ -1108,36 +1132,38 @@ func _set_generation_memory_text(key: String, args: Dictionary = {}) -> void:
 func _refresh_generation_status_translation() -> void:
 	_set_generation_phase_text(_generation_phase_key, _generation_phase_fallback)
 	_set_generation_memory_text(_generation_memory_key, _generation_memory_args)
-	_generation_memory_label.tooltip_text = tr("GEN_STATUS_TILING_THRESHOLD_TOOLTIP")
+	_generation_memory_label.tooltip_text = tr("GEN_STATUS_STEP_DETAIL_TOOLTIP")
 	if _cancel_generation_button != null:
 		_cancel_generation_button.text = tr("GEN_CANCEL").to_upper()
 
 
-func _show_generation_status(params: Dictionary) -> void:
+func _show_generation_status(_params: Dictionary) -> void:
 	_show_viewer_workspace()
 	_generation_started_usec = Time.get_ticks_usec()
 	_generation_progress_bar.value = 0
 	_set_generation_phase_text("GEN_STATUS_PREPARING")
-	var dims: Vector2i = params.get("global_dimensions", params.get("resolution", Vector2i.ZERO))
-	var monolithic_limit: Vector2i = TiledGlobalGenerator.last_monolithic_dimensions_for_aspect(dims)
-	_set_generation_memory_text("GEN_STATUS_TILING_THRESHOLD", {
-		"width": monolithic_limit.x,
-		"height": monolithic_limit.y,
-		"edge": TiledGlobalGenerator.MAX_TILE_SAMPLE_EDGE,
-	})
-	_generation_memory_label.tooltip_text = tr("GEN_STATUS_TILING_THRESHOLD_TOOLTIP")
+	_set_generation_memory_text("GEN_STEP_PREPARING")
+	_generation_memory_label.tooltip_text = tr("GEN_STATUS_STEP_DETAIL_TOOLTIP")
 	_cancel_generation_button.disabled = false
 
 func _on_generation_progress(phase: String, completed: int, total: int) -> void:
 	var safe_total := maxi(total, 1)
 	var phase_key := str(GENERATION_PHASE_TRANSLATION_KEYS.get(phase, ""))
-	_set_generation_phase_text(phase_key, phase.replace("_", " ").capitalize())
+	var phase_fallback := phase.replace("_", " ").capitalize()
+	_set_generation_phase_text(phase_key, phase_fallback)
+	var detail_key := str(GENERATION_PHASE_DETAIL_TRANSLATION_KEYS.get(phase, ""))
+	if detail_key.is_empty():
+		var translated_phase := tr(phase_key) if not phase_key.is_empty() else phase_fallback
+		_set_generation_memory_text("GEN_STATUS_STEP_ACTIVE", {"phase": translated_phase})
+	else:
+		_set_generation_memory_text(detail_key)
 	_generation_progress_bar.value = clampf(float(completed) * 100.0 / float(safe_total), 0.0, 98.0)
 
 func _on_cancel_generation_pressed() -> void:
 	if planetGenerator != null:
 		_cancel_generation_button.disabled = true
 		_set_generation_phase_text("GEN_STATUS_CANCELLING")
+		_set_generation_memory_text("GEN_STEP_CANCELLING")
 		planetGenerator.cancel_generation("user")
 
 func _on_generation_cancelled(reason: String) -> void:

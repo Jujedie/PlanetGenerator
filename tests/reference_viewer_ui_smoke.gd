@@ -122,6 +122,13 @@ func _ready() -> void:
 	assert(parameter_layer.find_child("RandomNameButton", true, false) != null)
 	master.call("_show_viewer_workspace")
 	assert(viewer_layer.visible and not parameter_layer.visible)
+	master.call("_show_generation_status", {"resolution": Vector2i(752, 376)})
+	var step_detail := master.get("_generation_memory_label") as Label
+	assert(step_detail.text == tr("GEN_STEP_PREPARING"))
+	master.call("_on_generation_progress", "export", 13, 14)
+	assert(step_detail.text == tr("GEN_STEP_EXPORT"))
+	assert(not step_detail.text.contains("8192"))
+	await get_tree().process_frame
 
 	DirAccess.make_dir_recursive_absolute("user://temp")
 	var capture_path := "user://temp/reference_viewer_smoke.png"

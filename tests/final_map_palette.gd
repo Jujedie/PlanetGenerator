@@ -414,10 +414,24 @@ func _validate_palette(biomes: Array, final_data: PackedByteArray, resolution: V
 
 func _validate_final_map_shader() -> bool:
 	var shader := FileAccess.get_file_as_string("res://shader/compute/final_map.glsl")
+	var precipitation_shader := FileAccess.get_file_as_string(
+		"res://shader/compute/atmosphere_climat/precipitation.glsl"
+	)
+	var orchestrator_script := FileAccess.get_file_as_string(
+		"res://src/classes/classes_gpu/orchestrator.gd"
+	)
 	return (
 		shader.contains("calculateTopoShading")
 		and shader.contains("climate_texture")
 		and shader.contains("smoothedBiomeMaterial")
+		and shader.contains("smoothed_land_humidity")
+		and shader.contains("humidity_sample_step = sample_step * 3")
+		and shader.contains("mix(fallback_humidity, filtered_humidity, 0.94)")
+		and shader.contains("landColorDither")
+		and precipitation_shader.contains("local_detail * 0.012")
+		and orchestrator_script.contains(
+			"lerpf(river_threshold, major_river_threshold, 0.35)"
+		)
 		and shader.contains("biomeVegetationCapacity")
 		and shader.contains("ephemeral_greenup")
 		and shader.contains("BIOME_TINT_STRENGTH = 0.07")

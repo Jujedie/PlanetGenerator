@@ -4768,6 +4768,14 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 		"river_riviere_threshold",
 		params.get("river_affluent_threshold", 5.0)
 	))
+	var major_river_threshold = float(params.get(
+		"river_fleuve_threshold",
+		river_threshold
+	))
+	# À l'échelle d'une planète, la totalité du réseau « rivière » ressemble à
+	# un champ de petites vagues. Garder les rivières établies les plus fortes
+	# et les fleuves conserve l'ancien bleu-vert sans surcharger les continents.
+	river_threshold = lerpf(river_threshold, major_river_threshold, 0.35)
 	# La carte finale est un rendu physique, pas une carte topographique.
 	# Conserver seulement un modelé lumineux discret ; les isolignes vivent dans
 	# topology_map.png et topographie_map.png.

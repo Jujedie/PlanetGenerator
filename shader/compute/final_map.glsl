@@ -252,6 +252,17 @@ float terrainRuggedness(ivec2 pos, int w, int h) {
     return smoothstep(30.0, 430.0, variation);
 }
 
+// Tramage stable sous-pixel pour l'export RGBA8. Sans lui, les gradients très
+// doux d'humidité se quantifient en isolignes parallèles visibles. L'amplitude
+// reste proche d'un niveau 8 bits et ne modifie donc pas la palette perçue.
+float landColorDither(ivec2 pos) {
+    uint value = uint(pos.x) * 0x9E3779B9u ^ uint(pos.y) * 0x85EBCA6Bu;
+    value ^= value >> 16;
+    value *= 0x7FEB352Du;
+    value ^= value >> 15;
+    return (float(value & 1023u) / 1023.0 - 0.5) * (1.75 / 255.0);
+}
+
 // Palette rocheuse satellite : terres basses sourdes, reliefs bruns/gris et
 // sommets minéraux. Elle reste volontairement moins claire qu'une hypsométrie
 // scolaire afin de se fondre sous la végétation et l'ombrage.
@@ -286,16 +297,21 @@ vec3 smoothedBiomeMaterial(
     int h,
     vec3 fallback,
     float fallback_vegetation_capacity,
-    out float vegetation_capacity
+    float fallback_humidity,
+    out float vegetation_capacity,
+    out float smoothed_land_humidity
 ) {
     // Garder une largeur d'écotone comparable sur les aperçus et les exports
     // 4K/8K. Contrairement à la cryosphère, ce filtre est purement visuel : un
     // pas plus large évite que les classes de biome réapparaissent comme des
     // frontières de quelques pixels sur une grande planète.
     int sample_step = clamp(int(floor(max(float(w) / 2048.0, float(h) / 1024.0) + 0.5)), 1, 4);
+    int humidity_sample_step = sample_step * 3;
     vec3 accumulated = vec3(0.0);
     float accumulated_capacity = 0.0;
+    float accumulated_humidity = 0.0;
     float total_weight = 0.0;
+    float humidity_weight = 0.0;
     for (int oy = -3; oy <= 3; ++oy) {
         for (int ox = -3; ox <= 3; ++ox) {
             ivec2 sample_pos = wrappedPosition(pos + ivec2(ox, oy) * sample_step, w, h);
@@ -311,13 +327,40 @@ vec3 smoothedBiomeMaterial(
             accumulated += biomes[sample_id].color.rgb * weight;
             accumulated_capacity += biomeVegetationCapacity(biomes[sample_id]) * weight;
             total_weight += weight;
+
+            // L'humidité visuelle demande un rayon géographique plus large que
+            // les écotones : les petites ondulations du bruit de précipitation
+            // ne doivent pas traverser les seuils de végétation sous forme de
+            // lignes. Le masque terre/mer est réévalué au point éloigné pour
+            // conserver un littoral net.
+            ivec2 humidity_pos = wrappedPosition(
+                pos + ivec2(ox, oy) * humidity_sample_step,
+                w,
+                h
+            );
+            if (imageLoad(water_colored, humidity_pos).a <= 0.0) {
+                accumulated_humidity += imageLoad(climate_texture, humidity_pos).g * weight;
+                humidity_weight += weight;
+            }
         }
     }
     if (total_weight > 0.0) {
         vegetation_capacity = accumulated_capacity / total_weight;
+        float filtered_humidity = fallback_humidity;
+        if (humidity_weight > 0.0) {
+            filtered_humidity = accumulated_humidity / humidity_weight;
+        }
+        // Conserver une petite part du signal local pour les ombres
+        // pluviométriques réelles tout en supprimant les rubans périodiques.
+        smoothed_land_humidity = clamp(
+            mix(fallback_humidity, filtered_humidity, 0.94),
+            0.0,
+            1.0
+        );
         return accumulated / total_weight;
     }
     vegetation_capacity = fallback_vegetation_capacity;
+    smoothed_land_humidity = clamp(fallback_humidity, 0.0, 1.0);
     return fallback;
 }
 
@@ -600,6 +643,7 @@ void main() {
     bool has_surface_ice = ice.a > 0.025;
     bool is_river = (river_bid != 0xFFFFFFFFu) &&
         (flux >= params.river_threshold);
+    float display_humidity = climate.g;
     
     // === STEP 1: Base physique + modulation écologique ===
     vec3 color = biome.rgb;
@@ -623,7 +667,9 @@ void main() {
             h,
             vegetation_color,
             local_vegetation_capacity,
-            smoothed_vegetation_capacity
+            climate.g,
+            smoothed_vegetation_capacity,
+            display_humidity
         );
         // Les cartes rocheuses ont besoin de conserver une partie du matériau
         // local. Le lissage 7x7 seul effaçait les petites coulées, cratères et
@@ -637,7 +683,7 @@ void main() {
         color = planetaryLandSurface(
             land_material,
             climate.r,
-            climate.g,
+            display_humidity,
             max(relative_height, 0.0),
             smoothed_vegetation_capacity,
             params.atmosphere_type
@@ -655,7 +701,7 @@ void main() {
         color = planetaryLandSurface(
             biome.rgb,
             climate.r,
-            climate.g,
+            display_humidity,
             max(relative_height, 0.0),
             1.0,
             params.atmosphere_type
@@ -744,7 +790,7 @@ void main() {
     if (!is_water) {
         float land_ice = landCryosphereCoverage(
             climate.r,
-            climate.g,
+            display_humidity,
             max(relative_height, 0.0),
             params.atmosphere_type
         );
@@ -767,6 +813,10 @@ void main() {
         );
         float ice_opacity = smoothstep(0.025, 0.92, ice.a) * 0.84;
         color = mix(color, cryosphere_color, ice_opacity);
+    }
+
+    if (!is_water) {
+        color = clamp(color + vec3(landColorDither(pos)), vec3(0.0), vec3(1.0));
     }
     
     // === OUTPUT ===

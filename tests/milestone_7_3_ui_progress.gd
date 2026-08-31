@@ -17,6 +17,12 @@ func _ready() -> void:
 	var get_maps_body := generator_script.substr(get_maps_start, get_maps_end - get_maps_start)
 	assert(not get_maps_body.contains("export_all_maps"))
 
+	var master_script := FileAccess.get_file_as_string("res://src/scenes/master.gd")
+	assert(master_script.contains("GENERATION_PHASE_DETAIL_TRANSLATION_KEYS"))
+	assert(master_script.contains("GEN_STEP_EXPORT"))
+	assert(master_script.contains("GEN_STEP_PREPARING"))
+	assert(not master_script.contains("_set_generation_memory_text(\"GEN_STATUS_TILING_THRESHOLD\""))
+
 	var worker_script := FileAccess.get_file_as_string("res://src/classes/classes_gpu/gpu_generation_worker.gd")
 	assert(worker_script.contains("class_name GPUGenerationWorker"))
 	assert(worker_script.contains("Thread.new()"))

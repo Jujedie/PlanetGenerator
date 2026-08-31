@@ -259,6 +259,31 @@ GEN_STATUS_MEMORY,Raster {width}×{height} • est. active ~{memory},Raster {wid
 GEN_STATUS_MEMORY_TOOLTIP,Estimated active generation memory and elapsed time,Mémoire active estimée et temps écoulé,Geschätzter aktiver Generierungsspeicher und verstrichene Zeit
 GEN_STATUS_TILING_THRESHOLD,Full GPU pipeline up to ~{width}×{height} at this aspect ratio,Pipeline GPU complet jusqu’à environ {width}×{height} pour ce ratio,Vollständige GPU-Pipeline bis etwa {width}×{height} bei diesem Seitenverhältnis
 GEN_STATUS_TILING_THRESHOLD_TOOLTIP,Worlds inside this limit use the same authoritative monolithic GPU pipeline as smaller maps. Larger rasters are rejected for now instead of using the experimental tiled backend.,Les mondes dans cette limite utilisent exactement le même pipeline GPU monolithique de référence que les petites cartes. Les rasters plus grands sont temporairement refusés au lieu d’utiliser le backend tuilé expérimental.,Welten innerhalb dieses Limits verwenden dieselbe maßgebliche monolithische GPU-Pipeline wie kleinere Karten. Größere Raster werden vorerst abgelehnt, statt das experimentelle Kachel-Backend zu verwenden.
+GEN_STATUS_STEP_DETAIL_TOOLTIP,What the generator is doing during the current step,Ce que le générateur réalise pendant l’étape en cours,Was der Generator im aktuellen Schritt ausführt
+GEN_STATUS_STEP_ACTIVE,Working on: {phase},En cours : {phase},Aktuell: {phase}
+GEN_STEP_PREPARING,Checking settings and preparing the map layers,Vérification des paramètres et préparation des couches,Parameter werden geprüft und Kartenebenen vorbereitet
+GEN_STEP_GPU_INITIALIZATION,Preparing the graphics processor and map textures,Préparation du processeur graphique et des textures,Vorbereitung des Grafikprozessors und der Kartentexturen
+GEN_STEP_BASE_ELEVATION,Drawing continents oceans and the base relief,Création des continents des océans et du relief de base,Kontinente Ozeane und Grundrelief werden erstellt
+GEN_STEP_CRUST_AGE,Simulating crust age and seafloor structure,Simulation de l’âge de la croûte et des fonds marins,Simulation von Krustenalter und Meeresbodenstruktur
+GEN_STEP_CRATERING,Adding impact craters allowed by the planet type,Ajout des cratères d’impact adaptés au type de planète,Einschlagkrater passend zum Planetentyp werden hinzugefügt
+GEN_STEP_PRE_EROSION_CLIMATE,Estimating the climate before terrain erosion,Estimation du climat avant l’érosion du terrain,Klima vor der Geländeerosion wird geschätzt
+GEN_STEP_EROSION,Carving terrain drainage and river networks,Érosion du relief et création des réseaux de drainage,Erosion von Gelände und Entwässerungsnetzen
+GEN_STEP_FINAL_CLIMATE,Calculating temperature winds and precipitation,Calcul des températures des vents et des précipitations,Temperatur Winde und Niederschlag werden berechnet
+GEN_STEP_WATER,Classifying oceans lakes and rivers,Classification des océans des lacs et des rivières,Ozeane Seen und Flüsse werden klassifiziert
+GEN_STEP_ICE_CAPS,Building sea ice and polar coverage,Création de la banquise et de la couverture polaire,Meereis und polare Bedeckung werden erstellt
+GEN_STEP_BIOMES,Assigning and blending ecological regions,Attribution et mélange des régions écologiques,Ökologische Regionen werden zugewiesen und gemischt
+GEN_STEP_LAND_REGIONS,Building the land administrative regions,Création des régions administratives terrestres,Verwaltungsregionen an Land werden erstellt
+GEN_STEP_OCEAN_REGIONS,Building the ocean administrative regions,Création des régions administratives maritimes,Verwaltungsregionen im Meer werden erstellt
+GEN_STEP_RESOURCES,Distributing geological resources,Distribution des ressources géologiques,Geologische Ressourcen werden verteilt
+GEN_STEP_FINAL_MAP,Combining terrain climate rivers and ice,Assemblage du relief du climat des rivières et de la glace,Gelände Klima Flüsse und Eis werden zusammengeführt
+GEN_STEP_EXPORT,Creating and saving the PNG map files,Création et enregistrement des cartes PNG,PNG-Karten werden erstellt und gespeichert
+GEN_STEP_COMPLETE,All map layers have been generated,Toutes les couches de la carte ont été générées,Alle Kartenebenen wurden erzeugt
+GEN_STEP_GLOBAL_HYDROLOGY_CONTEXT,Preparing seamless global drainage,Préparation du drainage global sans raccord visible,Nahtlose globale Entwässerung wird vorbereitet
+GEN_STEP_TERRAIN_TECTONICS,Generating terrain and tectonic tiles,Génération des tuiles de terrain et de tectonique,Gelände- und Tektonikkacheln werden erzeugt
+GEN_STEP_CLIMATE,Generating climate layers across the planet,Génération des couches climatiques de la planète,Klimaebenen des Planeten werden erzeugt
+GEN_STEP_HYDROLOGY,Generating lakes rivers and water layers,Génération des lacs des rivières et des couches d’eau,Seen Flüsse und Wasserebenen werden erzeugt
+GEN_STEP_CLASSIFICATION,Assigning biomes and geographic regions,Attribution des biomes et des régions géographiques,Biome und geografische Regionen werden zugewiesen
+GEN_STEP_CANCELLING,Finishing the current safe operation before stopping,Fin de l’opération sûre en cours avant l’arrêt,Der aktuelle sichere Vorgang wird vor dem Abbruch beendet
 GEN_STATUS_COMPLETE,Complete,Terminée,Abgeschlossen
 GEN_STATUS_COMPLETED_IN,Completed in {seconds} s,Terminée en {seconds} s,Abgeschlossen in {seconds} s
 GEN_STATUS_UNAVAILABLE,Unavailable,Indisponible,Nicht verfügbar
