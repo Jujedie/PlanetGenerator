@@ -14,6 +14,8 @@ func _run() -> void:
 	var compact_resource_format := true
 	var dependency_only_sync := true
 	var streamed_export := false
+	var minimal_export_fast_path := false
+	var minimal_retained_quality := false
 	var automatic_workers := false
 	var peak_vram_bytes := 0
 	var maximum_post_export_vram_bytes := 0
@@ -21,6 +23,7 @@ func _run() -> void:
 	var minimum_queued_lists := 1 << 30
 	var first_report: Dictionary = {}
 	var first_export_metrics: Dictionary = {}
+	var minimal_export_metrics: Dictionary = {}
 	var ram_after_first_cleanup := 0
 	var peak_ram_after_cleanup := 0
 
@@ -105,7 +108,53 @@ func _run() -> void:
 				str(first_export_metrics.get("worker_policy", "")) == "automatic"
 				and int(first_export_metrics.get("worker_count", 0)) > 0
 			)
+
+			# The minimal preset must skip work before readback/compression while
+			# retaining byte-identical versions of every map it promises to keep.
+			var minimal_export_dir := ProjectSettings.globalize_path(
+				"user://milestone_3_minimal_export"
+			)
+			var minimal_params := params.duplicate(true)
+			minimal_params["export_preset"] = ExportCatalog.PRESET_MINIMAL
+			var minimal_exporter := PlanetExporter.new()
+			var minimal_exported := minimal_exporter.export_maps(
+				gpu, minimal_export_dir, minimal_params
+			)
+			minimal_export_metrics = minimal_exporter.last_metrics.duplicate(true)
+			var minimal_stage_plan: Dictionary = minimal_export_metrics.get(
+				"stage_plan", {}
+			)
+			var minimal_keys_exact := true
+			for exported_key_value in minimal_exported:
+				var exported_key := str(exported_key_value)
+				minimal_keys_exact = minimal_keys_exact and (
+					exported_key in ExportCatalog.MINIMAL_KEYS
+					or exported_key in ExportCatalog.ALWAYS_METADATA
+				)
+			for retained_key in ExportCatalog.MINIMAL_KEYS:
+				minimal_keys_exact = minimal_keys_exact and minimal_exported.has(
+					retained_key
+				)
+			minimal_export_fast_path = (
+				minimal_keys_exact
+				and not bool(minimal_stage_plan.get("plates", true))
+				and not bool(minimal_stage_plan.get("topography", true))
+				and not bool(minimal_stage_plan.get("climate", true))
+				and not bool(minimal_stage_plan.get("administration", true))
+				and not bool(minimal_stage_plan.get("grid", true))
+				and not bool(minimal_stage_plan.get("resources", true))
+				and int(minimal_export_metrics.get("rgba32f_map_readbacks", 0)) <= 1
+				and int(minimal_export_metrics.get("readback_count", 0))
+					< int(first_export_metrics.get("readback_count", 0))
+				and int(minimal_export_metrics.get("png_jobs", 0))
+					== ExportCatalog.MINIMAL_KEYS.size()
+				and int(minimal_export_metrics.get("gpu_export_shaders_loaded", 0)) == 1
+			)
+			minimal_retained_quality = _retained_exports_match(
+				exported, minimal_exported
+			)
 			_remove_tree(export_dir)
+			_remove_tree(minimal_export_dir)
 
 		orchestrator.cleanup()
 		lifecycle_clean = lifecycle_clean and (
@@ -129,6 +178,9 @@ func _run() -> void:
 	print("[Milestone3] compact_resource_format=", compact_resource_format)
 	print("[Milestone3] streamed_export=", streamed_export,
 		" metrics=", first_export_metrics)
+	print("[Milestone3] minimal_export_fast_path=", minimal_export_fast_path,
+		" retained_quality=", minimal_retained_quality,
+		" metrics=", minimal_export_metrics)
 	print("[Milestone3] automatic_export_workers=", automatic_workers)
 	print("[Milestone3] peak_vram_bytes=", peak_vram_bytes,
 		" post_export_vram_bytes_max=", maximum_post_export_vram_bytes)
@@ -142,6 +194,8 @@ func _run() -> void:
 		and dependency_only_sync
 		and compact_resource_format
 		and streamed_export
+		and minimal_export_fast_path
+		and minimal_retained_quality
 		and automatic_workers
 	)
 	_quit(0 if passed else 1)
@@ -181,6 +235,20 @@ func _parameters() -> Dictionary:
 		"global_richness": 1.0,
 		"export_worker_count": 0,
 	}
+
+func _retained_exports_match(standard_export: Dictionary,
+		minimal_export: Dictionary) -> bool:
+	for retained_key in ExportCatalog.MINIMAL_KEYS:
+		if not standard_export.has(retained_key) or not minimal_export.has(retained_key):
+			return false
+		var standard_path := str(standard_export[retained_key])
+		var minimal_path := str(minimal_export[retained_key])
+		var standard_hash := FileChecksumCache.sha256(standard_path)
+		var minimal_hash := FileChecksumCache.sha256(minimal_path)
+		if standard_hash.is_empty() or standard_hash != minimal_hash:
+			push_error("Minimal export changed retained map '%s'" % retained_key)
+			return false
+	return true
 
 func _remove_tree(path: String) -> void:
 	var directory := DirAccess.open(path)
