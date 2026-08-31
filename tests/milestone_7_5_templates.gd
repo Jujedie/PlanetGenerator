@@ -1,0 +1,31 @@
+extends Node
+
+func _ready() -> void:
+	assert(PlanetTemplates.ORDER.size() >= 10)
+	var earth: Dictionary = PlanetTemplates.values("Earth-like")
+	assert(int(earth["planet_type"]) == 0)
+	assert(float(earth["ocean_ratio"]) > 50.0)
+	var mars: Dictionary = PlanetTemplates.values("Mars-like")
+	assert(float(mars["ocean_ratio"]) == 0.0)
+	var volcanic: Dictionary = PlanetTemplates.values("Volcanic World")
+	assert(int(volcanic["planet_type"]) == 2)
+	assert(float(volcanic["spreading_rate"]) > 100.0)
+	var dead: Dictionary = PlanetTemplates.values("Dead World")
+	assert(int(dead["planet_type"]) == 4)
+	assert(float(dead["crater_density"]) >= 0.7)
+	var gas: Dictionary = PlanetTemplates.values("Gas Giant")
+	assert(int(gas["planet_type"]) == 6)
+	assert(int(gas["gas_giant_num_bands"]) >= 6)
+	assert(not PlanetParameterSchema.definition("gas_giant_jet_strength").is_empty())
+	assert(PlanetTemplates.ORDER.has("Hot Jupiter"))
+	assert(PlanetTemplates.ORDER.has("Ice Giant"))
+	assert(PlanetTemplates.ORDER.has("Storm Giant"))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 12345
+	var a: Dictionary = PlanetTemplates.smart_random(rng)
+	rng.seed = 12345
+	var b: Dictionary = PlanetTemplates.smart_random(rng)
+	assert(a == b)
+	assert(a.has("template_name"))
+	print("Milestone 7.5 templates regression: PASS")
+	get_tree().quit()

@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "purpose": "Permanent deterministic comparison cases for Milestone 1 terrain, crust-age, erosion, and gas-giant regressions.",
+  "baseline_resolution": [942, 471],
+  "cases": [
+    {
+      "id": "balanced_terrestrial",
+      "seed": 2577655122,
+      "planet_type": 0,
+      "ocean_ratio": 55.0,
+      "global_humidity": 0.50,
+      "description": "Known pre-Milestone-1 case containing long tectonic lineaments, weak erosion, and dense drainage."
+    },
+    {
+      "id": "dry_mountainous",
+      "seed": 110729031,
+      "planet_type": 0,
+      "ocean_ratio": 38.0,
+      "global_humidity": 0.24,
+      "description": "Exposes continental plate-boundary cuts and verifies that erosion remains climate-sensitive."
+    },
+    {
+      "id": "ocean_heavy",
+      "seed": 804211337,
+      "planet_type": 0,
+      "ocean_ratio": 78.0,
+      "global_humidity": 0.72,
+      "description": "Exercises ridge seeding, oceanic crust age, subsidence, shelves, and horizontal wrapping."
+    },
+    {
+      "id": "gas_giant_regression",
+      "seed": 6700417,
+      "planet_type": 6,
+      "description": "Verifies the atmospheric-only output contract, deterministic colors, and repeated-generation stability."
+    }
+  ]
+}

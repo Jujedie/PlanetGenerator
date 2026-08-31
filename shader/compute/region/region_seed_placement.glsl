@@ -4,11 +4,9 @@
 // ===========================================================================
 // REGION SEED PLACEMENT SHADER
 // ===========================================================================
-// Place les seeds de régions aléatoirement sur la terre uniquement.
-// Chaque seed reçoit un budget de points basé sur nb_cases_region.
+// Place un nombre cible de seeds administratifs sur la terre uniquement.
 //
 // Entrées :
-//   - geo_texture (binding 0) : R=height pour déterminer terre/eau
 //   - water_mask (binding 1) : masque eau (0=terre, 1/2=eau)
 //
 // Sorties :
@@ -20,7 +18,6 @@
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 // === SET 0 : TEXTURES ===
-layout(set = 0, binding = 0, rgba32f) uniform readonly image2D geo_texture;
 layout(set = 0, binding = 1, r8ui) uniform readonly uimage2D water_mask;
 layout(set = 0, binding = 2, r32ui) uniform writeonly uimage2D region_map;
 layout(set = 0, binding = 3, r32f) uniform writeonly image2D region_cost;
@@ -30,10 +27,10 @@ layout(set = 1, binding = 0, std140) uniform SeedParams {
     uint width;
     uint height;
     uint seed;
-    uint nb_cases_region;      // Budget moyen par région
+    float seed_probability;    // Conservé pour compatibilité / diagnostic
     float sea_level;
     float budget_variation;    // 0.5 = variation de ±50%
-    float padding1;
+    float mean_spacing_px;     // sqrt(surface département cible)
     float padding2;
 } params;
 
@@ -62,6 +59,48 @@ float hashToFloat(uint h) {
     return float(h) / float(0xFFFFFFFFu);
 }
 
+int wrapX(int x, int w) {
+    return (x % w + w) % w;
+}
+
+bool isLand(ivec2 p) {
+    // water_mask is authoritative: dry terrain remains land even below
+    // sea_level (closed basins, dry craters, sterile/airless depressions).
+    return imageLoad(water_mask, p).r == 0u;
+}
+
+// Distribution blue-noise déterministe : chaque seed est le minimum de hash
+// d'un disque dont la surface approche la cible du département. Le disque ne
+// compte que la terre réellement disponible. Une côte étroite reçoit donc
+// assez de seeds au lieu de forcer un département à s'étirer verticalement
+// pour compenser la mer. X est raccordé, Y reste borné.
+bool isBlueNoiseSeed(ivec2 pixel, int w, int h, uint pixelHash) {
+    const int MAX_RADIUS = 8;
+    const float INV_SQRT_PI = 0.56418958355;
+    int radius = clamp(int(round(params.mean_spacing_px * INV_SQRT_PI)), 0, MAX_RADIUS);
+    if (radius == 0) return true;
+    int radiusSquared = radius * radius;
+
+    for (int dy = -MAX_RADIUS; dy <= MAX_RADIUS; dy++) {
+        if (abs(dy) > radius) continue;
+        int ny = pixel.y + dy;
+        if (ny < 0 || ny >= h) continue;
+        for (int dx = -MAX_RADIUS; dx <= MAX_RADIUS; dx++) {
+            if (dx * dx + dy * dy > radiusSquared) continue;
+            if (dx == 0 && dy == 0) continue;
+            int nx = wrapX(pixel.x + dx, w);
+            ivec2 candidate = ivec2(nx, ny);
+            if (!isLand(candidate)) continue;
+            uint candidateHash = hash3(uint(nx), uint(ny), params.seed);
+            if (candidateHash < pixelHash ||
+                    (candidateHash == pixelHash && (ny * w + nx) < (pixel.y * w + pixel.x))) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 // === MAIN ===
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
@@ -74,16 +113,7 @@ void main() {
     }
     
     // Vérifier si on est sur terre
-    uint water_type = imageLoad(water_mask, pixel).r;
-    bool is_water = (water_type > 0u);
-    
-    // Lire l'élévation
-    vec4 geo = imageLoad(geo_texture, pixel);
-    float height_val = geo.r;
-    bool is_above_sea = (height_val >= params.sea_level);
-    
-    // Un pixel est sur terre s'il n'est pas marqué eau ET au-dessus du niveau de la mer
-    bool is_land = !is_water && is_above_sea;
+    bool is_land = isLand(pixel);
     
     // Initialiser avec valeurs par défaut
     // region_map = 0xFFFFFFFF (invalide)
@@ -96,21 +126,11 @@ void main() {
         return;
     }
     
-    // Décider si ce pixel est un seed de région
-    // Utiliser une probabilité par pixel pour avoir une distribution régulière
-    
-    // Probabilité qu'un pixel terre soit un seed
-    // On veut BEAUCOUP de seeds pour garantir la couverture
-    // Avec nb_cases_region = 50, on veut 1 seed tous les 50 pixels en moyenne
-    // Mais on ajoute un facteur de sécurité x2 pour éviter les trous
-    float seed_probability = 2.0 / float(params.nb_cases_region);
-    
     // Hash déterministe pour ce pixel
     uint pixel_hash = hash3(uint(pixel.x), uint(pixel.y), params.seed);
-    float random_value = hashToFloat(pixel_hash);
-    
-    // Ce pixel est un seed si son hash est sous la probabilité
-    bool is_seed = (random_value < seed_probability);
+    // Répartition régulière mais non quadrillée. Même une petite île possède
+    // exactement son minimum local et reçoit donc naturellement un seed.
+    bool is_seed = isBlueNoiseSeed(pixel, w, h, pixel_hash);
     
     if (is_seed) {
         // Ce pixel est un seed de région !
@@ -120,9 +140,8 @@ void main() {
         
         // Écrire le seed
         imageStore(region_map, pixel, uvec4(region_id, 0u, 0u, 0u));
-        // JFA : stocker la position du seed encodée (y * width + x + 1.0)
-        float packed_pos = float(uint(pixel.y) * params.width + uint(pixel.x)) + 1.0;
-        imageStore(region_cost, pixel, vec4(packed_pos, 0.0, 0.0, 0.0));
+        // Coût de chemin nul au seed. Sa position est déjà encodée par l'ID.
+        imageStore(region_cost, pixel, vec4(0.0));
     } else {
         // Pixel terre normal : en attente d'assignation
         imageStore(region_map, pixel, uvec4(0xFFFFFFFFu, 0u, 0u, 0u));

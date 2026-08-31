@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "name": "Military Topographic",
+  "terrain": [
+    [-9000, "173047"],
+    [-3000, "22577a"],
+    [-500, "3979a8"],
+    [0, "6f8252"],
+    [250, "82915c"],
+    [750, "9a9467"],
+    [1500, "9a8064"],
+    [3000, "8a7770"],
+    [5000, "b1aaa2"],
+    [8000, "e6e4df"]
+  ],
+  "saltwater": "25588f",
+  "freshwater": "3d78ae",
+  "coastline": "172019",
+  "minor_contour": "2b3128",
+  "major_contour": "111610",
+  "grid": "d5d2bd",
+  "marker": "f1e3a2",
+  "hillshade_strength": 0.24,
+  "biome_modulation_strength": 0.08
+}

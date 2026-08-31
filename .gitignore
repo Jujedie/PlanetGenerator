@@ -2,3 +2,13 @@
 .godot/
 /android/
 data/img/temp/
+
+# Godot/editor transient files
+*.tmp
+*.TMP
+*~
+
+# Generated regression/release artifacts
+/*.log
+/m8_regression_report.json
+/release_candidate_report.json

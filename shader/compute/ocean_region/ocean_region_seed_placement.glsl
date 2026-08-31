@@ -60,6 +60,41 @@ float hashToFloat(uint h) {
     return float(h) / float(0xFFFFFFFFu);
 }
 
+int wrapX(int x, int w) {
+    return (x % w + w) % w;
+}
+
+bool isWater(ivec2 p) {
+    return imageLoad(water_mask, p).r > 0u;
+}
+
+// Les petites composantes d'eau reçoivent leur propre seed. Elles ne seront
+// jamais rattachées à un océan en sautant par-dessus une bande de terre.
+bool isSmallComponentSeed(ivec2 pixel, int w, int h, uint pixelHash) {
+    const int RADIUS = 4;
+    bool touchesWindow = false;
+    uint bestHash = pixelHash;
+    ivec2 bestPixel = pixel;
+
+    for (int dy = -RADIUS; dy <= RADIUS; dy++) {
+        for (int dx = -RADIUS; dx <= RADIUS; dx++) {
+            int nx = wrapX(pixel.x + dx, w);
+            int ny = clamp(pixel.y + dy, 0, h - 1);
+            ivec2 candidate = ivec2(nx, ny);
+            if (!isWater(candidate)) continue;
+            if (abs(dx) == RADIUS || abs(dy) == RADIUS) touchesWindow = true;
+
+            uint candidateHash = hash3(uint(nx), uint(ny), params.seed);
+            if (candidateHash < bestHash ||
+                    (candidateHash == bestHash && (ny * w + nx) < (bestPixel.y * w + bestPixel.x))) {
+                bestHash = candidateHash;
+                bestPixel = candidate;
+            }
+        }
+    }
+    return !touchesWindow && all(equal(bestPixel, pixel));
+}
+
 // === MAIN ===
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
@@ -80,15 +115,12 @@ void main() {
     
     // Seulement sur l'eau (inverse du système terrestre)
     if (water_type > 0u) {
-        // Probabilité qu'un pixel eau soit un seed
-        // On double pour garantir une bonne couverture
-        float seed_prob = 2.0 / float(params.nb_cases_region);
-        
         // Déterminer si ce pixel devient un seed
         uint pixel_hash = hash3(uint(pixel.x), uint(pixel.y), params.seed);
         float rand_val = hashToFloat(pixel_hash);
         
-        if (rand_val < seed_prob) {
+        if (rand_val < params.seed_probability ||
+                isSmallComponentSeed(pixel, w, h, pixel_hash)) {
             // Ce pixel est un seed : ID unique basé sur position
             region_id = uint(pixel.x) + uint(pixel.y) * params.width;
             cost = 0.0;  // Coût de départ

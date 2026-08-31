@@ -2,13 +2,14 @@
 #version 450
 
 // ============================================================================
-// WATER FILL SHADER - Identification des zones d'eau
+// WATER FILL SHADER - Initialisation des exutoires océaniques
 // ============================================================================
 // Étape 1 du système d'eau :
-// - Identifie les pixels sous le niveau de la mer (eau potentielle)
-// - Identifie les lacs en altitude (dépressions au-dessus du niveau mer)
-// - Vérifie la température : l'eau liquide n'existe que si T ∈ [0°C, 100°C]
-// - Initialise les seeds JFA pour la détection des composantes connexes
+// - Identifie uniquement les pixels sous le niveau de la mer (eau potentielle)
+// - Vérifie la plage thermique du fluide propre au type de planète
+//
+// Les lacs sont construits après le Priority-Flood à partir de la profondeur
+// et de l'aire réelles des bassins, jamais à partir d'un minimum local isolé.
 //
 // Entrées :
 // - GeoTexture (RGBA32F) : R=height (altitude en mètres)
@@ -16,7 +17,6 @@
 //
 // Sorties :
 // - water_mask (R8UI) : 0=terre, 1=eau (sera reclassifié après)
-// - water_component (RG32I) : Coordonnées seed pour JFA (-1,-1 si terre)
 // ============================================================================
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
@@ -29,18 +29,19 @@ layout(set = 0, binding = 0, rgba32f) uniform readonly image2D geo_texture;
 // Masque d'eau en écriture (R8UI)
 layout(set = 0, binding = 1, r8ui) uniform writeonly uimage2D water_mask;
 
-// Composantes connexes JFA (RG32I) - seed initial
-layout(set = 0, binding = 2, rg32i) uniform writeonly iimage2D water_component;
-
 // Texture climat en lecture (R=température en °C)
-layout(set = 0, binding = 3, rgba32f) uniform readonly image2D climate_texture;
+layout(set = 0, binding = 2, rgba32f) uniform readonly image2D climate_texture;
 
 // Uniform Buffer : Paramètres
 layout(set = 1, binding = 0, std140) uniform WaterParams {
     uint width;           // Largeur texture
     uint height;          // Hauteur texture
     float sea_level;      // Niveau de la mer
-    float lake_threshold; // Seuil pour détection des lacs en altitude (profondeur min)
+    float lake_threshold; // Réservé pour compatibilité UBO (non utilisé)
+    uint atmosphere_type; // 0=Terran, 1=Toxique, 2=Volcanique, 4=Mort
+    float padding1;
+    float padding2;
+    float padding3;
 } params;
 
 // ============================================================================
@@ -50,27 +51,21 @@ layout(set = 1, binding = 0, std140) uniform WaterParams {
 const uint WATER_NONE = 0u;
 const uint WATER_POTENTIAL = 1u;  // Eau potentielle (sera classifiée après)
 
-// Limites de température pour l'existence de l'eau liquide
-// En dessous de WATER_MIN_TEMP → glace (pas d'eau liquide)
-// Au dessus de WATER_MAX_TEMP → vapeur (pas d'eau liquide)
+// Limites de l'eau liquide Terran / monde mort.
 const float WATER_MIN_TEMP = -21.0;    // Point de congélation (°C)
 const float WATER_MAX_TEMP = 100.0;  // Point d'ébullition (°C)
 
-// 4 voisins cardinaux pour détection dépressions
-const ivec2 NEIGHBORS_4[4] = ivec2[4](
-    ivec2(-1, 0), ivec2(1, 0), ivec2(0, -1), ivec2(0, 1)
-);
-
-// Voisinage étendu pour détection robuste des lacs (rayon 2, 12 voisins)
-const int LAKE_NEIGHBOR_COUNT = 12;
-const ivec2 LAKE_NEIGHBORS[12] = ivec2[12](
-    // Rayon 1 : cardinaux
-    ivec2(-1, 0), ivec2(1, 0), ivec2(0, -1), ivec2(0, 1),
-    // Rayon 1 : diagonaux
-    ivec2(-1, -1), ivec2(1, -1), ivec2(-1, 1), ivec2(1, 1),
-    // Rayon 2 : cardinaux
-    ivec2(-2, 0), ivec2(2, 0), ivec2(0, -2), ivec2(0, 2)
-);
+bool temperatureAllowsSurfaceFluid(float temperature) {
+    if (params.atmosphere_type == 1u) {
+        // Saumures/acides et solvants exotiques du type toxique.
+        return temperature >= -55.0 && temperature <= 550.0;
+    }
+    if (params.atmosphere_type == 2u) {
+        // Le masque hydrologique représente ici de la lave ou du magma.
+        return temperature >= 150.0 && temperature <= 550.0;
+    }
+    return temperature >= WATER_MIN_TEMP && temperature <= WATER_MAX_TEMP;
+}
 
 // ============================================================================
 // FONCTIONS UTILITAIRES
@@ -109,9 +104,9 @@ void main() {
     float temperature = imageLoad(climate_texture, pixel).r;
     
     // === VÉRIFICATION TEMPÉRATURE ===
-    // L'eau liquide ne peut exister que dans la plage [WATER_MIN_TEMP, WATER_MAX_TEMP]
-    // En dehors de cette plage : glace ou vapeur, pas d'eau de surface
-    bool temperature_allows_water = (temperature >= WATER_MIN_TEMP && temperature <= WATER_MAX_TEMP);
+    // Eau, saumure/acide ou lave selon le monde. En dehors de sa plage de
+    // stabilité, le fluide n'est pas classé comme surface liquide.
+    bool temperature_allows_water = temperatureAllowsSurfaceFluid(temperature);
     
     // === CLASSIFICATION DE BASE ===
     bool is_water = false;
@@ -124,35 +119,6 @@ void main() {
     if (height < params.sea_level && temperature_allows_water) {
         is_water = true;
     }
-    // 2. Détection des lacs en altitude (dépressions locales)
-    //    Aussi conditionné par la température
-    //    Le lake_threshold agit comme un seuil de profondeur minimale :
-    //    plus il est élevé, moins il y a de lacs (seules les grosses dépressions passent).
-    //    On vérifie 12 voisins (rayon 2) : TOUS doivent être plus hauts que le pixel central.
-    //    La différence minimale entre le voisin le plus bas et le centre doit dépasser le seuil.
-    else if (params.lake_threshold > 0.0 && temperature_allows_water) {
-        bool is_depression = true;
-        float min_neighbor_height = 1e10;
-        
-        for (int i = 0; i < LAKE_NEIGHBOR_COUNT; i++) {
-            int nx = wrapX(pixel.x + LAKE_NEIGHBORS[i].x, w);
-            int ny = clampY(pixel.y + LAKE_NEIGHBORS[i].y, h);
-            
-            float n_height = imageLoad(geo_texture, ivec2(nx, ny)).r;
-            min_neighbor_height = min(min_neighbor_height, n_height);
-            
-            // Si un voisin est plus bas ou au même niveau, pas une dépression
-            if (n_height <= height) {
-                is_depression = false;
-                break;  // Pas besoin de continuer
-            }
-        }
-        
-        // C'est un lac si c'est une dépression dont la profondeur dépasse le seuil
-        if (is_depression && (min_neighbor_height - height) > params.lake_threshold) {
-            is_water = true;
-        }
-    }
     
     // === ÉCRITURE DES RÉSULTATS ===
     
@@ -160,10 +126,4 @@ void main() {
     uint water_type = is_water ? WATER_POTENTIAL : WATER_NONE;
     imageStore(water_mask, pixel, uvec4(water_type, 0u, 0u, 0u));
     
-    // Label pour composantes connexes :
-    // - Chaque pixel d'eau commence avec son propre ID unique = y * width + x
-    // - L'algorithme de propagation fera converger vers le minimum
-    // - (-1, -1) pour les pixels de terre
-    int label = is_water ? (pixel.y * w + pixel.x) : -1;
-    imageStore(water_component, pixel, ivec4(label, pixel.y, 0, 0));
 }

@@ -6,7 +6,8 @@
 // ============================================================================
 // Génère une carte encodant tous les types de ressources minérales.
 // Chaque ressource a une probabilité, taille et couleur définie.
-// Sortie : RGBA32F où R = resource_id (0-107), G = intensity, B = cluster_id, A = 1.0
+// Sortie : RGBA8UI où R = resource_id (0-114), G = intensité quantifiée,
+// B = cluster_id quantifié, A = présence/alpha quantifié.
 // Les ressources ne se génèrent que sur terre (pas sous l'eau)
 // SUPERPOSITION AUTORISÉE : Chaque ressource est générée indépendamment
 // ============================================================================
@@ -19,8 +20,8 @@ layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 layout(set = 0, binding = 0) uniform texture2D geo_texture;
 layout(set = 0, binding = 1) uniform sampler geo_sampler;
 
-// Texture de sortie : Resources (RGBA32F) - R=resource_id, G=intensity, B=cluster_id, A=has_resource
-layout(set = 0, binding = 2, rgba32f) uniform writeonly image2D resources_texture;
+// Texture de sortie compacte : 4 octets/pixel au lieu de 16.
+layout(set = 0, binding = 2, rgba8ui) uniform writeonly uimage2D resources_texture;
 
 // Uniform Buffer avec paramètres
 layout(set = 1, binding = 0, std140) uniform ResourcesParams {
@@ -430,13 +431,13 @@ void main() {
         alpha *= mix(0.5, 1.0, hf_noise);
         alpha = clamp(alpha, 0.0, 1.0);
         
-        imageStore(resources_texture, pixel, vec4(
-            float(best_resource_id),
-            noisy_intensity,
-            best_cluster_id,
-            alpha
+        imageStore(resources_texture, pixel, uvec4(
+            uint(best_resource_id),
+            uint(round(noisy_intensity * 255.0)),
+            uint(round(clamp(best_cluster_id / 1000.0, 0.0, 1.0) * 255.0)),
+            uint(round(alpha * 255.0))
         ));
     } else {
-        imageStore(resources_texture, pixel, vec4(-1.0, 0.0, 0.0, 0.0));
+        imageStore(resources_texture, pixel, uvec4(255u, 0u, 0u, 0u));
     }
 }

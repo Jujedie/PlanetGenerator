@@ -1,8 +1,0 @@
-[gd_resource type="StyleBoxTexture" load_steps=2 format=3 uid="uid://drou36ra2vb7i"]
-
-[ext_resource type="Texture2D" uid="uid://dbpq1h24f5bf3" path="res://data/img/UI/line_edit_seed.png" id="1_tjhks"]
-
-[resource]
-content_margin_left = 5.0
-content_margin_right = 4.0
-texture = ExtResource("1_tjhks")

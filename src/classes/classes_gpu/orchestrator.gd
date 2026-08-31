@@ -10,11 +10,30 @@ extends RefCounted
 ## 4. La gestion des données globales (Uniform Buffers) partagées entre les shaders.
 class_name GPUOrchestrator
 
+signal phase_started(name: String, index: int, total: int)
+signal phase_finished(name: String, index: int, total: int, elapsed_ms: float)
+
 var gpu: GPUContext
 var rd: RenderingDevice
 
 var resolution: Vector2i
 var generation_params: Dictionary
+var _cleaned_up: bool = false
+var last_phase_timings_ms: Dictionary = {}
+var last_hydrology_stats: Dictionary = {}
+var last_administrative_stats: Dictionary = {}
+var last_performance_report: Dictionary = {}
+var was_cancelled: bool = false
+var _cancel_reason: String = ""
+var cancellation_probe: Callable = Callable()
+var _phase_counter: int = 0
+var _phase_total: int = 0
+
+# Administrative Bellman-Ford relaxation is exact but usually converges far
+# before max(width, height). Submit a small even batch at a time, then inspect a
+# compact per-workgroup change map. Even batches keep the authoritative result
+# in the primary ping-pong texture in the common case.
+const ADMIN_GROWTH_BATCH_SIZE := 16
 
 # SSBO pour comptage de pixels par composante (water classification)
 var water_counter_buffer: RID = RID()
@@ -130,23 +149,19 @@ func _compile_all_shaders() -> bool:
 		{"path": "res://shader/compute/ressources/resources.glsl", "name": "resources", "critical": false},
 		# Shaders Classification des Eaux & Rivières (Étape 2.5)
 		{"path": "res://shader/compute/water/water_fill.glsl", "name": "water_fill", "critical": false},
-		{"path": "res://shader/compute/water/water_jfa.glsl", "name": "water_jfa", "critical": false},
-		{"path": "res://shader/compute/water/water_size_classify.glsl", "name": "water_size_classify", "critical": false},
 		{"path": "res://shader/compute/water/river_sources.glsl", "name": "river_sources", "critical": false},
-		{"path": "res://shader/compute/water/river_propagation.glsl", "name": "river_propagation", "critical": false},
 		{"path": "res://shader/compute/water/river_classify.glsl", "name": "river_classify", "critical": false},
-		{"path": "res://shader/compute/water/river_flow_direction.glsl", "name": "river_flow_direction", "critical": false},
-		{"path": "res://shader/compute/water/river_fill_depression.glsl", "name": "river_fill_depression", "critical": false},
-		{"path": "res://shader/compute/water/river_ocean_connect.glsl", "name": "river_ocean_connect", "critical": false},
 		{"path": "res://shader/compute/water/river_type_assign.glsl", "name": "river_type_assign", "critical": false},
-		{"path": "res://shader/compute/water/river_type_promote.glsl", "name": "river_type_promote", "critical": false},
+		{"path": "res://shader/compute/water/hydrology_water_color.glsl", "name": "hydrology_water_color", "critical": false},
 		# Shaders Régions Administratives (Étape 4)
 		{"path": "res://shader/compute/region/region_seed_placement.glsl", "name": "region_seed_placement", "critical": false},
+		{"path": "res://shader/compute/region/region_edge_cost.glsl", "name": "region_edge_cost", "critical": false},
 		{"path": "res://shader/compute/region/region_growth.glsl", "name": "region_growth", "critical": false},
 		{"path": "res://shader/compute/region/region_cleanup.glsl", "name": "region_cleanup", "critical": false},
 		{"path": "res://shader/compute/region/region_finalize.glsl", "name": "region_finalize", "critical": false},
 		# Shaders Régions Océaniques (Étape 4.5)
 		{"path": "res://shader/compute/ocean_region/ocean_region_seed_placement.glsl", "name": "ocean_region_seed_placement", "critical": false},
+		{"path": "res://shader/compute/ocean_region/ocean_region_edge_cost.glsl", "name": "ocean_region_edge_cost", "critical": false},
 		{"path": "res://shader/compute/ocean_region/ocean_region_growth.glsl", "name": "ocean_region_growth", "critical": false},
 		{"path": "res://shader/compute/ocean_region/ocean_region_cleanup.glsl", "name": "ocean_region_cleanup", "critical": false},
 		{"path": "res://shader/compute/ocean_region/ocean_region_finalize.glsl", "name": "ocean_region_finalize", "critical": false},
@@ -155,9 +170,11 @@ func _compile_all_shaders() -> bool:
 		{"path": "res://shader/compute/biome/biome_smooth.glsl", "name": "biome_smooth", "critical": false},
 		# Shaders Final Map (Étape 6)
 		{"path": "res://shader/compute/final_map.glsl", "name": "final_map", "critical": false},
-		{"path": "res://shader/compute/water/water_to_color.glsl", "name": "water_to_color", "critical": false},
 		# Shader Gas Giant Final Map (Type 6 - Gazeuse)
 		{"path": "res://shader/compute/gas_giant_final.glsl", "name": "gas_giant_final", "critical": false},
+		{"path": "res://shader/compute/gas_giant/gas_giant_velocity_init.glsl", "name": "gas_giant_velocity_init", "critical": false},
+		{"path": "res://shader/compute/gas_giant/gas_giant_dye_init.glsl", "name": "gas_giant_dye_init", "critical": false},
+		{"path": "res://shader/compute/gas_giant/gas_giant_advect.glsl", "name": "gas_giant_advect", "critical": false},
 	]
 	
 	var all_critical_loaded = true
@@ -183,7 +200,7 @@ func _compile_all_shaders() -> bool:
 ##
 ## Crée les textures RGBA32F (128 bits par pixel) qui stockeront les données physiques
 func _init_textures():
-	"""Crée les textures GPU avec données initiales"""
+	"""Valide les textures d'état créées par GPUContext et recrée les absentes."""
 	
 	if not rd:
 		push_error("[Orchestrator] ❌ RD is null, cannot create textures")
@@ -206,15 +223,25 @@ func _init_textures():
 	zero_data.resize(size)
 	zero_data.fill(0)
 	
-	# Créer les textures
+	# GPUContext initialise déjà ces textures. L'ancienne version les recréait
+	# ici puis remplaçait leurs RIDs dans le dictionnaire sans libérer les RIDs
+	# d'origine (six textures perdues à chaque génération).
+	var created_count := 0
+	var reused_count := 0
 	for tex_name in gpu.textures.keys():
+		var existing_rid: RID = gpu.textures[tex_name]
+		if existing_rid.is_valid():
+			reused_count += 1
+			continue
+
 		var rid = rd.texture_create(fmt, RDTextureView.new(), [zero_data])
 		if not rid.is_valid():
 			push_error("[Orchestrator] ❌ Échec création texture: ", tex_name)
 			continue
 		gpu.textures[tex_name] = rid
+		created_count += 1
 	
-	print("[Orchestrator] ✅ Textures créées (4x ", int(size / 1024.0), " KB)")
+	print("[Orchestrator] ✅ Textures d'état: ", reused_count, " réutilisées, ", created_count, " recréées")
 
 # ============================================================================
 # INITIALISATION DES UNIFORM SETS
@@ -287,17 +314,34 @@ func _init_uniform_sets():
 	if gpu.shaders.has("crust_age_jfa") and gpu.shaders["crust_age_jfa"].is_valid():
 		print("  • Création uniform set: crust_age_jfa")
 		
-		# Set 0 : Textures (plates en lecture, crust_age en lecture/écriture)
-		var uniforms_jfa = [
+		# Set 0 A->B : plates + geo en lecture, crust_age -> crust_age_temp
+		var uniforms_jfa_ab = [
 			gpu.create_texture_uniform(0, gpu.textures["plates"]),
 			gpu.create_texture_uniform(1, gpu.textures["crust_age"]),
+			gpu.create_texture_uniform(2, gpu.textures["crust_age_temp"]),
+			gpu.create_texture_uniform(3, gpu.textures["geo"]),
 		]
 		
-		gpu.uniform_sets["crust_age_jfa_textures"] = rd.uniform_set_create(uniforms_jfa, gpu.shaders["crust_age_jfa"], 0)
+		gpu.uniform_sets["crust_age_jfa_textures"] = rd.uniform_set_create(uniforms_jfa_ab, gpu.shaders["crust_age_jfa"], 0)
 		if not gpu.uniform_sets["crust_age_jfa_textures"].is_valid():
-			push_error("[Orchestrator] ❌ Failed to create crust_age_jfa textures uniform set")
+			push_error("[Orchestrator] ❌ Failed to create crust_age_jfa A->B uniform set")
 		else:
-			print("    ✅ crust_age_jfa textures uniform set créé")
+			print("    ✅ crust_age_jfa A->B uniform set créé")
+
+		# Set 0 B->A : crust_age_temp -> crust_age. La passe d'initialisation
+		# utilise également ce set car elle ignore l'entrée et initialise A.
+		var uniforms_jfa_ba = [
+			gpu.create_texture_uniform(0, gpu.textures["plates"]),
+			gpu.create_texture_uniform(1, gpu.textures["crust_age_temp"]),
+			gpu.create_texture_uniform(2, gpu.textures["crust_age"]),
+			gpu.create_texture_uniform(3, gpu.textures["geo"]),
+		]
+
+		gpu.uniform_sets["crust_age_jfa_textures_swap"] = rd.uniform_set_create(uniforms_jfa_ba, gpu.shaders["crust_age_jfa"], 0)
+		if not gpu.uniform_sets["crust_age_jfa_textures_swap"].is_valid():
+			push_error("[Orchestrator] ❌ Failed to create crust_age_jfa B->A uniform set")
+		else:
+			print("    ✅ crust_age_jfa B->A uniform set créé")
 	else:
 		push_warning("[Orchestrator] ⚠️ crust_age_jfa shader invalide, uniform set ignoré")
 	
@@ -617,6 +661,13 @@ func run_simulation() -> void:
 	
 	var w = resolution.x
 	var h = resolution.y
+	last_phase_timings_ms.clear()
+	last_performance_report.clear()
+	was_cancelled = false
+	_cancel_reason = ""
+	_phase_counter = 0
+	_phase_total = 1 if int(generation_params.get("planet_type", 0)) == Enum.TYPE_GAZEUZE else 13
+	var simulation_started_usec = Time.get_ticks_usec()
 	
 	print("  Résolution de la simulation : ", w, "x", h)
 	
@@ -624,25 +675,20 @@ func run_simulation() -> void:
 
 	# === TYPE 6 (GAZEUSE) : Pipeline simplifié ===
 	# Les planètes gazeuses n'ont pas de surface solide.
-	# On ne génère que température, précipitation et une carte finale spéciale.
+	# Leur météorologie visible est générée directement par le pipeline
+	# gazeux : aucune carte de température/précipitation terrestre n'est créée.
 	var atmosphere_type = int(generation_params.get("planet_type", 0))
 	if atmosphere_type == Enum.TYPE_GAZEUZE:
 		print("[Orchestrator] 🪐 Planète gazeuse détectée - pipeline simplifié")
 		
-		var groups_x = ceili(float(w) / 16.0)
-		var groups_y = ceili(float(h) / 16.0)
-		var seed_val = int(generation_params.get("seed", 12345))
-		var avg_temperature = float(generation_params.get("avg_temperature", 15.0))
-		var avg_precipitation = float(generation_params.get("global_humidity", 0.5))
-		var sea_level = float(generation_params.get("sea_level", 0.0))
-		var cylinder_radius = float(w) / (2.0 * PI)
-		
-		# Température et précipitation (réutilise les shaders existants, geo=0 → pas de gradient d'altitude)
-		_dispatch_temperature(w, h, groups_x, groups_y, seed_val, avg_temperature, sea_level, cylinder_radius, atmosphere_type)
-		_dispatch_precipitation(w, h, groups_x, groups_y, seed_val, avg_precipitation, cylinder_radius, atmosphere_type, sea_level)
-		
-		# Carte finale gazeuse (shader spécifique)
-		run_gas_giant_final_phase(generation_params, w, h)
+		# Carte finale gazeuse (pipeline multi-passes, écoulement fluide par advection)
+		if not _run_timed_phase("gas_giant", run_gas_giant_phase.bind(generation_params, w, h)):
+			return
+		gpu.sync_for_cpu("simulation_complete")
+		_record_total_simulation_time(simulation_started_usec)
+		var gas_release := gpu.prepare_for_export(true)
+		_build_performance_report(simulation_started_usec, gas_release)
+		_print_phase_timing_summary()
 		
 		print("=".repeat(60))
 		print("[Orchestrator] ✅ SIMULATION GAZEUSE TERMINÉE")
@@ -650,48 +696,97 @@ func run_simulation() -> void:
 		return
 
 	# === ÉTAPE 0 : GÉNÉRATION TOPOGRAPHIQUE DE BASE ===
-	run_base_elevation_phase(generation_params, w, h)
+	if not _run_timed_phase("base_elevation", run_base_elevation_phase.bind(generation_params, w, h)):
+		return
 	
 	# === ÉTAPE 0.5 : ÂGE DE CROÛTE OCÉANIQUE (JFA) ===
-	run_crust_age_phase(generation_params, w, h)
+	if not _run_timed_phase("crust_age", run_crust_age_phase.bind(generation_params, w, h)):
+		return
 	
 	# === ÉTAPE 0.6 : CRATÈRES D'IMPACT (planètes sans atmosphère) ===
-	run_cratering_phase(generation_params, w, h)
+	if not _run_timed_phase("cratering", run_cratering_phase.bind(generation_params, w, h)):
+		return
+	_retire_large_monolithic_textures(
+		["crust_age", "crust_age_temp"], "after_cratering"
+	)
+
+	# === ÉTAPE 1.5 : CLIMAT PRÉLIMINAIRE POUR L'ÉROSION ===
+	# L'érosion lit climate.G pour la pluie et climate.R pour le gel/évaporation.
+	# Ces canaux doivent être valides avant la première itération hydraulique.
+	if not _run_timed_phase("pre_erosion_climate", run_pre_erosion_climate_phase.bind(generation_params, w, h)):
+		return
 	
 	# === ÉTAPE 2 : ÉROSION HYDRAULIQUE ===
-	run_erosion_phase(generation_params, w, h)
+	if not _run_timed_phase("erosion", run_erosion_phase.bind(generation_params, w, h)):
+		return
+	_retire_large_monolithic_textures(
+		["geo_temp", "flux_temp"], "after_erosion"
+	)
 	
 	# === ÉTAPE 3 : ATMOSPHÈRE & CLIMAT ===
 	# IMPORTANT: Doit être exécuté AVANT la classification des eaux
 	# car les rivières dépendent des précipitations (climate texture canal G)
-	run_atmosphere_phase(generation_params, w, h)
+	if not _run_timed_phase("final_climate", run_atmosphere_phase.bind(generation_params, w, h)):
+		return
 	
 	# === ÉTAPE 2.5 : CLASSIFICATION DES EAUX & RIVIÈRES ===
-	run_water_phase(generation_params, w, h)
+	if not _run_timed_phase("water", run_water_phase.bind(generation_params, w, h)):
+		return
+	# Legacy JFA/source textures are no longer allocated by the exact hydrology
+	# path, so there is nothing temporary to retire here.
 	
 	# === ÉTAPE 3.5 : BANQUISE (après eau pour vérifier water_colored) ===
-	run_ice_caps_phase(generation_params, w, h)
+	if not _run_timed_phase("ice_caps", run_ice_caps_phase.bind(generation_params, w, h)):
+		return
 	
 	# === ÉTAPE 4.1 : BIOMES ===
-	run_biome_phase(generation_params, w, h)
+	if not _run_timed_phase("biomes", run_biome_phase.bind(generation_params, w, h)):
+		return
+	_retire_large_monolithic_textures(
+		["biome_id_temp", "biome_colored_temp"], "after_biomes"
+	)
 	
 	# === ÉTAPE 4 : RÉGIONS ADMINISTRATIVES ===
-	run_region_phase(generation_params, w, h)
+	if not _run_timed_phase("land_regions", run_region_phase.bind(generation_params, w, h)):
+		return
+	_retire_large_monolithic_textures(
+		["region_map_temp", "region_cost", "region_cost_temp"],
+		"after_land_regions"
+	)
 	
 	# === ÉTAPE 4.5 : RÉGIONS OCÉANIQUES ===
-	run_ocean_region_phase(generation_params, w, h)
+	if not _run_timed_phase("ocean_regions", run_ocean_region_phase.bind(generation_params, w, h)):
+		return
+	_retire_large_monolithic_textures(
+		[
+			"ocean_region_map_temp",
+			"ocean_region_cost",
+			"ocean_region_cost_temp",
+			"administrative_edge_cost",
+		],
+		"after_ocean_regions"
+	)
 	
 	# === ÉTAPE 5 : RESSOURCES & PÉTROLE ===
-	run_resources_phase(generation_params, w, h)
+	if not _run_timed_phase("resources", run_resources_phase.bind(generation_params, w, h)):
+		return
 	
 	# === ÉTAPE 6 : FINAL MAP (COMBINAISON) ===
-	run_final_map_phase(generation_params, w, h)
+	if not _run_timed_phase("final_map", run_final_map_phase.bind(generation_params, w, h)):
+		return
+	# All previous dispatches are ordered on one controlled local-device queue.
+	# This is the final simulation dependency before CPU export.
+	gpu.sync_for_cpu("simulation_complete")
+	_record_total_simulation_time(simulation_started_usec)
+	var lifecycle_release := gpu.prepare_for_export(false)
+	_build_performance_report(simulation_started_usec, lifecycle_release)
+	_print_phase_timing_summary()
 	
 	print("[Orchestrator] 🧹 Nettoyage de ", _rids_to_free.size(), " ressources temporaires...")
 	if rd:
 		for rid in _rids_to_free:
 			if rid.is_valid():
-				rd.free_rid(rid)
+				gpu.release_rid(rid)
 	else:
 		push_warning("[Orchestrator] RD is null, skipping temp cleanup")
 	_rids_to_free.clear()
@@ -699,6 +794,84 @@ func run_simulation() -> void:
 	print("=".repeat(60))
 	print("[Orchestrator] ✅ SIMULATION TERMINÉE (Clean)")
 	print("=".repeat(60) + "\n")
+
+## Exécute une phase et conserve sa durée pour les benchmarks déterministes.
+func _retire_large_monolithic_textures(texture_names: Array[String], reason: String) -> void:
+	if not bool(generation_params.get("large_monolithic_lifecycle", false)):
+		return
+	var retired_bytes := gpu.retire_textures(
+		texture_names, true, "large_monolithic:%s" % reason
+	)
+	if retired_bytes > 0:
+		print(
+			"[Orchestrator] VRAM lifecycle release ",
+			reason,
+			": ",
+			"%.1f MiB" % (float(retired_bytes) / 1024.0 / 1024.0)
+		)
+
+
+func _run_timed_phase(phase_name: String, phase_callable: Callable) -> bool:
+	_poll_external_cancel()
+	if was_cancelled:
+		return false
+	_phase_counter += 1
+	emit_signal("phase_started", phase_name, _phase_counter, _phase_total)
+	var started_usec = Time.get_ticks_usec()
+	phase_callable.call()
+	_poll_external_cancel()
+	var elapsed_ms = float(Time.get_ticks_usec() - started_usec) / 1000.0
+	last_phase_timings_ms[phase_name] = elapsed_ms
+	print("[Timing] ", phase_name, ": ", snappedf(elapsed_ms, 0.01), " ms")
+	gpu._sample_memory_peaks()
+	emit_signal("phase_finished", phase_name, _phase_counter, _phase_total, elapsed_ms)
+	# M8 deterministic release-test checkpoint. Normal generations never set this
+	# parameter. Cancellation is requested only after a phase has completed, so
+	# no compute dispatch is interrupted while it is in flight.
+	if str(generation_params.get("release_test_cancel_after_phase", "")) == phase_name:
+		request_cancel("release_test_after:%s" % phase_name)
+	return not was_cancelled
+
+func request_cancel(reason: String = "user") -> void:
+	# Monolithic compute dispatches cannot be interrupted halfway safely. The
+	# request is honored at the next phase boundary, which keeps the shared RD
+	# in a valid state.
+	was_cancelled = true
+	_cancel_reason = reason
+	print("[Orchestrator] Cancellation requested: ", reason)
+
+func _poll_external_cancel() -> void:
+	if was_cancelled or not cancellation_probe.is_valid():
+		return
+	var request = cancellation_probe.call()
+	if request is Dictionary and bool(request.get("cancelled", false)):
+		request_cancel(str(request.get("reason", "user")))
+
+func cancellation_reason() -> String:
+	return _cancel_reason
+
+func _record_total_simulation_time(started_usec: int) -> void:
+	last_phase_timings_ms["total_simulation"] = float(Time.get_ticks_usec() - started_usec) / 1000.0
+
+func _print_phase_timing_summary() -> void:
+	print("[Timing] --- Simulation phase summary ---")
+	for phase_name in last_phase_timings_ms:
+		print("[Timing] ", phase_name, " = ", snappedf(float(last_phase_timings_ms[phase_name]), 0.01), " ms")
+	if not last_performance_report.is_empty():
+		print("[Timing] GPU queue wall = ", snappedf(float(last_performance_report.get("gpu_simulation_wall_ms", 0.0)), 0.01), " ms")
+		print("[Timing] sync/readback = ", snappedf(float(last_performance_report.get("sync_time_ms", 0.0)), 0.01), "/", snappedf(float(last_performance_report.get("readback_time_ms", 0.0)), 0.01), " ms")
+
+func _build_performance_report(started_usec: int, lifecycle_release: Dictionary) -> void:
+	var gpu_metrics := gpu.get_metrics_snapshot()
+	last_performance_report = gpu_metrics.duplicate(true)
+	last_performance_report["gpu_simulation_wall_ms"] = (
+		float(Time.get_ticks_usec() - started_usec) / 1000.0
+	)
+	last_performance_report["phase_enqueue_and_cpu_ms"] = last_phase_timings_ms.duplicate(true)
+	last_performance_report["texture_lifecycle"] = gpu.get_texture_lifecycle()
+	last_performance_report["lifecycle_release"] = lifecycle_release.duplicate(true)
+	last_performance_report["cancelled"] = was_cancelled
+	last_performance_report["cancel_reason"] = _cancel_reason
 
 # ============================================================================
 # ÉTAPE 0 : GÉNÉRATION TOPOGRAPHIQUE DE BASE
@@ -737,12 +910,19 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	# - float cylinder_radius (4 bytes)
 	# - float ocean_threshold (4 bytes) - seuil océan/continent
 	# - float padding3 (4 bytes)
-	# Total : 32 bytes (aligné sur 16 bytes pour std140)
+	# - float planet_radius_km, uint active_plate_count (8 bytes)
+	# - float feature_frequency_scale, chain_width_km (8 bytes)
+	# Total : 48 bytes (aligné sur 16 bytes pour std140)
 	
 	var seed_val = int(params.get("seed", 12345))
 	var elevation_modifier = float(params.get("terrain_scale", 0.0))
 	var sea_level = float(params.get("sea_level", 0.0))
 	var cylinder_radius = float(w) / (2.0 * PI)  # Rayon du cylindre pour le bruit seamless
+	var planet_radius_km = maxf(float(params.get("planet_radius", 150.0)), 1.0)
+	var radius_scale = maxf(planet_radius_km / 150.0, 0.01)
+	var active_plate_count = clampi(int(round(12.0 * pow(radius_scale, 0.55))), 8, 48)
+	var feature_frequency_scale = clampf(pow(radius_scale, 0.45), 0.65, 3.0)
+	var chain_width_km = clampf(6.0 * pow(radius_scale, 0.35), 4.0, 18.0)
 	
 	# Convertir pourcentage océan en seuil FBM
 	var ocean_ratio = float(params.get("ocean_ratio", 55.0))
@@ -750,7 +930,7 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# Créer le buffer de données (PackedByteArray)
 	var buffer_bytes = PackedByteArray()
-	buffer_bytes.resize(32)
+	buffer_bytes.resize(48)
 	
 	# Écrire les données (little-endian)
 	buffer_bytes.encode_u32(0, seed_val)           # seed
@@ -761,6 +941,10 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	buffer_bytes.encode_float(20, cylinder_radius)  # cylinder_radius
 	buffer_bytes.encode_float(24, ocean_threshold)  # ocean_threshold
 	buffer_bytes.encode_float(28, 0.0)              # padding3
+	buffer_bytes.encode_float(32, planet_radius_km)
+	buffer_bytes.encode_u32(36, active_plate_count)
+	buffer_bytes.encode_float(40, feature_frequency_scale)
+	buffer_bytes.encode_float(44, chain_width_km)
 	
 	# 2. Création du Buffer Uniforme
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
@@ -778,7 +962,7 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["base_elevation"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create base_elevation param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	# 5. Calcul des groupes de travail (16x16 threads par groupe)
@@ -790,6 +974,9 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  Sea Level: ", sea_level)
 	print("  Cylinder Radius: ", cylinder_radius)
 	print("  Ocean Ratio: ", ocean_ratio, "% -> threshold: ", ocean_threshold)
+	print("  Physical tectonics: ", active_plate_count, " plates | feature scale: ",
+		snappedf(feature_frequency_scale, 0.01), " | chain width: ",
+		snappedf(chain_width_km, 0.1), " km")
 	print("  Dispatch: ", groups_x, "x", groups_y, " groupes (", w, "x", h, " pixels)")
 	
 	# 6. Dispatch du compute shader
@@ -805,12 +992,11 @@ func run_base_elevation_phase(params: Dictionary, w: int, h: int) -> void:
 	rd.compute_list_end()
 	
 	# 7. Soumettre et synchroniser
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
 	# 8. Nettoyage des ressources temporaires
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 	
 	print("[Orchestrator] ✅ Phase 0 : Topographie de base générée")
 
@@ -876,7 +1062,12 @@ func run_crust_age_phase(params: Dictionary, w: int, h: int) -> void:
 	if not gpu.shaders.has("crust_age_finalize") or not gpu.shaders["crust_age_finalize"].is_valid():
 		push_warning("[Orchestrator] ⚠️ crust_age_finalize shader non disponible, phase ignorée")
 		return
-	if not gpu.uniform_sets.has("crust_age_jfa_textures") or not gpu.uniform_sets["crust_age_jfa_textures"].is_valid():
+	if (
+		not gpu.uniform_sets.has("crust_age_jfa_textures")
+		or not gpu.uniform_sets["crust_age_jfa_textures"].is_valid()
+		or not gpu.uniform_sets.has("crust_age_jfa_textures_swap")
+		or not gpu.uniform_sets["crust_age_jfa_textures_swap"].is_valid()
+	):
 		push_warning("[Orchestrator] ⚠️ crust_age_jfa uniform set non disponible, phase ignorée")
 		return
 	
@@ -890,6 +1081,7 @@ func run_crust_age_phase(params: Dictionary, w: int, h: int) -> void:
 	var planet_radius = float(params.get("planet_radius", 6371.0))  # km
 	var max_age = float(params.get("max_crust_age", 200.0))  # Ma
 	var subsidence_coeff = float(params.get("subsidence_coeff", 2800.0))  # m
+	var sea_level = float(params.get("sea_level", 0.0))
 	
 	# Calculer le nombre de passes JFA
 	var max_dim = max(w, h)
@@ -900,28 +1092,39 @@ func run_crust_age_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  JFA Passes: ", num_passes)
 	
 	# === PASSE 0 : INITIALISATION ===
-	_dispatch_jfa_pass(w, h, groups_x, groups_y, 0, max_dim, spreading_rate)
+	# La passe d'initialisation écrit toujours dans crust_age (B->A).
+	_dispatch_jfa_pass(w, h, groups_x, groups_y, 0, max_dim, spreading_rate, sea_level, true)
 	
 	# === PASSES 1+ : PROPAGATION JFA ===
 	var step_size = max_dim / 2
 	var pass_idx = 1
+	var current_is_primary = true
 	while step_size >= 1:
-		_dispatch_jfa_pass(w, h, groups_x, groups_y, pass_idx, step_size, spreading_rate)
+		# Si A est courant, écrire A->B. Sinon écrire B->A.
+		var write_to_primary = not current_is_primary
+		_dispatch_jfa_pass(w, h, groups_x, groups_y, pass_idx, step_size, spreading_rate, sea_level, write_to_primary)
+		current_is_primary = not current_is_primary
 		step_size = step_size / 2
+		pass_idx += 1
+
+	# La finalisation lit toujours crust_age. Si la dernière propagation a
+	# produit crust_age_temp, une dernière relaxation step=1 la ramène dans A.
+	if not current_is_primary:
+		_dispatch_jfa_pass(w, h, groups_x, groups_y, pass_idx, 1, spreading_rate, sea_level, true)
 		pass_idx += 1
 	
 	print("  JFA terminé après ", pass_idx, " passes")
 	
 	# === PASSE FINALE : CALCUL ÂGE ET SUBSIDENCE ===
-	_dispatch_crust_age_finalize(w, h, groups_x, groups_y, spreading_rate, planet_radius, max_age, subsidence_coeff)
+	_dispatch_crust_age_finalize(w, h, groups_x, groups_y, spreading_rate, planet_radius, max_age, subsidence_coeff, sea_level)
 	
 	print("[Orchestrator] ✅ Phase 0.5 : Âge de croûte calculé")
 
 ## Dispatch une passe JFA
-func _dispatch_jfa_pass(w: int, h: int, groups_x: int, groups_y: int, pass_index: int, step_size: int, spreading_rate: float) -> void:
+func _dispatch_jfa_pass(w: int, h: int, groups_x: int, groups_y: int, pass_index: int, step_size: int, spreading_rate: float, sea_level: float, use_swap: bool) -> void:
 	# Structure UBO pour crust_age_jfa:
 	# uint width, height, pass_index, step_size (16 bytes)
-	# float spreading_rate, padding1, padding2, padding3 (16 bytes)
+	# float spreading_rate, sea_level, padding2, padding3 (16 bytes)
 	# Total: 32 bytes
 	
 	var buffer_bytes = PackedByteArray()
@@ -932,7 +1135,7 @@ func _dispatch_jfa_pass(w: int, h: int, groups_x: int, groups_y: int, pass_index
 	buffer_bytes.encode_u32(8, pass_index)     # pass_index
 	buffer_bytes.encode_u32(12, step_size)     # step_size
 	buffer_bytes.encode_float(16, spreading_rate)  # spreading_rate
-	buffer_bytes.encode_float(20, 0.0)         # padding1
+	buffer_bytes.encode_float(20, sea_level)   # sea_level
 	buffer_bytes.encode_float(24, 0.0)         # padding2
 	buffer_bytes.encode_float(28, 0.0)         # padding3
 	
@@ -949,27 +1152,27 @@ func _dispatch_jfa_pass(w: int, h: int, groups_x: int, groups_y: int, pass_index
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["crust_age_jfa"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create JFA param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["crust_age_jfa"])
-	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["crust_age_jfa_textures"], 0)
+	var uniform_set_name = "crust_age_jfa_textures_swap" if use_swap else "crust_age_jfa_textures"
+	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets[uniform_set_name], 0)
 	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 ## Dispatch la passe de finalisation (calcul âge + subsidence)
-func _dispatch_crust_age_finalize(w: int, h: int, groups_x: int, groups_y: int, spreading_rate: float, planet_radius: float, max_age: float, subsidence_coeff: float) -> void:
+func _dispatch_crust_age_finalize(w: int, h: int, groups_x: int, groups_y: int, spreading_rate: float, planet_radius: float, max_age: float, subsidence_coeff: float, sea_level: float) -> void:
 	# Structure UBO pour crust_age_finalize:
 	# uint width, height (8 bytes)
-	# float spreading_rate, planet_radius, max_age, subsidence_coeff, padding1, padding2 (24 bytes)
+	# float spreading_rate, planet_radius, max_age, subsidence_coeff, sea_level, padding2 (24 bytes)
 	# Total: 32 bytes
 	
 	var buffer_bytes = PackedByteArray()
@@ -981,7 +1184,7 @@ func _dispatch_crust_age_finalize(w: int, h: int, groups_x: int, groups_y: int, 
 	buffer_bytes.encode_float(12, planet_radius)    # planet_radius
 	buffer_bytes.encode_float(16, max_age)          # max_age
 	buffer_bytes.encode_float(20, subsidence_coeff) # subsidence_coeff
-	buffer_bytes.encode_float(24, 0.0)              # padding1
+	buffer_bytes.encode_float(24, sea_level)         # sea_level
 	buffer_bytes.encode_float(28, 0.0)              # padding2
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
@@ -997,7 +1200,7 @@ func _dispatch_crust_age_finalize(w: int, h: int, groups_x: int, groups_y: int, 
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["crust_age_finalize"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create finalize param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1007,11 +1210,10 @@ func _dispatch_crust_age_finalize(w: int, h: int, groups_x: int, groups_y: int, 
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 # ============================================================================
 # ÉTAPE 0.6 : CRATÈRES D'IMPACT (planètes sans atmosphère)
@@ -1030,108 +1232,225 @@ func _dispatch_crust_age_finalize(w: int, h: int, groups_x: int, groups_y: int, 
 ## @param w: Largeur de la texture
 ## @param h: Hauteur de la texture
 func run_cratering_phase(params: Dictionary, w: int, h: int) -> void:
-	# Vérifier que le shader est disponible
 	if not gpu.shaders.has("cratering") or not gpu.shaders["cratering"].is_valid():
 		push_warning("[Orchestrator] ⚠️ cratering shader non disponible, phase ignorée")
 		return
-	
-	# Vérifier si la planète peut avoir des cratères
-	# Types avec cratères : Sans Atmosphère (3), Mort (4), Stérile (5)
+
+	# Types avec cratères : Sans Atmosphère (3), Mort (4), Stérile (5).
 	var atmosphere_type = int(params.get("planet_type", 0))
 	if atmosphere_type not in [Enum.TYPE_NO_ATMOS, Enum.TYPE_DEAD, Enum.TYPE_STERILE]:
 		print("[Orchestrator] ⏭️ Phase 0.6 : Cratères ignorés (planète avec atmosphère épaisse)")
 		return
-	
+
 	print("[Orchestrator] ☄️ Phase 0.6 : Génération des cratères d'impact (type=", atmosphere_type, ")")
-	
+
 	var groups_x = ceili(float(w) / 16.0)
 	var groups_y = ceili(float(h) / 16.0)
-	
-	# Paramètres de cratères
-	var seed_val = int(params.get("seed", 12345))
-	var crater_density = float(params.get("crater_density", 0.5))  # 0.0 - 1.0
-	
-	# Calculer l'échelle pixels → mètres
-	# Pour une planète de rayon R km, la circonférence = 2πR km
-	# Sur une texture de largeur W, chaque pixel = (2πR × 1000) / W mètres
-	var planet_radius_km = float(params.get("planet_radius", 1737.0))  # Défaut: Lune (1737 km)
-	var meters_per_pixel = (2.0 * PI * planet_radius_km * 1000.0) / float(w)
-	
-	# Calculer le nombre de cratères basé sur la densité et la taille
-	# Densité 0.5 sur 2048x1024 → environ 500 cratères
-	var base_craters = int(float(w * h) / 4000.0)
-	var num_craters = int(float(base_craters) * crater_density)
-	num_craters = clamp(num_craters, 50, 3000)  # Limites raisonnables
-	
-	# Paramètres du profil de cratère
-	var max_radius = float(params.get("crater_max_radius", min(w, h) * 0.08))  # 8% de la dimension
-	var min_radius = float(params.get("crater_min_radius", 3.0))  # Minimum 3 pixels
-	var depth_ratio = float(params.get("crater_depth_ratio", 0.25))  # Profondeur = 25% du rayon
-	var rim_height_ratio = float(params.get("crater_rim_ratio", 0.15))  # Rebord = 15% de la profondeur
-	var ejecta_extent = float(params.get("crater_ejecta_extent", 2.5))  # Éjectas jusqu'à 2.5× rayon
-	var ejecta_decay = float(params.get("crater_ejecta_decay", 3.0))  # Décroissance exponentielle
-	var azimuth_variation = float(params.get("crater_azimuth_var", 0.3))  # 30% de variation
-	
-	print("  Nombre de cratères: ", num_craters)
-	print("  Rayon: ", min_radius, " - ", max_radius, " px")
-	print("  Profondeur ratio: ", depth_ratio)
-	print("  Échelle: ", meters_per_pixel, " m/px")
+	var seed_val = int(params.get("seed", 12345)) & 0xFFFFFFFF
+	var crater_density = clampf(float(params.get("crater_density", 0.5)), 0.0, 1.0)
+	var planet_radius_km = maxf(float(params.get("planet_radius", 1737.0)), 1.0)
+	var planet_density = maxf(float(params.get("planet_density", 5.51)), 0.01)
+
+	# Physical pixel scale for the equirectangular projection. Crater radii are
+	# expressed in kilometres, so changing texture resolution only changes how
+	# many pixels represent a crater; it never changes the crater's real size.
+	var meters_per_pixel_x = (2.0 * PI * planet_radius_km * 1000.0) / float(maxi(w, 1))
+	var meters_per_pixel_y = (PI * planet_radius_km * 1000.0) / float(maxi(h, 1))
+
+	# The UI values are physical radii in km. Limit a crater to 25% of the body
+	# radius so invalid project settings cannot create a globe-sized depression.
+	var physical_radius_cap_km = maxf(1.0, planet_radius_km * 0.25)
+	var requested_min_radius_km = maxf(float(params.get("crater_min_radius", 3.0)), 0.25)
+	var requested_max_radius_km = maxf(float(params.get("crater_max_radius", 24.0)), requested_min_radius_km)
+	var max_radius_km = minf(requested_max_radius_km, physical_radius_cap_km)
+	var min_radius_km = minf(requested_min_radius_km, max_radius_km)
+
+	# Count craters per physical surface area rather than per texture pixel.
+	# The reference density keeps the historical default close to ~50 visible
+	# craters on a 150 km-radius body, while larger bodies naturally have more
+	# impacts without making individual craters larger.
+	var surface_area_km2 = 4.0 * PI * planet_radius_km * planet_radius_km
+	var craters_per_km2_at_density_one = 0.00035
+	var num_craters = clampi(
+		roundi(surface_area_km2 * craters_per_km2_at_density_one * crater_density),
+		8,
+		3000
+	)
+
+	# Simple-to-complex crater transition scales approximately as 1/g. This is
+	# ~18 km diameter on the Moon, ~8 km on Mars and ~3 km on Earth. Small low-g
+	# bodies therefore keep simple bowl craters to much larger diameters.
+	var gravity = compute_gravity(planet_radius_km, planet_density)
+	var complex_transition_diameter_km = clampf(29.16 / maxf(gravity, 0.05), 3.0, 250.0)
+
+	var depth_ratio = clampf(float(params.get("crater_depth_ratio", 0.25)), 0.01, 1.0)
+	var rim_height_ratio = clampf(float(params.get("crater_rim_ratio", 0.15)), 0.02, 0.5)
+	var ejecta_extent = clampf(float(params.get("crater_ejecta_extent", 2.5)), 1.05, 4.0)
+	var ejecta_decay = maxf(float(params.get("crater_ejecta_decay", 3.0)), 0.1)
+	var azimuth_variation = clampf(float(params.get("crater_azimuth_var", 0.3)), 0.0, 1.0)
+
+	var crater_data = _build_crater_descriptor_bytes(
+		seed_val,
+		w,
+		h,
+		num_craters,
+		min_radius_km,
+		max_radius_km
+	)
+	var crater_buffer = rd.storage_buffer_create(crater_data.size(), crater_data)
+	if not crater_buffer.is_valid():
+		push_error("[Orchestrator] ❌ Failed to create crater descriptor buffer")
+		return
+
+	print("  Nombre de cratères: ", num_craters, " (densité surfacique)")
+	print("  Rayon physique: ", min_radius_km, " - ", max_radius_km, " km")
+	print("  Échelle: ", snappedf(meters_per_pixel_x, 0.01), " × ", snappedf(meters_per_pixel_y, 0.01), " m/px")
+	print("  Transition simple/complexe: ", snappedf(complex_transition_diameter_km, 0.1), " km de diamètre")
 	print("  Éjectas: ", ejecta_extent, "× rayon")
-	
-	# Structure UBO pour cratering (std140, 48 bytes):
-	# uint seed (4) + uint width (4) + uint height (4) + uint num_craters (4) = 16 bytes
-	# float max_radius (4) + float min_radius (4) + float depth_ratio (4) + float rim_height_ratio (4) = 16 bytes
-	# float ejecta_extent (4) + float ejecta_decay (4) + float azimuth_variation (4) + float meters_per_pixel (4) = 16 bytes
-	# Total: 48 bytes
-	
+
+	# std140, 48 bytes:
+	# 4 uints + 8 floats. The crater centres/sizes themselves live in a compact
+	# std430 SSBO and are generated once on CPU instead of being re-hashed for
+	# every pixel/crater pair in the shader.
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(48)
-	
-	buffer_bytes.encode_u32(0, seed_val)              # seed
-	buffer_bytes.encode_u32(4, w)                      # width
-	buffer_bytes.encode_u32(8, h)                      # height
-	buffer_bytes.encode_u32(12, num_craters)           # num_craters
-	buffer_bytes.encode_float(16, max_radius)          # max_radius
-	buffer_bytes.encode_float(20, min_radius)          # min_radius
-	buffer_bytes.encode_float(24, depth_ratio)         # depth_ratio
-	buffer_bytes.encode_float(28, rim_height_ratio)    # rim_height_ratio
-	buffer_bytes.encode_float(32, ejecta_extent)       # ejecta_extent
-	buffer_bytes.encode_float(36, ejecta_decay)        # ejecta_decay
-	buffer_bytes.encode_float(40, azimuth_variation)   # azimuth_variation
-	buffer_bytes.encode_float(44, meters_per_pixel)    # meters_per_pixel
-	
+	buffer_bytes.encode_u32(0, seed_val)
+	buffer_bytes.encode_u32(4, w)
+	buffer_bytes.encode_u32(8, h)
+	buffer_bytes.encode_u32(12, num_craters)
+	buffer_bytes.encode_float(16, depth_ratio)
+	buffer_bytes.encode_float(20, rim_height_ratio)
+	buffer_bytes.encode_float(24, ejecta_extent)
+	buffer_bytes.encode_float(28, ejecta_decay)
+	buffer_bytes.encode_float(32, azimuth_variation)
+	buffer_bytes.encode_float(36, meters_per_pixel_x)
+	buffer_bytes.encode_float(40, meters_per_pixel_y)
+	buffer_bytes.encode_float(44, complex_transition_diameter_km)
+
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
 	if not param_buffer.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create cratering param buffer")
+		gpu.release_rid(crater_buffer)
 		return
-	
+
 	var param_uniform = RDUniform.new()
 	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
 	param_uniform.binding = 0
 	param_uniform.add_id(param_buffer)
-	
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["cratering"], 1)
+
+	var crater_uniform = RDUniform.new()
+	crater_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	crater_uniform.binding = 1
+	crater_uniform.add_id(crater_buffer)
+
+	var param_set = rd.uniform_set_create([param_uniform, crater_uniform], gpu.shaders["cratering"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create cratering param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
+		gpu.release_rid(crater_buffer)
 		return
-	
-	# Dispatch du compute shader
+
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["cratering"])
 	rd.compute_list_bind_uniform_set(compute_list, gpu.uniform_sets["cratering_textures"], 0)
 	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
-	
-	rd.submit()
-	rd.sync()
-	
-	# Nettoyage
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	
+	gpu.submit_gpu_work()
+
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(crater_buffer)
+
 	print("[Orchestrator] ✅ Phase 0.6 : Cratères générés")
+
+
+func _build_crater_descriptor_bytes(
+	seed_val: int,
+	w: int,
+	h: int,
+	num_craters: int,
+	min_radius_km: float,
+	max_radius_km: float
+) -> PackedByteArray:
+	# Three vec4 values per crater (48 bytes):
+	#   A = center_x_px, center_y_px, physical_radius_km, degradation_age
+	#   B = minor/major axis ratio, rotation, rim phase, morphology random
+	#   C = cos(latitude) metric scale, reserved, reserved, reserved
+	var values = PackedFloat32Array()
+	values.resize(num_craters * 12)
+
+	# Differential size-frequency distribution dN/dr ~ r^-2.8. The old shader
+	# was actually log-uniform despite its "power-law" comment and produced far
+	# too many giant craters. This exponent yields many small impacts and only a
+	# few large basins, which is much closer to observed crater populations.
+	var size_exponent = 2.8
+	var inverse_exponent = 1.0 - size_exponent
+	var min_power = pow(min_radius_km, inverse_exponent)
+	var max_power = pow(max_radius_km, inverse_exponent)
+
+	for crater_idx in range(num_craters):
+		var h0 = _crater_hash32(crater_idx + seed_val)
+		var h1 = _crater_hash32(h0)
+		var h2 = _crater_hash32(h1)
+		var h3 = _crater_hash32(h2)
+		var h4 = _crater_hash32(h3)
+		var h5 = _crater_hash32(h4)
+		var h6 = _crater_hash32(h5)
+		var h7 = _crater_hash32(h6)
+
+		# Uniform distribution on a sphere. Uniform Y in an equirectangular map
+		# would over-populate the polar regions by 1/cos(latitude).
+		var center_x = _crater_rand01(h0) * float(w)
+		var sin_latitude = clampf(_crater_rand01(h1) * 2.0 - 1.0, -0.999999, 0.999999)
+		var latitude = asin(sin_latitude)
+		var center_y = (0.5 - latitude / PI) * float(h)
+
+		var size_u = _crater_rand01(h2)
+		var radius_km = pow(lerpf(min_power, max_power, size_u), 1.0 / inverse_exponent)
+
+		# 0=fresh, 1=old/degraded. Bias mildly toward mature craters so the final
+		# terrain does not look like every impact happened at the same instant.
+		var degradation_age = pow(_crater_rand01(h3), 0.65)
+
+		# Almost all impact craters are near-circular. Only the rarest grazing
+		# impacts receive noticeable ellipticity.
+		var grazing = pow(_crater_rand01(h4), 7.0)
+		var axis_ratio = 1.0 - 0.22 * grazing
+		var rotation = _crater_rand01(h5) * TAU
+		var rim_phase = _crater_rand01(h6) * TAU
+		var morphology_random = _crater_rand01(h7)
+		var longitude_scale = maxf(absf(cos(latitude)), 0.08)
+
+		var base = crater_idx * 12
+		values[base + 0] = center_x
+		values[base + 1] = center_y
+		values[base + 2] = radius_km
+		values[base + 3] = degradation_age
+		values[base + 4] = axis_ratio
+		values[base + 5] = rotation
+		values[base + 6] = rim_phase
+		values[base + 7] = morphology_random
+		values[base + 8] = longitude_scale
+		values[base + 9] = 0.0
+		values[base + 10] = 0.0
+		values[base + 11] = 0.0
+
+	return values.to_byte_array()
+
+
+func _crater_hash32(value: int) -> int:
+	var x = value & 0xFFFFFFFF
+	x = (x ^ (x >> 16)) & 0xFFFFFFFF
+	x = (x * 0x85EBCA6B) & 0xFFFFFFFF
+	x = (x ^ (x >> 13)) & 0xFFFFFFFF
+	x = (x * 0xC2B2AE35) & 0xFFFFFFFF
+	x = (x ^ (x >> 16)) & 0xFFFFFFFF
+	return x
+
+
+func _crater_rand01(hash_value: int) -> float:
+	return float(hash_value & 0xFFFFFFFF) / 4294967295.0
 
 # ============================================================================
 # ÉTAPE 2 : ÉROSION HYDRAULIQUE
@@ -1164,7 +1483,7 @@ func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
 		print("[Orchestrator] ⏭️ Phase 2 : Érosion ignorée (type=", atmosphere_type, ")")
 		return
 	
-	print("[Orchestrator] 💧 Phase 2 : Érosion Hydraulique")
+	print("[Orchestrator] 💧 Phase 2 : Hydrologie de surface (sans incision)")
 	
 	var groups_x = ceili(float(w) / 16.0)
 	var groups_y = ceili(float(h) / 16.0)
@@ -1176,14 +1495,25 @@ func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
 	var rain_rate = float(params.get("rain_rate", 0.012))
 	var evap_rate = float(params.get("evap_rate", 0.02))
 	var flow_rate = float(params.get("flow_rate", 0.25))
-	# Erosion rate: 0.05 → 0.15 pour effet plus marqué
-	var erosion_rate = float(params.get("erosion_rate", 0.15))
-	# Deposition rate: 0.05 → 0.12 pour dépôts visibles
-	var deposition_rate = float(params.get("deposition_rate", 0.12))
+	# L'incision de canyon est volontairement désactivée. La phase conserve la
+	# pluie, l'écoulement et l'accumulation nécessaires aux rivières, mais le
+	# transport sédimentaire sert uniquement au ping-pong des textures.
+	var erosion_rate := 0.0
+	var deposition_rate := 0.0
 	# Capacity multiplier: 1.0 → 2.5 pour transport plus efficace
 	var capacity_multiplier = float(params.get("capacity_multiplier", 2.5))
 	var sea_level = float(params.get("sea_level", 0.0))
-	var gravity = compute_gravity(float(params.get("planet_radius", 6371.0)), float(params.get("planet_density", 5500.0)))  # Default Earth-like density
+	var planet_radius_km = float(params.get("planet_radius", 6371.0))
+	var gravity = compute_gravity(planet_radius_km, float(params.get("planet_density", 5.51)))
+	var pixel_size_x_m = (2.0 * PI * planet_radius_km * 1000.0) / float(max(w, 1))
+	var pixel_size_y_m = (PI * planet_radius_km * 1000.0) / float(max(h, 1))
+	var nominal_cell_size_m = sqrt(pixel_size_x_m * pixel_size_y_m)
+	var max_erosion_per_pass_m := 0.0
+	var channel_flux_threshold = clampf(
+		0.008 * pow(maxf(nominal_cell_size_m / 1000.0, 0.01), 0.25),
+		0.005,
+		0.04
+	)
 	
 	# Paramètres pour l'accumulation de flux
 	var flux_iterations = int(params.get("flux_iterations", 10))
@@ -1193,20 +1523,26 @@ func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
 	print("  Iterations: ", erosion_iterations)
 	print("  Rain Rate: ", rain_rate, " | Evap Rate: ", evap_rate)
 	print("  Flow Rate: ", flow_rate)
-	print("  Erosion/Deposition: ", erosion_rate, "/", deposition_rate)
+	print("  Incision/deposition terrain: désactivée (aucun canyon)")
+	print("  Channel flux threshold: ", snappedf(channel_flux_threshold, 0.0001))
+	print("  Nominal cell size: ", snappedf(pixel_size_x_m, 0.01), "m × ", snappedf(pixel_size_y_m, 0.01), "m")
+	print("  Surface gravity: ", snappedf(gravity, 0.001), " m/s²")
 	
-	# === BOUCLE D'ÉROSION ===
-	for iter in range(erosion_iterations):
-		var use_swap = (iter % 2 == 1)
-		
+	# === BOUCLE HYDROLOGIQUE ===
+	for _iter in range(erosion_iterations):
 		# === PASSE 1 : PLUIE + ÉVAPORATION ===
+		# geo est toujours l'état autoritatif au début d'une itération.
 		_dispatch_erosion_rainfall(w, h, groups_x, groups_y, rain_rate, evap_rate, sea_level)
 		
-		# === PASSE 2 : ÉCOULEMENT ===
-		_dispatch_erosion_flow(w, h, groups_x, groups_y, flow_rate, sea_level, gravity, use_swap)
+		# === PASSE 2 : ÉCOULEMENT A->B ===
+		_dispatch_erosion_flow(w, h, groups_x, groups_y, flow_rate, sea_level, gravity, pixel_size_x_m, pixel_size_y_m, false)
 		
-		# === PASSE 3 : TRANSPORT SÉDIMENT ===
-		_dispatch_erosion_sediment(w, h, groups_x, groups_y, erosion_rate, deposition_rate, capacity_multiplier, sea_level, not use_swap)
+		# === PASSE 3 : CONSERVATION DE L'ÉTAT B->A (sans incision) ===
+		# Chaque itération se termine donc dans geo; aucune itération impaire ne
+		# peut relire ou restaurer un état temporaire obsolète.
+		_dispatch_erosion_sediment(w, h, groups_x, groups_y, erosion_rate,
+			deposition_rate, capacity_multiplier, sea_level, pixel_size_x_m,
+			pixel_size_y_m, max_erosion_per_pass_m, channel_flux_threshold, true)
 	
 	# === PASSE 4 : ACCUMULATION DE FLUX (pour rivières) ===
 	print("  • Accumulation de flux (", flux_iterations, " passes)")
@@ -1214,7 +1550,7 @@ func run_erosion_phase(params: Dictionary, w: int, h: int) -> void:
 		var use_swap = (pass_idx % 2 == 1)
 		_dispatch_erosion_flux_accumulation(w, h, groups_x, groups_y, pass_idx, sea_level, base_flux, propagation_rate, use_swap)
 	
-	print("[Orchestrator] ✅ Phase 2 : Érosion terminée")
+	print("[Orchestrator] ✅ Phase 2 : Hydrologie de surface terminée")
 
 ## Dispatch le shader de pluie/évaporation
 func _dispatch_erosion_rainfall(w: int, h: int, groups_x: int, groups_y: int, rain_rate: float, evap_rate: float, sea_level: float) -> void:
@@ -1249,7 +1585,7 @@ func _dispatch_erosion_rainfall(w: int, h: int, groups_x: int, groups_y: int, ra
 	
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["erosion_rainfall"], 1)
 	if not param_set.is_valid():
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1259,14 +1595,13 @@ func _dispatch_erosion_rainfall(w: int, h: int, groups_x: int, groups_y: int, ra
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 ## Dispatch le shader d'écoulement
-func _dispatch_erosion_flow(w: int, h: int, groups_x: int, groups_y: int, flow_rate: float, sea_level: float, gravity: float, use_swap: bool) -> void:
+func _dispatch_erosion_flow(w: int, h: int, groups_x: int, groups_y: int, flow_rate: float, sea_level: float, gravity: float, pixel_size_x_m: float, pixel_size_y_m: float, use_swap: bool) -> void:
 	var uniform_set_name = "erosion_flow_textures_swap" if use_swap else "erosion_flow_textures"
 	if not gpu.uniform_sets.has(uniform_set_name) or not gpu.uniform_sets[uniform_set_name].is_valid():
 		return
@@ -1274,7 +1609,7 @@ func _dispatch_erosion_flow(w: int, h: int, groups_x: int, groups_y: int, flow_r
 	# Structure UBO (std140, 32 bytes):
 	# uint width, height (8 bytes)
 	# float flow_rate, min_slope, sea_level, gravity (16 bytes)
-	# padding (8 bytes)
+	# float pixel_size_x_m, pixel_size_y_m (8 bytes)
 	
 	var min_slope = 0.001
 	
@@ -1287,8 +1622,8 @@ func _dispatch_erosion_flow(w: int, h: int, groups_x: int, groups_y: int, flow_r
 	buffer_bytes.encode_float(12, min_slope)
 	buffer_bytes.encode_float(16, sea_level)
 	buffer_bytes.encode_float(20, gravity)
-	buffer_bytes.encode_float(24, 0.0)  # padding1
-	buffer_bytes.encode_float(28, 0.0)  # padding2
+	buffer_bytes.encode_float(24, pixel_size_x_m)
+	buffer_bytes.encode_float(28, pixel_size_y_m)
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
 	if not param_buffer.is_valid():
@@ -1301,7 +1636,7 @@ func _dispatch_erosion_flow(w: int, h: int, groups_x: int, groups_y: int, flow_r
 	
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["erosion_flow"], 1)
 	if not param_set.is_valid():
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1311,27 +1646,31 @@ func _dispatch_erosion_flow(w: int, h: int, groups_x: int, groups_y: int, flow_r
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 ## Dispatch le shader de transport de sédiments
-func _dispatch_erosion_sediment(w: int, h: int, groups_x: int, groups_y: int, erosion_rate: float, deposition_rate: float, capacity_multiplier: float, sea_level: float, use_swap: bool) -> void:
+func _dispatch_erosion_sediment(w: int, h: int, groups_x: int, groups_y: int,
+		erosion_rate: float, deposition_rate: float, capacity_multiplier: float,
+		sea_level: float, pixel_size_x_m: float, pixel_size_y_m: float,
+		max_erosion_per_pass_m: float, channel_flux_threshold: float,
+		use_swap: bool) -> void:
 	var uniform_set_name = "erosion_sediment_textures_swap" if use_swap else "erosion_sediment_textures"
 	if not gpu.uniform_sets.has(uniform_set_name) or not gpu.uniform_sets[uniform_set_name].is_valid():
 		return
 	
 	# Structure UBO (std140, 32 bytes):
 	# uint width, height (8 bytes)
-	# float erosion_rate, deposition_rate, capacity_multiplier, min_slope, sea_level, bedrock_hardness (24 bytes)
+	# float erosion_rate, deposition_rate, capacity_multiplier, min_slope,
+	# sea_level, bedrock_hardness, pixel_size_x_m, pixel_size_y_m (32 bytes)
 	
 	var min_slope = 0.001
 	var bedrock_hardness = 0.5
 	
 	var buffer_bytes = PackedByteArray()
-	buffer_bytes.resize(32)
+	buffer_bytes.resize(48)
 	
 	buffer_bytes.encode_u32(0, w)
 	buffer_bytes.encode_u32(4, h)
@@ -1341,6 +1680,10 @@ func _dispatch_erosion_sediment(w: int, h: int, groups_x: int, groups_y: int, er
 	buffer_bytes.encode_float(20, min_slope)
 	buffer_bytes.encode_float(24, sea_level)
 	buffer_bytes.encode_float(28, bedrock_hardness)
+	buffer_bytes.encode_float(32, pixel_size_x_m)
+	buffer_bytes.encode_float(36, pixel_size_y_m)
+	buffer_bytes.encode_float(40, max_erosion_per_pass_m)
+	buffer_bytes.encode_float(44, channel_flux_threshold)
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
 	if not param_buffer.is_valid():
@@ -1353,7 +1696,7 @@ func _dispatch_erosion_sediment(w: int, h: int, groups_x: int, groups_y: int, er
 	
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["erosion_sediment"], 1)
 	if not param_set.is_valid():
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1363,11 +1706,10 @@ func _dispatch_erosion_sediment(w: int, h: int, groups_x: int, groups_y: int, er
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 ## Dispatch le shader d'accumulation de flux
 func _dispatch_erosion_flux_accumulation(w: int, h: int, groups_x: int, groups_y: int, pass_index: int, sea_level: float, base_flux: float, propagation_rate: float, use_swap: bool) -> void:
@@ -1403,7 +1745,7 @@ func _dispatch_erosion_flux_accumulation(w: int, h: int, groups_x: int, groups_y
 	
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["erosion_flux_accumulation"], 1)
 	if not param_set.is_valid():
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1413,24 +1755,45 @@ func _dispatch_erosion_flux_accumulation(w: int, h: int, groups_x: int, groups_y
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 
 # ============================================================================
 # ÉTAPE 3 : ATMOSPHÈRE & CLIMAT
 # ============================================================================
 
-## Génère les cartes climatiques : température, précipitation, nuages, banquise.
+## Calcule uniquement température et précipitation sur le relief pré-érodé.
+## Ce pré-passage fournit à l'érosion une pluie valide sans générer deux fois
+## les nuages. Le passage climatique complet est recalculé après l'érosion.
+func run_pre_erosion_climate_phase(params: Dictionary, w: int, h: int) -> void:
+	var atmosphere_type = int(params.get("planet_type", 0))
+	if atmosphere_type in [Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE]:
+		return
+
+	print("[Orchestrator] 🌦️ Phase 1.5 : Climat préliminaire pour l'érosion")
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+	var seed_val = int(params.get("seed", 12345))
+	var avg_temperature = float(params.get("avg_temperature", 15.0))
+	var avg_precipitation = float(params.get("global_humidity", 0.5))
+	var sea_level = float(params.get("sea_level", 0.0))
+	var cylinder_radius = float(w) / (2.0 * PI)
+
+	_dispatch_temperature(w, h, groups_x, groups_y, seed_val, avg_temperature, sea_level, cylinder_radius, atmosphere_type)
+	_dispatch_precipitation(w, h, groups_x, groups_y, seed_val, avg_precipitation, cylinder_radius, atmosphere_type, sea_level)
+	print("[Orchestrator] ✅ Climat préliminaire prêt")
+
+## Génère les cartes climatiques : température, précipitation et nuages.
 ##
 ## Cette phase exécute :
 ## 1. Température : basée sur latitude, altitude, bruit fBm
 ## 2. Précipitation : basée sur 3 types de bruit + influence latitude
 ## 3. Nuages : simulation fluide (init, advection x N, render)
-## 4. Banquise : eau + température < 0 avec probabilité
+## La neige terrestre est rendue depuis ces champs ; la banquise est calculée
+## après l'hydrologie afin de rester limitée aux surfaces liquides.
 ##
 ## Écrit dans ClimateTexture (RGBA32F) :
 ## - R = temperature (°C)
@@ -1462,9 +1825,10 @@ func run_atmosphere_phase(params: Dictionary, w: int, h: int) -> void:
 	# === PASSE 2 : PRÉCIPITATION ===
 	_dispatch_precipitation(w, h, groups_x, groups_y, seed_val, avg_precipitation, cylinder_radius, atmosphere_type, sea_level)
 	
-	# Pas de nuages ni de banquise sur planètes sans atmosphère ou stériles
+	# Pas de nuages sur les planètes sans atmosphère. Leur givre terrestre reste
+	# calculable dans la carte finale à partir de la température et du relief.
 	if atmosphere_type in [Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE]:
-		print("  ⏭️ Nuages et banquise ignorés (type=", atmosphere_type, ")")
+		print("  ⏭️ Nuages ignorés (type=", atmosphere_type, ")")
 		print("[Orchestrator] ✅ Phase 3 : Atmosphère & Climat terminée")
 		return
 	
@@ -1473,8 +1837,8 @@ func run_atmosphere_phase(params: Dictionary, w: int, h: int) -> void:
 	var cloud_density = float(params.get("cloud_density", 0.8))
 	_dispatch_clouds(w, h, groups_x, groups_y, seed_val, cloud_coverage, cloud_density, cylinder_radius, atmosphere_type)
 
-	# NOTE: Banquise (ice_caps) déplacée après la phase eau pour pouvoir
-	# vérifier water_colored et éviter de générer de la glace sans eau.
+	# NOTE: la banquise (ice_caps) est calculée après la phase eau. La neige et
+	# le givre terrestres sont ajoutés séparément dans final_map.glsl.
 	
 	print("[Orchestrator] ✅ Phase 3 : Atmosphère & Climat terminée")
 
@@ -1520,7 +1884,7 @@ func _dispatch_temperature(w: int, h: int, groups_x: int, groups_y: int, seed_va
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["temperature"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create temperature param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	# === SET 2 : PALETTE DE COULEURS DYNAMIQUE (SSBO) ===
@@ -1528,8 +1892,8 @@ func _dispatch_temperature(w: int, h: int, groups_x: int, groups_y: int, seed_va
 	var palette_ssbo: RID = rd.storage_buffer_create(palette_data.size(), palette_data)
 	if not palette_ssbo.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create temperature palette SSBO")
-		rd.free_rid(param_set)
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_set)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var palette_uniform := RDUniform.new()
@@ -1540,9 +1904,9 @@ func _dispatch_temperature(w: int, h: int, groups_x: int, groups_y: int, seed_va
 	var palette_set: RID = rd.uniform_set_create([palette_uniform], gpu.shaders["temperature"], 2)
 	if not palette_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create temperature palette uniform set")
-		rd.free_rid(palette_ssbo)
-		rd.free_rid(param_set)
-		rd.free_rid(param_buffer)
+		gpu.release_rid(palette_ssbo)
+		gpu.release_rid(param_set)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1553,13 +1917,12 @@ func _dispatch_temperature(w: int, h: int, groups_x: int, groups_y: int, seed_va
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(palette_set)
-	rd.free_rid(palette_ssbo)
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(palette_set)
+	gpu.release_rid(palette_ssbo)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 ## Dispatch le shader de précipitation
 func _dispatch_precipitation(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, avg_precipitation: float, cylinder_radius: float, atmosphere_type: int, sea_level: float = 0.0) -> void:
@@ -1604,7 +1967,7 @@ func _dispatch_precipitation(w: int, h: int, groups_x: int, groups_y: int, seed_
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["precipitation"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create precipitation param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	# === SET 2 : PALETTE DE COULEURS DYNAMIQUE (SSBO) ===
@@ -1612,8 +1975,8 @@ func _dispatch_precipitation(w: int, h: int, groups_x: int, groups_y: int, seed_
 	var palette_ssbo: RID = rd.storage_buffer_create(palette_data.size(), palette_data)
 	if not palette_ssbo.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create precipitation palette SSBO")
-		rd.free_rid(param_set)
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_set)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var palette_uniform := RDUniform.new()
@@ -1624,9 +1987,9 @@ func _dispatch_precipitation(w: int, h: int, groups_x: int, groups_y: int, seed_
 	var palette_set: RID = rd.uniform_set_create([palette_uniform], gpu.shaders["precipitation"], 2)
 	if not palette_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create precipitation palette uniform set")
-		rd.free_rid(palette_ssbo)
-		rd.free_rid(param_set)
-		rd.free_rid(param_buffer)
+		gpu.release_rid(palette_ssbo)
+		gpu.release_rid(param_set)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1637,13 +2000,12 @@ func _dispatch_precipitation(w: int, h: int, groups_x: int, groups_y: int, seed_
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(palette_set)
-	rd.free_rid(palette_ssbo)
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(palette_set)
+	gpu.release_rid(palette_ssbo)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 
 ## Dispatch le shader de nuages
@@ -1689,7 +2051,7 @@ func _dispatch_clouds(w: int, h: int, groups_x: int, groups_y: int, seed_val: in
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["clouds"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create clouds param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1699,22 +2061,22 @@ func _dispatch_clouds(w: int, h: int, groups_x: int, groups_y: int, seed_val: in
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 
-## Phase banquise - exécutée APRÈS la phase eau pour avoir accès à water_colored
+## Phase banquise - exécutée APRÈS l'eau afin de rester strictement maritime
 func run_ice_caps_phase(params: Dictionary, w: int, h: int) -> void:
 	var atmosphere_type = int(params.get("planet_type", 0))
-	
-	# Pas de banquise sur planètes sans atmosphère ou stériles
+
+	# Ces types ne génèrent aucune surface liquide. Leur éventuel givre
+	# terrestre est rendu directement dans la carte finale.
 	if atmosphere_type in [Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE]:
-		print("[Orchestrator] ⏭️ Banquise ignorée (type=", atmosphere_type, ")")
+		print("[Orchestrator] ⏭️ Phase 3.5 : pas de banquise sans surface liquide")
 		return
-	
+
 	print("[Orchestrator] 🧊 Phase 3.5 : Banquise")
 	
 	var groups_x = ceili(float(w) / 16.0)
@@ -1786,7 +2148,7 @@ func _dispatch_ice_caps(w: int, h: int, groups_x: int, groups_y: int, seed_val: 
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["ice_caps"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create ice_caps param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -1796,11 +2158,10 @@ func _dispatch_ice_caps(w: int, h: int, groups_x: int, groups_y: int, seed_val: 
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 # ============================================================================
 # SAMPLER HELPER
@@ -1841,244 +2202,251 @@ func _get_or_create_linear_sampler() -> RID:
 ## @param w: Largeur de la texture
 ## @param h: Hauteur de la texture
 func run_water_phase(params: Dictionary, w: int, h: int) -> void:
-	print("[Orchestrator] 💧 Phase 2.5 : Classification des Eaux & Rivières")
-	
-	var groups_x = ceili(float(w) / 16.0)
-	var groups_y = ceili(float(h) / 16.0)
-	
-	var seed_val = int(params.get("seed", 12345))
-	var sea_level = float(params.get("sea_level", 0.0))
-	var atmosphere_type = int(params.get("planet_type", 0))
-	
-	# Toujours initialiser les textures d'eau (nécessaires pour final_map même sans eau)
+	print("[Orchestrator] 💧 Phase 2.5 : Hydrologie déterministe")
+	last_hydrology_stats.clear()
+
+	var groups_x := ceili(float(w) / 16.0)
+	var groups_y := ceili(float(h) / 16.0)
+	var seed_val := int(params.get("seed", 12345))
+	var sea_level := float(params.get("sea_level", 0.0))
+	var atmosphere_type := int(params.get("planet_type", 0))
+
+	# Keep wall-clock timings for every CPU/GPU dependency in this phase. The
+	# compute dispatches themselves are asynchronous, so the following readback
+	# bucket intentionally includes the wait for the preceding GPU fill.
+	var texture_init_started := Time.get_ticks_usec()
 	gpu.initialize_water_textures()
-	
-	# Planètes sans eau liquide : Sans atmosphère (3) et Stérile (5)
+	gpu.initialize_final_map_textures()
+	var texture_init_ms := float(Time.get_ticks_usec() - texture_init_started) / 1000.0
+
+	# Les textures restent initialisées même lorsqu'un type de planète ne peut
+	# pas avoir d'eau liquide, car les phases finales les référencent.
+	# water_colored appartient au groupe final_map.
 	if atmosphere_type in [Enum.TYPE_NO_ATMOS, Enum.TYPE_STERILE]:
+		last_hydrology_stats = {
+			"skipped_no_liquid_water": true,
+			"texture_init_ms": texture_init_ms,
+		}
 		print("  ⏭️ Planète sans eau liquide (type=", atmosphere_type, ")")
 		return
-	
-	# Paramètres de classification des eaux
-	var saltwater_min_size = int(params.get("saltwater_min_size", 1000))
-	var freshwater_max_size = int(params.get("freshwater_max_size", 999))
-	var lake_threshold = float(params.get("lake_threshold", 5.0))  # Profondeur min pour lac altitude
-	
-	# Paramètres de rivières
-	var river_iterations = int(params.get("river_iterations", 2000))
-	var river_precip_scale = float(params.get("river_precip_scale", 1.0))
+
+	var saltwater_min_size := maxi(int(params.get("saltwater_min_size", 1000)), 1)
+	var freshwater_min_size := maxi(int(params.get("freshwater_min_size", 32)), 1)
+	var lake_threshold := maxf(float(params.get("lake_threshold", 5.0)), 0.01)
+	var river_precip_scale := maxf(float(params.get("river_precip_scale", 1.0)), 0.0)
 
 	print("  Seed: ", seed_val, " | Sea Level: ", sea_level)
-	print("  Saltwater Min Size: ", saltwater_min_size, " pixels | Freshwater Max Size: ", freshwater_max_size, " pixels")
-	print("  River Iterations: ", river_iterations)
-	
-	# === PASSE 1 : WATER FILL - Identification des zones d'eau ===
-	print("  • Identification des zones d'eau...")
-	_dispatch_water_fill(w, h, groups_x, groups_y, sea_level, lake_threshold)
-	
-	# === PASSE 2 : COMPOSANTES CONNEXES - Local + Pointer Jumping ===
-	print("  • Regroupement en composantes connexes...")
-	var max_dim = maxi(w, h)
-	
-	# Avec pointer jumping (3 sauts par passe), chaque passe propage de ~8 pixels
-	# et double/triple la distance de convergence.
-	# log2(max_dim) * 4 passes devrait suffire largement
-	var num_passes = int(ceil(log(float(max_dim)) / log(2.0))) * 4
-	num_passes = maxi(num_passes, 40)  # Minimum 40 passes
-	
-	for pass_idx in range(num_passes):
-		var use_swap = (pass_idx % 2 == 1)
-		_dispatch_water_jfa(w, h, groups_x, groups_y, 1, pass_idx, use_swap)
-	
-	print("    Propagation terminée: ", num_passes, " passes")
-	
-	# Si nombre impair de passes, le résultat final est dans temp → copier vers component
-	if num_passes % 2 == 1:
-		_copy_texture(gpu.textures["water_component_temp"], gpu.textures["water_component"], w, h)
-	
-	# === PASSE 3 : WATER TO COLOR - Coloration par taille ===
-	# NOUVEAU SYSTÈME : Génère directement water_colored (RGBA8)
-	# - D'abord comptage des pixels par composante
-	# - Puis coloration : grandes zones = eau salée, petites zones = eau douce
-	print("  • Coloration des eaux (eau salée/douce par taille)...")
-	
-	# Initialiser la texture water_colored
-	gpu.initialize_final_map_textures()  # Crée water_colored et final_map
-	
-	# Créer le buffer de comptage (SSBO)
-	var counter_buffer_size = w * h * 4  # 4 bytes par pixel (uint)
-	var counter_data = PackedByteArray()
-	counter_data.resize(counter_buffer_size)
-	counter_data.fill(0)
-	var counter_buffer = rd.storage_buffer_create(counter_buffer_size, counter_data)
-	
-	# Passe 1 : Comptage
-	_dispatch_water_to_color(w, h, groups_x, groups_y, 0, sea_level, atmosphere_type, freshwater_max_size, counter_buffer)
-	
-	# SYNCHRONISATION GPU - Attendre que tous les comptages atomiques soient terminés
-	rd.submit()
-	rd.sync()
-	
-	# Passe 2 : Coloration initiale
-	_dispatch_water_to_color(w, h, groups_x, groups_y, 1, sea_level, atmosphere_type, freshwater_max_size, counter_buffer)
-	
-	rd.submit()
-	rd.sync()
-	
-	# Passe 3 : Fusion eau douce touchant eau salée → eau salée
-	# Répéter plusieurs fois pour propager la conversion
-	print("  • Fusion eau douce adjacente à eau salée...")
-	for i in range(10):  # 10 passes de fusion
-		_dispatch_water_to_color(w, h, groups_x, groups_y, 2, sea_level, atmosphere_type, freshwater_max_size, counter_buffer)
-		rd.submit()
-		rd.sync()
-	
-	# DEBUG : Lire quelques valeurs du buffer de comptage pour vérifier
-	var counter_bytes = rd.buffer_get_data(counter_buffer)
-	var max_component_size = 0
-	var non_zero_components = 0
-	var total_water_pixels = 0
-	var saltwater_components = 0
-	var freshwater_components = 0
-	
-	# Vérifier TOUS les seeds possibles
-	for i in range(counter_bytes.size() / 4):
-		var count = counter_bytes.decode_u32(i * 4)
-		if count > 0:
-			non_zero_components += 1
-			total_water_pixels += count
-			max_component_size = maxi(max_component_size, count)
-			if count > freshwater_max_size:
-				saltwater_components += 1
-			else:
-				freshwater_components += 1
-	
-	print("  DEBUG - Composantes: ", non_zero_components, " | Pixels eau: ", total_water_pixels)
-	print("  DEBUG - Taille max: ", max_component_size, " | Saltwater: ", saltwater_components, " | Freshwater: ", freshwater_components)
-	
-	# Libérer le buffer de comptage
-	rd.free_rid(counter_buffer)
-	
-	# === PASSE 4 : DEPRESSION FILLING (Planchon-Darboux) ===
-	# Remplit les depressions du terrain pour garantir un ecoulement continu.
-	# Utilise river_flux / river_flux_temp (R32F) comme buffers ping-pong.
-	var fill_iterations = 200
-	print("  • Remplissage des dépressions Planchon-Darboux (", fill_iterations, " passes)...")
+	print("  Lake minimum: ", lake_threshold, "m depth / ", freshwater_min_size, " cells")
+	print("  Saltwater minimum: ", saltwater_min_size, " connected cells")
 
-	# Init (mode=0) : écrit dans river_flux_temp (use_swap=false → out=river_flux_temp)
-	_dispatch_fill_depression(w, h, groups_x, groups_y, sea_level, 0, false)
+	# 1. Le premier masque ne contient que l'océan thermiquement liquide.
+	# Les lacs seront dérivés ensuite de la profondeur réelle des bassins.
+	print("  • Initialisation du masque océanique...")
+	var fill_and_input_started := Time.get_ticks_usec()
+	_dispatch_water_fill(w, h, groups_x, groups_y, sea_level, 0.0, atmosphere_type)
 
-	# Iterate (mode=1) : ping-pong entre river_flux_temp et river_flux
-	for fill_pass in range(fill_iterations):
-		# Passe 0: in=river_flux_temp, out=river_flux (use_swap=true car init a écrit dans river_flux_temp)
-		# Passe 1: in=river_flux, out=river_flux_temp (use_swap=false)
-		# etc.
-		var use_swap_fill = ((fill_pass + 1) % 2 == 1)
-		_dispatch_fill_depression(w, h, groups_x, groups_y, sea_level, 1, use_swap_fill)
+	# One sync is paid by the first readback; the next two texture_get_data calls
+	# reuse that completed GPU state. Keep the buffers named so their lifetime is
+	# explicit and measurable instead of hiding three huge temporaries in a call.
+	var geo_data := gpu.readback_texture_raw("geo")
+	var climate_data := gpu.readback_texture_raw("climate")
+	var initial_water_mask := gpu.readback_texture_raw("water_mask")
+	var fill_and_input_ms := float(Time.get_ticks_usec() - fill_and_input_started) / 1000.0
 
-	# Après 200 passes (pair), le résultat final est dans river_flux_temp
-	# Copier vers river_flux pour que flow_direction le lise
-	if fill_iterations % 2 == 0:
-		_copy_texture(gpu.textures["river_flux_temp"], gpu.textures["river_flux"], w, h)
-	# (si impair, le résultat est déjà dans river_flux)
+	# 2. Priority-Flood exact : convergence par épuisement de la file de
+	# priorité, sans nombre de passes arbitraire. Le solveur classe ensuite les
+	# composantes d'eau exactes avec wrap horizontal.
+	print("  • Priority-Flood convergent et classification des bassins...")
+	var surface_started := Time.get_ticks_usec()
+	var solver := HydrologySolver.new()
+	var surface_result := solver.solve_surface_and_water(
+		geo_data,
+		climate_data,
+		initial_water_mask,
+		w,
+		h,
+		sea_level,
+		lake_threshold,
+		freshwater_min_size,
+		saltwater_min_size,
+		atmosphere_type,
+	)
+	var surface_wall_ms := float(Time.get_ticks_usec() - surface_started) / 1000.0
+	# Geo/climate are no longer needed on CPU after the exact surface solve.
+	geo_data = PackedByteArray()
+	climate_data = PackedByteArray()
+	initial_water_mask = PackedByteArray()
+	if surface_result.is_empty():
+		push_error("[Orchestrator] Hydrology surface solve failed")
+		return
 
-	print("    ✅ Dépressions remplies")
+	var water_mask_data: PackedByteArray = surface_result["water_mask"]
+	var routing_parent: PackedInt32Array = surface_result["routing_parent"]
+	var routing_child_count: PackedByteArray = surface_result["routing_child_count"]
+	var routing_order: PackedInt32Array = surface_result.get("routing_order", PackedInt32Array())
+	var precomputed_flow_direction: PackedByteArray = surface_result["flow_direction"]
+	var routing_seam_links := int(surface_result.get("routing_seam_links", 0))
 
-	# === PASSE 5 : FLOW DIRECTION - Calcul des directions D8 ===
-	# Lit river_flux comme élévation remplie (filled_elevation)
-	print("  • Calcul des directions d'écoulement D8 (sur terrain rempli)...")
-	_dispatch_river_flow_direction(w, h, groups_x, groups_y, seed_val, sea_level)
+	var mask_upload_started := Time.get_ticks_usec()
+	rd.texture_update(gpu.textures["water_mask"], 0, water_mask_data)
+	# Colorization is a trivial GPU pass over the final classified mask. Keeping
+	# it on-device avoids a full GDScript RGBA construction plus texture upload.
+	_dispatch_hydrology_water_color(w, h, groups_x, groups_y, atmosphere_type)
+	var mask_upload_queue_ms := float(Time.get_ticks_usec() - mask_upload_started) / 1000.0
+	last_hydrology_stats = Dictionary(surface_result["stats"]).duplicate()
+	last_hydrology_stats["texture_init_ms"] = texture_init_ms
+	last_hydrology_stats["initial_fill_and_input_readback_ms"] = fill_and_input_ms
+	last_hydrology_stats["surface_solver_wall_ms"] = surface_wall_ms
+	last_hydrology_stats["mask_upload_color_queue_ms"] = mask_upload_queue_ms
 
-	# === PASSE 6 : RIVER SOURCES - Initialisation distribuée du flux ===
-	# Réinitialise river_flux avec les précipitations (écrase l'élévation remplie)
-	print("  • Initialisation distribuée du flux (précipitations)...")
+	print(
+		"    [Hydrology timing] total-surface=", snappedf(float(last_hydrology_stats.get("surface_total_ms", 0.0)), 0.01), " ms",
+		" | decode/keys=", snappedf(float(last_hydrology_stats.get("surface_decode_ms", 0.0)), 0.01), " ms",
+		" | sort=", snappedf(float(last_hydrology_stats.get("priority_sort_ms", 0.0)), 0.01), " ms",
+		" | flood=", snappedf(float(last_hydrology_stats.get("priority_flood_ms", 0.0)), 0.01), " ms",
+		" | lake-filter=", snappedf(float(last_hydrology_stats.get("lake_candidate_ms", 0.0)), 0.01), " ms",
+		" | lake-components=", snappedf(float(last_hydrology_stats.get("lake_components_ms", 0.0)), 0.01), " ms",
+		" | water-components=", snappedf(float(last_hydrology_stats.get("water_components_ms", 0.0)), 0.01), " ms",
+	)
+	print(
+		"    [Hydrology queue] outlet-frontier=", last_hydrology_stats.get("priority_flood_outlet_frontier_cells", 0),
+		" | open-pops=", last_hydrology_stats.get("priority_flood_heap_pops", 0),
+		" | pit-pops=", last_hydrology_stats.get("priority_flood_pit_pops", 0),
+		" | sorted=", last_hydrology_stats.get("priority_sorted_cells", 0),
+		" | sorted-scan=", last_hydrology_stats.get("priority_scanned_cells", 0),
+		" | pre-sort=", snappedf(float(last_hydrology_stats.get("priority_sort_ms", 0.0)), 0.01), " ms",
+	)
+
+	print(
+		"    Lacs conservés: ", last_hydrology_stats.get("lake_components_retained", 0),
+		" | cellules lac supprimées: ", last_hydrology_stats.get("lake_cells_removed", 0),
+		" | composantes eau: ", last_hydrology_stats.get("water_components", 0),
+		" | runs lac/eau=", last_hydrology_stats.get("lake_component_runs", 0),
+		"/", last_hydrology_stats.get("water_component_runs", 0),
+	)
+
+	# 3. Le parent enregistré lors du Priority-Flood forme directement une
+	# forêt D8 sans cycle. Cela évite de reconstruire un graphe ambigu sur les
+	# plateaux remplis.
+	print("  • Directions D8 dérivées de la forêt Priority-Flood")
+
+	# 4. Chaque cellule terrestre reçoit exactement une contribution locale.
+	var source_and_readback_started := Time.get_ticks_usec()
 	_dispatch_river_sources(w, h, groups_x, groups_y, sea_level, river_precip_scale)
+	var local_flux_data := gpu.readback_texture_raw("river_flux")
+	var source_and_readback_ms := float(Time.get_ticks_usec() - source_and_readback_started) / 1000.0
 
-	# === PASSE 7 : RIVER PROPAGATION - Accumulation du flux ===
-	var effective_river_iterations = maxi(river_iterations, maxi(w, h))
-	print("  • Propagation des rivières (", effective_river_iterations, " passes)...")
-	for pass_idx_ in range(effective_river_iterations):
-		var use_swap = (pass_idx_ % 2 == 1)
-		_dispatch_river_propagation(w, h, groups_x, groups_y, pass_idx_, sea_level, river_precip_scale, use_swap)
+	# 5. Priority-Flood recorded parent-before-child discovery order. Reversing
+	# it is already a topological order, so large maps avoid the old full-size
+	# Kahn indegree copy and queue. Direct/legacy callers still retain the Kahn
+	# fallback when no order is provided.
+	print("  • Accumulation topologique conservatrice...")
+	var accumulation_start_usec: int = Time.get_ticks_usec()
+	var accumulation_result := solver.accumulate_flow(
+		routing_parent,
+		water_mask_data,
+		local_flux_data,
+		w,
+		h,
+		routing_child_count,
+		precomputed_flow_direction,
+		routing_seam_links,
+		routing_order,
+	)
+	local_flux_data = PackedByteArray()
+	routing_order = PackedInt32Array()
+	routing_child_count = PackedByteArray()
+	if accumulation_result.is_empty():
+		push_error("[Orchestrator] Hydrology flow accumulation failed")
+		return
 
-	# Si nombre impair de passes, copier le résultat
-	if effective_river_iterations % 2 == 1:
-		_copy_texture(gpu.textures["river_flux_temp"], gpu.textures["river_flux"], w, h)
+	var accumulated_flux: PackedByteArray = accumulation_result["flux_data"]
+	var flow_direction_data: PackedByteArray = accumulation_result["flow_direction"]
+	var accumulation_ms: float = float(Time.get_ticks_usec() - accumulation_start_usec) / 1000.0
+	last_hydrology_stats.merge(Dictionary(accumulation_result["stats"]), true)
+	last_hydrology_stats["flow_accumulation_ms"] = accumulation_ms
+	last_hydrology_stats["river_source_and_readback_ms"] = source_and_readback_ms
+	print(
+		"    [Hydrology timing] flow-accumulation=", snappedf(accumulation_ms, 0.01), " ms",
+		" | mode=", last_hydrology_stats.get("accumulation_mode", "kahn"),
+	)
+	var max_flux := float(accumulation_result["max_land_flux"])
+	last_hydrology_stats["max_land_flux"] = max_flux
 
-	# === PASSE 7.5 : READBACK MAX FLUX pour seuils adaptatifs ===
-	print("  • Lecture du flux maximum pour seuils adaptatifs...")
-	rd.submit()
-	rd.sync()
-	var flux_bytes = rd.texture_get_data(gpu.textures["river_flux"], 0)
-	var max_flux: float = 0.0
-	var num_pixels = flux_bytes.size() / 4  # R32F = 4 bytes par pixel
-	for px_idx in range(num_pixels):
-		var val = flux_bytes.decode_float(px_idx * 4)
-		if val > max_flux:
-			max_flux = val
+	var unresolved := int(last_hydrology_stats.get("unresolved_land_cells", 0))
+	var nonpolar_sinks := int(last_hydrology_stats.get("nonpolar_land_sinks", 0))
+	var relative_mass_error := float(last_hydrology_stats.get("relative_mass_error", 1.0))
+	if unresolved > 0:
+		push_error("[Hydrology] Drainage graph contains %d unresolved cells" % unresolved)
+	if nonpolar_sinks > 0:
+		push_error("[Hydrology] Drainage graph contains %d invalid non-polar sinks" % nonpolar_sinks)
+	if relative_mass_error > 0.0001:
+		push_error("[Hydrology] Flux conservation error: %.8f" % relative_mass_error)
 
-	print("    Max flux détecté: ", max_flux)
+	print(
+		"    Terrain traité: ", last_hydrology_stats.get("processed_land_cells", 0),
+		"/", last_hydrology_stats.get("land_cells", 0),
+		" | erreur de masse relative: ", snappedf(relative_mass_error, 0.00000001),
+		" | liens de seam: ", last_hydrology_stats.get("seam_flow_links", 0),
+	)
 
-	# Seuils adaptatifs basés sur le flux maximum
-	# SCALING PAR TAILLE DE CARTE : sur les petites cartes, les drainage networks
-	# sont proportionnellement plus denses visuellement. On augmente les seuils
-	# pour compenser, en prenant une carte de référence de 2000×1000 pixels.
-	var map_pixels = float(w * h)
-	var reference_pixels = 2000.0 * 1000.0  # 2M pixels comme référence
-	var density_scale = sqrt(reference_pixels / maxf(map_pixels, 1.0))
-	density_scale = clampf(density_scale, 0.5, 4.0)  # Borner le facteur
-	print("    Density scale (map size correction): ", density_scale, " (map: ", w, "x", h, " = ", int(map_pixels), " px)")
+	# 6. Une hiérarchie basée sur le flux accumulé est monotone vers l'aval :
+	# affluent -> rivière -> fleuve. L'ancienne promotion sur 500 passes est
+	# supprimée, tout comme sa dépendance à une distance arbitraire.
+	var map_pixels := float(w * h)
+	var reference_pixels := 2000.0 * 1000.0
+	var density_scale := clampf(sqrt(reference_pixels / maxf(map_pixels, 1.0)), 0.5, 4.0)
+	var river_affluent_threshold := max_flux * 0.005 * density_scale
+	var river_riviere_threshold := max_flux * 0.02 * density_scale
+	var river_fleuve_threshold := max_flux * 0.08 * density_scale
+	if max_flux <= 0.0:
+		river_affluent_threshold = INF
+		river_riviere_threshold = INF
+		river_fleuve_threshold = INF
 
-	var river_affluent_threshold: float
-	var river_riviere_threshold: float
-	var river_fleuve_threshold: float
-
-	if max_flux > 100.0:
-		# Seuils adaptatifs : pourcentage du max, ajustés par la taille de la carte
-		# Avec type promotion, les seuils bas suffisent car la promotion
-		# propage le type fleuve/riviere en amont le long du chenal principal
-		river_affluent_threshold = max_flux * 0.005 * density_scale
-		river_riviere_threshold  = max_flux * 0.02  * density_scale
-		river_fleuve_threshold   = max_flux * 0.08  * density_scale
-	else:
-		# Fallback si flux très faible (ne devrait pas arriver avec depression filling)
-		river_affluent_threshold = 10.0 * density_scale
-		river_riviere_threshold  = 30.0 * density_scale
-		river_fleuve_threshold   = 60.0 * density_scale
-
-	# Stocker dans params pour l'exporter
 	params["river_affluent_threshold"] = river_affluent_threshold
-	params["river_riviere_threshold"]  = river_riviere_threshold
-	params["river_fleuve_threshold"]   = river_fleuve_threshold
+	params["river_riviere_threshold"] = river_riviere_threshold
+	params["river_fleuve_threshold"] = river_fleuve_threshold
+	last_hydrology_stats["river_affluent_threshold"] = river_affluent_threshold
+	last_hydrology_stats["river_riviere_threshold"] = river_riviere_threshold
+	last_hydrology_stats["river_fleuve_threshold"] = river_fleuve_threshold
 
-	print("    Seuils adaptatifs: affluent=", river_affluent_threshold,
-		" | rivière=", river_riviere_threshold,
-		" | fleuve=", river_fleuve_threshold)
+	print(
+		"    Flux max: ", max_flux,
+		" | seuils: ", river_affluent_threshold,
+		" / ", river_riviere_threshold,
+		" / ", river_fleuve_threshold,
+	)
 
-	# === PASSE 8 : TYPE ASSIGN - Classification initiale par flux ===
-	# Note: ocean_connect est inutile avec depression filling (tout le terrain
-	# draine vers l'eau), et type_assign ecrase ocean_reachable de toute facon.
-	print("  • Classification initiale des types de rivière (flux → type)...")
-	_dispatch_river_type_assign(w, h, groups_x, groups_y, river_affluent_threshold, river_riviere_threshold, river_fleuve_threshold)
-
-	# === PASSE 9 : TYPE PROMOTE - Promotion du type le long du chenal principal ===
-	var promote_iterations = 500
-	print("  • Promotion des types de rivière (", promote_iterations, " passes)...")
-	for pass_idx_ in range(promote_iterations):
-		var use_swap = (pass_idx_ % 2 == 1)
-		_dispatch_river_type_promote(w, h, groups_x, groups_y, use_swap)
-
-	# Si nombre impair de passes, copier le résultat
-	if promote_iterations % 2 == 1:
-		_copy_texture(gpu.textures["ocean_reachable_temp"], gpu.textures["ocean_reachable"], w, h)
-
-	# === PASSE 10 : RIVER CLASSIFY - Classification des rivières en biomes ===
-	print("  • Classification des rivières en biomes (type promu)...")
+	var finalize_started := Time.get_ticks_usec()
+	rd.texture_update(gpu.textures["river_flux"], 0, accumulated_flux)
+	rd.texture_update(gpu.textures["flow_direction"], 0, flow_direction_data)
+	_dispatch_river_type_assign(
+		w,
+		h,
+		groups_x,
+		groups_y,
+		river_affluent_threshold,
+		river_riviere_threshold,
+		river_fleuve_threshold,
+	)
 	_dispatch_river_classify(w, h, groups_x, groups_y, atmosphere_type)
+	var finalize_queue_ms := float(Time.get_ticks_usec() - finalize_started) / 1000.0
+	last_hydrology_stats["final_upload_and_classify_queue_ms"] = finalize_queue_ms
 
-	print("[Orchestrator] ✅ Phase 2.5 : Classification des eaux terminée")
+	print(
+		"    [Water Timing] texture-init=", snappedf(texture_init_ms, 0.01), " ms",
+		" | fill+input-readback=", snappedf(fill_and_input_ms, 0.01), " ms",
+		" | surface=", snappedf(surface_wall_ms, 0.01), " ms",
+		" | source+readback=", snappedf(source_and_readback_ms, 0.01), " ms",
+		" | accumulation=", snappedf(accumulation_ms, 0.01), " ms",
+		" | finalize-queue=", snappedf(finalize_queue_ms, 0.01), " ms",
+	)
+	print("[Orchestrator] ✅ Phase 2.5 : Hydrologie terminée")
 
 ## Dispatch le shader d'identification des zones d'eau
-func _dispatch_water_fill(w: int, h: int, groups_x: int, groups_y: int, sea_level: float, lake_threshold: float) -> void:
+func _dispatch_water_fill(w: int, h: int, groups_x: int, groups_y: int,
+		sea_level: float, lake_threshold: float, atmosphere_type: int) -> void:
 	if not gpu.shaders.has("water_fill") or not gpu.shaders["water_fill"].is_valid():
 		push_warning("[Orchestrator] ⚠️ water_fill shader non disponible")
 		return
@@ -2094,25 +2462,24 @@ func _dispatch_water_fill(w: int, h: int, groups_x: int, groups_y: int, sea_leve
 	mask_uniform.add_id(gpu.textures["water_mask"])
 	tex_uniforms.append(mask_uniform)
 	
-	# water_component (RG32I)
-	var comp_uniform = RDUniform.new()
-	comp_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	comp_uniform.binding = 2
-	comp_uniform.add_id(gpu.textures["water_component"])
-	tex_uniforms.append(comp_uniform)
-	
-	# climate_texture (RGBA32F) - pour vérification température eau liquide
-	tex_uniforms.append(gpu.create_texture_uniform(3, gpu.textures["climate"]))
+	# climate_texture (RGBA32F) - pour vérification température eau liquide.
+	# Binding 2 used to be a dead RG32I JFA label texture; the exact CPU
+	# hydrology solver has owned component classification for several milestones.
+	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["climate"]))
 	
 	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["water_fill"], 0)
 	
-	# UBO paramètres (16 bytes, std140)
+	# UBO paramètres (32 bytes, std140)
 	var buffer_bytes = PackedByteArray()
-	buffer_bytes.resize(16)
+	buffer_bytes.resize(32)
 	buffer_bytes.encode_u32(0, w)
 	buffer_bytes.encode_u32(4, h)
 	buffer_bytes.encode_float(8, sea_level)
 	buffer_bytes.encode_float(12, lake_threshold)
+	buffer_bytes.encode_u32(16, atmosphere_type)
+	buffer_bytes.encode_float(20, 0.0)
+	buffer_bytes.encode_float(24, 0.0)
+	buffer_bytes.encode_float(28, 0.0)
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
 	var param_uniform = RDUniform.new()
@@ -2128,345 +2495,43 @@ func _dispatch_water_fill(w: int, h: int, groups_x: int, groups_y: int, sea_leve
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
-## Dispatch le shader JFA pour composantes connexes
-func _dispatch_water_jfa(w: int, h: int, groups_x: int, groups_y: int, step_size: int, pass_index: int, use_swap: bool) -> void:
-	if not gpu.shaders.has("water_jfa") or not gpu.shaders["water_jfa"].is_valid():
+func _dispatch_hydrology_water_color(w: int, h: int, groups_x: int,
+		groups_y: int, atmosphere_type: int) -> void:
+	if not gpu.shaders.has("hydrology_water_color") or not gpu.shaders["hydrology_water_color"].is_valid():
+		push_warning("[Orchestrator] ⚠️ hydrology_water_color shader non disponible")
 		return
-	
-	var input_tex = gpu.textures["water_component"] if not use_swap else gpu.textures["water_component_temp"]
-	var output_tex = gpu.textures["water_component_temp"] if not use_swap else gpu.textures["water_component"]
-	
 	var tex_uniforms: Array[RDUniform] = []
-	
-	# Input (lecture)
-	var in_uniform = RDUniform.new()
-	in_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	in_uniform.binding = 0
-	in_uniform.add_id(input_tex)
-	tex_uniforms.append(in_uniform)
-	
-	# Output (écriture)
-	var out_uniform = RDUniform.new()
-	out_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	out_uniform.binding = 1
-	out_uniform.add_id(output_tex)
-	tex_uniforms.append(out_uniform)
-	
-	# water_mask
-	var mask_uniform = RDUniform.new()
+	var mask_uniform := RDUniform.new()
 	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	mask_uniform.binding = 2
+	mask_uniform.binding = 0
 	mask_uniform.add_id(gpu.textures["water_mask"])
 	tex_uniforms.append(mask_uniform)
-	
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["water_jfa"], 0)
-	
-	# UBO (16 bytes)
-	var buffer_bytes = PackedByteArray()
-	buffer_bytes.resize(16)
-	buffer_bytes.encode_u32(0, w)
-	buffer_bytes.encode_u32(4, h)
-	buffer_bytes.encode_s32(8, step_size)
-	buffer_bytes.encode_u32(12, pass_index)
-	
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["water_jfa"], 1)
-	
-	var compute_list = rd.compute_list_begin()
-	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["water_jfa"])
-	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
-	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
-	rd.compute_list_end()
-	
-	rd.submit()
-	rd.sync()
-	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
-
-## Dispatch le shader de classification par taille
-func _dispatch_water_size_classify(w: int, h: int, groups_x: int, groups_y: int, pass_type: int, saltwater_min_size: int, freshwater_max_size: int, sea_level: float, counter_buffer: RID) -> void:
-	if not gpu.shaders.has("water_size_classify") or not gpu.shaders["water_size_classify"].is_valid():
-		return
-	
-	var tex_uniforms: Array[RDUniform] = []
-	
-	# water_component (lecture)
-	var comp_uniform = RDUniform.new()
-	comp_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	comp_uniform.binding = 0
-	comp_uniform.add_id(gpu.textures["water_component"])
-	tex_uniforms.append(comp_uniform)
-	
-	# water_mask (lecture/écriture)
-	var mask_uniform = RDUniform.new()
-	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	mask_uniform.binding = 1
-	mask_uniform.add_id(gpu.textures["water_mask"])
-	tex_uniforms.append(mask_uniform)
-	
-	# geo (lecture)
-	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["geo"]))
-	
-	# SSBO comptage
-	var ssbo_uniform = RDUniform.new()
-	ssbo_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-	ssbo_uniform.binding = 3
-	ssbo_uniform.add_id(counter_buffer)
-	tex_uniforms.append(ssbo_uniform)
-	
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["water_size_classify"], 0)
-	
-	# UBO (32 bytes, std140)
-	var buffer_bytes = PackedByteArray()
-	buffer_bytes.resize(32)
-	buffer_bytes.encode_u32(0, w)
-	buffer_bytes.encode_u32(4, h)
-	buffer_bytes.encode_u32(8, pass_type)
-	buffer_bytes.encode_u32(12, saltwater_min_size)
-	buffer_bytes.encode_u32(16, freshwater_max_size)
-	buffer_bytes.encode_float(20, sea_level)
-	buffer_bytes.encode_float(24, 0.0)  # padding
-	buffer_bytes.encode_float(28, 0.0)  # padding
-	
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["water_size_classify"], 1)
-	
-	var compute_list = rd.compute_list_begin()
-	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["water_size_classify"])
-	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
-	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
-	rd.compute_list_end()
-	
-	rd.submit()
-	rd.sync()
-	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
-
-## Dispatch le shader de coloration de l'eau (remplace water_size_classify pour la sortie visuelle)
-func _dispatch_water_to_color(w: int, h: int, groups_x: int, groups_y: int, pass_type: int, sea_level: float, atmosphere_type: int, freshwater_max_size: int, counter_buffer: RID) -> void:
-	if not gpu.shaders.has("water_to_color") or not gpu.shaders["water_to_color"].is_valid():
-		push_error("Shader water_to_color non disponible")
-		return
-	
-	var tex_uniforms: Array[RDUniform] = []
-	
-	# binding 0 : water_component (rg32i) - lecture seule
-	var comp_uniform = RDUniform.new()
-	comp_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	comp_uniform.binding = 0
-	comp_uniform.add_id(gpu.textures["water_component"])
-	tex_uniforms.append(comp_uniform)
-	
-	# binding 1 : water_mask (r8ui) - lecture seule
-	var mask_uniform = RDUniform.new()
-	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	mask_uniform.binding = 1
-	mask_uniform.add_id(gpu.textures["water_mask"])
-	tex_uniforms.append(mask_uniform)
-	
-	# binding 2 : geo_texture (rgba32f) - lecture seule
-	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["geo"]))
-	
-	# binding 3 : water_colored (rgba8) - écriture
-	var color_uniform = RDUniform.new()
+	var color_uniform := RDUniform.new()
 	color_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	color_uniform.binding = 3
+	color_uniform.binding = 1
 	color_uniform.add_id(gpu.textures["water_colored"])
 	tex_uniforms.append(color_uniform)
-	
-	# binding 4 : SSBO comptage
-	var ssbo_uniform = RDUniform.new()
-	ssbo_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-	ssbo_uniform.binding = 4
-	ssbo_uniform.add_id(counter_buffer)
-	tex_uniforms.append(ssbo_uniform)
-	
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["water_to_color"], 0)
-	
-	# UBO (32 bytes, std140)
-	var buffer_bytes = PackedByteArray()
-	buffer_bytes.resize(32)
-	buffer_bytes.encode_u32(0, w)                      # width
-	buffer_bytes.encode_u32(4, h)                      # height
-	buffer_bytes.encode_u32(8, pass_type)             # pass_type (0=comptage, 1=coloration)
-	buffer_bytes.encode_u32(12, freshwater_max_size)  # freshwater_max_size
-	buffer_bytes.encode_float(16, sea_level)          # sea_level
-	buffer_bytes.encode_u32(20, atmosphere_type)      # atmosphere_type
-	buffer_bytes.encode_float(24, 0.0)                # padding1
-	buffer_bytes.encode_float(28, 0.0)                # padding2
-	
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["water_to_color"], 1)
-	
-	var compute_list = rd.compute_list_begin()
-	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["water_to_color"])
+	var tex_set := rd.uniform_set_create(tex_uniforms, gpu.shaders["hydrology_water_color"], 0)
+	var push := PackedByteArray()
+	push.resize(16)
+	push.encode_u32(0, w)
+	push.encode_u32(4, h)
+	push.encode_u32(8, atmosphere_type)
+	var compute_list := rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["hydrology_water_color"])
 	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_set_push_constant(compute_list, push, push.size())
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
-	
-	rd.submit()
-	rd.sync()
-	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.submit_gpu_work()
+	gpu.release_rid(tex_set)
 
-## Dispatch le shader de remplissage de depressions (Planchon-Darboux)
-## mode: 0 = initialisation, 1 = iteration
-## use_swap: alterne les buffers ping-pong
-func _dispatch_fill_depression(w: int, h: int, groups_x: int, groups_y: int, sea_level: float, mode: int, use_swap: bool) -> void:
-	if not gpu.shaders.has("river_fill_depression") or not gpu.shaders["river_fill_depression"].is_valid():
-		push_warning("[Orchestrator] river_fill_depression shader non disponible")
-		return
-
-	# Ping-pong: alterne entre river_flux et river_flux_temp
-	var input_tex = gpu.textures["river_flux"] if not use_swap else gpu.textures["river_flux_temp"]
-	var output_tex = gpu.textures["river_flux_temp"] if not use_swap else gpu.textures["river_flux"]
-
-	var tex_uniforms: Array[RDUniform] = []
-
-	# Binding 0: geo_texture (RGBA32F) - elevation originale
-	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
-
-	# Binding 1: water_mask (R8UI)
-	var mask_uniform = RDUniform.new()
-	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	mask_uniform.binding = 1
-	mask_uniform.add_id(gpu.textures["water_mask"])
-	tex_uniforms.append(mask_uniform)
-
-	# Binding 2: filled_in (R32F) - passe precedente (lecture)
-	var in_uniform = RDUniform.new()
-	in_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	in_uniform.binding = 2
-	in_uniform.add_id(input_tex)
-	tex_uniforms.append(in_uniform)
-
-	# Binding 3: filled_out (R32F) - cette passe (ecriture)
-	var out_uniform = RDUniform.new()
-	out_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	out_uniform.binding = 3
-	out_uniform.add_id(output_tex)
-	tex_uniforms.append(out_uniform)
-
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["river_fill_depression"], 0)
-
-	# UBO (16 bytes, std140)
-	var buffer_bytes = PackedByteArray()
-	buffer_bytes.resize(16)
-	buffer_bytes.encode_u32(0, w)
-	buffer_bytes.encode_u32(4, h)
-	buffer_bytes.encode_float(8, sea_level)
-	buffer_bytes.encode_u32(12, mode)
-
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["river_fill_depression"], 1)
-
-	var compute_list = rd.compute_list_begin()
-	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["river_fill_depression"])
-	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
-	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
-	rd.compute_list_end()
-
-	rd.submit()
-	rd.sync()
-
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
-
-## Dispatch le shader de calcul des directions d'écoulement D8
-func _dispatch_river_flow_direction(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, sea_level: float) -> void:
-	if not gpu.shaders.has("river_flow_direction") or not gpu.shaders["river_flow_direction"].is_valid():
-		push_warning("[Orchestrator] ⚠️ river_flow_direction shader non disponible")
-		return
-
-	var tex_uniforms: Array[RDUniform] = []
-
-	# Binding 0: filled_elevation (R32F) - from Planchon-Darboux depression filling
-	var filled_uniform = RDUniform.new()
-	filled_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	filled_uniform.binding = 0
-	filled_uniform.add_id(gpu.textures["river_flux"])
-	tex_uniforms.append(filled_uniform)
-
-	# Binding 1: water_mask (R8UI)
-	var mask_uniform = RDUniform.new()
-	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	mask_uniform.binding = 1
-	mask_uniform.add_id(gpu.textures["water_mask"])
-	tex_uniforms.append(mask_uniform)
-
-	# Binding 2: flow_direction (R8UI) - output
-	var dir_uniform = RDUniform.new()
-	dir_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	dir_uniform.binding = 2
-	dir_uniform.add_id(gpu.textures["flow_direction"])
-	tex_uniforms.append(dir_uniform)
-
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["river_flow_direction"], 0)
-
-	# UBO (16 bytes)
-	var buffer_bytes = PackedByteArray()
-	buffer_bytes.resize(16)
-	buffer_bytes.encode_u32(0, w)
-	buffer_bytes.encode_u32(4, h)
-	buffer_bytes.encode_u32(8, seed_val)
-	buffer_bytes.encode_float(12, sea_level)
-
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["river_flow_direction"], 1)
-
-	var compute_list = rd.compute_list_begin()
-	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["river_flow_direction"])
-	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
-	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
-	rd.compute_list_end()
-
-	rd.submit()
-	rd.sync()
-
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
-
-## Dispatch le shader d'initialisation distribuée du flux (chaque pixel = précipitation)
 func _dispatch_river_sources(w: int, h: int, groups_x: int, groups_y: int, sea_level: float, precip_scale: float) -> void:
 	if not gpu.shaders.has("river_sources") or not gpu.shaders["river_sources"].is_valid():
 		return
@@ -2513,159 +2578,12 @@ func _dispatch_river_sources(w: int, h: int, groups_x: int, groups_y: int, sea_l
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
-## Dispatch le shader de propagation des rivières (accumulation conservatrice)
-func _dispatch_river_propagation(w: int, h: int, groups_x: int, groups_y: int, pass_index: int, sea_level: float, precip_scale: float, use_swap: bool) -> void:
-	if not gpu.shaders.has("river_propagation") or not gpu.shaders["river_propagation"].is_valid():
-		return
-
-	var input_tex = gpu.textures["river_flux"] if not use_swap else gpu.textures["river_flux_temp"]
-	var output_tex = gpu.textures["river_flux_temp"] if not use_swap else gpu.textures["river_flux"]
-
-	var tex_uniforms: Array[RDUniform] = []
-
-	# Binding 0: flow_direction (R8UI)
-	var dir_uniform = RDUniform.new()
-	dir_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	dir_uniform.binding = 0
-	dir_uniform.add_id(gpu.textures["flow_direction"])
-	tex_uniforms.append(dir_uniform)
-
-	# Binding 1: water_mask (R8UI)
-	var mask_uniform = RDUniform.new()
-	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	mask_uniform.binding = 1
-	mask_uniform.add_id(gpu.textures["water_mask"])
-	tex_uniforms.append(mask_uniform)
-
-	# Binding 2: climate_texture (RGBA32F)
-	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["climate"]))
-
-	# Binding 3: flux input (R32F)
-	var in_uniform = RDUniform.new()
-	in_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	in_uniform.binding = 3
-	in_uniform.add_id(input_tex)
-	tex_uniforms.append(in_uniform)
-
-	# Binding 4: flux output (R32F)
-	var out_uniform = RDUniform.new()
-	out_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	out_uniform.binding = 4
-	out_uniform.add_id(output_tex)
-	tex_uniforms.append(out_uniform)
-
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["river_propagation"], 0)
-
-	# UBO (32 bytes)
-	var buffer_bytes = PackedByteArray()
-	buffer_bytes.resize(32)
-	buffer_bytes.encode_u32(0, w)
-	buffer_bytes.encode_u32(4, h)
-	buffer_bytes.encode_u32(8, pass_index)
-	buffer_bytes.encode_float(12, sea_level)
-	buffer_bytes.encode_float(16, precip_scale)
-	buffer_bytes.encode_float(20, 0.0)  # padding1
-	buffer_bytes.encode_float(24, 0.0)  # padding2
-	buffer_bytes.encode_float(28, 0.0)  # padding3
-
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["river_propagation"], 1)
-
-	var compute_list = rd.compute_list_begin()
-	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["river_propagation"])
-	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
-	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
-	rd.compute_list_end()
-
-	rd.submit()
-	rd.sync()
-
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
-
-## Dispatch le shader de vérification de connectivité à l'océan
-func _dispatch_river_ocean_connect(w: int, h: int, groups_x: int, groups_y: int, pass_index: int, use_swap: bool) -> void:
-	if not gpu.shaders.has("river_ocean_connect") or not gpu.shaders["river_ocean_connect"].is_valid():
-		return
-
-	var input_tex = gpu.textures["ocean_reachable"] if not use_swap else gpu.textures["ocean_reachable_temp"]
-	var output_tex = gpu.textures["ocean_reachable_temp"] if not use_swap else gpu.textures["ocean_reachable"]
-
-	var tex_uniforms: Array[RDUniform] = []
-
-	# Binding 0: flow_direction (R8UI)
-	var dir_uniform = RDUniform.new()
-	dir_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	dir_uniform.binding = 0
-	dir_uniform.add_id(gpu.textures["flow_direction"])
-	tex_uniforms.append(dir_uniform)
-
-	# Binding 1: water_mask (R8UI)
-	var mask_uniform = RDUniform.new()
-	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	mask_uniform.binding = 1
-	mask_uniform.add_id(gpu.textures["water_mask"])
-	tex_uniforms.append(mask_uniform)
-
-	# Binding 2: connect input (R8UI)
-	var in_uniform = RDUniform.new()
-	in_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	in_uniform.binding = 2
-	in_uniform.add_id(input_tex)
-	tex_uniforms.append(in_uniform)
-
-	# Binding 3: connect output (R8UI)
-	var out_uniform = RDUniform.new()
-	out_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	out_uniform.binding = 3
-	out_uniform.add_id(output_tex)
-	tex_uniforms.append(out_uniform)
-
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["river_ocean_connect"], 0)
-
-	# UBO (16 bytes)
-	var buffer_bytes = PackedByteArray()
-	buffer_bytes.resize(16)
-	buffer_bytes.encode_u32(0, w)
-	buffer_bytes.encode_u32(4, h)
-	buffer_bytes.encode_u32(8, pass_index)
-	buffer_bytes.encode_u32(12, 0)  # padding
-
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["river_ocean_connect"], 1)
-
-	var compute_list = rd.compute_list_begin()
-	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["river_ocean_connect"])
-	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
-	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
-	rd.compute_list_end()
-
-	rd.submit()
-	rd.sync()
-
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
-
-## Dispatch le shader de classification initiale des types de rivière (flux → type)
 func _dispatch_river_type_assign(w: int, h: int, groups_x: int, groups_y: int, affluent_threshold: float, riviere_threshold: float, fleuve_threshold: float) -> void:
 	if not gpu.shaders.has("river_type_assign") or not gpu.shaders["river_type_assign"].is_valid():
 		push_warning("[Orchestrator] ⚠️ river_type_assign shader not ready, skipping")
@@ -2712,69 +2630,12 @@ func _dispatch_river_type_assign(w: int, h: int, groups_x: int, groups_y: int, a
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
-## Dispatch le shader de promotion de type le long du chenal principal (ping-pong)
-func _dispatch_river_type_promote(w: int, h: int, groups_x: int, groups_y: int, use_swap: bool) -> void:
-	if not gpu.shaders.has("river_type_promote") or not gpu.shaders["river_type_promote"].is_valid():
-		return
-
-	var input_tex = gpu.textures["ocean_reachable"] if not use_swap else gpu.textures["ocean_reachable_temp"]
-	var output_tex = gpu.textures["ocean_reachable_temp"] if not use_swap else gpu.textures["ocean_reachable"]
-
-	# === SET 0 : TEXTURES ===
-	var tex_uniforms: Array[RDUniform] = []
-
-	# Binding 0: river_type_in (R8UI) - input ping
-	tex_uniforms.append(gpu.create_texture_uniform(0, input_tex))
-
-	# Binding 1: river_type_out (R8UI) - output pong
-	tex_uniforms.append(gpu.create_texture_uniform(1, output_tex))
-
-	# Binding 2: river_flux (R32F) - for main channel identification
-	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["river_flux"]))
-
-	# Binding 3: flow_direction (R8UI)
-	tex_uniforms.append(gpu.create_texture_uniform(3, gpu.textures["flow_direction"]))
-
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["river_type_promote"], 0)
-
-	# === SET 1 : UBO PARAMETERS (16 bytes) ===
-	var buffer_bytes = PackedByteArray()
-	buffer_bytes.resize(16)
-	buffer_bytes.encode_u32(0, w)
-	buffer_bytes.encode_u32(4, h)
-	buffer_bytes.encode_u32(8, 0)   # padding1
-	buffer_bytes.encode_u32(12, 0)  # padding2
-
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["river_type_promote"], 1)
-
-	# === DISPATCH ===
-	var compute_list = rd.compute_list_begin()
-	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["river_type_promote"])
-	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
-	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
-	rd.compute_list_end()
-
-	rd.submit()
-	rd.sync()
-
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
-
-## Dispatch le shader de classification des rivières en biomes (avec connectivité océan)
 func _dispatch_river_classify(w: int, h: int, groups_x: int, groups_y: int, atmosphere_type: int) -> void:
 	if not gpu.shaders.has("river_classify") or not gpu.shaders["river_classify"].is_valid():
 		push_warning("[Orchestrator] ⚠️ river_classify shader not ready, skipping")
@@ -2816,9 +2677,9 @@ func _dispatch_river_classify(w: int, h: int, groups_x: int, groups_y: int, atmo
 
 	if not river_ssbo.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create river biomes SSBO")
-		rd.free_rid(param_set)
-		rd.free_rid(tex_set)
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_set)
+		gpu.release_rid(tex_set)
+		gpu.release_rid(param_buffer)
 		return
 
 	var ssbo_uniform = RDUniform.new()
@@ -2836,14 +2697,13 @@ func _dispatch_river_classify(w: int, h: int, groups_x: int, groups_y: int, atmo
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 
-	rd.free_rid(ssbo_set)
-	rd.free_rid(river_ssbo)
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(ssbo_set)
+	gpu.release_rid(river_ssbo)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 	print("  [Orchestrator] ✅ Rivières classifiées en biomes")
 
@@ -2882,7 +2742,10 @@ func run_biome_phase(params: Dictionary, w: int, h: int) -> void:
 	var sea_level = float(params.get("sea_level", 0.0))
 	var atmosphere_type = int(params.get("planet_type", 0))
 	var cylinder_radius = float(w) / (2.0 * PI)
-	var flux_humidity_boost = 0.5  # Boost d'humidité près des flux d'eau
+	# Le biome décrit le climat de fond. Le réseau fluvial possède sa propre
+	# couche river_biome_id et ne doit jamais reclassifier le sol sous son tracé.
+	var flux_humidity_boost = 0.0
+	var river_affluent_threshold = float(params.get("river_affluent_threshold", 1.0e20))
 	
 	print("  Seed: ", seed_val, " | Type planète: ", atmosphere_type)
 	print("  Sea level: ", sea_level, " | Cylinder radius: ", cylinder_radius)
@@ -2902,7 +2765,10 @@ func run_biome_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	# === PASSE 1 : CLASSIFICATION INITIALE ===
 	print("  • Classification des biomes...")
-	_dispatch_biome_classify(w, h, groups_x, groups_y, seed_val, atmosphere_type, sea_level, cylinder_radius, flux_humidity_boost, biomes_ssbo)
+	_dispatch_biome_classify(
+		w, h, groups_x, groups_y, seed_val, atmosphere_type, sea_level,
+		cylinder_radius, flux_humidity_boost, river_affluent_threshold, biomes_ssbo
+	)
 	
 	# === PASSES 2-3 : LISSAGE (2 passes ping-pong) ===
 	if gpu.shaders.has("biome_smooth") and gpu.shaders["biome_smooth"].is_valid():
@@ -2915,14 +2781,15 @@ func run_biome_phase(params: Dictionary, w: int, h: int) -> void:
 		push_warning("[Orchestrator] ⚠️ biome_smooth shader not ready, skipping smoothing")
 	
 	# Nettoyer le SSBO
-	rd.free_rid(biomes_ssbo)
+	gpu.release_rid(biomes_ssbo)
 	
 	print("[Orchestrator] ✅ Phase 4.1 terminée")
 
 ## Dispatch le shader de classification des biomes
 func _dispatch_biome_classify(w: int, h: int, groups_x: int, groups_y: int, 
 		seed_val: int, atmosphere_type: int, sea_level: float, 
-		cylinder_radius: float, flux_humidity_boost: float, biomes_ssbo: RID) -> void:
+		cylinder_radius: float, flux_humidity_boost: float,
+		river_affluent_threshold: float, biomes_ssbo: RID) -> void:
 	
 	# Vérifier les textures nécessaires
 	var required_textures = ["geo", "climate", "water_mask", "river_flux", "biome_id", "biome_colored"]
@@ -2959,7 +2826,7 @@ func _dispatch_biome_classify(w: int, h: int, groups_x: int, groups_y: int,
 	buffer_bytes.encode_float(16, sea_level)           # sea_level
 	buffer_bytes.encode_float(20, cylinder_radius)     # cylinder_radius
 	buffer_bytes.encode_float(24, flux_humidity_boost) # flux_humidity_boost
-	buffer_bytes.encode_float(28, 0.0)                 # padding
+	buffer_bytes.encode_float(28, river_affluent_threshold)
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
 	var param_uniform = RDUniform.new()
@@ -2984,14 +2851,13 @@ func _dispatch_biome_classify(w: int, h: int, groups_x: int, groups_y: int,
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
 	# Cleanup
-	rd.free_rid(ssbo_set)
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(ssbo_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de lissage des biomes (ping-pong)
 func _dispatch_biome_smooth(w: int, h: int, groups_x: int, groups_y: int,
@@ -3073,14 +2939,13 @@ func _dispatch_biome_smooth(w: int, h: int, groups_x: int, groups_y: int,
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
 	# Cleanup
-	rd.free_rid(ssbo_set)
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(ssbo_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 # ============================================================================
 # ÉTAPE 4 : RÉGIONS ADMINISTRATIVES
@@ -3107,80 +2972,369 @@ func run_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	var seed_val = int(params.get("seed", 12345))
 	var sea_level = float(params.get("sea_level", 0.0))
-	var nb_cases_region = int(params.get("nb_cases_regions", 50))
-	var atmosphere_type = int(params.get("atmosphere_type", 0))
 	
-	# Si pas d'atmosphère, pas de régions (planète sans vie)
-	if atmosphere_type == 3:
-		print("  ⏭️ Planète sans atmosphère - pas de régions")
-		return
-	
+	# Administrative partitions describe solid surface ownership/geometry, not
+	# habitability. Airless worlds therefore use the same land partitioning as
+	# every other solid planet type.
 	# Paramètres de coûts
 	var cost_flat = float(params.get("region_cost_flat", 1.0))
-	var cost_uphill = float(params.get("region_cost_uphill", 2.0))
+	var cost_uphill = float(params.get("region_cost_hill", params.get("region_cost_uphill", 2.0)))
 	var cost_river = float(params.get("region_cost_river", 3.0))
 	var river_threshold = float(params.get("region_river_threshold", 1.0))
 	var budget_variation = float(params.get("region_budget_variation", 0.5))
-	var noise_strength = float(params.get("region_noise_strength", 3.0))  # Perturbation en pixels pour frontières organiques (JFA)
+	var noise_strength = clampf(float(params.get("region_noise_strength", 0.5)), 0.0, 2.0)
 	
-	# JFA : ceil(log2(max_dim)) + 2 passes supplémentaires à step=1 pour robustesse
-	# Pour une carte 2048 : log2(2048)=11, donc 13 passes au lieu de 4096+
+	# La croissance locale ne saute jamais par-dessus la mer. Le nombre de
+	# passes ne définit pas la taille politique : il ne fait qu'assurer la
+	# couverture topologique de la projection.
 	var max_dim = max(w, h)
-	var jfa_log_steps = ceili(log(float(max_dim)) / log(2.0))
-	var region_iterations = int(params.get("region_iterations", jfa_log_steps + 2))
-	
-	print("  Seed: ", seed_val, " | Cases/Région: ", nb_cases_region)
-	print("  Bruit frontières: ", noise_strength, " px")
-	print("  Itérations JFA: ", region_iterations, " (log2(", max_dim, ")=", jfa_log_steps, ")")
+	var water_mask_data := gpu.readback_texture_raw("water_mask")
+	# Un même prédicat de terre pilote le comptage, les shaders et la
+	# normalisation : le masque hydrologique final fait foi. `geo` n'est plus lu
+	# ici : build_land_mask ignorait déjà l'altitude, donc ce readback RGBA32F
+	# (16 octets/pixel) était entièrement inutile.
+	var land_mask_result: Dictionary = DepartmentNormalizer.build_surface_mask(
+		water_mask_data, w, h, false
+	)
+	var land_mask: PackedByteArray = PackedByteArray(land_mask_result["mask"])
+	var actual_land_cells := int(land_mask_result["active_cells"])
+	# "nb_cases_regions" contrôle la surface locale visible d'un département.
+	# Il ne doit pas être réinterprété comme un nombre global de graines : avec
+	# une valeur de 15, une zone doit couvrir environ 15 cases de terre, quelle
+	# que soit la surface totale de la texture. Les niveaux région/pays/continent
+	# restent, eux, construits plus tard selon l'échelle physique de la planète.
+	var hierarchy_targets := HierarchyBuilder.compute_physical_targets(
+		params, false, actual_land_cells
+	)
+	var target_department_cells := clampf(
+		float(params.get("land_department_target_cells",
+			params.get("nb_cases_regions", 50.0))),
+		1.0,
+		float(maxi(actual_land_cells, 1))
+	)
+	var target_departments := clampi(int(round(
+		float(actual_land_cells) / target_department_cells
+	)), 1, maxi(actual_land_cells, 1))
+	var target_regions := clampi(
+		int(hierarchy_targets["regions"]), 1, target_departments
+	)
+	var desired_seed_density := clampf(
+		float(target_departments) / float(maxi(actual_land_cells, 1)),
+		0.000001,
+		0.105
+	)
+	# Valeur conservée dans l'UBO pour compatibilité. Le shader place désormais
+	# les minima de hash dans un disque dont l'aire suit directement la cible.
+	var seed_probability := 1.0 - pow(
+		maxf(1.0 - 9.0 * desired_seed_density, 0.000001), 1.0 / 9.0
+	)
+	var mean_department_spacing_px := sqrt(target_department_cells)
+	var seed_neighborhood_radius := clampi(int(round(
+		mean_department_spacing_px / sqrt(PI)
+	)), 0, 8)
+	var minimum_department_ratio := clampf(
+		float(params.get("land_department_min_ratio", 0.45)), 0.10, 0.90
+	)
+	var maximum_department_ratio := maxf(
+		float(params.get("land_department_max_ratio", 1.85)),
+		minimum_department_ratio + 0.10
+	)
+	var requested_iterations = int(params.get("region_iterations", max_dim * 2))
+	var region_iterations = clampi(requested_iterations, max_dim, max_dim * 2)
+
+	print("  Seed: ", seed_val, " | Cellules terrestres mesurées: ", actual_land_cells)
+	print("  Surface terrestre: ", snappedf(float(hierarchy_targets["surface_km2"]), 1.0),
+		" km² | taille département cible: ", snappedf(target_department_cells, 0.1),
+		" cases | départements cibles: ", target_departments,
+		" | régions cibles: ", target_regions)
+	print("  Densité blue-noise cible: ", snappedf(desired_seed_density, 0.0001),
+		" | rayon local: ", seed_neighborhood_radius,
+		" px | espacement moyen: ", snappedf(mean_department_spacing_px, 0.1), " px")
+	print("  Irrégularité organique: ", noise_strength,
+		" | plage souple: ", snappedf(minimum_department_ratio * 100.0, 0.1),
+		"–", snappedf(maximum_department_ratio * 100.0, 0.1),
+		" % | passes topologiques: ", region_iterations)
 	
 	# Initialiser les textures de région
 	gpu.initialize_region_textures()
 	
 	# === PASSE 1 : PLACEMENT DES SEEDS ===
 	print("  • Placement des seeds de régions...")
-	_dispatch_region_seed_placement(w, h, groups_x, groups_y, seed_val, nb_cases_region, sea_level, budget_variation)
+	_dispatch_region_seed_placement(
+		w, h, groups_x, groups_y, seed_val, seed_probability, sea_level,
+		budget_variation, mean_department_spacing_px
+	)
+	print("  • Pré-calcul des coûts statiques de croissance...")
+	_dispatch_region_edge_cost(
+		w, h, groups_x, groups_y, seed_val, river_threshold, cost_flat,
+		cost_uphill, cost_river, noise_strength, mean_department_spacing_px
+	)
 	
-	# === PASSE 2 : CROISSANCE JFA (Jump Flooding Algorithm) ===
-	print("  • Croissance des régions JFA (", region_iterations, " passes)...")
-	for pass_idx in range(region_iterations):
-		# JFA : step diminue par puissances de 2 (1024, 512, ..., 2, 1, 1)
-		var step_size = maxi(1, int(pow(2, jfa_log_steps - 1 - pass_idx)))
-		var use_swap = (pass_idx % 2 == 1)
-		_dispatch_region_growth(w, h, groups_x, groups_y, step_size, seed_val, sea_level, river_threshold, cost_flat, cost_uphill, cost_river, noise_strength, use_swap)
+	# === PASSE 2 : CROISSANCE LOCALE MASQUÉE ===
+	var growth_batch_size := clampi(
+		int(params.get("administrative_growth_batch_size", ADMIN_GROWTH_BATCH_SIZE)),
+		2, 64
+	)
+	if growth_batch_size % 2 == 1:
+		growth_batch_size += 1
+	print("  • Croissance organique connexe (max ", region_iterations,
+		" passes, batch=", growth_batch_size, ")...")
+	# Only two texture layouts exist (ping/pong). Reuse both uniform sets for all
+	# passes instead of allocating one RenderingDevice set per iteration.
+	var region_growth_sets: Array[RID] = [
+		_create_region_growth_texture_set(false),
+		_create_region_growth_texture_set(true),
+	]
+	var convergence := _create_growth_convergence_resources(
+		"region_growth", groups_x, groups_y
+	)
+	if convergence.is_empty():
+		for growth_uniform_set in region_growth_sets:
+			gpu.release_rid(growth_uniform_set)
+		return
+	var convergence_set: RID = convergence["set"]
+	var convergence_buffer: RID = convergence["buffer"]
+	var growth_executed := 0
+	var growth_converged := false
+	var growth_unassigned := actual_land_cells
+	while growth_executed < region_iterations:
+		var batch_end := mini(growth_executed + growth_batch_size, region_iterations)
+		_dispatch_region_growth_batch(
+			w, h, groups_x, groups_y, growth_executed, batch_end, seed_val,
+			sea_level, river_threshold, cost_flat, cost_uphill, cost_river,
+			noise_strength, mean_department_spacing_px, region_growth_sets,
+			convergence_set
+		)
+		growth_executed = batch_end
+		var growth_status := _read_growth_batch_status(
+			convergence_buffer, int(convergence["group_count"]),
+			"land_region_growth_convergence"
+		)
+		growth_unassigned = int(growth_status["unassigned"])
+		if not bool(growth_status["changed"]):
+			growth_converged = true
+			break
+	for growth_uniform_set in region_growth_sets:
+		gpu.release_rid(growth_uniform_set)
+	_release_growth_convergence_resources(convergence)
+	print("    Croissance: ", growth_executed, "/", region_iterations,
+		" passes exécutées | convergence=", growth_converged,
+		" | non assignées=", growth_unassigned)
 	
 	# Si nombre impair de passes, copier le résultat vers la texture principale
-	if region_iterations % 2 == 1:
+	if growth_executed % 2 == 1:
 		_copy_region_textures(w, h)
 	
 	# === PASSE 2.5 : NETTOYAGE FINAL (sécurité pour îles isolées) ===
-	print("  • Nettoyage final (sécurité)...")
-	# JFA couvre >99% des pixels terrestres, quelques passes suffisent
-	var cleanup_passes = 3
-	for cleanup_pass in range(cleanup_passes):
-		var use_swap = ((region_iterations + cleanup_pass) % 2 == 1)
-		_dispatch_region_cleanup(w, h, groups_x, groups_y, seed_val, use_swap)
+	# Cleanup can be skipped only when growth is both converged AND complete.
+	# Seedless isolated components intentionally rely on cleanup's deterministic
+	# local-minimum seeds, so any remaining unassigned cell preserves that path.
+	# Propagation strictement 4-connexe : aucun saut au-dessus du masque.
+	var cleanup_passes := 0 if (
+		growth_converged and growth_unassigned == 0
+	) else maxi(4, ceili(mean_department_spacing_px))
+	var cleanup_unassigned := growth_unassigned
+	if cleanup_passes > 0:
+		print("  • Nettoyage final (sécurité, ", cleanup_passes, " passes)...")
+		var region_cleanup_sets: Array[RID] = [
+			_create_region_cleanup_texture_set(false),
+			_create_region_cleanup_texture_set(true),
+		]
+		var cleanup_convergence := _create_growth_convergence_resources(
+			"region_cleanup", groups_x, groups_y
+		)
+		var cleanup_convergence_set: RID = cleanup_convergence.get("set", RID())
+		_dispatch_region_cleanup_batch(
+			w, h, groups_x, groups_y, seed_val, sea_level,
+			growth_executed, cleanup_passes, region_cleanup_sets,
+			cleanup_convergence_set
+		)
+		if not cleanup_convergence.is_empty():
+			var cleanup_status := _read_growth_batch_status(
+				cleanup_convergence["buffer"], int(cleanup_convergence["group_count"]),
+				"land_region_cleanup_convergence"
+			)
+			cleanup_unassigned = int(cleanup_status["unassigned"])
+		_release_growth_convergence_resources(cleanup_convergence)
+		for cleanup_uniform_set in region_cleanup_sets:
+			gpu.release_rid(cleanup_uniform_set)
+		print("    Couverture après nettoyage : non assignées=", cleanup_unassigned)
+	else:
+		print("  • Nettoyage final ignoré : croissance déjà convergée")
 	
 	# Si nombre impair de passes totales, copier le résultat
-	if (region_iterations + cleanup_passes) % 2 == 1:
+	if cleanup_passes > 0 and (growth_executed + cleanup_passes) % 2 == 1:
 		_copy_region_textures(w, h)
+	# Une normalisation topologique absorbe les résidus trop petits dans leur
+	# meilleur voisin réel. Elle utilise la même couture X et ne fusionne jamais
+	# deux masses terrestres séparées par l'eau.
+	var region_readback_start_usec := Time.get_ticks_usec()
+	var region_map_data := gpu.readback_texture_raw("region_map")
+	var region_readback_ms := float(Time.get_ticks_usec() - region_readback_start_usec) / 1000.0
+	var normalization_start_usec := Time.get_ticks_usec()
+	var normalization := DepartmentNormalizer.normalize(
+		region_map_data, land_mask, w, h, target_department_cells,
+		minimum_department_ratio, maximum_department_ratio, false, false,
+		cleanup_unassigned == 0
+	)
+	var normalization_ms := float(Time.get_ticks_usec() - normalization_start_usec) / 1000.0
+	var normalized_data: PackedByteArray = region_map_data
+	if not normalization.is_empty():
+		normalized_data = PackedByteArray(normalization["data"])
+		rd.texture_update(gpu.textures["region_map"], 0, normalized_data)
+		print(
+			"  • Normalisation départements : ", normalization["merged_components"],
+			" fusion(s), ", normalization["split_fragments"],
+			" fragment(s) séparé(s), ", normalization["removed_non_land"],
+			" pixel(s) hors terre supprimé(s), ",
+			normalization["isolated_undersized"],
+			" petite(s) île(s) sans voisin"
+		)
+		print(
+			"    [Administration CPU] fill=", snappedf(float(normalization.get("timing_fill_ms", 0.0)), 0.01), " ms",
+			" | components=", snappedf(float(normalization.get("timing_components_ms", 0.0)), 0.01), " ms",
+			" | adjacency=", snappedf(float(normalization.get("timing_adjacency_ms", 0.0)), 0.01), " ms",
+			" | merge=", snappedf(float(normalization.get("timing_merge_ms", 0.0)), 0.01), " ms",
+			" | finalize=", snappedf(float(normalization.get("timing_finalize_ms", 0.0)), 0.01), " ms"
+		)
 	
 	# === PASSE 3 : FINALISATION ET COLORATION ===
 	print("  • Finalisation et coloration...")
-	_dispatch_region_finalize(w, h, groups_x, groups_y, seed_val)
+	_dispatch_region_finalize(w, h, groups_x, groups_y, seed_val, sea_level)
+	# Keep phase timing honest without downloading region_map a second time. The
+	# normalized bytes above are already the authoritative IDs used by finalize.
+	gpu.sync_for_cpu("land_region_finalize")
+	var department_stats: Dictionary = _measure_normalized_partition_stats(
+		normalization, normalized_data, target_department_cells
+	)
+	department_stats["region_readback_ms"] = region_readback_ms
+	department_stats["normalization_ms"] = normalization_ms
+	department_stats["growth_requested_passes"] = region_iterations
+	department_stats["growth_executed_passes"] = growth_executed
+	department_stats["growth_converged"] = growth_converged
+	department_stats["growth_unassigned_cells"] = growth_unassigned
+	department_stats["growth_batch_size"] = growth_batch_size
+	department_stats["cleanup_executed_passes"] = cleanup_passes
+	department_stats["cleanup_unassigned_cells"] = cleanup_unassigned
+	print(
+		"    [Administration timing] readback=", snappedf(region_readback_ms, 0.01),
+		" ms | normalization=", snappedf(normalization_ms, 0.01), " ms"
+	)
+	for key in normalization.keys():
+		if key != "data" and key != "partition_sizes":
+			department_stats["normalization_" + str(key)] = normalization[key]
+	last_administrative_stats["land_departments"] = department_stats
+	_print_partition_stats("Départements terrestres", last_administrative_stats["land_departments"])
 	
 	print("[Orchestrator] ✅ Phase 4 : Régions terminées")
 
-## Dispatch le shader de placement des seeds de région
-func _dispatch_region_seed_placement(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, nb_cases_region: int, sea_level: float, budget_variation: float) -> void:
+func _measure_partition_sizes_from_data(
+	raw: PackedByteArray,
+	target_cells: float,
+) -> Dictionary:
+	var counts: Dictionary = {}
+	for offset in range(0, raw.size(), 4):
+		var region_id := raw.decode_u32(offset)
+		if region_id == 0xFFFFFFFF:
+			continue
+		counts[region_id] = int(counts.get(region_id, 0)) + 1
+	var sizes: Array[int] = []
+	for size in counts.values():
+		sizes.append(int(size))
+	return _measure_partition_sizes_from_sizes(sizes, target_cells)
+
+func _measure_partition_sizes_from_sizes(
+	raw_sizes: Array,
+	target_cells: float,
+) -> Dictionary:
+	var sizes: Array[int] = []
+	var total_cells := 0
+	for raw_size in raw_sizes:
+		var cell_count := int(raw_size)
+		if cell_count <= 0:
+			continue
+		sizes.append(cell_count)
+		total_cells += cell_count
+	sizes.sort()
+	if sizes.is_empty():
+		return {}
+	var outlier_threshold := maxi(int(ceil(target_cells * 4.0)), 1)
+	var outlier_count := 0
+	for size in sizes:
+		if size > outlier_threshold:
+			outlier_count += 1
+	return {
+		"count": sizes.size(),
+		"cells": total_cells,
+		"target_cells": target_cells,
+		"mean": float(total_cells) / float(sizes.size()),
+		"minimum": sizes[0],
+		"p05": _partition_percentile(sizes, 0.05),
+		"p10": _partition_percentile(sizes, 0.10),
+		"median": _partition_percentile(sizes, 0.50),
+		"p75": _partition_percentile(sizes, 0.75),
+		"p90": _partition_percentile(sizes, 0.90),
+		"p95": _partition_percentile(sizes, 0.95),
+		"p99": _partition_percentile(sizes, 0.99),
+		"maximum": sizes[sizes.size() - 1],
+		"extreme_outlier_threshold": outlier_threshold,
+		"extreme_outliers": outlier_count,
+	}
+
+func _partition_percentile(sorted_sizes: Array[int], percentile: float) -> int:
+	var index := clampi(
+		int(floor(float(sorted_sizes.size() - 1) * percentile)),
+		0,
+		sorted_sizes.size() - 1
+	)
+	return sorted_sizes[index]
+
+func _measure_normalized_partition_stats(
+		normalization: Dictionary, normalized_data: PackedByteArray,
+		target_cells: float
+	) -> Dictionary:
+	# normalize() can legitimately return a non-empty metadata dictionary with an
+	# empty partition_sizes array (for example when the active mask contains no
+	# measurable component). In that case, measure the authoritative normalized
+	# ID bytes before declaring that no partition exists.
+	var stats: Dictionary = {}
+	if not normalization.is_empty():
+		stats = _measure_partition_sizes_from_sizes(
+			normalization.get("partition_sizes", []), target_cells
+		)
+	if not stats.has("count"):
+		stats = _measure_partition_sizes_from_data(normalized_data, target_cells)
+	return stats
+
+
+func _print_partition_stats(label: String, stats: Dictionary) -> void:
+	# Timing/normalization metadata may be appended even when no statistical
+	# payload exists. Test the required core field rather than Dictionary.is_empty().
+	if not stats.has("count") or int(stats.get("count", 0)) <= 0:
+		print("  ⚠️ ", label, " : aucune zone mesurable")
+		return
+	print(
+		"  ", label, " : n=", stats.get("count", 0),
+		" | moyenne=", snappedf(float(stats.get("mean", 0.0)), 0.01),
+		" | médiane=", stats.get("median", 0),
+		" | min/max=", stats.get("minimum", 0), "/", stats.get("maximum", 0),
+		" | p90/p95/p99=", stats.get("p90", 0), "/", stats.get("p95", 0), "/", stats.get("p99", 0),
+		" | extrêmes >", stats.get("extreme_outlier_threshold", 0),
+		": ", stats.get("extreme_outliers", 0)
+	)
+
+func _dispatch_region_seed_placement(w: int, h: int, groups_x: int,
+		groups_y: int, seed_val: int, seed_probability: float,
+		sea_level: float, budget_variation: float,
+		mean_spacing_px: float) -> void:
 	if not gpu.shaders.has("region_seed_placement") or not gpu.shaders["region_seed_placement"].is_valid():
 		push_warning("[Orchestrator] ⚠️ region_seed_placement shader non disponible")
 		return
 	
 	# Créer les uniforms de texture (set 0)
 	var tex_uniforms: Array[RDUniform] = []
-	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
 	
-	# water_mask (R8UI)
+	# water_mask (R8UI) — seul arbitre terre/eau pour l'administration
 	var mask_uniform = RDUniform.new()
 	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
 	mask_uniform.binding = 1
@@ -3205,10 +3359,10 @@ func _dispatch_region_seed_placement(w: int, h: int, groups_x: int, groups_y: in
 	buffer_bytes.encode_u32(0, w)
 	buffer_bytes.encode_u32(4, h)
 	buffer_bytes.encode_u32(8, seed_val)
-	buffer_bytes.encode_u32(12, nb_cases_region)
+	buffer_bytes.encode_float(12, seed_probability)
 	buffer_bytes.encode_float(16, sea_level)
 	buffer_bytes.encode_float(20, budget_variation)
-	buffer_bytes.encode_float(24, 0.0)  # padding
+	buffer_bytes.encode_float(24, mean_spacing_px)
 	buffer_bytes.encode_float(28, 0.0)  # padding
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
@@ -3225,40 +3379,64 @@ func _dispatch_region_seed_placement(w: int, h: int, groups_x: int, groups_y: in
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
+
+func _dispatch_region_edge_cost(w: int, h: int, groups_x: int, groups_y: int,
+		seed_val: int, river_threshold: float, cost_flat: float,
+		cost_uphill: float, cost_river: float, noise_strength: float,
+		mean_spacing_px: float) -> void:
+	if not gpu.shaders.has("region_edge_cost") or not gpu.shaders["region_edge_cost"].is_valid():
+		push_warning("[Orchestrator] ⚠️ region_edge_cost shader non disponible")
+		return
+	var tex_uniforms: Array[RDUniform] = []
+	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
+	var mask_uniform := RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 1
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["river_flux"]))
+	tex_uniforms.append(gpu.create_texture_uniform(3, gpu.textures["administrative_edge_cost"]))
+	var tex_set := rd.uniform_set_create(tex_uniforms, gpu.shaders["region_edge_cost"], 0)
+
+	var push := PackedByteArray()
+	push.resize(48)
+	push.encode_u32(0, w)
+	push.encode_u32(4, h)
+	push.encode_u32(8, seed_val)
+	push.encode_float(12, river_threshold)
+	push.encode_float(16, cost_flat)
+	push.encode_float(20, cost_uphill)
+	push.encode_float(24, cost_river)
+	push.encode_float(28, noise_strength)
+	push.encode_float(32, mean_spacing_px)
+
+	var compute_list := rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["region_edge_cost"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_set_push_constant(compute_list, push, push.size())
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	gpu.submit_gpu_work()
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de croissance des régions (Dijkstra-like)
-func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int, pass_idx: int, seed_val: int, sea_level: float, river_threshold: float, cost_flat: float, cost_uphill: float, cost_river: float, noise_strength: float, use_swap: bool) -> void:
+func _create_region_growth_texture_set(use_swap: bool) -> RID:
 	if not gpu.shaders.has("region_growth") or not gpu.shaders["region_growth"].is_valid():
-		push_warning("[Orchestrator] ⚠️ region_growth shader non disponible")
-		return
-	
+		return RID()
 	# Textures ping-pong (comme pour les régions océaniques)
 	var map_in: RID = gpu.textures["region_map"] if not use_swap else gpu.textures["region_map_temp"]
 	var map_out: RID = gpu.textures["region_map_temp"] if not use_swap else gpu.textures["region_map"]
 	var cost_in: RID = gpu.textures["region_cost"] if not use_swap else gpu.textures["region_cost_temp"]
 	var cost_out: RID = gpu.textures["region_cost_temp"] if not use_swap else gpu.textures["region_cost"]
 	
-	# Créer les uniforms de texture (set 0)
+	# Static cardinal traversal costs were computed once before growth.
 	var tex_uniforms: Array[RDUniform] = []
-	
-	# geo_texture (binding 0)
-	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
-	
-	# water_mask (binding 1)
-	var mask_uniform = RDUniform.new()
-	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	mask_uniform.binding = 1
-	mask_uniform.add_id(gpu.textures["water_mask"])
-	tex_uniforms.append(mask_uniform)
-	
-	# river_flux (binding 2)
-	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["river_flux"]))
+	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["administrative_edge_cost"]))
 	
 	# region_map_in (binding 3) - lecture
 	var map_in_uniform = RDUniform.new()
@@ -3280,14 +3458,79 @@ func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int, pass_
 	# region_cost_out (binding 6) - écriture
 	tex_uniforms.append(gpu.create_texture_uniform(6, cost_out))
 	
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["region_growth"], 0)
-	
-	# UBO paramètres (48 bytes, std140)
-	var buffer_bytes = PackedByteArray()
+	return rd.uniform_set_create(tex_uniforms, gpu.shaders["region_growth"], 0)
+
+func _create_growth_convergence_resources(
+		shader_name: String, groups_x: int, groups_y: int) -> Dictionary:
+	var group_count := maxi(groups_x * groups_y, 1)
+	var initial_data := PackedByteArray()
+	initial_data.resize(group_count * 8)
+	initial_data.fill(0)
+	var buffer := rd.storage_buffer_create(initial_data.size(), initial_data)
+	if not buffer.is_valid():
+		push_error("[Orchestrator] Impossible de créer le buffer de convergence administrative")
+		return {}
+
+	var uniform := RDUniform.new()
+	uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	uniform.binding = 0
+	uniform.add_id(buffer)
+	var uniform_set := rd.uniform_set_create([uniform], gpu.shaders[shader_name], 1)
+	if not uniform_set.is_valid():
+		gpu.release_rid(buffer)
+		push_error("[Orchestrator] Impossible de créer le set de convergence administrative")
+		return {}
+	return {
+		"buffer": buffer,
+		"set": uniform_set,
+		"group_count": group_count,
+	}
+
+func _release_growth_convergence_resources(resources: Dictionary) -> void:
+	if resources.is_empty():
+		return
+	var uniform_set: RID = resources.get("set", RID())
+	var buffer: RID = resources.get("buffer", RID())
+	gpu.release_rid(uniform_set)
+	gpu.release_rid(buffer)
+
+func _read_growth_batch_status(
+		stats_buffer: RID, group_count: int, sync_reason: String) -> Dictionary:
+	if not stats_buffer.is_valid():
+		return {"changed": true, "unassigned": -1}
+	# This is the only synchronization introduced by early convergence. The
+	# transfer is one uvec2 per 16x16 workgroup (64 KiB at 2048x1024), not a full
+	# region texture readback.
+	gpu.sync_for_cpu(sync_reason)
+	var byte_count := group_count * 8
+	var flags := rd.buffer_get_data(stats_buffer, 0, byte_count)
+	if flags.size() != byte_count:
+		return {"changed": true, "unassigned": -1}
+	var changed := false
+	var unassigned := 0
+	for offset in range(0, byte_count, 8):
+		changed = changed or flags.decode_u32(offset) != 0
+		unassigned += int(flags.decode_u32(offset + 4))
+	return {"changed": changed, "unassigned": unassigned}
+
+func _dispatch_region_growth_batch(w: int, h: int, groups_x: int, groups_y: int,
+		pass_begin: int, pass_end: int, seed_val: int, sea_level: float,
+		river_threshold: float, cost_flat: float, cost_uphill: float,
+		cost_river: float, noise_strength: float, mean_spacing_px: float,
+		texture_sets: Array[RID], convergence_set: RID) -> void:
+	if not gpu.shaders.has("region_growth") or not gpu.shaders["region_growth"].is_valid():
+		push_warning("[Orchestrator] ⚠️ region_growth shader non disponible")
+		return
+
+	if texture_sets.size() < 2 or not convergence_set.is_valid():
+		return
+
+	# One command list for the entire batch removes per-pass driver/list overhead.
+	# Explicit barriers retain the exact ping-pong dependency between passes.
+	var buffer_bytes := PackedByteArray()
 	buffer_bytes.resize(48)
 	buffer_bytes.encode_u32(0, w)
 	buffer_bytes.encode_u32(4, h)
-	buffer_bytes.encode_u32(8, pass_idx)
 	buffer_bytes.encode_u32(12, seed_val)  # seed pour le bruit
 	buffer_bytes.encode_float(16, sea_level)
 	buffer_bytes.encode_float(20, river_threshold)
@@ -3295,29 +3538,22 @@ func _dispatch_region_growth(w: int, h: int, groups_x: int, groups_y: int, pass_
 	buffer_bytes.encode_float(28, cost_uphill)
 	buffer_bytes.encode_float(32, cost_river)
 	buffer_bytes.encode_float(36, noise_strength)  # Force du bruit
-	buffer_bytes.encode_float(40, 0.0)  # padding
+	buffer_bytes.encode_float(40, mean_spacing_px)
 	buffer_bytes.encode_float(44, 0.0)  # padding
 	
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["region_growth"], 1)
-	
-	var compute_list = rd.compute_list_begin()
+	var compute_list := rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["region_growth"])
-	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
-	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_bind_uniform_set(compute_list, convergence_set, 1)
+	for pass_idx in range(pass_begin, pass_end):
+		buffer_bytes.encode_u32(8, pass_idx)
+		rd.compute_list_bind_uniform_set(compute_list, texture_sets[pass_idx % 2], 0)
+		rd.compute_list_set_push_constant(compute_list, buffer_bytes, buffer_bytes.size())
+		rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+		if pass_idx + 1 < pass_end:
+			rd.compute_list_add_barrier(compute_list)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
-	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.submit_gpu_work()
 
 ## Copie les textures de région du buffer temp vers le buffer principal
 func _copy_region_textures(w: int, h: int) -> void:
@@ -3327,11 +3563,9 @@ func _copy_region_textures(w: int, h: int) -> void:
 	_copy_texture(gpu.textures["region_cost_temp"], gpu.textures["region_cost"], w, h)
 
 ## Dispatch le shader de nettoyage final des régions (assigne toute terre restante)
-func _dispatch_region_cleanup(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, use_swap: bool) -> void:
+func _create_region_cleanup_texture_set(use_swap: bool) -> RID:
 	if not gpu.shaders.has("region_cleanup") or not gpu.shaders["region_cleanup"].is_valid():
-		push_warning("[Orchestrator] ⚠️ region_cleanup shader non disponible")
-		return
-	
+		return RID()
 	# Choisir les textures source/destination selon le ping-pong
 	var src_map: RID = gpu.textures["region_map"] if not use_swap else gpu.textures["region_map_temp"]
 	var dst_map: RID = gpu.textures["region_map_temp"] if not use_swap else gpu.textures["region_map"]
@@ -3364,40 +3598,49 @@ func _dispatch_region_cleanup(w: int, h: int, groups_x: int, groups_y: int, seed
 	# region_cost_out (R32F)
 	tex_uniforms.append(gpu.create_texture_uniform(3, dst_cost))
 	
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["region_cleanup"], 0)
-	
-	# UBO paramètres (16 bytes, std140)
+	return rd.uniform_set_create(tex_uniforms, gpu.shaders["region_cleanup"], 0)
+
+func _dispatch_region_cleanup_batch(w: int, h: int, groups_x: int,
+		groups_y: int, seed_val: int, sea_level: float,
+		growth_passes: int, cleanup_passes: int,
+		texture_sets: Array[RID], convergence_set: RID) -> void:
+	if not gpu.shaders.has("region_cleanup") or not gpu.shaders["region_cleanup"].is_valid():
+		push_warning("[Orchestrator] ⚠️ region_cleanup shader non disponible")
+		return
+
+	if texture_sets.size() < 2 or cleanup_passes <= 0 or not convergence_set.is_valid():
+		return
+
+	# Push constants (16 bytes): avoid per-pass parameter RIDs.
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(16)
 	buffer_bytes.encode_u32(0, w)
 	buffer_bytes.encode_u32(4, h)
 	buffer_bytes.encode_u32(8, seed_val)
-	buffer_bytes.encode_u32(12, 0)  # padding
+	buffer_bytes.encode_float(12, sea_level)
 	
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["region_cleanup"], 1)
-	
-	# Dispatch
-	var compute_list = rd.compute_list_begin()
+	# Dispatch all cleanup passes in one list; barriers preserve the exact
+	# pass-by-pass ping-pong visibility of the former implementation.
+	var compute_list := rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["region_cleanup"])
-	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
-	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_bind_uniform_set(compute_list, convergence_set, 1)
+	for cleanup_pass in range(cleanup_passes):
+		var use_swap := ((growth_passes + cleanup_pass) % 2 == 1)
+		rd.compute_list_bind_uniform_set(
+			compute_list, texture_sets[1 if use_swap else 0], 0
+		)
+		rd.compute_list_set_push_constant(compute_list, buffer_bytes, buffer_bytes.size())
+		rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+		if cleanup_pass + 1 < cleanup_passes:
+			rd.compute_list_add_barrier(compute_list)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
 
 ## Dispatch le shader de finalisation des régions (coloration)
-func _dispatch_region_finalize(w: int, h: int, groups_x: int, groups_y: int, seed_val: int) -> void:
+func _dispatch_region_finalize(w: int, h: int, groups_x: int,
+		groups_y: int, seed_val: int, sea_level: float) -> void:
 	if not gpu.shaders.has("region_finalize") or not gpu.shaders["region_finalize"].is_valid():
 		push_warning("[Orchestrator] ⚠️ region_finalize shader non disponible")
 		return
@@ -3434,7 +3677,7 @@ func _dispatch_region_finalize(w: int, h: int, groups_x: int, groups_y: int, see
 	buffer_bytes.encode_u32(12, 22)   # water_color_r
 	buffer_bytes.encode_u32(16, 26)   # water_color_g
 	buffer_bytes.encode_u32(20, 31)   # water_color_b
-	buffer_bytes.encode_float(24, 0.0)  # padding
+	buffer_bytes.encode_float(24, sea_level)
 	buffer_bytes.encode_float(28, 0.0)  # padding
 	
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
@@ -3451,12 +3694,11 @@ func _dispatch_region_finalize(w: int, h: int, groups_x: int, groups_y: int, see
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 # ============================================================================
 # ÉTAPE 4.5 : RÉGIONS OCÉANIQUES
@@ -3474,46 +3716,256 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	
 	var seed_val = int(params.get("seed", 12345))
 	var sea_level = float(params.get("sea_level", 0.0))
-	var nb_cases_ocean_region = int(params.get("nb_cases_ocean_regions", 100))
 	
 	# Paramètres de coûts pour océans
 	var cost_flat = float(params.get("ocean_cost_flat", 1.0))
 	var cost_deeper = float(params.get("ocean_cost_deeper", 2.0))
-	var noise_strength = float(params.get("ocean_noise_strength", 0.5))  # Réduit pour ne pas dominer les coûts
+	var noise_strength = clampf(float(params.get("ocean_noise_strength", 0.5)), 0.0, 2.0)
 	
-	var ocean_iterations = int(params.get("ocean_iterations", max(w, h) * 2))
+	# Même contrat que les départements terrestres : nb_cases_ocean_regions est
+	# la TAILLE MOYENNE CIBLE d'un département maritime en pixels, et non un
+	# nombre global de régions transformé ensuite selon la surface de la planète.
+	var water_mask_data := gpu.readback_texture_raw("water_mask")
+	var water_mask_result: Dictionary = DepartmentNormalizer.build_surface_mask(
+		water_mask_data, w, h, true
+	)
+	var water_department_mask: PackedByteArray = PackedByteArray(water_mask_result["mask"])
+	var actual_water_cells := int(water_mask_result["active_cells"])
+	if actual_water_cells <= 0:
+		print("  • Aucune cellule d'eau : phase maritime ignorée")
+		return
+
+	var physical_targets := HierarchyBuilder.compute_physical_targets(
+		params, true, actual_water_cells
+	)
+	var target_department_cells := clampf(
+		float(params.get("ocean_department_target_cells",
+			params.get("nb_cases_ocean_regions", 100.0))),
+		1.0, float(maxi(actual_water_cells, 1))
+	)
+	var target_departments := clampi(int(round(
+		float(actual_water_cells) / target_department_cells
+	)), 1, maxi(actual_water_cells, 1))
+	var target_ocean_regions := clampi(
+		int(physical_targets["regions"]), 1, target_departments
+	)
+	var desired_seed_density := clampf(
+		float(target_departments) / float(maxi(actual_water_cells, 1)),
+		0.000001, 0.105
+	)
+	# Même conversion locale que pour la terre, afin d'éviter une densité de
+	# seeds dépendante de la surface totale de la planète.
+	var seed_probability := 1.0 - pow(
+		maxf(1.0 - 9.0 * desired_seed_density, 0.000001), 1.0 / 9.0
+	)
+	var mean_department_spacing_px := sqrt(target_department_cells)
+	var minimum_department_ratio := clampf(
+		float(params.get("ocean_department_min_ratio", 0.45)), 0.10, 0.90
+	)
+	var maximum_department_ratio := maxf(
+		float(params.get("ocean_department_max_ratio", 1.85)),
+		minimum_department_ratio + 0.10
+	)
+	var max_dim = max(w, h)
+	var requested_iterations = int(params.get("ocean_iterations", max_dim * 2))
+	var ocean_iterations = clampi(requested_iterations, max_dim, max_dim * 2)
 	
-	print("  Seed: ", seed_val, " | Cases/Région: ", nb_cases_ocean_region)
-	print("  Coûts - Plat: ", cost_flat, " | Profondeur: ", cost_deeper)
-	print("  Bruit frontières: ", noise_strength)
-	print("  Itérations de croissance: ", ocean_iterations)
+	print("  Seed: ", seed_val, " | Cellules d'eau mesurées: ", actual_water_cells)
+	print("  Surface maritime: ", snappedf(float(physical_targets["surface_km2"]), 1.0),
+		" km² | taille département cible: ", snappedf(target_department_cells, 0.1),
+		" cases | départements cibles: ", target_departments,
+		" | régions maritimes cibles: ", target_ocean_regions)
+	print("  Densité cible: ", snappedf(desired_seed_density, 0.0001),
+		" | espacement moyen: ", snappedf(mean_department_spacing_px, 0.1), " px")
+	print("  Plage de taille admise: ",
+		snappedf(minimum_department_ratio * 100.0, 0.1), "–",
+		snappedf(maximum_department_ratio * 100.0, 0.1), " % de la cible")
+	print("  Coûts - Plat: ", cost_flat, " | Profondeur: ", cost_deeper,
+		" | Bruit frontières: ", noise_strength)
 	
 	# Initialiser les textures océaniques
 	gpu.initialize_ocean_region_textures()
 	
 	# === PASSE 1 : PLACEMENT DES SEEDS ===
-	print("  • Placement des seeds de régions océaniques...")
-	_dispatch_ocean_region_seed_placement(w, h, groups_x, groups_y, seed_val, nb_cases_ocean_region, sea_level)
+	print("  • Placement des seeds de départements maritimes...")
+	_dispatch_ocean_region_seed_placement(w, h, groups_x, groups_y, seed_val,
+		target_departments, sea_level, seed_probability)
+	print("  • Pré-calcul des coûts statiques maritimes...")
+	_dispatch_ocean_region_edge_cost(
+		w, h, groups_x, groups_y, seed_val, sea_level, cost_flat, cost_deeper,
+		noise_strength, mean_department_spacing_px
+	)
 	
 	# === PASSE 2 : CROISSANCE ITÉRATIVE ===
-	print("  • Croissance des régions océaniques (", ocean_iterations, " passes)...")
-	for pass_idx in range(ocean_iterations):
-		var use_swap = (pass_idx % 2 == 1)
-		_dispatch_ocean_region_growth(w, h, groups_x, groups_y, pass_idx, seed_val, sea_level, cost_flat, cost_deeper, noise_strength, use_swap)
+	var growth_batch_size := clampi(
+		int(params.get("administrative_growth_batch_size", ADMIN_GROWTH_BATCH_SIZE)),
+		2, 64
+	)
+	if growth_batch_size % 2 == 1:
+		growth_batch_size += 1
+	print("  • Croissance des départements maritimes (max ", ocean_iterations,
+		" passes, batch=", growth_batch_size, ")...")
+	var ocean_growth_sets: Array[RID] = [
+		_create_ocean_region_growth_texture_set(false),
+		_create_ocean_region_growth_texture_set(true),
+	]
+	var convergence := _create_growth_convergence_resources(
+		"ocean_region_growth", groups_x, groups_y
+	)
+	if convergence.is_empty():
+		for growth_uniform_set in ocean_growth_sets:
+			gpu.release_rid(growth_uniform_set)
+		return
+	var convergence_set: RID = convergence["set"]
+	var convergence_buffer: RID = convergence["buffer"]
+	var growth_executed := 0
+	var growth_converged := false
+	var growth_unassigned := actual_water_cells
+	while growth_executed < ocean_iterations:
+		var batch_end := mini(growth_executed + growth_batch_size, ocean_iterations)
+		_dispatch_ocean_region_growth_batch(
+			w, h, groups_x, groups_y, growth_executed, batch_end,
+			seed_val, sea_level, cost_flat, cost_deeper, noise_strength,
+			mean_department_spacing_px, ocean_growth_sets, convergence_set
+		)
+		growth_executed = batch_end
+		var growth_status := _read_growth_batch_status(
+			convergence_buffer, int(convergence["group_count"]),
+			"ocean_region_growth_convergence"
+		)
+		growth_unassigned = int(growth_status["unassigned"])
+		if not bool(growth_status["changed"]):
+			growth_converged = true
+			break
+	for growth_uniform_set in ocean_growth_sets:
+		gpu.release_rid(growth_uniform_set)
+	_release_growth_convergence_resources(convergence)
+	print("    Croissance: ", growth_executed, "/", ocean_iterations,
+		" passes exécutées | convergence=", growth_converged,
+		" | non assignées=", growth_unassigned)
 	
-	if ocean_iterations % 2 == 1:
+	if growth_executed % 2 == 1:
 		_copy_ocean_region_textures(w, h)
 	
 	# === PASSE 2.5 : NETTOYAGE FINAL ===
-	print("  • Nettoyage final (couverture complète)...")
-	# Chaque passe cherche jusqu'à 16 pixels de rayon, donc max(w,h)/16 passes suffisent
-	var cleanup_passes = max(w, h) / 16 + 1
-	for cleanup_pass in range(cleanup_passes):
-		var use_swap = ((ocean_iterations + cleanup_pass) % 2 == 1)
-		_dispatch_ocean_region_cleanup(w, h, groups_x, groups_y, seed_val, use_swap)
-	
-	if (ocean_iterations + cleanup_passes) % 2 == 1:
+	var cleanup_passes := 0 if (
+		growth_converged and growth_unassigned == 0
+	) else maxi(4, ceili(mean_department_spacing_px))
+	var cleanup_unassigned := growth_unassigned
+	if cleanup_passes > 0:
+		print("  • Nettoyage final (couverture complète, ", cleanup_passes, " passes)...")
+		var ocean_cleanup_sets: Array[RID] = [
+			_create_ocean_region_cleanup_texture_set(false),
+			_create_ocean_region_cleanup_texture_set(true),
+		]
+		var cleanup_convergence := _create_growth_convergence_resources(
+			"ocean_region_cleanup", groups_x, groups_y
+		)
+		var cleanup_convergence_set: RID = cleanup_convergence.get("set", RID())
+		_dispatch_ocean_region_cleanup_batch(
+			w, h, groups_x, groups_y, seed_val,
+			growth_executed, cleanup_passes, ocean_cleanup_sets,
+			cleanup_convergence_set
+		)
+		if not cleanup_convergence.is_empty():
+			var cleanup_status := _read_growth_batch_status(
+				cleanup_convergence["buffer"], int(cleanup_convergence["group_count"]),
+				"ocean_region_cleanup_convergence"
+			)
+			cleanup_unassigned = int(cleanup_status["unassigned"])
+		_release_growth_convergence_resources(cleanup_convergence)
+		for cleanup_uniform_set in ocean_cleanup_sets:
+			gpu.release_rid(cleanup_uniform_set)
+		print("    Couverture après nettoyage : non assignées=", cleanup_unassigned)
+	else:
+		print("  • Nettoyage final ignoré : croissance déjà convergée")
+
+	if cleanup_passes > 0 and (growth_executed + cleanup_passes) % 2 == 1:
 		_copy_ocean_region_textures(w, h)
+
+	# Appliquer le même contrôle de taille qu'aux départements terrestres.
+	# Important : on ne supprime plus les petites composantes isolées. Toutes les
+	# cellules d'eau doivent conserver une administration maritime.
+	var ocean_readback_start_usec := Time.get_ticks_usec()
+	var ocean_region_data := gpu.readback_texture_raw("ocean_region_map")
+	var ocean_readback_ms := float(Time.get_ticks_usec() - ocean_readback_start_usec) / 1000.0
+	var normalization_start_usec := Time.get_ticks_usec()
+	var normalization := DepartmentNormalizer.normalize(
+		ocean_region_data, water_department_mask, w, h, target_department_cells,
+		minimum_department_ratio, maximum_department_ratio, false, true,
+		cleanup_unassigned == 0
+	)
+	var normalization_ms := float(Time.get_ticks_usec() - normalization_start_usec) / 1000.0
+	var normalized_data: PackedByteArray = ocean_region_data
+	if not normalization.is_empty():
+		normalized_data = PackedByteArray(normalization["data"])
+
+	# IMPORTANT : ne jamais regrouper à distance plusieurs composantes d'eau
+	# isolées sous un même ID. Le précédent correctif de couverture faisait cela
+	# pour atteindre artificiellement la taille cible, ce qui produisait une même
+	# couleur sur des dizaines de petits points sans continuité géographique.
+	#
+	# Une composante aquatique physiquement plus petite que la taille minimale ne
+	# peut pas être agrandie sans traverser la terre. Elle reste donc un département
+	# maritime autonome : couverture complète + un ID/une couleur par composante.
+	# Sa petite taille est une exception topologique mesurée, pas une fusion fictive.
+	rd.texture_update(gpu.textures["ocean_region_map"], 0, normalized_data)
+
+	var missing_water := int(normalization.get("unassigned_active_cells", 0))
+	print(
+		"  • Normalisation maritime : ", int(normalization.get("merged_components", 0)),
+		" fusion(s) connexes, ", int(normalization.get("split_fragments", 0)),
+		" ID(s) disjoint(s) séparé(s), exceptions isolées sous le minimum=",
+		int(normalization.get("isolated_undersized", 0)),
+		", couverture manquante=", missing_water
+	)
+	print(
+		"    [Administration CPU] fill=", snappedf(float(normalization.get("timing_fill_ms", 0.0)), 0.01), " ms",
+		" | components=", snappedf(float(normalization.get("timing_components_ms", 0.0)), 0.01), " ms",
+		" | adjacency=", snappedf(float(normalization.get("timing_adjacency_ms", 0.0)), 0.01), " ms",
+		" | merge=", snappedf(float(normalization.get("timing_merge_ms", 0.0)), 0.01), " ms",
+		" | finalize=", snappedf(float(normalization.get("timing_finalize_ms", 0.0)), 0.01), " ms"
+	)
+
+	# Vérification quantitative : toute l'eau doit être couverte et un même ID
+	# ne doit jamais représenter plusieurs composantes disjointes. Les seules zones
+	# autorisées sous le minimum sont les composantes aquatiques isolées qui sont
+	# elles-mêmes physiquement plus petites que ce minimum.
+	# Region IDs are already available in normalized_data; avoid another
+	# ocean_region_map download solely for statistics. Final coloration remains
+	# queued exactly as before and is synchronized by the next real dependency.
+	var department_stats: Dictionary = _measure_normalized_partition_stats(
+		normalization, normalized_data, target_department_cells
+	)
+	department_stats["region_readback_ms"] = ocean_readback_ms
+	department_stats["normalization_ms"] = normalization_ms
+	department_stats["growth_requested_passes"] = ocean_iterations
+	department_stats["growth_executed_passes"] = growth_executed
+	department_stats["growth_converged"] = growth_converged
+	department_stats["growth_unassigned_cells"] = growth_unassigned
+	department_stats["growth_batch_size"] = growth_batch_size
+	department_stats["cleanup_executed_passes"] = cleanup_passes
+	department_stats["cleanup_unassigned_cells"] = cleanup_unassigned
+	print(
+		"    [Administration timing] readback=", snappedf(ocean_readback_ms, 0.01),
+		" ms | normalization=", snappedf(normalization_ms, 0.01), " ms"
+	)
+	for key in normalization.keys():
+		if key != "data" and key != "partition_sizes":
+			department_stats["normalization_" + str(key)] = normalization[key]
+	department_stats["unassigned_water_cells"] = missing_water
+	last_administrative_stats["ocean_departments"] = department_stats
+	_print_partition_stats("Départements maritimes", department_stats)
+	if department_stats.has("count") and int(department_stats.get("count", 0)) > 0:
+		var min_allowed := int(normalization.get("minimum_cells", 1))
+		if missing_water > 0:
+			push_error("[Orchestrator] Couverture maritime incomplète après normalisation: "
+				+ str(missing_water) + " pixel(s) d'eau sans département")
+		if int(department_stats.get("minimum", 0)) < min_allowed and int(
+			normalization.get("isolated_undersized", 0)
+		) == 0:
+			push_warning("[Orchestrator] Département maritime sous la taille minimale sans exception topologique: "
+				+ str(department_stats.get("minimum", 0)) + " < " + str(min_allowed))
 	
 	# === PASSE 3 : FINALISATION ET COLORATION ===
 	print("  • Finalisation et coloration...")
@@ -3522,7 +3974,9 @@ func run_ocean_region_phase(params: Dictionary, w: int, h: int) -> void:
 	print("[Orchestrator] ✅ Phase 4.5 : Régions océaniques terminées")
 
 ## Dispatch le shader de placement des seeds de région océanique
-func _dispatch_ocean_region_seed_placement(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, nb_cases_region: int, sea_level: float) -> void:
+func _dispatch_ocean_region_seed_placement(w: int, h: int, groups_x: int,
+		groups_y: int, seed_val: int, nb_cases_region: int, sea_level: float,
+		seed_probability: float) -> void:
 	if not gpu.shaders.has("ocean_region_seed_placement") or not gpu.shaders["ocean_region_seed_placement"].is_valid():
 		push_warning("[Orchestrator] ⚠️ ocean_region_seed_placement shader non disponible")
 		return
@@ -3545,10 +3999,6 @@ func _dispatch_ocean_region_seed_placement(w: int, h: int, groups_x: int, groups
 	tex_uniforms.append(gpu.create_texture_uniform(3, gpu.textures["ocean_region_cost"]))
 	
 	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["ocean_region_seed_placement"], 0)
-	
-	var area_total = w * h
-	# Diviser par 10 pour des régions 10x plus grandes
-	var seed_probability = (float(nb_cases_region) / float(area_total)) / 10.0
 	
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(32)
@@ -3575,32 +4025,59 @@ func _dispatch_ocean_region_seed_placement(w: int, h: int, groups_x: int, groups
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
+
+func _dispatch_ocean_region_edge_cost(w: int, h: int, groups_x: int,
+		groups_y: int, seed_val: int, sea_level: float, cost_flat: float,
+		cost_deeper: float, noise_strength: float, mean_spacing_px: float) -> void:
+	if not gpu.shaders.has("ocean_region_edge_cost") or not gpu.shaders["ocean_region_edge_cost"].is_valid():
+		push_warning("[Orchestrator] ⚠️ ocean_region_edge_cost shader non disponible")
+		return
+	var tex_uniforms: Array[RDUniform] = []
+	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
+	var mask_uniform := RDUniform.new()
+	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	mask_uniform.binding = 1
+	mask_uniform.add_id(gpu.textures["water_mask"])
+	tex_uniforms.append(mask_uniform)
+	tex_uniforms.append(gpu.create_texture_uniform(2, gpu.textures["administrative_edge_cost"]))
+	var tex_set := rd.uniform_set_create(tex_uniforms, gpu.shaders["ocean_region_edge_cost"], 0)
+
+	var push := PackedByteArray()
+	push.resize(48)
+	push.encode_u32(0, w)
+	push.encode_u32(4, h)
+	push.encode_u32(8, seed_val)
+	push.encode_float(12, sea_level)
+	push.encode_float(16, cost_flat)
+	push.encode_float(20, cost_deeper)
+	push.encode_float(24, noise_strength)
+	push.encode_float(28, mean_spacing_px)
+
+	var compute_list := rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["ocean_region_edge_cost"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_set_push_constant(compute_list, push, push.size())
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+	gpu.submit_gpu_work()
+	gpu.release_rid(tex_set)
 
 ## Dispatch le shader de croissance des régions océaniques
-func _dispatch_ocean_region_growth(w: int, h: int, groups_x: int, groups_y: int, pass_idx: int, seed_val: int, sea_level: float, cost_flat: float, cost_deeper: float, noise_strength: float, use_swap: bool) -> void:
+func _create_ocean_region_growth_texture_set(use_swap: bool) -> RID:
 	if not gpu.shaders.has("ocean_region_growth") or not gpu.shaders["ocean_region_growth"].is_valid():
-		push_warning("[Orchestrator] ⚠️ ocean_region_growth shader non disponible")
-		return
-	
+		return RID()
 	var src_map: RID = gpu.textures["ocean_region_map"] if not use_swap else gpu.textures["ocean_region_map_temp"]
 	var src_cost: RID = gpu.textures["ocean_region_cost"] if not use_swap else gpu.textures["ocean_region_cost_temp"]
 	var dst_map: RID = gpu.textures["ocean_region_map_temp"] if not use_swap else gpu.textures["ocean_region_map"]
 	var dst_cost: RID = gpu.textures["ocean_region_cost_temp"] if not use_swap else gpu.textures["ocean_region_cost"]
 	
 	var tex_uniforms: Array[RDUniform] = []
-	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["geo"]))
-	
-	var mask_uniform = RDUniform.new()
-	mask_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	mask_uniform.binding = 1
-	mask_uniform.add_id(gpu.textures["water_mask"])
-	tex_uniforms.append(mask_uniform)
+	tex_uniforms.append(gpu.create_texture_uniform(0, gpu.textures["administrative_edge_cost"]))
 	
 	var map_in_uniform = RDUniform.new()
 	map_in_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
@@ -3618,54 +4095,58 @@ func _dispatch_ocean_region_growth(w: int, h: int, groups_x: int, groups_y: int,
 	
 	tex_uniforms.append(gpu.create_texture_uniform(5, dst_cost))
 	
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["ocean_region_growth"], 0)
-	
-	var buffer_bytes = PackedByteArray()
+	return rd.uniform_set_create(tex_uniforms, gpu.shaders["ocean_region_growth"], 0)
+
+func _dispatch_ocean_region_growth_batch(w: int, h: int, groups_x: int,
+		groups_y: int, pass_begin: int, pass_end: int, seed_val: int,
+		sea_level: float, cost_flat: float, cost_deeper: float,
+		noise_strength: float, mean_spacing_px: float,
+		texture_sets: Array[RID], convergence_set: RID) -> void:
+	if not gpu.shaders.has("ocean_region_growth") or not gpu.shaders["ocean_region_growth"].is_valid():
+		push_warning("[Orchestrator] ⚠️ ocean_region_growth shader non disponible")
+		return
+
+	if texture_sets.size() < 2 or not convergence_set.is_valid():
+		return
+
+	# Push constants are reused across the whole batch; only pass_index changes.
+	var buffer_bytes := PackedByteArray()
 	buffer_bytes.resize(48)
 	buffer_bytes.encode_u32(0, w)
 	buffer_bytes.encode_u32(4, h)
-	buffer_bytes.encode_u32(8, pass_idx)
 	buffer_bytes.encode_u32(12, seed_val)
 	buffer_bytes.encode_float(16, sea_level)
 	buffer_bytes.encode_float(20, cost_flat)
 	buffer_bytes.encode_float(24, cost_deeper)
 	buffer_bytes.encode_float(28, noise_strength)
-	buffer_bytes.encode_float(32, 0.0)
+	buffer_bytes.encode_float(32, mean_spacing_px)
 	buffer_bytes.encode_float(36, 0.0)
 	buffer_bytes.encode_float(40, 0.0)
 	buffer_bytes.encode_float(44, 0.0)
 	
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["ocean_region_growth"], 1)
-	
-	var compute_list = rd.compute_list_begin()
+	var compute_list := rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["ocean_region_growth"])
-	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
-	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_bind_uniform_set(compute_list, convergence_set, 1)
+	for pass_idx in range(pass_begin, pass_end):
+		buffer_bytes.encode_u32(8, pass_idx)
+		rd.compute_list_bind_uniform_set(compute_list, texture_sets[pass_idx % 2], 0)
+		rd.compute_list_set_push_constant(compute_list, buffer_bytes, buffer_bytes.size())
+		rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+		if pass_idx + 1 < pass_end:
+			rd.compute_list_add_barrier(compute_list)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
-	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.submit_gpu_work()
 
 ## Copie les textures océaniques du buffer temp vers le buffer principal
 func _copy_ocean_region_textures(w: int, h: int) -> void:
+	_copy_texture(gpu.textures["ocean_region_map_temp"], gpu.textures["ocean_region_map"], w, h)
 	_copy_texture(gpu.textures["ocean_region_cost_temp"], gpu.textures["ocean_region_cost"], w, h)
 
 ## Dispatch le shader de nettoyage des régions océaniques
-func _dispatch_ocean_region_cleanup(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, use_swap: bool) -> void:
+func _create_ocean_region_cleanup_texture_set(use_swap: bool) -> RID:
 	if not gpu.shaders.has("ocean_region_cleanup") or not gpu.shaders["ocean_region_cleanup"].is_valid():
-		push_warning("[Orchestrator] ⚠️ ocean_region_cleanup shader non disponible")
-		return
-	
+		return RID()
 	var src_map: RID = gpu.textures["ocean_region_map"] if not use_swap else gpu.textures["ocean_region_map_temp"]
 	var dst_map: RID = gpu.textures["ocean_region_map_temp"] if not use_swap else gpu.textures["ocean_region_map"]
 	var dst_cost: RID = gpu.textures["ocean_region_cost_temp"] if not use_swap else gpu.textures["ocean_region_cost"]
@@ -3692,8 +4173,19 @@ func _dispatch_ocean_region_cleanup(w: int, h: int, groups_x: int, groups_y: int
 	
 	tex_uniforms.append(gpu.create_texture_uniform(3, dst_cost))
 	
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["ocean_region_cleanup"], 0)
-	
+	return rd.uniform_set_create(tex_uniforms, gpu.shaders["ocean_region_cleanup"], 0)
+
+func _dispatch_ocean_region_cleanup_batch(w: int, h: int, groups_x: int,
+		groups_y: int, seed_val: int, growth_passes: int,
+		cleanup_passes: int, texture_sets: Array[RID], convergence_set: RID) -> void:
+	if not gpu.shaders.has("ocean_region_cleanup") or not gpu.shaders["ocean_region_cleanup"].is_valid():
+		push_warning("[Orchestrator] ⚠️ ocean_region_cleanup shader non disponible")
+		return
+
+	if texture_sets.size() < 2 or cleanup_passes <= 0 or not convergence_set.is_valid():
+		return
+
+	# Push constants (16 bytes): avoid per-pass parameter RIDs.
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(16)
 	buffer_bytes.encode_u32(0, w)
@@ -3701,26 +4193,22 @@ func _dispatch_ocean_region_cleanup(w: int, h: int, groups_x: int, groups_y: int
 	buffer_bytes.encode_u32(8, seed_val)
 	buffer_bytes.encode_u32(12, 0)
 	
-	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	var param_uniform = RDUniform.new()
-	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
-	param_uniform.binding = 0
-	param_uniform.add_id(param_buffer)
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["ocean_region_cleanup"], 1)
-	
-	var compute_list = rd.compute_list_begin()
+	var compute_list := rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["ocean_region_cleanup"])
-	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
-	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
-	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_bind_uniform_set(compute_list, convergence_set, 1)
+	for cleanup_pass in range(cleanup_passes):
+		var use_swap := ((growth_passes + cleanup_pass) % 2 == 1)
+		rd.compute_list_bind_uniform_set(
+			compute_list, texture_sets[1 if use_swap else 0], 0
+		)
+		rd.compute_list_set_push_constant(compute_list, buffer_bytes, buffer_bytes.size())
+		rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+		if cleanup_pass + 1 < cleanup_passes:
+			rd.compute_list_add_barrier(compute_list)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
 
 ## Dispatch le shader de finalisation des régions océaniques (coloration)
 func _dispatch_ocean_region_finalize(w: int, h: int, groups_x: int, groups_y: int, seed_val: int) -> void:
@@ -3771,12 +4259,11 @@ func _dispatch_ocean_region_finalize(w: int, h: int, groups_x: int, groups_y: in
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
-	rd.free_rid(tex_set)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
 
 # ============================================================================
 # ÉTAPE 5 : RESSOURCES & PÉTROLE
@@ -3867,7 +4354,7 @@ func _dispatch_petrole(w: int, h: int, groups_x: int, groups_y: int, seed_val: i
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["petrole"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create petrole param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -3877,11 +4364,10 @@ func _dispatch_petrole(w: int, h: int, groups_x: int, groups_y: int, seed_val: i
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 ## Dispatch le shader de ressources minérales
 func _dispatch_resources(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, sea_level: float, cylinder_radius: float, atmosphere_type: int, global_richness: float) -> void:
@@ -3927,7 +4413,7 @@ func _dispatch_resources(w: int, h: int, groups_x: int, groups_y: int, seed_val:
 	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["resources"], 1)
 	if not param_set.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create resources param set")
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var compute_list = rd.compute_list_begin()
@@ -3937,125 +4423,304 @@ func _dispatch_resources(w: int, h: int, groups_x: int, groups_y: int, seed_val:
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
 	
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
-	rd.free_rid(param_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
 
 # ============================================================================
 # ÉTAPE 6 BIS : FINAL MAP GAZEUSE (TYPE 6)
 # ============================================================================
 
-## Génère la carte finale pour une planète gazeuse.
-##
-## Utilise le shader gas_giant_final qui lit climate_texture (R=temp, G=humidity)
-## et produit une apparence de géante gazeuse avec bandes horizontales et tourbillons.
-##
-## @param params: Dictionnaire contenant les paramètres de génération
-## @param w: Largeur de la texture
-## @param h: Hauteur de la texture
-func run_gas_giant_final_phase(params: Dictionary, w: int, h: int) -> void:
-	print("[Orchestrator] 🪐 Phase 6 : Génération Final Map (Gazeuse)")
-	
-	if not rd or not gpu.pipelines.has("gas_giant_final") or not gpu.pipelines["gas_giant_final"].is_valid():
-		push_warning("[Orchestrator] ⚠️ gas_giant_final pipeline not ready, skipping")
+## Exécute le pipeline complet de génération d'une planète gazeuse :
+## 1. Calcul du champ de vélocité (jets zonaux + tourbillons curl-noise)
+## 2. Initialisation du colorant (bandes de couleur)
+## 3. Advection semi-lagrangienne du colorant sur N itérations (ping-pong)
+## 4. Composition finale (climat + tempêtes + assombrissement polaire)
+func run_gas_giant_phase(params: Dictionary, w: int, h: int) -> void:
+	print("[Orchestrator] 🪐 Pipeline gazeuse multi-passes (advection fluide)")
+
+	if not rd:
+		push_warning("[Orchestrator] ⚠️ RD non disponible, pipeline gazeuse ignoré")
 		return
-	
-	# Initialiser la texture final_map (RGBA8)
+
+	gpu.initialize_gas_giant_textures()
 	gpu.initialize_final_map_textures()
-	
-	var groups_x = int(ceil(float(w) / 16.0))
-	var groups_y = int(ceil(float(h) / 16.0))
-	
+
+	var groups_x = ceili(float(w) / 16.0)
+	var groups_y = ceili(float(h) / 16.0)
+
 	var seed_val = int(params.get("seed", 12345))
-	var avg_temperature = float(params.get("avg_temperature", 15.0))
 	var cylinder_radius = float(w) / (2.0 * PI)
-	
-	# === UBO (32 bytes, std140) ===
+	var avg_temperature = float(params.get("avg_temperature", 15.0))
+	var num_bands = clampi(int(params.get("gas_giant_num_bands", 12)), 6, 24)
+	var jet_strength = float(params.get("gas_giant_jet_strength", 4.0))
+	var eddy_strength = float(params.get("gas_giant_eddy_strength", 2.5))
+	var advection_dt = float(params.get("gas_giant_advection_dt", 1.4))
+
+	# --- Iteration count: scale with resolution -----------------------------
+	# Displacement per iteration is roughly constant in PIXELS (velocity/dt
+	# are resolution-independent by design), so the fraction of the
+	# circumference actually mixed per iteration shrinks as resolution
+	# grows. Compensate with more, smaller, accurate steps at higher
+	# resolution-scaled loop keeps gas giant detail stable across output sizes.
+	var base_iterations = int(params.get("gas_giant_advection_iterations", 40))
+	var reference_width = float(params.get("gas_giant_reference_width", 1024.0))
+	var resolution_scale = max(float(w) / reference_width, 1.0)
+	var advection_iterations = int(round(float(base_iterations) * resolution_scale))
+	advection_iterations = clampi(advection_iterations, base_iterations, base_iterations * 8)
+
+	# --- Sharpen: keep TOTAL compounded contrast fixed, not per-step -------
+	# La correction agit maintenant sur la saturation autour de la luminance,
+	# pas sur chaque canal autour de 0.5. Une correction totale faible conserve
+	# les filaments sans pousser les bandes claires vers le blanc pur ni les
+	# bandes sombres vers le noir.
+	var target_total_sharpen = clampf(float(params.get("gas_giant_target_sharpen", 1.18)), 1.0, 1.5)
+	var advection_sharpen = pow(target_total_sharpen, 1.0 / float(advection_iterations))
+
+	# === PASSE 1 : CHAMP DE VÉLOCITÉ (calculé une seule fois) ===
+	_dispatch_gas_giant_velocity_init(w, h, groups_x, groups_y, seed_val, cylinder_radius, num_bands, jet_strength, eddy_strength)
+
+	# === PASSE 2 : INITIALISATION DU COLORANT ===
+	_dispatch_gas_giant_dye_init(w, h, groups_x, groups_y, seed_val, cylinder_radius, avg_temperature, num_bands)
+
+	# === PASSE 3 : ADVECTION (ping-pong dye_a <-> dye_b) ===
+	print("  • Advection du colorant (", advection_iterations, " passes, sharpen/step=", advection_sharpen, ")...")
+	var advection_completed := _dispatch_gas_giant_advection(
+		w,
+		h,
+		groups_x,
+		groups_y,
+		advection_iterations,
+		advection_dt,
+		advection_sharpen,
+	)
+
+	# The final composition can consume either side of the ping-pong pair,
+	# avoiding another GPU submission just to copy an odd final pass.
+	var final_dye_texture: RID = gpu.textures["gas_dye_a"]
+	if advection_completed and advection_iterations % 2 == 1:
+		final_dye_texture = gpu.textures["gas_dye_b"]
+
+	# === PASSE 4 : COMPOSITION FINALE ===
+	_dispatch_gas_giant_final(w, h, groups_x, groups_y, seed_val, cylinder_radius, avg_temperature, final_dye_texture)
+
+	print("[Orchestrator] ✅ Pipeline gazeuse terminée")
+
+func _dispatch_gas_giant_velocity_init(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, cylinder_radius: float, num_bands: int, jet_strength: float, eddy_strength: float) -> void:
+	if not gpu.shaders.has("gas_giant_velocity_init") or not gpu.shaders["gas_giant_velocity_init"].is_valid():
+		push_warning("[Orchestrator] ⚠️ gas_giant_velocity_init shader non disponible")
+		return
+
+	var tex_uniforms: Array[RDUniform] = [
+		gpu.create_texture_uniform(0, gpu.textures["gas_velocity"]),
+	]
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["gas_giant_velocity_init"], 0)
+
 	var buffer_bytes = PackedByteArray()
 	buffer_bytes.resize(32)
-	
-	buffer_bytes.encode_u32(0, w)                      # width
-	buffer_bytes.encode_u32(4, h)                      # height
-	buffer_bytes.encode_u32(8, seed_val)               # seed
-	buffer_bytes.encode_float(12, cylinder_radius)     # cylinder_radius
-	buffer_bytes.encode_float(16, avg_temperature)     # avg_temperature
-	buffer_bytes.encode_float(20, 0.0)                 # padding1
-	buffer_bytes.encode_float(24, 0.0)                 # padding2
-	buffer_bytes.encode_float(28, 0.0)                 # padding3
-	
+	buffer_bytes.encode_u32(0, seed_val)
+	buffer_bytes.encode_u32(4, w)
+	buffer_bytes.encode_u32(8, h)
+	buffer_bytes.encode_float(12, cylinder_radius)
+	buffer_bytes.encode_u32(16, num_bands)
+	buffer_bytes.encode_float(20, jet_strength)
+	buffer_bytes.encode_float(24, eddy_strength)
+	buffer_bytes.encode_float(28, 0.0)
+
 	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
-	if not param_buffer.is_valid():
-		push_error("[Orchestrator] ❌ Failed to create gas_giant_final param buffer")
-		return
-	
-	# === SET 0 : Textures (climate_texture + final_map) ===
-	var tex_uniforms: Array[RDUniform] = []
-	
-	# Binding 0: climate_texture (RGBA32F, lecture)
-	var u_climate = RDUniform.new()
-	u_climate.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	u_climate.binding = 0
-	u_climate.add_id(gpu.textures["climate"])
-	tex_uniforms.append(u_climate)
-	
-	# Binding 1: final_map (RGBA8, écriture)
-	var u_final = RDUniform.new()
-	u_final.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	u_final.binding = 1
-	u_final.add_id(gpu.textures["final_map"])
-	tex_uniforms.append(u_final)
-	
-	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["gas_giant_final"], 0)
-	if not tex_set.is_valid():
-		push_error("[Orchestrator] ❌ Failed to create gas_giant_final textures uniform set")
-		rd.free_rid(param_buffer)
-		return
-	
-	# === SET 1 : Parameters UBO ===
 	var param_uniform = RDUniform.new()
 	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
 	param_uniform.binding = 0
 	param_uniform.add_id(param_buffer)
-	
-	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["gas_giant_final"], 1)
-	if not param_set.is_valid():
-		push_error("[Orchestrator] ❌ Failed to create gas_giant_final param set")
-		rd.free_rid(tex_set)
-		rd.free_rid(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["gas_giant_velocity_init"], 1)
+
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["gas_giant_velocity_init"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+
+	gpu.submit_gpu_work()
+
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
+
+
+func _dispatch_gas_giant_dye_init(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, cylinder_radius: float, avg_temperature: float, num_bands: int) -> void:
+	if not gpu.shaders.has("gas_giant_dye_init") or not gpu.shaders["gas_giant_dye_init"].is_valid():
+		push_warning("[Orchestrator] ⚠️ gas_giant_dye_init shader non disponible")
 		return
-	
-	# === Dispatch ===
+
+	var tex_uniforms: Array[RDUniform] = [
+		gpu.create_texture_uniform(0, gpu.textures["gas_dye_a"]),
+	]
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["gas_giant_dye_init"], 0)
+
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	buffer_bytes.encode_u32(0, seed_val)
+	buffer_bytes.encode_u32(4, w)
+	buffer_bytes.encode_u32(8, h)
+	buffer_bytes.encode_u32(12, num_bands)
+	buffer_bytes.encode_float(16, cylinder_radius)
+	buffer_bytes.encode_float(20, avg_temperature)
+	buffer_bytes.encode_float(24, 0.0)
+	buffer_bytes.encode_float(28, 0.0)
+
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["gas_giant_dye_init"], 1)
+
+	var compute_list = rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["gas_giant_dye_init"])
+	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
+	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
+	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+	rd.compute_list_end()
+
+	gpu.submit_gpu_work()
+
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
+
+
+func _dispatch_gas_giant_advection(w: int, h: int, groups_x: int, groups_y: int, iterations: int, dt: float, sharpen: float) -> bool:
+	if not gpu.shaders.has("gas_giant_advect") or not gpu.shaders["gas_giant_advect"].is_valid():
+		push_warning("[Orchestrator] ⚠️ gas_giant_advect shader non disponible")
+		return false
+	if iterations <= 0:
+		return true
+
+	# Parameters must remain distinct because all commands are submitted
+	# together. Texture bindings only have two ping-pong configurations.
+	# Keep every RID alive until the single GPU sync below.
+	var texture_sets: Array[RID] = []
+	var param_buffers: Array[RID] = []
+	var param_sets: Array[RID] = []
+
+	for swap_index in range(mini(iterations, 2)):
+		var use_swap := swap_index == 1
+		var input_tex: RID = gpu.textures["gas_dye_b"] if use_swap else gpu.textures["gas_dye_a"]
+		var output_tex: RID = gpu.textures["gas_dye_a"] if use_swap else gpu.textures["gas_dye_b"]
+
+		var tex_uniforms: Array[RDUniform] = [
+			gpu.create_texture_uniform(0, gpu.textures["gas_velocity"]),
+			gpu.create_texture_uniform(1, input_tex),
+			gpu.create_texture_uniform(2, output_tex),
+		]
+		var tex_set := rd.uniform_set_create(tex_uniforms, gpu.shaders["gas_giant_advect"], 0)
+		if not tex_set.is_valid():
+			push_error("[Orchestrator] ❌ Failed to create gas advection texture set")
+			_free_rid_array(param_sets)
+			_free_rid_array(param_buffers)
+			_free_rid_array(texture_sets)
+			return false
+		texture_sets.append(tex_set)
+
+	for pass_index in range(iterations):
+		var buffer_bytes := PackedByteArray()
+		buffer_bytes.resize(32)
+		buffer_bytes.encode_u32(0, w)
+		buffer_bytes.encode_u32(4, h)
+		buffer_bytes.encode_u32(8, pass_index)
+		buffer_bytes.encode_float(12, dt)
+		buffer_bytes.encode_float(16, sharpen)
+		buffer_bytes.encode_float(20, 0.0)
+		buffer_bytes.encode_float(24, 0.0)
+		buffer_bytes.encode_float(28, 0.0)
+
+		var param_buffer := rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+		if not param_buffer.is_valid():
+			push_error("[Orchestrator] ❌ Failed to create gas advection parameter buffer")
+			_free_rid_array(param_sets)
+			_free_rid_array(param_buffers)
+			_free_rid_array(texture_sets)
+			return false
+		param_buffers.append(param_buffer)
+
+		var param_uniform := RDUniform.new()
+		param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+		param_uniform.binding = 0
+		param_uniform.add_id(param_buffer)
+		var param_set := rd.uniform_set_create([param_uniform], gpu.shaders["gas_giant_advect"], 1)
+		if not param_set.is_valid():
+			push_error("[Orchestrator] ❌ Failed to create gas advection parameter set")
+			_free_rid_array(param_sets)
+			_free_rid_array(param_buffers)
+			_free_rid_array(texture_sets)
+			return false
+		param_sets.append(param_set)
+
+	var compute_list := rd.compute_list_begin()
+	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["gas_giant_advect"])
+	for pass_index in range(iterations):
+		rd.compute_list_bind_uniform_set(compute_list, texture_sets[pass_index % 2], 0)
+		rd.compute_list_bind_uniform_set(compute_list, param_sets[pass_index], 1)
+		rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
+		if pass_index + 1 < iterations:
+			rd.compute_list_add_barrier(compute_list)
+	rd.compute_list_end()
+
+	# One submit/sync replaces the previous CPU/GPU round-trip per iteration.
+	gpu.submit_gpu_work()
+
+	_free_rid_array(param_sets)
+	_free_rid_array(param_buffers)
+	_free_rid_array(texture_sets)
+	return true
+
+
+func _dispatch_gas_giant_final(w: int, h: int, groups_x: int, groups_y: int, seed_val: int, cylinder_radius: float, avg_temperature: float, dye_texture: RID) -> void:
+	if not gpu.shaders.has("gas_giant_final") or not gpu.shaders["gas_giant_final"].is_valid():
+		push_warning("[Orchestrator] ⚠️ gas_giant_final shader non disponible")
+		return
+
+	var tex_uniforms: Array[RDUniform] = [
+		gpu.create_texture_uniform(0, dye_texture),
+		gpu.create_texture_uniform(1, gpu.textures["gas_velocity"]),
+		gpu.create_texture_uniform(2, gpu.textures["climate"]),
+		gpu.create_texture_uniform(3, gpu.textures["final_map"]),
+	]
+	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["gas_giant_final"], 0)
+
+	var buffer_bytes = PackedByteArray()
+	buffer_bytes.resize(32)
+	buffer_bytes.encode_u32(0, w)
+	buffer_bytes.encode_u32(4, h)
+	buffer_bytes.encode_u32(8, seed_val)
+	buffer_bytes.encode_float(12, cylinder_radius)
+	buffer_bytes.encode_float(16, avg_temperature)
+	buffer_bytes.encode_float(20, 0.0)
+	buffer_bytes.encode_float(24, 0.0)
+	buffer_bytes.encode_float(28, 0.0)
+
+	var param_buffer = rd.uniform_buffer_create(buffer_bytes.size(), buffer_bytes)
+	var param_uniform = RDUniform.new()
+	param_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER
+	param_uniform.binding = 0
+	param_uniform.add_id(param_buffer)
+	var param_set = rd.uniform_set_create([param_uniform], gpu.shaders["gas_giant_final"], 1)
+
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["gas_giant_final"])
 	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
 	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
-	rd.submit()
-	rd.sync()
-	
-	# Nettoyer
-	rd.free_rid(param_set)
-	rd.free_rid(tex_set)
-	rd.free_rid(param_buffer)
-	
-	print("[Orchestrator] ✅ Carte finale gazeuse générée")
 
-# ============================================================================
-# ÉTAPE 6 : FINAL MAP (COMBINAISON)
-# ============================================================================
+	gpu.submit_gpu_work()
 
-## Génère la carte finale combinée et la carte colorée des eaux.
-##
-## Cette phase exécute :
-## 1. Water to Color : Coloration des masses d'eau (eau salée/douce)
-## 2. Final Map : Combinaison biome + rivières + relief + banquise
-##
-## @param params: Dictionnaire contenant les paramètres de génération
-## @param w: Largeur de la texture
-## @param h: Hauteur de la texture
+	gpu.release_rid(param_set)
+	gpu.release_rid(param_buffer)
+	gpu.release_rid(tex_set)
+
 func run_final_map_phase(params: Dictionary, w: int, h: int) -> void:
 	print("[Orchestrator] 🎨 Phase 6 : Génération Final Map")
 	
@@ -4071,41 +4736,16 @@ func run_final_map_phase(params: Dictionary, w: int, h: int) -> void:
 	print("[Orchestrator] ✅ Phase 6 terminée")
 
 ## Exécute le shader de coloration des eaux
-func _run_water_to_color_phase(params: Dictionary, w: int, h: int) -> void:
-	if not rd or not gpu.pipelines.has("water_to_color") or not gpu.pipelines["water_to_color"].is_valid():
-		push_warning("[Orchestrator] ⚠️ water_to_color pipeline not ready, skipping")
+func _run_water_to_color_phase(_params: Dictionary, _w: int, _h: int) -> void:
+	# HydrologySolver is now the only authoritative component classifier and
+	# _dispatch_hydrology_water_color() already materializes water_colored during
+	# run_water_phase(). The legacy JFA/counting recolor path was unreachable in
+	# successful generations and required a 8-byte-per-pixel water_component
+	# texture. Keep this hook for tests/final-map sequencing, but never reclassify.
+	if last_hydrology_stats.is_empty():
+		push_warning("[Orchestrator] ⚠️ No authoritative hydrology classification available")
 		return
-	
-	print("  [Orchestrator] 💧 Coloration des eaux...")
-	
-	var groups_x = int(ceil(float(w) / 16.0))
-	var groups_y = int(ceil(float(h) / 16.0))
-	
-	var sea_level = float(params.get("sea_level", 0.0))
-	var atmosphere_type = int(params.get("planet_type", 0))
-	var freshwater_max_size = int(params.get("freshwater_max_size", 999))
-	
-	# Créer le buffer de comptage pour les composantes d'eau
-	var buffer_size = w * h * 4  # uint par pixel
-	var counter_data = PackedByteArray()
-	counter_data.resize(buffer_size)
-	counter_data.fill(0)
-	
-	var counter_buffer = rd.storage_buffer_create(buffer_size, counter_data)
-	if not counter_buffer.is_valid():
-		push_error("[Orchestrator] ❌ Failed to create water counter buffer")
-		return
-	
-	# === PASSE 1 : COMPTAGE ===
-	_dispatch_water_to_color(w, h, groups_x, groups_y, 0, sea_level, atmosphere_type, freshwater_max_size, counter_buffer)
-	
-	# === PASSE 2 : COLORATION ===
-	_dispatch_water_to_color(w, h, groups_x, groups_y, 1, sea_level, atmosphere_type, freshwater_max_size, counter_buffer)
-	
-	# Nettoyer le buffer de comptage
-	rd.free_rid(counter_buffer)
-	
-	print("  [Orchestrator] ✅ Eaux colorées")
+	print("  [Orchestrator] 💧 Classification des eaux conservée (hydrologie exacte)")
 
 ## Exécute le shader de génération de la carte finale
 func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
@@ -4121,10 +4761,26 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 	var atmosphere_type = int(params.get("planet_type", 0))
 	var sea_level = float(params.get("sea_level", 0.0))
 	
-	# Valeurs hardcodées pour river_threshold et relief_strength
-	var river_threshold = 5.0
-	var relief_strength = 0.3
-	var water_relief_factor = 0.2  # Relief très atténué sur l'eau (20% de la force normale)
+	# Ne dessiner sur la carte finale que les rivières établies, pas chaque
+	# micro-affluent. Les seuils ont déjà été adaptés à la surface de la planète
+	# par la phase hydrologique.
+	var river_threshold = float(params.get(
+		"river_riviere_threshold",
+		params.get("river_affluent_threshold", 5.0)
+	))
+	var major_river_threshold = float(params.get(
+		"river_fleuve_threshold",
+		river_threshold
+	))
+	# À l'échelle d'une planète, la totalité du réseau « rivière » ressemble à
+	# un champ de petites vagues. Garder les rivières établies les plus fortes
+	# et les fleuves conserve l'ancien bleu-vert sans surcharger les continents.
+	river_threshold = lerpf(river_threshold, major_river_threshold, 0.35)
+	# La carte finale est un rendu physique, pas une carte topographique.
+	# Conserver seulement un modelé lumineux discret ; les isolignes vivent dans
+	# topology_map.png et topographie_map.png.
+	var relief_strength = 0.10
+	var water_relief_factor = 0.25
 	
 	# Calculer min/max élévation pour normalisation (approximatif)
 	var min_elevation = -10000.0
@@ -4204,12 +4860,20 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 	u_biome_id.add_id(gpu.textures["biome_id"])
 	tex_uniforms.append(u_biome_id)
 	
-	# Binding 7: river_biome_id (R32UI) - IDs des biomes rivière pour lookup SSBO rivière
+	# Binding 7: river_biome_id (R32UI) - présence/classification des rivières
 	var u_river_biome_id = RDUniform.new()
 	u_river_biome_id.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
 	u_river_biome_id.binding = 7
 	u_river_biome_id.add_id(gpu.textures["river_biome_id"])
 	tex_uniforms.append(u_river_biome_id)
+
+	# Binding 8: climate (RGBA32F) - température et humidité continues. La
+	# final map les utilise afin d'éviter les aplats séparés par biome.
+	var u_climate = RDUniform.new()
+	u_climate.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	u_climate.binding = 8
+	u_climate.add_id(gpu.textures["climate"])
+	tex_uniforms.append(u_climate)
 	
 	var tex_set = rd.uniform_set_create(tex_uniforms, gpu.shaders["final_map"], 0)
 	
@@ -4227,9 +4891,9 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 	
 	if not biomes_veg_ssbo.is_valid():
 		push_error("[Orchestrator] ❌ Failed to create vegetation biomes SSBO")
-		rd.free_rid(param_set)
-		rd.free_rid(tex_set)
-		rd.free_rid(param_buffer)
+		gpu.release_rid(param_set)
+		gpu.release_rid(tex_set)
+		gpu.release_rid(param_buffer)
 		return
 	
 	var ssbo_uniform = RDUniform.new()
@@ -4239,46 +4903,22 @@ func _run_final_map_shader(params: Dictionary, w: int, h: int) -> void:
 	
 	var ssbo_set = rd.uniform_set_create([ssbo_uniform], gpu.shaders["final_map"], 2)
 	
-	# Créer le SSBO des biomes rivière pour set 3
-	var river_biomes_data = Enum.build_river_biomes_gpu_buffer(atmosphere_type, true)  # is_vegetation = true
-	var river_biomes_ssbo = rd.storage_buffer_create(river_biomes_data.size(), river_biomes_data)
-	
-	if not river_biomes_ssbo.is_valid():
-		push_error("[Orchestrator] ❌ Failed to create river biomes SSBO for final_map")
-		rd.free_rid(ssbo_set)
-		rd.free_rid(biomes_veg_ssbo)
-		rd.free_rid(param_set)
-		rd.free_rid(tex_set)
-		rd.free_rid(param_buffer)
-		return
-	
-	var river_ssbo_uniform = RDUniform.new()
-	river_ssbo_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-	river_ssbo_uniform.binding = 0
-	river_ssbo_uniform.add_id(river_biomes_ssbo)
-	
-	var river_ssbo_set = rd.uniform_set_create([river_ssbo_uniform], gpu.shaders["final_map"], 3)
-	
 	# Dispatcher
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, gpu.pipelines["final_map"])
 	rd.compute_list_bind_uniform_set(compute_list, tex_set, 0)
 	rd.compute_list_bind_uniform_set(compute_list, param_set, 1)
 	rd.compute_list_bind_uniform_set(compute_list, ssbo_set, 2)
-	rd.compute_list_bind_uniform_set(compute_list, river_ssbo_set, 3)
 	rd.compute_list_dispatch(compute_list, groups_x, groups_y, 1)
 	rd.compute_list_end()
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 	
 	# Nettoyer
-	rd.free_rid(river_ssbo_set)
-	rd.free_rid(river_biomes_ssbo)
-	rd.free_rid(ssbo_set)
-	rd.free_rid(biomes_veg_ssbo)
-	rd.free_rid(param_set)
-	rd.free_rid(tex_set)
-	rd.free_rid(param_buffer)
+	gpu.release_rid(ssbo_set)
+	gpu.release_rid(biomes_veg_ssbo)
+	gpu.release_rid(param_set)
+	gpu.release_rid(tex_set)
+	gpu.release_rid(param_buffer)
 	
 	print("  [Orchestrator] ✅ Carte finale générée")
 
@@ -4293,10 +4933,7 @@ func export_geo_texture_to_image() -> Image:
 		push_error("[Orchestrator] ❌ Cannot export geo texture - invalid RID")
 		return null
 	
-	rd.submit()
-	rd.sync()
-	
-	var byte_data = rd.texture_get_data(gpu.textures["geo"], 0)
+	var byte_data = gpu.readback_texture_raw("geo")
 	return Image.create_from_data(resolution.x, resolution.y, false, Image.FORMAT_RGBAF, byte_data)
 
 ## Exporte toutes les cartes générées via PlanetExporter
@@ -4307,11 +4944,18 @@ func export_all_maps(output_dir: String) -> Dictionary:
 	print("[Orchestrator] 📤 Exporting all maps to: ", output_dir)
 	
 	var exporter = PlanetExporter.new()
-	return exporter.export_maps(gpu, output_dir, generation_params)
+	exporter.cancellation_probe = cancellation_probe
+	var exported := exporter.export_maps(gpu, output_dir, generation_params)
+	last_performance_report["export"] = exporter.last_metrics.duplicate(true)
+	last_performance_report["total_generation_and_export_ms"] = (
+		float(last_performance_report.get("gpu_simulation_wall_ms", 0.0))
+		+ float(exporter.last_metrics.get("total_export_ms", 0.0))
+	)
+	return exported
 
 ## Example d'exportation de carte
 func export_example_to_image() -> Image:
-	var byte_data = rd.texture_get_data(gpu.textures["example"], 0)
+	var byte_data = gpu.readback_texture_raw("example")
 	return Image.create_from_data(resolution.x, resolution.y, false, Image.FORMAT_RGBAF, byte_data)
 
 
@@ -4319,33 +4963,50 @@ func export_example_to_image() -> Image:
 # HELPERS METHODS
 # ============================================================================
 
+func _free_rid_array(rids: Array[RID]) -> void:
+	for rid in rids:
+		if rid.is_valid():
+			gpu.release_rid(rid)
+
 ## Libère toutes les ressources GPU allouées par l'orchestrateur.
 ##
 ## Détruit manuellement les RIDs des textures, pipelines, shaders et uniform sets
 ## via [method RenderingDevice.free_rid] pour éviter les fuites de VRAM.
-func cleanup():
+func cleanup() -> void:
 	"""Nettoyage manuel - appeler avant de détruire l'orchestrateur"""
-	
+	if _cleaned_up:
+		return
+	_cleaned_up = true
+
 	if not rd:
-		push_warning("[Orchestrator] RD is null, skipping cleanup")
+		gpu = null
 		return
 	
 	print("[Orchestrator] 🧹 Nettoyage des ressources persistantes...")
-	
-	gpu._exit_tree()
+
+	# S'assurer qu'aucune commande n'utilise encore les ressources que nous
+	# allons libérer. C'est indispensable avant de remplacer un device local.
+	gpu.sync_for_cpu("orchestrator_cleanup")
+
+	if _linear_sampler.is_valid():
+		gpu.release_rid(_linear_sampler)
+		_linear_sampler = RID()
+
+	if water_counter_buffer.is_valid():
+		gpu.release_rid(water_counter_buffer)
+		water_counter_buffer = RID()
+
+	# Les orchestrator-owned resources are gone; the context can now release
+	# descriptor sets, pipelines, shaders and remaining textures.
+	if gpu:
+		gpu.cleanup()
+
+	# Relâcher les références propres à cet orchestrateur. GPUContext conserve
+	# un device partagé pour éviter les create/destroy Vulkan successifs.
+	gpu = null
+	rd = null
 	
 	print("[Orchestrator] ✅ Ressources libérées")
-
-## Intercepte la suppression de l'objet pour forcer le nettoyage.
-##
-## Garantit que [method cleanup] est appelée même si le script est libéré brusquement.
-##
-## @param what: Type de notification Godot.
-func _notification(what: int) -> void:
-	"""Nettoyage automatique quand l'objet est détruit"""
-	if what == NOTIFICATION_PREDELETE:
-		# cleanup()  # Commented out to prevent null instance error
-		pass
 
 ## Copie une texture vers une autre (pour résoudre les problèmes de ping-pong)
 func _copy_texture(src: RID, dst: RID, width: int, height: int) -> void:
@@ -4355,8 +5016,7 @@ func _copy_texture(src: RID, dst: RID, width: int, height: int) -> void:
 		return
 	
 	rd.texture_copy(src, dst, Vector3(0, 0, 0), Vector3(0, 0, 0), Vector3(width, height, 1), 0, 0, 0, 0)
-	rd.submit()
-	rd.sync()
+	gpu.submit_gpu_work()
 
 # ============================================================================
 # PHYSICS HELPERS
@@ -4370,4 +5030,8 @@ func _copy_texture(src: RID, dst: RID, width: int, height: int) -> void:
 ## @return float: La gravité en m/s² (ou unités sim).
 func compute_gravity(radius: float, density: float) -> float:
 	const G = 6.67430e-11 # constante gravitationnelle en m^3·kg^-1·s^-2
-	return (4.0 / 3.0) * PI * G * density * radius
+	# Les paramètres de l'interface sont en kilomètres et g/cm³. Convertir en
+	# unités SI avant d'appliquer g = 4/3 * PI * G * rho * R.
+	var radius_m = max(radius, 0.0) * 1000.0
+	var density_kg_m3 = max(density, 0.0) * 1000.0
+	return (4.0 / 3.0) * PI * G * density_kg_m3 * radius_m

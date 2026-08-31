@@ -6,26 +6,112 @@ var maps: Array[String]
 var map_index: int = 0
 var langue: String = "fr"
 var _sfx_player: AudioStreamPlayer
+var _generation_epoch: int = 0
+var _is_exiting: bool = false
+var _loaded_project: Dictionary = {}
+var _generation_phase_label: Label
+var _generation_progress_bar: ProgressBar
+var _generation_memory_label: Label
+var _cancel_generation_button: Button
+var _generation_started_usec: int = 0
+var _generation_phase_key: String = "GEN_STATUS_READY"
+var _generation_phase_fallback: String = ""
+var _generation_memory_key: String = "GEN_STATUS_IDLE"
+var _generation_memory_args: Dictionary = {}
+var _viewer_panel: Control
+var _viewer_title_label: Label
+var _viewer_base_select: OptionButton
+var _viewer_overlay_select: OptionButton
+var _viewer_overlay_alpha: HSlider
+var _viewer_overlay_alpha_label: Label
+var _viewer_overlay_texture: TextureRect
+var _viewer_crosshair: PlanetMapCrosshair
+var _viewer_inspector_label: RichTextLabel
+var _viewer_zoom_label: Label
+var _viewer_reset_button: Button
+var _viewer_zoom: float = 1.0
+var _viewer_dragging: bool = false
+var _viewer_image_cache: Dictionary = {}
+var _viewer_scalar_decode_cache: Dictionary = {}
+var _viewer_inspected_uv := Vector2(-1.0, -1.0)
+var _viewer_shell_layer: CanvasLayer
+var _viewer_shell_root: Control
+var _viewer_map_viewport: PanelContainer
+var _viewer_map_frame: Control
+var _viewer_map_texture: TextureRect
+var _viewer_empty_label: Label
+var _viewer_help_label: Label
+var _viewer_shortcut_label: Label
+var _viewer_base_title_label: Label
+var _viewer_overlay_title_label: Label
+var _viewer_overlay_percent_label: Label
+var _viewer_status_dot: Label
+var _viewer_parameters_button: Button
+var _viewer_load_action: Button
+var _viewer_save_action: Button
+var _parameter_workspace
+var _viewer_workspace
+var _batch_runner: BatchGenerationRunner
 
 # --- Constants ---
-const BASE_PATH_SLIDERS = "ImageFrame/Control General/Control_Parameters/SC Parameters/Parameters_tree"
 const PRESETS_DIR = "user://presets/"
 const SFX_GENERATION_DONE = "res://data/sound/Foley UI E.wav"
+const PARAMETER_WORKSPACE_SCENE := preload("res://data/scn/parameter_workspace.tscn")
+const REFERENCE_VIEWER_WORKSPACE_SCENE := preload("res://data/scn/reference_viewer_workspace.tscn")
+const UI_POLISH := preload("res://src/classes/classes_io/ui_polish.gd")
 
-const CATEGORIES_PATHS = {
-	"GENERAL" : BASE_PATH_SLIDERS+"/General_Categorie/MarginContainer/Parameters/",
-	"EROSION" : BASE_PATH_SLIDERS+"/Erosion_Tectonic_Categorie/MarginContainer/Erosion_Tectonic_parameters/",
-	"CRATER" : BASE_PATH_SLIDERS+"/Crater_Categorie/MarginContainer/Crater_parameters/",
-	"EAU" : BASE_PATH_SLIDERS+"/Eau_Categorie/MarginContainer/Eaux_parameters/",
-	"NUAGE" : BASE_PATH_SLIDERS+"/Nuages_Categorie/MarginContainer/nuage_parameters/",
-	"REGION" : BASE_PATH_SLIDERS+"/Region_Categorie/MarginContainer/Region_parameters/",
-	"OCEAN" : BASE_PATH_SLIDERS+"/Region_Ocean_Categorie/MarginContainer/Region_Ocean_parameters/",
-	"RESSOURCES" : BASE_PATH_SLIDERS+"/Ressources_Categorie/MarginContainer/Ressources_parameters/",
+const GENERATION_PHASE_TRANSLATION_KEYS := {
+	"gpu_initialization": "GEN_PHASE_GPU_INITIALIZATION",
+	"base_elevation": "GEN_PHASE_BASE_ELEVATION",
+	"crust_age": "GEN_PHASE_CRUST_AGE",
+	"cratering": "GEN_PHASE_CRATERING",
+	"pre_erosion_climate": "GEN_PHASE_PRE_EROSION_CLIMATE",
+	"erosion": "GEN_PHASE_EROSION",
+	"final_climate": "GEN_PHASE_FINAL_CLIMATE",
+	"water": "GEN_PHASE_WATER",
+	"ice_caps": "GEN_PHASE_ICE_CAPS",
+	"biomes": "GEN_PHASE_BIOMES",
+	"land_regions": "GEN_PHASE_LAND_REGIONS",
+	"ocean_regions": "GEN_PHASE_OCEAN_REGIONS",
+	"resources": "GEN_PHASE_RESOURCES",
+	"final_map": "GEN_PHASE_FINAL_MAP",
+	"export": "GEN_PHASE_EXPORT",
+	"complete": "GEN_PHASE_COMPLETE",
+	"global_hydrology_context": "GEN_PHASE_GLOBAL_HYDROLOGY_CONTEXT",
+	"terrain_tectonics": "GEN_PHASE_TERRAIN_TECTONICS",
+	"climate": "GEN_PHASE_CLIMATE",
+	"hydrology": "GEN_PHASE_HYDROLOGY",
+	"classification": "GEN_PHASE_CLASSIFICATION",
+}
+
+const GENERATION_PHASE_DETAIL_TRANSLATION_KEYS := {
+	"gpu_initialization": "GEN_STEP_GPU_INITIALIZATION",
+	"base_elevation": "GEN_STEP_BASE_ELEVATION",
+	"crust_age": "GEN_STEP_CRUST_AGE",
+	"cratering": "GEN_STEP_CRATERING",
+	"pre_erosion_climate": "GEN_STEP_PRE_EROSION_CLIMATE",
+	"erosion": "GEN_STEP_EROSION",
+	"final_climate": "GEN_STEP_FINAL_CLIMATE",
+	"water": "GEN_STEP_WATER",
+	"ice_caps": "GEN_STEP_ICE_CAPS",
+	"biomes": "GEN_STEP_BIOMES",
+	"land_regions": "GEN_STEP_LAND_REGIONS",
+	"ocean_regions": "GEN_STEP_OCEAN_REGIONS",
+	"resources": "GEN_STEP_RESOURCES",
+	"final_map": "GEN_STEP_FINAL_MAP",
+	"export": "GEN_STEP_EXPORT",
+	"complete": "GEN_STEP_COMPLETE",
+	"global_hydrology_context": "GEN_STEP_GLOBAL_HYDROLOGY_CONTEXT",
+	"terrain_tectonics": "GEN_STEP_TERRAIN_TECTONICS",
+	"climate": "GEN_STEP_CLIMATE",
+	"hydrology": "GEN_STEP_HYDROLOGY",
+	"classification": "GEN_STEP_CLASSIFICATION",
 }
 
 const MAP_NAME_TO_KEY = {
 	"topographie_map.png": "MAP_TOPOGRAPHIE",
 	"topographie_map_grey.png": "MAP_TOPOGRAPHIE_GREY",
+	"topology_map.png": "MAP_TOPOLOGY",
 	"eaux_map.png": "MAP_EAUX",
 	"plaques_map.png": "MAP_PLAQUES",
 	"plaques_bordures_map.png": "MAP_PLAQUES_BORDURES",
@@ -37,6 +123,8 @@ const MAP_NAME_TO_KEY = {
 	"river_type_map.png": "MAP_RIVER_TYPE",
 	"ice_caps_map.png": "MAP_ICE",
 	"biome_map.png": "MAP_BIOMES",
+	"cartographic_map.png": "MAP_CARTHOGRAPHIC",
+	"grid_overlay.png": "MAP_GRID_OVERLAY",
 	"final_map.png": "MAP_FINAL",
 	"departement_map.png": "MAP_DEPARTEMENT",
 	"region_map.png": "MAP_REGIONS",
@@ -56,73 +144,1236 @@ const MAP_NAME_TO_KEY = {
 # ============================================================================
 
 func _ready() -> void:
-	# 1. Language Setup
 	if OS.get_locale_language() != "fr":
 		langue = "en"
 	TranslationServer.set_locale(langue)
 
-	$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = load("res://data/img/UI/no_data.png")
-
-	# 2. Audio player for SFX
 	_sfx_player = AudioStreamPlayer.new()
 	_sfx_player.bus = "Master"
 	_sfx_player.volume_db = 25.0
 	add_child(_sfx_player)
 
-	# 3. Ensure presets directory exists
 	DirAccess.make_dir_recursive_absolute(PRESETS_DIR)
 
-	# 4. UI Initialization
+	_setup_parameter_workspace()
+	_setup_batch_runner()
+	_setup_reference_viewer_workspace()
+	if not UITheme.theme_changed.is_connected(_on_ui_theme_changed):
+		UITheme.theme_changed.connect(_on_ui_theme_changed)
 	maj_labels()
+	_show_parameters_workspace()
+
+
+func _on_ui_theme_changed(_theme_id: StringName) -> void:
+	# Workspace styling is applied by each layer. Reapply status semantics after
+	# that pass so a completed/error dot keeps its role in the new palette.
+	_refresh_generation_status_translation()
+	# Inspector colors are BBCode generated from the active palette, so refresh
+	# an existing selection immediately when the user changes theme.
+	if _viewer_inspected_uv.x >= 0.0 and _viewer_inspector_label != null:
+		_refresh_viewer_inspector()
+
+
+func _setup_parameter_workspace() -> void:
+	_parameter_workspace = PARAMETER_WORKSPACE_SCENE.instantiate()
+	add_child(_parameter_workspace)
+	_parameter_workspace.visible = false
+	_parameter_workspace.set_save_planet_enabled(false)
+	_parameter_workspace.generate_requested.connect(_on_btn_comfirme_pressed)
+	_parameter_workspace.save_planet_requested.connect(_on_btn_sauvegarder_pressed)
+	_parameter_workspace.load_preset_requested.connect(load_preset)
+	_parameter_workspace.save_preset_requested.connect(save_preset)
+	_parameter_workspace.viewer_requested.connect(_show_viewer_workspace)
+	_parameter_workspace.quit_requested.connect(_on_btn_quitter_pressed)
+	_parameter_workspace.language_requested.connect(_change_lang)
+	_parameter_workspace.batch_start_requested.connect(_on_batch_start_requested)
+	_parameter_workspace.batch_cancel_requested.connect(_on_batch_cancel_requested)
+
+
+func _setup_batch_runner() -> void:
+	_batch_runner = BatchGenerationRunner.new()
+	_batch_runner.name = "BatchGenerationRunner"
+	add_child(_batch_runner)
+	_batch_runner.batch_progress.connect(_on_batch_progress)
+	_batch_runner.batch_completed.connect(_on_batch_completed)
+
+
+func _setup_reference_viewer_workspace() -> void:
+	_viewer_workspace = REFERENCE_VIEWER_WORKSPACE_SCENE.instantiate()
+	add_child(_viewer_workspace)
+
+	_viewer_shell_layer = _viewer_workspace
+	_viewer_shell_root = _viewer_workspace.root
+	_viewer_status_dot = _viewer_workspace.status_dot
+	_generation_phase_label = _viewer_workspace.phase_label
+	_generation_memory_label = _viewer_workspace.memory_label
+	_generation_progress_bar = _viewer_workspace.progress_bar
+	_cancel_generation_button = _viewer_workspace.cancel_button
+	_viewer_parameters_button = _viewer_workspace.parameters_button
+	_viewer_map_viewport = _viewer_workspace.map_viewport
+	_viewer_map_frame = _viewer_workspace.map_canvas
+	_viewer_map_texture = _viewer_workspace.map_texture
+	_viewer_overlay_texture = _viewer_workspace.overlay_texture
+	_viewer_crosshair = _viewer_workspace.crosshair
+	_viewer_empty_label = _viewer_workspace.empty_label
+	_viewer_load_action = _viewer_workspace.load_button
+	_viewer_save_action = _viewer_workspace.save_button
+	_viewer_panel = _viewer_workspace.viewer_panel
+	_viewer_title_label = _viewer_workspace.viewer_title_label
+	_viewer_shortcut_label = _viewer_workspace.shortcut_label
+	_viewer_base_title_label = _viewer_workspace.base_title_label
+	_viewer_base_select = _viewer_workspace.base_select
+	_viewer_overlay_title_label = _viewer_workspace.overlay_title_label
+	_viewer_overlay_select = _viewer_workspace.overlay_select
+	_viewer_overlay_alpha_label = _viewer_workspace.opacity_title_label
+	_viewer_overlay_alpha = _viewer_workspace.opacity_slider
+	_viewer_overlay_percent_label = _viewer_workspace.opacity_percent_label
+	_viewer_zoom_label = _viewer_workspace.zoom_label
+	_viewer_reset_button = _viewer_workspace.reset_button
+	_viewer_inspector_label = _viewer_workspace.inspector_label
+	_viewer_help_label = _viewer_workspace.help_label
+
+	_viewer_parameters_button.pressed.connect(_show_parameters_workspace)
+	_cancel_generation_button.pressed.connect(_on_cancel_generation_pressed)
+	_viewer_load_action.pressed.connect(_on_load_planet_project_pressed)
+	_viewer_save_action.pressed.connect(_on_btn_sauvegarder_pressed)
+	_viewer_base_select.item_selected.connect(_on_viewer_base_selected)
+	_viewer_overlay_select.item_selected.connect(_on_viewer_overlay_selected)
+	_viewer_overlay_alpha.value_changed.connect(_on_viewer_overlay_alpha_changed)
+	_viewer_reset_button.pressed.connect(_reset_viewer_transform)
+	_viewer_map_viewport.gui_input.connect(_on_map_viewer_input)
+	if not get_viewport().size_changed.is_connected(_on_viewer_viewport_resized):
+		get_viewport().size_changed.connect(_on_viewer_viewport_resized)
+
+	_refresh_generation_status_translation()
+	_refresh_advanced_viewer_translation()
+	_update_viewer_sources()
+	_sync_reference_map()
+
+func _show_parameters_workspace() -> void:
+	if _viewer_workspace != null:
+		_viewer_workspace.visible = false
+	if _parameter_workspace != null:
+		_parameter_workspace.visible = true
+
+
+func _show_viewer_workspace() -> void:
+	if _parameter_workspace != null:
+		_parameter_workspace.close_batch_panel()
+		_parameter_workspace.visible = false
+	if _viewer_workspace != null:
+		_viewer_workspace.visible = true
+	_sync_reference_map()
+	call_deferred("_sync_viewer_crosshair_to_uv")
+
+
+func _sync_reference_map() -> void:
+	if _viewer_map_texture == null:
+		return
+	var has_map := not maps.is_empty() and map_index >= 0 and map_index < maps.size()
+	_viewer_empty_label.visible = not has_map
+	_viewer_map_frame.visible = has_map
+	_viewer_save_action.disabled = not has_map
+	if not has_map:
+		_viewer_map_texture.texture = null
+		_viewer_overlay_texture.texture = null
+		return
+	var image := _viewer_load_image(maps[map_index])
+	if image != null:
+		_viewer_map_texture.texture = ImageTexture.create_from_image(image)
+		call_deferred("_sync_viewer_crosshair_to_uv")
+
+
+func _set_map_texture(texture: Texture2D) -> void:
+	if _viewer_map_texture != null:
+		_viewer_map_texture.texture = texture
+		_viewer_map_frame.visible = texture != null
+		_viewer_empty_label.visible = texture == null
+		_viewer_save_action.disabled = texture == null
+		call_deferred("_sync_viewer_crosshair_to_uv")
+	if _parameter_workspace != null:
+		_parameter_workspace.set_preview_texture(texture)
+
+
+func _refresh_advanced_viewer_translation() -> void:
+	if _viewer_panel == null:
+		return
+	_viewer_title_label.text = tr("MAP_VIEWER_TITLE")
+	if _viewer_base_title_label != null:
+		_viewer_base_title_label.text = tr("MAP_VIEWER_BASE")
+	if _viewer_overlay_title_label != null:
+		_viewer_overlay_title_label.text = tr("MAP_VIEWER_OVERLAY")
+	_viewer_base_select.tooltip_text = tr("MAP_VIEWER_BASE_TOOLTIP")
+	_viewer_overlay_select.tooltip_text = tr("MAP_VIEWER_OVERLAY_TOOLTIP")
+	_viewer_overlay_alpha_label.text = tr("MAP_VIEWER_OVERLAY_OPACITY")
+	_viewer_reset_button.text = tr("MAP_VIEWER_RESET")
+	_viewer_zoom_label.text = tr("MAP_VIEWER_ZOOM").format({"percent": int(round(_viewer_zoom * 100.0))})
+	_viewer_overlay_alpha.tooltip_text = "%s: %d%%" % [tr("MAP_VIEWER_OVERLAY_OPACITY"), int(round(_viewer_overlay_alpha.value * 100.0))]
+	if _viewer_empty_label != null:
+		_viewer_empty_label.text = "%s\n%s" % [tr("VIEWER_EMPTY_TITLE"), tr("VIEWER_EMPTY_HINT")]
+	if _viewer_shortcut_label != null:
+		_viewer_shortcut_label.text = tr("MAP_VIEWER_SHORTCUTS")
+	if _viewer_help_label != null:
+		_viewer_help_label.text = tr("VIEWER_HELP")
+	if _viewer_parameters_button != null:
+		_viewer_parameters_button.text = tr("PARAMETRES").to_upper()
+	if _viewer_load_action != null:
+		_viewer_load_action.text = "▰  " + tr("LOAD_PLANET").to_upper()
+	if _viewer_save_action != null:
+		_viewer_save_action.text = tr("SAUVEGARDER").to_upper()
+	if _viewer_parameters_button != null:
+		_viewer_parameters_button.tooltip_text = tr("UI_TOOLTIP_PARAMETERS")
+	if _viewer_load_action != null:
+		_viewer_load_action.tooltip_text = tr("UI_TOOLTIP_LOAD_PLANET")
+	if _viewer_save_action != null:
+		_viewer_save_action.tooltip_text = tr("UI_TOOLTIP_SAVE_PLANET")
+	if _viewer_reset_button != null:
+		_viewer_reset_button.tooltip_text = tr("UI_TOOLTIP_RESET_VIEW")
+	if _cancel_generation_button != null:
+		_cancel_generation_button.text = tr("GEN_CANCEL").to_upper()
+	if _viewer_inspected_uv.x >= 0.0 and _viewer_crosshair.has_point:
+		_refresh_viewer_inspector()
+	else:
+		_viewer_inspector_label.visible = true
+		_viewer_inspector_label.text = tr("MAP_VIEWER_INSPECT_HINT")
+	_update_viewer_sources()
+
+
+func _update_viewer_sources() -> void:
+	if _viewer_base_select == null:
+		return
+	var selected_base := clampi(map_index, 0, maxi(maps.size() - 1, 0))
+	var selected_overlay_path := ""
+	if _viewer_overlay_select != null and _viewer_overlay_select.selected >= 0:
+		selected_overlay_path = str(_viewer_overlay_select.get_item_metadata(_viewer_overlay_select.selected))
+	_viewer_base_select.clear()
+	_viewer_overlay_select.clear()
+	_viewer_overlay_select.add_item(tr("MAP_VIEWER_NO_OVERLAY"))
+	_viewer_overlay_select.set_item_metadata(0, "")
+	var overlay_selection := 0
+	for i in range(maps.size()):
+		var path := maps[i]
+		var display_name := get_map_display_name(path)
+		_viewer_base_select.add_item(display_name)
+		_viewer_base_select.set_item_metadata(_viewer_base_select.item_count - 1, i)
+		# Any exported map can be used as an overlay. This is deliberately kept
+		# symmetrical with the base selector so newly exported layers become
+		# overlay-capable automatically without another hard-coded allow-list.
+		_viewer_overlay_select.add_item(display_name)
+		_viewer_overlay_select.set_item_metadata(_viewer_overlay_select.item_count - 1, path)
+		if path == selected_overlay_path:
+			overlay_selection = _viewer_overlay_select.item_count - 1
+	if not maps.is_empty():
+		_viewer_base_select.select(selected_base)
+	_viewer_overlay_select.select(overlay_selection)
+
+
+func _on_viewer_base_selected(index: int) -> void:
+	if index < 0 or index >= _viewer_base_select.item_count:
+		return
+	map_index = int(_viewer_base_select.get_item_metadata(index))
+	_load_current_map()
+	call_deferred("_sync_viewer_crosshair_to_uv")
+	if _viewer_inspected_uv.x >= 0.0:
+		_refresh_viewer_inspector()
+
+
+func _on_viewer_overlay_selected(index: int) -> void:
+	if index < 0 or index >= _viewer_overlay_select.item_count:
+		return
+	var path := str(_viewer_overlay_select.get_item_metadata(index))
+	if path.is_empty():
+		_viewer_overlay_texture.texture = null
+		if _viewer_inspected_uv.x >= 0.0:
+			_refresh_viewer_inspector()
+		return
+	var image: Image = _viewer_load_image(path)
+	if image != null:
+		_viewer_overlay_texture.texture = ImageTexture.create_from_image(image)
+	if _viewer_inspected_uv.x >= 0.0:
+		_refresh_viewer_inspector()
+
+
+func _on_viewer_overlay_alpha_changed(value: float) -> void:
+	_viewer_overlay_texture.modulate.a = clampf(value, 0.0, 1.0)
+	if _viewer_overlay_percent_label != null:
+		_viewer_overlay_percent_label.text = "%d%%" % int(round(value * 100.0))
+	_viewer_overlay_alpha.tooltip_text = "%s: %d%%" % [
+		tr("MAP_VIEWER_OVERLAY_OPACITY"), int(round(value * 100.0))
+	]
+
+
+func _viewer_load_image(path: String) -> Image:
+	if _viewer_image_cache.has(path):
+		return _viewer_image_cache[path]
+	var image := Image.new()
+	if image.load(path) != OK:
+		return null
+	_viewer_image_cache[path] = image
+	return image
+
+
+func _viewer_aspect_fit_rect(content_size: Vector2, available_size: Vector2) -> Rect2:
+	if (
+		content_size.x <= 0.0 or content_size.y <= 0.0
+		or available_size.x <= 0.0 or available_size.y <= 0.0
+	):
+		return Rect2(Vector2.ZERO, available_size)
+	var fit_scale: float = minf(
+		available_size.x / content_size.x,
+		available_size.y / content_size.y
+	)
+	var fitted_size: Vector2 = content_size * fit_scale
+	var fitted_position: Vector2 = (available_size - fitted_size) * 0.5
+	return Rect2(fitted_position, fitted_size)
+
+
+func _viewer_map_content_rect() -> Rect2:
+	if _viewer_map_texture == null:
+		return Rect2()
+	var control_size: Vector2 = _viewer_map_texture.size
+	var texture: Texture2D = _viewer_map_texture.texture
+	if texture == null:
+		return Rect2(Vector2.ZERO, control_size)
+	return _viewer_aspect_fit_rect(texture.get_size(), control_size)
+
+
+func _viewer_point_from_uv(uv: Vector2) -> Vector2:
+	var content_rect: Rect2 = _viewer_map_content_rect()
+	return content_rect.position + Vector2(
+		clampf(uv.x, 0.0, 1.0) * content_rect.size.x,
+		clampf(uv.y, 0.0, 1.0) * content_rect.size.y
+	)
+
+
+func _sync_viewer_crosshair_to_uv() -> void:
+	if _viewer_crosshair == null:
+		return
+	var content_rect: Rect2 = _viewer_map_content_rect()
+	_viewer_crosshair.set_content_rect(content_rect)
+	if _viewer_inspected_uv.x < 0.0 or _viewer_inspected_uv.y < 0.0:
+		return
+	_viewer_crosshair.set_point(_viewer_point_from_uv(_viewer_inspected_uv))
+
+
+func _on_viewer_viewport_resized() -> void:
+	# ReferenceViewerWorkspace recalculates its geometry on the same signal. Wait
+	# one frame so the TextureRect has its new size before recomputing letterbox
+	# offsets and the inspected point.
+	call_deferred("_sync_viewer_crosshair_to_uv")
+
+
+func _on_map_viewer_input(event: InputEvent) -> void:
+	var frame := _viewer_map_frame
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
+			_set_viewer_zoom(_viewer_zoom * 1.15, event.position)
+			get_viewport().set_input_as_handled()
+			return
+		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
+			_set_viewer_zoom(_viewer_zoom / 1.15, event.position)
+			get_viewport().set_input_as_handled()
+			return
+		if event.button_index == MOUSE_BUTTON_MIDDLE:
+			_viewer_dragging = event.pressed
+			get_viewport().set_input_as_handled()
+			return
+		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			var local_point: Vector2 = (event.position - frame.position) / frame.scale
+			_inspect_map_point(local_point)
+			get_viewport().set_input_as_handled()
+			return
+	elif event is InputEventMouseMotion and _viewer_dragging:
+		frame.position += event.relative
+		get_viewport().set_input_as_handled()
+
+
+func _set_viewer_zoom(value: float, anchor_position: Vector2) -> void:
+	var new_zoom: float = clampf(value, 1.0, 8.0)
+	var frame := _viewer_map_frame
+	var old_zoom: float = _viewer_zoom
+	if old_zoom <= 0.0:
+		old_zoom = 1.0
+
+	# Keep the map point currently below the cursor at the same screen
+	# position while scaling. Using a zero pivot also keeps panning and
+	# pixel inspection in the same coordinate system.
+	var local_anchor: Vector2 = (anchor_position - frame.position) / old_zoom
+	_viewer_zoom = new_zoom
+	frame.pivot_offset = Vector2.ZERO
+	frame.scale = Vector2.ONE * _viewer_zoom
+	frame.position = anchor_position - local_anchor * _viewer_zoom
+	_viewer_zoom_label.text = tr("MAP_VIEWER_ZOOM").format({"percent": int(round(_viewer_zoom * 100.0))})
+
+
+func _reset_viewer_transform() -> void:
+	_viewer_zoom = 1.0
+	var frame := _viewer_map_frame
+	frame.scale = Vector2.ONE
+	frame.position = Vector2.ZERO
+	_viewer_zoom_label.text = tr("MAP_VIEWER_ZOOM").format({"percent": 100})
+	_viewer_crosshair.clear_point()
+	_viewer_inspected_uv = Vector2(-1.0, -1.0)
+	_viewer_inspector_label.visible = true
+	_viewer_inspector_label.text = tr("MAP_VIEWER_INSPECT_HINT")
+
+
+func _inspect_map_point(local_point: Vector2) -> void:
+	if maps.is_empty():
+		return
+	var content_rect: Rect2 = _viewer_map_content_rect()
+	if content_rect.size.x <= 0.0 or content_rect.size.y <= 0.0:
+		return
+	# KEEP_ASPECT_CENTERED can create horizontal or vertical letterboxing. Clicks
+	# in those empty bands are not map coordinates and must not inspect a cell.
+	if not content_rect.has_point(local_point):
+		return
+	var point_in_map: Vector2 = local_point - content_rect.position
+	var uv := Vector2(
+		clampf(point_in_map.x / content_rect.size.x, 0.0, 0.999999),
+		clampf(point_in_map.y / content_rect.size.y, 0.0, 0.999999)
+	)
+	_viewer_inspected_uv = uv
+	_viewer_crosshair.set_content_rect(content_rect)
+	_viewer_crosshair.set_point(local_point)
+	_refresh_viewer_inspector()
+
+
+func _refresh_viewer_inspector() -> void:
+	if maps.is_empty() or _viewer_inspected_uv.x < 0.0:
+		return
+	var base_path: String = str(maps[clampi(map_index, 0, maps.size() - 1)])
+	var base_sample: Dictionary = _viewer_sample_path(base_path, _viewer_inspected_uv)
+	if base_sample.is_empty():
+		return
+	var base_image_size: Vector2i = base_sample["size"]
+	var cell: Vector2i = base_sample["cell"]
+	var lon_lat: Vector2 = PlanetGridContract.global_cell_to_world(cell, base_image_size)
+	var generation_params: Dictionary = _viewer_generation_params()
+	var planet_type: int = int(generation_params.get("planet_type", 0))
+	var sections: Array[String] = []
+
+	var position_rows: Array[String] = [
+		_viewer_info_row(tr("MAP_VIEWER_INSPECT_CELL"), "%d, %d" % [cell.x, cell.y]),
+		_viewer_info_row(
+			"Lon / Lat",
+			"%.3f°  /  %.3f°" % [rad_to_deg(lon_lat.x), rad_to_deg(lon_lat.y)],
+			_viewer_semantic_color("coordinate")
+		),
+		_viewer_info_row(
+			tr("MAP_VIEWER_INSPECT_UV"),
+			"%.5f, %.5f" % [_viewer_inspected_uv.x, _viewer_inspected_uv.y],
+			_viewer_semantic_color("coordinate")
+		),
+	]
+	sections.append(_viewer_info_section(
+		tr("MAP_VIEWER_INSPECT_POSITION"), _viewer_semantic_color("position"), position_rows
+	))
+
+	var radius_km: float = float(generation_params.get("planet_radius", 0.0))
+	var sea_level: float = float(generation_params.get("sea_level", 0.0))
+	var world_rows: Array[String] = [
+		_viewer_info_row(tr("MAP_VIEWER_INSPECT_PLANET"), _viewer_planet_name()),
+		_viewer_info_row(tr("PLANET_TYPE"), _viewer_planet_type_name(planet_type)),
+		_viewer_info_row(tr("MAP_VIEWER_INSPECT_SEED"), str(generation_params.get("seed", 0))),
+		_viewer_info_row(tr("MAP_VIEWER_INSPECT_RADIUS"), "%.1f km" % radius_km),
+		_viewer_info_row(tr("MAP_VIEWER_INSPECT_SEA_LEVEL"), "%.1f m" % sea_level),
+	]
+	sections.append(_viewer_info_section(
+		tr("MAP_VIEWER_INSPECT_WORLD"), _viewer_semantic_color("world"), world_rows
+	))
+
+	var base_color: Color = base_sample["color"]
+	var layer_rows: Array[String] = [
+		_viewer_info_row(tr("MAP_VIEWER_INSPECT_BASE"), get_map_display_name(base_path)),
+		_viewer_info_row("RGBA", _viewer_color_rich_text(base_color), UITheme.color(&"text_bright"), true),
+	]
+	var overlay_path: String = _viewer_current_overlay_path()
+	if not overlay_path.is_empty():
+		var overlay_sample: Dictionary = _viewer_sample_path(overlay_path, _viewer_inspected_uv)
+		if not overlay_sample.is_empty():
+			layer_rows.append(_viewer_info_row(
+				tr("MAP_VIEWER_INSPECT_OVERLAY"), get_map_display_name(overlay_path)
+			))
+			layer_rows.append(_viewer_info_row(
+				"%s RGBA" % tr("MAP_VIEWER_INSPECT_OVERLAY"), _viewer_color_rich_text(overlay_sample["color"]),
+				UITheme.color(&"text_bright"), true
+			))
+	sections.append(_viewer_info_section(
+		tr("MAP_VIEWER_INSPECT_LAYER"), _viewer_semantic_color("layer"), layer_rows
+	))
+
+	_append_viewer_surface_info(sections, planet_type)
+	_append_viewer_climate_info(sections, planet_type)
+	_append_viewer_hydrology_info(sections, planet_type)
+	_append_viewer_administration_info(sections)
+	_append_viewer_tectonics_info(sections)
+	_append_viewer_resource_info(sections, base_path, overlay_path)
+
+	_viewer_inspector_label.visible = true
+	_viewer_inspector_label.text = "\n\n".join(sections)
+
+
+func _viewer_bbcode_escape(value: Variant) -> String:
+	# Prevent project names / translated strings from being interpreted as BBCode.
+	return str(value).replace("[", "［").replace("]", "］")
+
+
+func _viewer_bbcode_color(color_value: Color) -> String:
+	return color_value.to_html(false).to_upper()
+
+
+func _viewer_semantic_color(role: String) -> Color:
+	match role:
+		"position":
+			return UITheme.color(&"accent_bright")
+		"coordinate":
+			return Color(0.58, 0.84, 1.0, 1.0)
+		"world":
+			return Color(0.96, 0.90, 0.58, 1.0)
+		"layer":
+			return Color(0.45, 0.80, 1.0, 1.0)
+		"surface":
+			return Color(0.48, 0.86, 0.45, 1.0)
+		"climate":
+			return Color(1.0, 0.72, 0.30, 1.0)
+		"water":
+			return Color(0.32, 0.72, 1.0, 1.0)
+		"ice":
+			return Color(0.70, 0.93, 1.0, 1.0)
+		"admin":
+			return Color(0.80, 0.60, 1.0, 1.0)
+		"tectonics":
+			return Color(1.0, 0.50, 0.32, 1.0)
+		"resources":
+			return Color(0.95, 0.80, 0.30, 1.0)
+		"positive":
+			return UITheme.color(&"success")
+		"negative":
+			return UITheme.color(&"muted")
+	return UITheme.color(&"text_bright")
+
+
+func _viewer_info_section(title_text: String, section_color: Color,
+		rows: Array[String]) -> String:
+	# RichTextLabel tables let the inspector consume the whole panel width. Each
+	# logical information item contributes two cells (label + value), and four
+	# table columns place two items side-by-side on desktop layouts. Cell expansion
+	# ratios keep both halves balanced while long values can still wrap.
+	var header: String = "[font_size=23][color=#%s][b]◆ %s[/b][/color][/font_size]" % [
+		_viewer_bbcode_color(section_color), _viewer_bbcode_escape(title_text).to_upper()
+	]
+	var use_wide_layout: bool = (
+		_viewer_inspector_label != null and _viewer_inspector_label.size.x >= 900.0
+	)
+	var table_cells: Array[String] = []
+	table_cells.append_array(rows)
+	if use_wide_layout and rows.size() % 2 != 0:
+		# Complete the last four-column row so the table keeps stable proportions.
+		table_cells.append(
+			"[cell expand=1 padding=8,5,14,5][/cell]"
+			+ "[cell expand=2 padding=0,5,18,5][/cell]"
+		)
+	var column_count: int = 4 if use_wide_layout else 2
+	var table: String = "[table=%d]%s[/table]" % [column_count, "".join(table_cells)]
+	return "%s\n[hr]\n%s" % [header, table]
+
+
+func _viewer_info_row(label_text: String, value_text: String,
+		value_color: Color = Color.TRANSPARENT, value_is_bbcode: bool = false) -> String:
+	var resolved_color: Color = value_color
+	if resolved_color.a <= 0.0:
+		resolved_color = UITheme.color(&"text_bright")
+	var rendered_value: String = value_text if value_is_bbcode else _viewer_bbcode_escape(value_text)
+	# Return two table cells rather than a preformatted line. `expand` ratios make
+	# every section use the available horizontal space instead of hugging the left
+	# edge, while values receive twice the width of their labels.
+	return (
+		"[cell expand=1 padding=8,5,14,5][color=#%s]%s[/color][/cell]"
+		+ "[cell expand=2 padding=0,5,18,5][color=#%s][b]%s[/b][/color][/cell]"
+	) % [
+		_viewer_bbcode_color(UITheme.color(&"secondary_text")),
+		_viewer_bbcode_escape(label_text),
+		_viewer_bbcode_color(resolved_color),
+		rendered_value,
+	]
+
+
+func _viewer_color_rich_text(color_value: Color) -> String:
+	var rgb_hex: String = color_value.to_html(false).to_upper()
+	return "[color=#%s]■[/color]  #%s   RGBA(%d, %d, %d, %d)" % [
+		rgb_hex, rgb_hex,
+		clampi(roundi(color_value.r * 255.0), 0, 255),
+		clampi(roundi(color_value.g * 255.0), 0, 255),
+		clampi(roundi(color_value.b * 255.0), 0, 255),
+		clampi(roundi(color_value.a * 255.0), 0, 255),
+	]
+
+
+func _viewer_generation_params() -> Dictionary:
+	if planetGenerator != null:
+		return planetGenerator.generation_params
+	var manifest_value = _loaded_project.get("manifest", {})
+	if manifest_value is Dictionary:
+		var manifest: Dictionary = manifest_value as Dictionary
+		var parameters_value = manifest.get("parameters", {})
+		if parameters_value is Dictionary:
+			return parameters_value as Dictionary
+	return {}
+
+
+func _viewer_planet_name() -> String:
+	if planetGenerator != null and not planetGenerator.nom.is_empty():
+		return planetGenerator.nom
+	var manifest_value = _loaded_project.get("manifest", {})
+	if manifest_value is Dictionary:
+		return str((manifest_value as Dictionary).get("planet_name", "—"))
+	return "—"
+
+
+func _viewer_planet_type_name(planet_type: int) -> String:
+	var key: String = "PLANET_TYPE_TERRAN"
+	match planet_type:
+		Enum.TYPE_TOXIC: key = "PLANET_TYPE_TOXIC"
+		Enum.TYPE_VOLCANIC: key = "PLANET_TYPE_VOLCANIC"
+		Enum.TYPE_NO_ATMOS: key = "PLANET_TYPE_NO_ATMOS"
+		Enum.TYPE_DEAD: key = "PLANET_TYPE_DEAD"
+		Enum.TYPE_STERILE: key = "PLANET_TYPE_STERILE"
+		Enum.TYPE_GAZEUZE: key = "PLANET_TYPE_GAS"
+	return tr(key)
+
+
+func _viewer_current_overlay_path() -> String:
+	if _viewer_overlay_select == null or _viewer_overlay_select.selected < 0:
+		return ""
+	return str(_viewer_overlay_select.get_item_metadata(_viewer_overlay_select.selected))
+
+
+func _viewer_find_map_path(file_name: String) -> String:
+	var target: String = file_name.to_lower()
+	for path_value in maps:
+		var path: String = str(path_value)
+		if path.get_file().to_lower() == target:
+			return path
+	return ""
+
+
+func _viewer_sample_filename(file_name: String) -> Dictionary:
+	var path: String = _viewer_find_map_path(file_name)
+	return {} if path.is_empty() else _viewer_sample_path(path, _viewer_inspected_uv)
+
+
+func _viewer_sample_path(path: String, uv: Vector2) -> Dictionary:
+	if path.is_empty():
+		return {}
+	var image: Image = _viewer_load_image(path)
+	if image == null or image.is_empty():
+		return {}
+	var size: Vector2i = image.get_size()
+	var cell: Vector2i = Vector2i(
+		clampi(int(floor(uv.x * float(size.x))), 0, maxi(size.x - 1, 0)),
+		clampi(int(floor(uv.y * float(size.y))), 0, maxi(size.y - 1, 0))
+	)
+	return {"path": path, "size": size, "cell": cell, "color": image.get_pixelv(cell)}
+
+
+func _viewer_color_description(color: Color) -> String:
+	return "#%s  RGBA(%d,%d,%d,%d)" % [
+		color.to_html(true).to_upper(),
+		clampi(roundi(color.r * 255.0), 0, 255),
+		clampi(roundi(color.g * 255.0), 0, 255),
+		clampi(roundi(color.b * 255.0), 0, 255),
+		clampi(roundi(color.a * 255.0), 0, 255),
+	]
+
+
+func _viewer_color_token(color: Color) -> String:
+	return "#" + color.to_html(false).to_upper()
+
+
+func _viewer_color_distance_sq(a: Color, b: Color) -> float:
+	var dr: float = a.r - b.r
+	var dg: float = a.g - b.g
+	var db: float = a.b - b.b
+	return dr * dr + dg * dg + db * db
+
+
+func _append_viewer_surface_info(sections: Array[String], planet_type: int) -> void:
+	var rows: Array[String] = []
+	var biome_sample: Dictionary = _viewer_sample_filename("biome_map.png")
+	if not biome_sample.is_empty():
+		var biome_color: Color = biome_sample["color"]
+		if biome_color.a > 0.01:
+			var biome: Biome = Enum.find_biome_by_map_color(biome_color, planet_type, 0)
+			if biome != null:
+				rows.append(_viewer_info_row(
+					tr("MAP_VIEWER_INSPECT_BIOME"), Enum.get_biome_display_name(biome),
+					_viewer_semantic_color("surface")
+				))
+				var temp: Array[int] = biome.get_interval_temp()
+				var precip: Array[float] = biome.get_interval_precipitation()
+				var elevation: Array[int] = biome.get_interval_elevation()
+				rows.append(_viewer_info_row(
+					tr("MAP_VIEWER_INSPECT_BIOME_PROFILE"),
+					"%d…%d°C   •   %.0f…%.0f%%   •   %d…%d m" % [
+						int(temp[0]), int(temp[1]), float(precip[0]) * 100.0,
+						float(precip[1]) * 100.0, int(elevation[0]), int(elevation[1]),
+					]
+				))
+				var flags: Array[String] = []
+				if biome.get_water_need(): flags.append(tr("MAP_VIEWER_INSPECT_REQUIRES_WATER"))
+				if biome.isEauDouce(): flags.append(tr("MAP_VIEWER_INSPECT_FRESHWATER"))
+				if biome.isRiver(): flags.append(tr("MAP_VIEWER_INSPECT_RIVER_ONLY"))
+				if not flags.is_empty():
+					rows.append(_viewer_info_row("Tags", " • ".join(flags), _viewer_semantic_color("surface")))
+	var topo_sample: Dictionary = _viewer_sample_filename("topographie_map.png")
+	if not topo_sample.is_empty():
+		var elevation_estimate: float = _viewer_estimate_elevation(topo_sample["color"])
+		if is_finite(elevation_estimate):
+			rows.append(_viewer_info_row(
+				tr("MAP_VIEWER_INSPECT_ELEVATION"), "≈ %.0f m" % elevation_estimate,
+				_viewer_semantic_color("surface")
+			))
+	if not rows.is_empty():
+		sections.append(_viewer_info_section(
+			tr("MAP_VIEWER_INSPECT_SURFACE"), _viewer_semantic_color("surface"), rows
+		))
+
+
+func _append_viewer_climate_info(sections: Array[String], _planet_type: int) -> void:
+	var rows: Array[String] = []
+	var temperature_sample: Dictionary = _viewer_sample_filename("temperature_map.png")
+	if not temperature_sample.is_empty():
+		var estimated_temp: float = _viewer_estimate_palette_scalar(
+			temperature_sample["color"], Enum.COULEURS_TEMPERATURE, -200.0, 200.0, 0.5,
+			"temp"
+		)
+		rows.append(_viewer_info_row(
+			tr("MAP_VIEWER_INSPECT_TEMPERATURE"), "≈ %.1f°C" % estimated_temp,
+			_viewer_semantic_color("climate")
+		))
+	var precipitation_sample: Dictionary = _viewer_sample_filename("precipitation_map.png")
+	if not precipitation_sample.is_empty():
+		var estimated_precip: float = _viewer_estimate_palette_scalar(
+			precipitation_sample["color"], Enum.COULEUR_PRECIPITATION, 0.0, 1.0, 0.002,
+			"precip"
+		)
+		rows.append(_viewer_info_row(
+			tr("MAP_VIEWER_INSPECT_PRECIPITATION"), "≈ %.1f%%" % (estimated_precip * 100.0),
+			_viewer_semantic_color("water")
+		))
+	var cloud_sample: Dictionary = _viewer_sample_filename("clouds_map.png")
+	if not cloud_sample.is_empty():
+		var cloud_color: Color = cloud_sample["color"]
+		var cloud_signal: float = maxf(cloud_color.r, maxf(cloud_color.g, cloud_color.b)) * 100.0
+		rows.append(_viewer_info_row(
+			tr("MAP_VIEWER_INSPECT_CLOUDS"), "%.0f%%" % cloud_signal,
+			Color(0.78, 0.84, 0.88, 1.0)
+		))
+	if not rows.is_empty():
+		sections.append(_viewer_info_section(
+			tr("MAP_VIEWER_INSPECT_CLIMATE"), _viewer_semantic_color("climate"), rows
+		))
+
+
+func _append_viewer_hydrology_info(sections: Array[String], planet_type: int) -> void:
+	var rows: Array[String] = []
+	var water_sample: Dictionary = _viewer_sample_filename("eaux_map.png")
+	if not water_sample.is_empty():
+		var water_color: Color = water_sample["color"]
+		var water_name: String = _viewer_water_type_name(water_color, planet_type)
+		rows.append(_viewer_info_row(
+			tr("MAP_VIEWER_INSPECT_WATER"), water_name,
+			_viewer_semantic_color("water") if water_color.a > 0.01 else _viewer_semantic_color("negative")
+		))
+	var river_sample: Dictionary = _viewer_sample_filename("river_map.png")
+	if not river_sample.is_empty():
+		var river_color: Color = river_sample["color"]
+		if river_color.a > 0.01:
+			var river_biome: Biome = Enum.find_biome_by_map_color(river_color, planet_type, 1)
+			rows.append(_viewer_info_row(
+				tr("MAP_VIEWER_INSPECT_RIVER"),
+				Enum.get_biome_display_name(river_biome) if river_biome != null else _viewer_color_token(river_color),
+				_viewer_semantic_color("water")
+			))
+	var river_type_sample: Dictionary = _viewer_sample_filename("river_type_map.png")
+	if not river_type_sample.is_empty() and (river_type_sample["color"] as Color).a > 0.01:
+		rows.append(_viewer_info_row(
+			tr("MAP_VIEWER_INSPECT_RIVER_TYPE"), _viewer_river_type_name(river_type_sample["color"]),
+			_viewer_semantic_color("water")
+		))
+	var ice_sample: Dictionary = _viewer_sample_filename("ice_caps_map.png")
+	if not ice_sample.is_empty():
+		var ice_color: Color = ice_sample["color"]
+		var has_ice: bool = ice_color.a > (6.0 / 255.0)
+		rows.append(_viewer_info_row(
+			tr("MAP_VIEWER_INSPECT_ICE"),
+			tr("MAP_VIEWER_INSPECT_YES") if has_ice else tr("MAP_VIEWER_INSPECT_NO"),
+			_viewer_semantic_color("ice") if has_ice else _viewer_semantic_color("negative")
+		))
+	if not rows.is_empty():
+		sections.append(_viewer_info_section(
+			tr("MAP_VIEWER_INSPECT_HYDROLOGY"), _viewer_semantic_color("water"), rows
+		))
+
+
+func _append_viewer_administration_info(sections: Array[String]) -> void:
+	var definitions: Array = [
+		["departement_map.png", "MAP_VIEWER_INSPECT_DEPARTMENT"],
+		["region_map.png", "MAP_VIEWER_INSPECT_REGION"],
+		["pays_map.png", "MAP_VIEWER_INSPECT_COUNTRY"],
+		["continent_map.png", "MAP_VIEWER_INSPECT_CONTINENT"],
+		["departement_mer_map.png", "MAP_VIEWER_INSPECT_SEA_DEPARTMENT"],
+		["region_mer_map.png", "MAP_VIEWER_INSPECT_SEA_REGION"],
+		["bassin_map.png", "MAP_VIEWER_INSPECT_BASIN"],
+		["ocean_map.png", "MAP_VIEWER_INSPECT_OCEAN"],
+	]
+	var rows: Array[String] = []
+	for definition in definitions:
+		var sample: Dictionary = _viewer_sample_filename(str(definition[0]))
+		if sample.is_empty():
+			continue
+		var color: Color = sample["color"]
+		if color.a <= 0.01:
+			continue
+		rows.append(_viewer_info_row(
+			tr(str(definition[1])), _viewer_color_rich_text(color),
+			_viewer_semantic_color("admin"), true
+		))
+	if not rows.is_empty():
+		sections.append(_viewer_info_section(
+			tr("MAP_VIEWER_INSPECT_ADMIN"), _viewer_semantic_color("admin"), rows
+		))
+
+
+func _append_viewer_tectonics_info(sections: Array[String]) -> void:
+	var rows: Array[String] = []
+	var plate_sample: Dictionary = _viewer_sample_filename("plaques_map.png")
+	if not plate_sample.is_empty():
+		var plate_color: Color = plate_sample["color"]
+		rows.append(_viewer_info_row(
+			tr("MAP_VIEWER_INSPECT_PLATE"), _viewer_color_rich_text(plate_color),
+			_viewer_semantic_color("tectonics"), true
+		))
+	var border_sample: Dictionary = _viewer_sample_filename("plaques_bordures_map.png")
+	if not border_sample.is_empty():
+		var border_color: Color = border_sample["color"]
+		if border_color.a > 0.01:
+			var boundary_name: String = _viewer_plate_boundary_name(border_color)
+			var boundary_value: String = "%s   %s" % [boundary_name, _viewer_color_rich_text(border_color)]
+			rows.append(_viewer_info_row(
+				tr("MAP_VIEWER_INSPECT_PLATE_BORDER"), boundary_value,
+				_viewer_semantic_color("tectonics"), true
+			))
+	if not rows.is_empty():
+		sections.append(_viewer_info_section(
+			tr("MAP_VIEWER_INSPECT_TECTONICS"), _viewer_semantic_color("tectonics"), rows
+		))
+
+
+func _append_viewer_resource_info(sections: Array[String], base_path: String, overlay_path: String) -> void:
+	var resource_paths: Array[String] = []
+	for path_value in [base_path, overlay_path, _viewer_find_map_path("petrole_map.png")]:
+		var path: String = str(path_value)
+		if path.is_empty() or path in resource_paths:
+			continue
+		if not _resource_map_translation_key(path).is_empty() or path.get_file().to_lower() == "petrole_map.png":
+			resource_paths.append(path)
+	var rows: Array[String] = []
+	for path in resource_paths:
+		var sample: Dictionary = _viewer_sample_path(path, _viewer_inspected_uv)
+		if sample.is_empty():
+			continue
+		var color: Color = sample["color"]
+		if color.a <= 0.01:
+			continue
+		var resource_strength: float = maxf(color.r, maxf(color.g, color.b)) * 100.0
+		var rich_value: String = "%s   ≈ %.0f%%" % [_viewer_color_rich_text(color), resource_strength]
+		rows.append(_viewer_info_row(
+			get_map_display_name(path), rich_value, _viewer_semantic_color("resources"), true
+		))
+	if not rows.is_empty():
+		sections.append(_viewer_info_section(
+			tr("MAP_VIEWER_INSPECT_RESOURCES"), _viewer_semantic_color("resources"), rows
+		))
+
+
+func _viewer_water_type_name(color: Color, planet_type: int) -> String:
+	if color.a <= 0.01:
+		return tr("MAP_VIEWER_INSPECT_NONE")
+	var salt: Color = Color(0.145, 0.322, 0.541, 1.0)
+	var fresh: Color = Color(0.271, 0.518, 0.824, 1.0)
+	match planet_type:
+		Enum.TYPE_TOXIC:
+			salt = Color(0.255, 0.298, 0.176, 1.0)
+			fresh = Color(0.388, 0.424, 0.227, 1.0)
+		Enum.TYPE_VOLCANIC:
+			salt = Color(0.376, 0.165, 0.110, 1.0)
+			fresh = Color(0.722, 0.286, 0.106, 1.0)
+		Enum.TYPE_DEAD:
+			salt = Color(0.192, 0.239, 0.220, 1.0)
+			fresh = Color(0.298, 0.310, 0.259, 1.0)
+	return tr("MAP_VIEWER_WATER_SALT") if _viewer_color_distance_sq(color, salt) <= _viewer_color_distance_sq(color, fresh) else tr("MAP_VIEWER_WATER_FRESH")
+
+
+func _viewer_river_type_name(color: Color) -> String:
+	var tributary: Color = Color(0.4, 0.75, 1.0, 1.0)
+	var river: Color = Color(0.1, 0.35, 0.85, 1.0)
+	var major: Color = Color(0.15, 0.05, 0.55, 1.0)
+	var distances: Array[float] = [
+		_viewer_color_distance_sq(color, tributary),
+		_viewer_color_distance_sq(color, river),
+		_viewer_color_distance_sq(color, major),
+	]
+	var best: int = 0
+	if float(distances[1]) < float(distances[best]): best = 1
+	if float(distances[2]) < float(distances[best]): best = 2
+	return tr(str(["MAP_VIEWER_RIVER_TRIBUTARY", "MAP_VIEWER_RIVER_RIVER", "MAP_VIEWER_RIVER_MAJOR"][best]))
+
+
+func _viewer_plate_boundary_name(color: Color) -> String:
+	var red: Color = Color(1.0, 0.0, 0.0, 1.0)
+	var blue: Color = Color(0.0, 0.5, 1.0, 1.0)
+	if _viewer_color_distance_sq(color, red) < 0.05:
+		return tr("MAP_VIEWER_PLATE_CONVERGENT")
+	if _viewer_color_distance_sq(color, blue) < 0.05:
+		return tr("MAP_VIEWER_PLATE_DIVERGENT")
+	return tr("MAP_VIEWER_PLATE_TRANSFORM")
+
+
+func _viewer_estimate_elevation(color: Color) -> float:
+	var cache_key: String = "elev:" + color.to_html(false)
+	if _viewer_scalar_decode_cache.has(cache_key):
+		return float(_viewer_scalar_decode_cache[cache_key])
+	var best_value: float = 0.0
+	var best_distance: float = INF
+	# Coarse 100 m search followed by 1 m refinement reproduces the exported
+	# elevation palette closely while keeping first-click cost bounded.
+	for elevation in range(-Enum.ALTITUDE_MAX, Enum.ALTITUDE_MAX + 1, 100):
+		var distance: float = _viewer_color_distance_sq(color, Enum.getElevationColor(elevation, false))
+		if distance < best_distance:
+			best_distance = distance
+			best_value = float(elevation)
+	var coarse: int = int(best_value)
+	for elevation in range(maxi(-Enum.ALTITUDE_MAX, coarse - 120), mini(Enum.ALTITUDE_MAX, coarse + 120) + 1):
+		var distance: float = _viewer_color_distance_sq(color, Enum.getElevationColor(elevation, false))
+		if distance < best_distance:
+			best_distance = distance
+			best_value = float(elevation)
+	_viewer_scalar_decode_cache[cache_key] = best_value
+	return best_value
+
+
+func _viewer_estimate_palette_scalar(color: Color, palette: Dictionary,
+		minimum: float, maximum: float, step: float, cache_namespace: String) -> float:
+	var cache_key: String = "%s:%s" % [cache_namespace, color.to_html(false)]
+	if _viewer_scalar_decode_cache.has(cache_key):
+		return float(_viewer_scalar_decode_cache[cache_key])
+	var best_value: float = minimum
+	var best_distance: float = INF
+	var count: int = maxi(int(round((maximum - minimum) / step)), 1)
+	for index in range(count + 1):
+		var value: float = minf(minimum + float(index) * step, maximum)
+		var candidate: Color = _viewer_palette_color(value, palette)
+		var distance: float = _viewer_color_distance_sq(color, candidate)
+		if distance < best_distance:
+			best_distance = distance
+			best_value = value
+	_viewer_scalar_decode_cache[cache_key] = best_value
+	return best_value
+
+
+func _viewer_palette_color(value: float, palette: Dictionary) -> Color:
+	var keys: Array = palette.keys()
+	keys.sort()
+	if keys.is_empty():
+		return Color.MAGENTA
+	if value <= float(keys[0]):
+		return palette[keys[0]] as Color
+	if value >= float(keys[-1]):
+		return palette[keys[-1]] as Color
+	for index in range(keys.size() - 1):
+		var lower: float = float(keys[index])
+		var upper: float = float(keys[index + 1])
+		if value > upper:
+			continue
+		var t: float = clampf((value - lower) / maxf(upper - lower, 0.000001), 0.0, 1.0)
+		var smooth_t: float = t * t * (3.0 - 2.0 * t)
+		return (palette[keys[index]] as Color).lerp(palette[keys[index + 1]] as Color, smooth_t)
+	return palette[keys[-1]] as Color
+
+
+func _set_generation_phase_text(key: String, fallback: String = "") -> void:
+	_generation_phase_key = key
+	_generation_phase_fallback = fallback
+	if key.is_empty():
+		_generation_phase_label.text = fallback
+	else:
+		var translated := tr(key)
+		_generation_phase_label.text = fallback if translated == key and not fallback.is_empty() else translated
+	if _viewer_status_dot != null:
+		if key == "GEN_STATUS_COMPLETE":
+			_viewer_status_dot.add_theme_color_override("font_color", UITheme.color(&"success"))
+		elif key in ["GEN_STATUS_CANCELLED", "GEN_STATUS_UNAVAILABLE"]:
+			_viewer_status_dot.add_theme_color_override("font_color", UITheme.color(&"danger"))
+		elif key == "GEN_STATUS_READY":
+			_viewer_status_dot.add_theme_color_override("font_color", UITheme.color(&"muted"))
+		else:
+			_viewer_status_dot.add_theme_color_override("font_color", UITheme.color(&"accent"))
+
+
+func _set_generation_memory_text(key: String, args: Dictionary = {}) -> void:
+	_generation_memory_key = key
+	_generation_memory_args = args.duplicate(true)
+	var translated := tr(key)
+	_generation_memory_label.text = translated.format(args) if not args.is_empty() else translated
+
+
+func _refresh_generation_status_translation() -> void:
+	_set_generation_phase_text(_generation_phase_key, _generation_phase_fallback)
+	_set_generation_memory_text(_generation_memory_key, _generation_memory_args)
+	_generation_memory_label.tooltip_text = tr("GEN_STATUS_STEP_DETAIL_TOOLTIP")
+	if _cancel_generation_button != null:
+		_cancel_generation_button.text = tr("GEN_CANCEL").to_upper()
+
+
+func _show_generation_status(_params: Dictionary) -> void:
+	_show_viewer_workspace()
+	_generation_started_usec = Time.get_ticks_usec()
+	_generation_progress_bar.value = 0
+	_set_generation_phase_text("GEN_STATUS_PREPARING")
+	_set_generation_memory_text("GEN_STEP_PREPARING")
+	_generation_memory_label.tooltip_text = tr("GEN_STATUS_STEP_DETAIL_TOOLTIP")
+	_cancel_generation_button.disabled = false
+
+func _on_generation_progress(phase: String, completed: int, total: int) -> void:
+	var safe_total := maxi(total, 1)
+	var phase_key := str(GENERATION_PHASE_TRANSLATION_KEYS.get(phase, ""))
+	var phase_fallback := phase.replace("_", " ").capitalize()
+	_set_generation_phase_text(phase_key, phase_fallback)
+	var detail_key := str(GENERATION_PHASE_DETAIL_TRANSLATION_KEYS.get(phase, ""))
+	if detail_key.is_empty():
+		var translated_phase := tr(phase_key) if not phase_key.is_empty() else phase_fallback
+		_set_generation_memory_text("GEN_STATUS_STEP_ACTIVE", {"phase": translated_phase})
+	else:
+		_set_generation_memory_text(detail_key)
+	_generation_progress_bar.value = clampf(float(completed) * 100.0 / float(safe_total), 0.0, 98.0)
+
+func _on_cancel_generation_pressed() -> void:
+	if planetGenerator != null:
+		_cancel_generation_button.disabled = true
+		_set_generation_phase_text("GEN_STATUS_CANCELLING")
+		_set_generation_memory_text("GEN_STEP_CANCELLING")
+		planetGenerator.cancel_generation("user")
+
+func _on_generation_cancelled(reason: String) -> void:
+	_set_generation_phase_text("GEN_STATUS_CANCELLED")
+	_generation_progress_bar.value = 0
+	_set_generation_memory_text("GEN_STATUS_CANCELLED_REASON", {"reason": reason})
+	_cancel_generation_button.disabled = true
+	_set_buttons_enabled(true)
+
+func _on_load_planet_project_pressed() -> void:
+	var dialog := FileDialog.new()
+	dialog.access = FileDialog.ACCESS_FILESYSTEM
+	dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	dialog.title = tr("LOAD_PLANET_DIALOG_TITLE")
+	dialog.filters = PackedStringArray(["planet_project.json ; Planet Generator Project"])
+	dialog.min_size = Vector2i(700, 450)
+	add_child(dialog)
+	dialog.file_selected.connect(func(path: String):
+		_load_planet_project(path)
+		dialog.queue_free()
+	)
+	dialog.canceled.connect(dialog.queue_free)
+	dialog.popup_centered()
+
+
+func _load_planet_project(path: String) -> void:
+	var project := PlanetProject.load_project(path)
+	if not bool(project.get("ok", false)):
+		push_error("[Master] Cannot load planet project: %s" % project.get("reason", "unknown"))
+		return
+	_release_planet_generator()
+	_loaded_project = project
+	_viewer_inspected_uv = Vector2(-1.0, -1.0)
+	_viewer_crosshair.clear_point()
+	maps = project.get("maps", [])
+	map_index = 0
+	_viewer_image_cache.clear()
+	_viewer_scalar_decode_cache.clear()
+	_update_viewer_sources()
+	if maps.is_empty():
+		push_warning("[Master] Project contains no displayable PNG maps")
+		return
+	_show_map_path(maps[0])
+	_show_viewer_workspace()
+
+
+func _show_map_path(path: String) -> bool:
+	var image := Image.new()
+	if image.load(path) != OK:
+		push_warning("[Master] Cannot load map: " + path)
+		return false
+	_set_map_texture(ImageTexture.create_from_image(image))
+	return true
+
+
+# ============================================================================
+# BATCH / BENCHMARK
+# ============================================================================
+
+func _on_batch_start_requested(count: int, first_seed: int) -> void:
+	if _batch_runner == null or _batch_runner.running:
+		return
+
+	_release_planet_generator()
+	var params: Dictionary = _compile_generation_params()
+	var planet_name: String = str(_parameter_workspace.get_value("planet_name")).strip_edges()
+	if planet_name.is_empty():
+		planet_name = "Planet"
+	var safe_name: String = planet_name.validate_filename()
+	if safe_name.is_empty():
+		safe_name = "Planet"
+	var batch_root: String = "user://batch/%s_%d" % [
+		safe_name,
+		int(Time.get_unix_time_from_system()),
+	]
+
+	if _batch_runner.start(params, count, first_seed, batch_root, safe_name):
+		_parameter_workspace.set_batch_running(true)
+		_parameter_workspace.set_batch_status("BATCH_STARTING")
+		_set_buttons_enabled(false)
+	else:
+		_parameter_workspace.set_batch_status("BATCH_START_FAILED")
+
+
+func _on_batch_cancel_requested() -> void:
+	if _batch_runner == null or not _batch_runner.running:
+		return
+	_batch_runner.cancel()
+	_parameter_workspace.set_batch_status("BATCH_CANCELLING")
+
+
+func _on_batch_progress(completed: int, total: int, seed: int, status: String) -> void:
+	if _parameter_workspace != null:
+		_parameter_workspace.set_batch_progress(completed, total, seed, status)
+
+
+func _on_batch_completed(report: Dictionary) -> void:
+	if _parameter_workspace != null:
+		_parameter_workspace.set_batch_running(false)
+		_parameter_workspace.set_batch_completed(report)
+	_set_buttons_enabled(true)
+
 
 # ============================================================================
 # GENERATION LOGIC
 # ============================================================================
 
 func _on_btn_comfirme_pressed() -> void:
-	# UI Gather Data
-	var nom          = get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Name_Param/HBoxContainer/LineEdit")
-	var lblMapStatus = $"ImageFrame/LabelNomMap"
+	_loaded_project = {}
+	var planet_name := str(_parameter_workspace.get_value("planet_name"))
+	var generation_params = _compile_generation_params()
 
 	# Reset state
+	_viewer_inspected_uv = Vector2(-1.0, -1.0)
+	_viewer_crosshair.clear_point()
 	maps      = []
 	map_index = 0
-	$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = load("res://data/img/UI/no_data.png")
+	_set_map_texture(null)
+	_sync_reference_map()
+
+	# Le constructeur du nouveau générateur acquiert immédiatement le device
+	# partagé et alloue ses textures. Libérer l'ancienne planète AVANT d'évaluer
+	# PlanetGenerator.new() empêche le chevauchement de deux jeux de ressources.
+	_release_planet_generator()
 
 	# Initialize Generator
 	planetGenerator = PlanetGenerator.new(
-		nom.text, 
-		_compile_generation_params(),
+		planet_name,
+		generation_params,
 		"user://temp/",
-		lblMapStatus,
 	)
 	
-	# Connect Signal
-	planetGenerator.finished.connect(_on_planetGenerator_finished)
+	# Bind the current epoch so stale callbacks from a replaced generator can
+	# never operate on the new one.
+	var generation_epoch := _generation_epoch
+	planetGenerator.finished.connect(
+		_on_planetGenerator_finished.bind(generation_epoch),
+		CONNECT_ONE_SHOT,
+	)
+	planetGenerator.generation_progress.connect(_on_generation_progress)
+	planetGenerator.generation_cancelled.connect(_on_generation_cancelled, CONNECT_ONE_SHOT)
 
-	print("Génération de la planète : " + nom.text)
+	print("Génération de la planète : " + planet_name)
+	_show_generation_status(generation_params)
 
-	planetGenerator.generate_planet()
+	var generation_started = planetGenerator.generate_planet()
 
-	# Disable UI
-	_set_buttons_enabled(false)
+	# Ne pas bloquer l'interface si l'initialisation GPU a tout de même échoué.
+	_set_buttons_enabled(not generation_started)
+	if not generation_started:
+		_set_generation_phase_text("GEN_STATUS_UNAVAILABLE")
+		_set_generation_memory_text("GEN_STATUS_GPU_START_FAILED")
+		_cancel_generation_button.disabled = true
 
-func _on_planetGenerator_finished() -> void:
-	call_deferred("_on_planetGenerator_finished_main")
 
-func _on_planetGenerator_finished_main() -> void:
+func _release_planet_generator() -> void:
+	# Invalidate both the signal callback and its deferred UI continuation
+	# before releasing GPU state.
+	_generation_epoch += 1
+	if planetGenerator:
+		planetGenerator.cleanup()
+		planetGenerator = null
+	if _parameter_workspace != null:
+		_parameter_workspace.set_save_planet_enabled(false)
+
+
+func _exit_tree() -> void:
+	_is_exiting = true
+	if _batch_runner != null:
+		_batch_runner.shutdown()
+	_release_planet_generator()
+	# Drain all GPU cleanup jobs and destroy the shared local RenderingDevice on
+	# its owning background thread. Blocking here is safe because the app exits.
+	GPUGenerationWorker.shutdown()
+
+func _on_planetGenerator_finished(generation_epoch: int) -> void:
+	call_deferred("_on_planetGenerator_finished_main", generation_epoch)
+
+func _on_planetGenerator_finished_main(generation_epoch: int) -> void:
+	if (
+		_is_exiting
+		or generation_epoch != _generation_epoch
+		or not is_instance_valid(planetGenerator)
+	):
+		return
+
 	# 1. Update 2D Maps (Standard Logic)
 	maps = planetGenerator.getMaps()
 	map_index = 0
+	_viewer_image_cache.clear()
+	_viewer_scalar_decode_cache.clear()
+	_update_viewer_sources()
+	if maps.is_empty():
+		push_warning("[Master] Generation completed without exportable maps")
+		_set_buttons_enabled(true)
+		return
 	
 	var img = Image.new()
 	var err = img.load(maps[map_index])
 	if err == OK:
 		var tex = ImageTexture.create_from_image(img)
-		$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = tex
-		update_map_label()
+		_set_map_texture(tex)
 	else:
 		print("Erreur lors du chargement de l'image: ", maps[map_index])
+
+	_generation_progress_bar.value = 100
+	_set_generation_phase_text("GEN_STATUS_COMPLETE")
+	var elapsed_s := float(Time.get_ticks_usec() - _generation_started_usec) / 1000000.0
+	_set_generation_memory_text("GEN_STATUS_COMPLETED_IN", {"seconds": "%.2f" % elapsed_s})
+	_cancel_generation_button.disabled = true
 
 	# 2. Play completion sound
 	var sfx = load(SFX_GENERATION_DONE)
@@ -134,11 +1385,16 @@ func _on_planetGenerator_finished_main() -> void:
 	_set_buttons_enabled(true)
 
 func _set_buttons_enabled(enabled: bool) -> void:
-	$"ImageFrame/Control General/btnGenerer".disabled = !enabled
-	$"ImageFrame/Control General/btnSauvegarder".disabled = !enabled
-	$"ImageFrame/Control General/btnRandomiser".disabled  = !enabled
-	$"ImageFrame/btnSuivant".disabled   = !enabled
-	$"ImageFrame/btnPrecedent".disabled = !enabled
+	if _parameter_workspace != null:
+		_parameter_workspace.set_actions_enabled(enabled)
+		_parameter_workspace.set_save_planet_enabled(enabled and planetGenerator != null and not maps.is_empty())
+	if _viewer_load_action != null:
+		_viewer_load_action.disabled = not enabled
+	if _viewer_parameters_button != null:
+		_viewer_parameters_button.disabled = not enabled
+	if _viewer_save_action != null:
+		_viewer_save_action.disabled = not enabled or maps.is_empty()
+
 
 ## Compile et normalise les paramètres de génération pour le GPU.
 ##
@@ -148,102 +1404,111 @@ func _set_buttons_enabled(enabled: bool) -> void:
 ##
 ## @return Dictionary: Un dictionnaire contenant 'seed', 'planet_radius', 'atmo_density', 'gravity', etc.
 func _compile_generation_params() -> Dictionary:
-	"""
-	Compile all generation parameters into a single dictionary
-	This is passed to the GPU orchestrator and shaders
-	"""
-	var _seed = get_node(BASE_PATH_SLIDERS+"/PanelSeed/seed/LineEdit").value
-	if _seed == 0:
+	var ui = _parameter_workspace.get_values()
+	var generation_seed := int(ui.get("seed", 0))
+	if generation_seed == 0:
 		randomize()
-		_seed = randi()
-	
-	var circonference = int(get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Radius_Param/LineEdit").value) * 2 * PI
-	var typePlanete   = get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Type_Param/LineEdit").get_selected_id()
-	if typePlanete == -1:
-		typePlanete = 0  # Default to Earth-like if none selected
+		generation_seed = randi()
 
-	var generation_params = {
-		"seed"              : _seed,
-		"nb_thread"         : get_node(CATEGORIES_PATHS["GENERAL"]+"Thread_Number_Param/LineEdit").value,
+	var planet_radius_km := float(ui["planet_radius"])
+	var canonical_resolution := PlanetGridContract.logical_dimensions(planet_radius_km)
+	var planet_type := int(ui.get("planet_type", 0))
+	if planet_type < 0:
+		planet_type = 0
 
-		# Planet properties
-		"planet_radius"     : circonference / (2.0 * PI),
-		"planet_density"    : get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Density_Param/LineEdit").value,
-		"planet_type"       : typePlanete, # 0: Earth-like, 1: Thin, 2: Thick
-		"resolution"        : Vector2i(circonference, circonference / 2),
-		"avg_temperature"   : get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Temperature_Param/LineEdit").value,
-		
-		# Erosion and tectonics
-		"terrain_scale"      : get_node(CATEGORIES_PATHS["EROSION"]+"Terrain_Scale_Param/LineEdit").value, # 0
-		"erosion_iterations" : get_node(CATEGORIES_PATHS["EROSION"]+"Erosions_Iterations_Param/LineEdit").value, # 100
-		"erosion_rate"       : get_node(CATEGORIES_PATHS["EROSION"]+"Erosion_Rate_Param/LineEdit").value, # 0.05
-		"rain_rate"          : get_node(CATEGORIES_PATHS["EROSION"]+"Rain_Rate_Param/LineEdit").value, # 0.005
-		"evap_rate"          : get_node(CATEGORIES_PATHS["EROSION"]+"Evap_Rate_Param/LineEdit").value, # 0.02
-		"flow_rate"          : get_node(CATEGORIES_PATHS["EROSION"]+"Flow_Rate_Param/LineEdit").value, # 0.25
-		"deposition_rate"    : get_node(CATEGORIES_PATHS["EROSION"]+"Deposition_Rate_Param/LineEdit").value, # 0.05
-		"capacity_multiplier": get_node(CATEGORIES_PATHS["EROSION"]+"Capacity_Multiplier_Param/LineEdit").value, # 1.0
-		"flux_iterations"    : get_node(CATEGORIES_PATHS["EROSION"]+"Flux_Iterations_Param/LineEdit").value, # 10
-		"base_flux"          : get_node(CATEGORIES_PATHS["EROSION"]+"Base_Flux_Param/LineEdit").value, #1.0
-		"propagation_rate"   : get_node(CATEGORIES_PATHS["EROSION"]+"Propagation_Rate_Param/LineEdit").value, # 0.8
-		"spreading_rate"    : get_node(CATEGORIES_PATHS["EROSION"]+"Spreading_Rate_Param/LineEdit").value, # 50.0
-		"max_crust_age"     : get_node(CATEGORIES_PATHS["EROSION"]+"Max_Crust_Age_Param/LineEdit").value, # 200.0
-		"subsidence_coeff"  : get_node(CATEGORIES_PATHS["EROSION"]+"Subsidence_Coeff_Param/LineEdit").value, # 2800.0
+	var generation_params := {
+		"seed": generation_seed,
+		"export_worker_count": ui["export_worker_count"],
+		"planet_radius": planet_radius_km,
+		"planet_density": ui["planet_density"],
+		"planet_type": planet_type,
+		"resolution": canonical_resolution,
+		"global_dimensions": canonical_resolution,
+		"global_cell_area_km2": PlanetGridContract.effective_cell_area_km2(planet_radius_km, canonical_resolution),
+		"tile_size": PlanetGridContract.DEFAULT_TILE_SIZE,
+		"projection": PlanetGridContract.PROJECTION_ID,
+		"tiled_global_generation": false,
+		"vram_budget_bytes": TiledGlobalGenerator.HARD_VRAM_BUDGET_BYTES,
+		"export_cartographic_map": true,
+		"export_grid_overlay": true,
+		"cartography_palette_path": CartographicPalette.DEFAULT_PATH,
+		"cartography_view": CartographicRenderer.VIEW_PLANET,
+		"cartography_grid_alpha": 166,
+		"run_integrity_checks": true,
+		"export_preset": _parameter_workspace.get_export_preset() if _parameter_workspace != null else ExportCatalog.PRESET_STANDARD,
+		"avg_temperature": ui["avg_temperature"],
 
-		# Craters
-		"crater_density"     : get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Density_Param/LineEdit").value, # 0.5
-		"crater_max_radius"  : min(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 0.08,
-		"crater_min_radius"  : min(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Min_Radius_Param/LineEdit").value, min(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 0.08),
-		"crater_depth_ratio" : get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Depth_Ratio_Param/LineEdit").value, # 0.25
-		"crater_ejecta_extent": get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Ejecta_Extent_Param/LineEdit").value, # 2.5
-		"crater_ejecta_decay" : get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Ejecta_Decay_Param/LineEdit").value, # 3.0
-		"crater_azimuth_var"  : get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Azimuth_Var_Param/LineEdit").value, # 0.3
+		"gas_giant_num_bands": int(ui["gas_giant_num_bands"]),
+		"gas_giant_jet_strength": ui["gas_giant_jet_strength"],
+		"gas_giant_eddy_strength": ui["gas_giant_eddy_strength"],
+		"gas_giant_advection_dt": ui["gas_giant_advection_dt"],
+		"gas_giant_advection_iterations": int(ui["gas_giant_advection_iterations"]),
+		"gas_giant_target_sharpen": ui["gas_giant_target_sharpen"],
 
-		# Clouds
-		"cloud_coverage"    : get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Coverage_Param/LineEdit").value, # 0.5
-		"cloud_density"     : get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Density_Param/LineEdit").value,  # 0.8
+		"terrain_scale": ui["terrain_scale"],
+		"erosion_iterations": ui["erosion_iterations"],
+		"erosion_rate": ui["erosion_rate"],
+		"rain_rate": ui["rain_rate"],
+		"evap_rate": ui["evap_rate"],
+		"flow_rate": ui["flow_rate"],
+		"deposition_rate": ui["deposition_rate"],
+		"capacity_multiplier": ui["capacity_multiplier"],
+		"flux_iterations": ui["flux_iterations"],
+		"base_flux": ui["base_flux"],
+		"propagation_rate": ui["propagation_rate"],
+		"spreading_rate": ui["spreading_rate"],
+		"max_crust_age": ui["max_crust_age"],
+		"subsidence_coeff": ui["subsidence_coeff"],
 
-		# Ice caps
-		"ice_probability" : get_node(CATEGORIES_PATHS["EAU"]+"Ice_Probability_Param/LineEdit").value, # 0.9
+		"crater_density": ui["crater_density"],
+		# Crater radii are physical values in kilometres. They must not depend on
+		# the render/canonical resolution; the cratering phase converts them to
+		# the appropriate footprint for the current equirectangular texture.
+		"crater_min_radius": ui["crater_min_radius"],
+		"crater_max_radius": ui["crater_max_radius"],
+		"crater_depth_ratio": ui["crater_depth_ratio"],
+		"crater_ejecta_extent": ui["crater_ejecta_extent"],
+		"crater_ejecta_decay": ui["crater_ejecta_decay"],
+		"crater_azimuth_var": ui["crater_azimuth_var"],
 
-		# Water bodies
-		"ocean_ratio"       : get_node(CATEGORIES_PATHS["EAU"]+"Ocean_Ratio_Param/LineEdit").value,  # Pourcentage couverture océanique 70.0
-		"global_humidity"   : get_node(CATEGORIES_PATHS["EAU"]+"Global_Humidity_Param/LineEdit").value, # 0.5
-		"sea_level"         : get_node(CATEGORIES_PATHS["EAU"]+"Sea_Level_Param/LineEdit").value, # 0.0
-		"saltwater_min_size" : get_node(CATEGORIES_PATHS["EAU"]+"Freshwater_Max_Size_Param/LineEdit").value+1, # 1000
-		"freshwater_max_size": get_node(CATEGORIES_PATHS["EAU"]+"Freshwater_Max_Size_Param/LineEdit").value, # 999
-		"lake_threshold"     : get_node(CATEGORIES_PATHS["EAU"]+"Lake_Threshold_Param/LineEdit").value, # 5.0
+		"cloud_coverage": ui["cloud_coverage"],
+		"cloud_density": ui["cloud_density"],
+		"ice_probability": ui["ice_probability"],
 
-		"river_iterations"   : get_node(CATEGORIES_PATHS["EAU"]+"River_Iterations_Param/LineEdit").value, # 2000
-		# Nouveau système de rivières : les seuils sont définis par défaut dans orchestrator.gd
-		# river_affluent_threshold = 50.0, river_riviere_threshold = 200.0, river_fleuve_threshold = 800.0
-		# river_precip_scale = 1.0 (utiliser River_Base_Flux_Param comme proxy si besoin)
+		"ocean_ratio": ui["ocean_ratio"],
+		"global_humidity": ui["global_humidity"],
+		"sea_level": ui["sea_level"],
+		"saltwater_min_size": float(ui["freshwater_max_size"]) + 1.0,
+		"freshwater_max_size": ui["freshwater_max_size"],
+		"lake_threshold": ui["lake_threshold"],
 
-		# Regions
-		"nb_cases_regions" : get_node(CATEGORIES_PATHS["REGION"]+"Nb_Cases_Regions_Param/LineEdit").value, # 50
-		"region_cost_flat" : get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_Flat_Param/LineEdit").value, # 1.0
-		"region_cost_hill" : get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_Hill_Param/LineEdit").value, # 2.0
-		"region_cost_river": get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_River_Param/LineEdit").value, # 3.0
-		"region_river_threshold" : get_node(CATEGORIES_PATHS["REGION"]+"Region_River_Threshold_Param/LineEdit").value, # 1.0
-		"region_budget_variation": get_node(CATEGORIES_PATHS["REGION"]+"Region_Budget_Variation_Param/LineEdit").value, # 0.5
-		"region_noise_strength"  : get_node(CATEGORIES_PATHS["REGION"]+"Region_Noise_Strength_Param/LineEdit").value, # 0.5
-		"region_iterations"	     : max(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 2,
+		"nb_cases_regions": ui["nb_cases_regions"],
+		"region_cost_flat": ui["region_cost_flat"],
+		"region_cost_hill": ui["region_cost_hill"],
+		"region_cost_river": ui["region_cost_river"],
+		"region_river_threshold": ui["region_river_threshold"],
+		"region_budget_variation": ui["region_budget_variation"],
+		"region_noise_strength": ui["region_noise_strength"],
+		"region_iterations": max(canonical_resolution.x, canonical_resolution.y) * 2,
 
-		# Regions Ocean 
-		"nb_cases_ocean_regions": get_node(CATEGORIES_PATHS["OCEAN"]+"Nb_Cases_Ocean_Regions_Param/LineEdit").value, # 100
-		"ocean_cost_flat"   : get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Cost_Flat_Param/LineEdit").value, # 1.0
-		"ocean_cost_deeper" : get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Cost_Deeper_Param/LineEdit").value, # 2.0
-		"ocean_noise_strength" : get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Noise_Strength_Param/LineEdit").value, # 0.5
-		"ocean_iterations"	   : max(Vector2i(circonference, circonference / 2).x, Vector2i(circonference, circonference / 2).y) * 2,
+		"admin_country_enclave_cleanup": true,
+		"admin_country_enclave_max_fraction": 0.30,
+		"admin_country_enclave_dominance": 0.60,
+		"admin_country_enclave_proximity_factor": 0.35,
 
-		# Resources
-		"petrole_probability"  : get_node(CATEGORIES_PATHS["RESSOURCES"]+"Petrole_Probability_Param/LineEdit").value, # 0.025
-		"petrole_deposit_size" : get_node(CATEGORIES_PATHS["RESSOURCES"]+"Petrole_Deposit_Size_Param/LineEdit").value, # 200.0
-		"global_richness"      : get_node(CATEGORIES_PATHS["RESSOURCES"]+"Global_Richness_Param/LineEdit").value, # 1.0
+		"nb_cases_ocean_regions": ui["nb_cases_ocean_regions"],
+		"ocean_cost_flat": ui["ocean_cost_flat"],
+		"ocean_cost_deeper": ui["ocean_cost_deeper"],
+		"ocean_noise_strength": ui["ocean_noise_strength"],
+		"ocean_iterations": max(canonical_resolution.x, canonical_resolution.y) * 2,
+
+		"petrole_probability": ui["petrole_probability"],
+		"petrole_deposit_size": ui["petrole_deposit_size"],
+		"global_richness": ui["global_richness"],
 	}
-	
+
 	print("[PlanetGenerator] Parameters compiled:")
 	print("  Seed: ", generation_params["seed"])
-
 	return generation_params
 
 
@@ -252,220 +1517,124 @@ func _compile_generation_params() -> Dictionary:
 # ============================================================================
 
 func get_map_display_name(file_path: String) -> String:
-	var file_name = file_path.get_file()
+	var file_name := file_path.get_file()
 	if MAP_NAME_TO_KEY.has(file_name):
 		return tr(MAP_NAME_TO_KEY[file_name])
+
+	# Resource maps are numerous and M7.2 stores them below maps/resources/.
+	# Derive their localization key from the stable file identifier instead of
+	# maintaining a second 116-entry filename table in the UI. This also keeps
+	# compatibility with the legacy `ressource/` export directory.
+	var resource_key := _resource_map_translation_key(file_path)
+	if not resource_key.is_empty():
+		var translated := tr(resource_key)
+		if translated != resource_key:
+			return translated
+
 	return file_name
 
-func update_map_label() -> void:
-	if maps.is_empty():
-		return
-	var lbl = $"ImageFrame/LabelNomMap"
-	lbl.text = get_map_display_name(maps[map_index])
 
-func _on_btn_suivant_pressed() -> void:
-	if maps.is_empty(): return 
-	map_index = (map_index + 1) % maps.size()
-	_load_current_map()
-
-func _on_btn_precedant_pressed() -> void:
-	if maps.is_empty(): return 
-	map_index -= 1
-	if map_index < 0: map_index = maps.size() - 1
-	_load_current_map()
+func _resource_map_translation_key(file_path: String) -> String:
+	var normalized := file_path.replace("\\", "/")
+	var lower_path := normalized.to_lower()
+	var parent_dir := normalized.get_base_dir().get_file().to_lower()
+	var is_resource_path := (
+		parent_dir in ["ressource", "resources"]
+		or "/ressource/" in lower_path
+		or "/resources/" in lower_path
+	)
+	if not is_resource_path:
+		return ""
+	var stem := normalized.get_file().get_basename()
+	if not stem.ends_with("_map"):
+		return ""
+	stem = stem.trim_suffix("_map")
+	if stem.is_empty():
+		return ""
+	return "RESOURCE_" + stem.to_upper()
 
 func _load_current_map() -> void:
 	var img = Image.new()
 	if img.load(maps[map_index]) == OK:
 		var tex = ImageTexture.create_from_image(img)
-		$"ImageFrame/ImageMenu/Control Images/Frame Map/Map".texture = tex
-		update_map_label()
-
-func _on_fold_button_pressed(cible : String) -> void:
-	print("Node : ", get_node(cible))
-	var margin_container = get_node(cible) as MarginContainer
-	margin_container.visible = !margin_container.visible
-
-# ============================================================================
-# SLIDER CALLBACKS
-# ============================================================================
-
-func _set_slider_label(slider_label: Label, tr_key: String, value, unit: String = "") -> void:
-	print("Setting slider label for ", tr_key, " to value: ", str(value) + unit)
-	slider_label.text = tr(tr_key).format({"val": str(value) + unit})
-
-
-func _on_range_change_terrain_scale(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Terrain_Scale_Param/Label"), "TERRAIN_SCALE", get_node(CATEGORIES_PATHS["EROSION"]+"Terrain_Scale_Param/LineEdit").value, " m")
-func _on_range_change_thread_number(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["GENERAL"]+"Thread_Number_Param/Label"), "THREAD_NUMBER", get_node(CATEGORIES_PATHS["GENERAL"]+"Thread_Number_Param/LineEdit").value)
-func _on_range_change_ocean_ratio(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"Ocean_Ratio_Param/Label"), "OCEAN_RATIO", get_node(CATEGORIES_PATHS["EAU"]+"Ocean_Ratio_Param/LineEdit").value, "%")
-func _on_range_change_planet_radius(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Radius_Param/Label"), "PLANET_RADIUS", get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Radius_Param/LineEdit").value, " km")
-func _on_range_change_planet_density(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Density_Param/Label"), "PLANET_DENSITY", get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Density_Param/LineEdit").value, " g/cm³")
-func _on_range_change_planet_temperature_avg(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Temperature_Param/Label"), "PLANET_TEMPERATURE_AVG", get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Temperature_Param/LineEdit").value, " °C")
-
-func _on_range_change_erosion_iterations(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Erosions_Iterations_Param/Label"), "EROSION_ITERATIONS", get_node(CATEGORIES_PATHS["EROSION"]+"Erosions_Iterations_Param/LineEdit").value)
-func _on_range_change_erosion_rate(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Erosion_Rate_Param/Label"), "EROSION_RATE", get_node(CATEGORIES_PATHS["EROSION"]+"Erosion_Rate_Param/LineEdit").value)
-func _on_range_change_rain_rate(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Rain_Rate_Param/Label"), "RAIN_RATE", get_node(CATEGORIES_PATHS["EROSION"]+"Rain_Rate_Param/LineEdit").value)
-func _on_range_change_evap_rate(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Evap_Rate_Param/Label"), "EVAP_RATE", get_node(CATEGORIES_PATHS["EROSION"]+"Evap_Rate_Param/LineEdit").value)
-func _on_range_change_flow_rate(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Flow_Rate_Param/Label"), "FLOW_RATE", get_node(CATEGORIES_PATHS["EROSION"]+"Flow_Rate_Param/LineEdit").value)
-
-func _on_range_change_deposition_rate(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Deposition_Rate_Param/Label"), "DEPOSITION_RATE", get_node(CATEGORIES_PATHS["EROSION"]+"Deposition_Rate_Param/LineEdit").value)
-func _on_range_change_capacity_multiplier(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Capacity_Multiplier_Param/Label"), "CAPACITY_MULTIPLIER", get_node(CATEGORIES_PATHS["EROSION"]+"Capacity_Multiplier_Param/LineEdit").value)
-func _on_range_change_flux_iterations(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Flux_Iterations_Param/Label"), "FLUX_ITERATIONS", get_node(CATEGORIES_PATHS["EROSION"]+"Flux_Iterations_Param/LineEdit").value)
-func _on_range_change_base_flux(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Base_Flux_Param/Label"), "BASE_FLUX", get_node(CATEGORIES_PATHS["EROSION"]+"Base_Flux_Param/LineEdit").value)
-func _on_range_change_propagation_rate(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Propagation_Rate_Param/Label"), "PROPAGATION_RATE", get_node(CATEGORIES_PATHS["EROSION"]+"Propagation_Rate_Param/LineEdit").value)
-func _on_range_change_spreading_rate(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Spreading_Rate_Param/Label"), "SPREADING_RATE", get_node(CATEGORIES_PATHS["EROSION"]+"Spreading_Rate_Param/LineEdit").value)
-func _on_range_change_max_crust_age(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Max_Crust_Age_Param/Label"), "MAX_CRUST_AGE", get_node(CATEGORIES_PATHS["EROSION"]+"Max_Crust_Age_Param/LineEdit").value, " Myr")
-func _on_range_change_subsidence_coefficient(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EROSION"]+"Subsidence_Coeff_Param/Label"), "SUBSIDENCE_COEFFICIENT", get_node(CATEGORIES_PATHS["EROSION"]+"Subsidence_Coeff_Param/LineEdit").value, " m/Myr")
-
-
-func _on_range_change_crater_density(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Density_Param/Label"), "CRATER_DENSITY", get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Density_Param/LineEdit").value)
-func _on_range_change_crater_min_radius(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Min_Radius_Param/Label"), "CRATER_MIN_RADIUS", get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Min_Radius_Param/LineEdit").value, " km")
-func _on_range_change_crater_depth_ratio(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Depth_Ratio_Param/Label"), "CRATER_DEPTH_RATIO", get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Depth_Ratio_Param/LineEdit").value)
-func _on_range_change_crater_ejecta_extent(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Ejecta_Extent_Param/Label"), "CRATER_EJECTA_EXTENT", get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Ejecta_Extent_Param/LineEdit").value)
-func _on_range_change_crater_ejecta_decay(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Ejecta_Decay_Param/Label"), "CRATER_EJECTA_DECAY", get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Ejecta_Decay_Param/LineEdit").value)
-func _on_range_change_crater_azimuth_var(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Azimuth_Var_Param/Label"), "CRATER_AZIMUTH_VAR", get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Azimuth_Var_Param/LineEdit").value)
-
-
-func _on_range_change_ice_probability(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"Ice_Probability_Param/Label"), "ICE_PROBABILITY", get_node(CATEGORIES_PATHS["EAU"]+"Ice_Probability_Param/LineEdit").value, "%")
-func _on_range_change_global_humidity(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"Global_Humidity_Param/Label"), "GLOBAL_HUMIDITY", get_node(CATEGORIES_PATHS["EAU"]+"Global_Humidity_Param/LineEdit").value, "%")
-func _on_range_change_sea_level(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"Sea_Level_Param/Label"), "SEA_LEVEL", get_node(CATEGORIES_PATHS["EAU"]+"Sea_Level_Param/LineEdit").value, " m")
-func _on_range_change_freshwater_max_size(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"Freshwater_Max_Size_Param/Label"), "FRESHWATER_MAX_SIZE", get_node(CATEGORIES_PATHS["EAU"]+"Freshwater_Max_Size_Param/LineEdit").value, " km²")
-func _on_range_change_lake_threshold(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"Lake_Threshold_Param/Label"), "LAKE_THRESHOLD", get_node(CATEGORIES_PATHS["EAU"]+"Lake_Threshold_Param/LineEdit").value)
-func _on_range_change_river_iterations(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Iterations_Param/Label"), "RIVER_ITERATIONS", get_node(CATEGORIES_PATHS["EAU"]+"River_Iterations_Param/LineEdit").value)
-func _on_range_change_river_affluent_threshold(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Affluent_Threshold_Param/Label"), "RIVER_AFFLUENT_THRESHOLD", get_node(CATEGORIES_PATHS["EAU"]+"River_Affluent_Threshold_Param/LineEdit").value)
-func _on_range_change_river_threshold(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Threshold_Param/Label"), "RIVER_THRESHOLD", get_node(CATEGORIES_PATHS["EAU"]+"River_Threshold_Param/LineEdit").value)
-func _on_range_change_river_fleuve_threshold(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["EAU"]+"River_Fleuve_Threshold_Param/Label"), "RIVER_FLEUVE_THRESHOLD", get_node(CATEGORIES_PATHS["EAU"]+"River_Fleuve_Threshold_Param/LineEdit").value)
-
-func _on_range_change_cloud_coverage(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Coverage_Param/Label"), "CLOUD_COVERAGE", get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Coverage_Param/LineEdit").value, "%")
-func _on_range_change_cloud_density(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Density_Param/Label"), "CLOUD_DENSITY", get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Density_Param/LineEdit").value, "%")
-
-
-func _on_range_change_nb_cases_regions(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["REGION"]+"Nb_Cases_Regions_Param/Label"), "NB_CASES_REGIONS", get_node(CATEGORIES_PATHS["REGION"]+"Nb_Cases_Regions_Param/LineEdit").value)
-func _on_range_change_region_cost_flat(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_Flat_Param/Label"), "REGION_COST_FLAT", get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_Flat_Param/LineEdit").value)
-func _on_range_change_region_cost_hill(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_Hill_Param/Label"), "REGION_COST_HILL", get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_Hill_Param/LineEdit").value)
-func _on_range_change_region_cost_river(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_River_Param/Label"), "REGION_COST_RIVER", get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_River_Param/LineEdit").value)
-func _on_range_change_region_river_threshold(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["REGION"]+"Region_River_Threshold_Param/Label"), "REGION_RIVER_THRESHOLD", get_node(CATEGORIES_PATHS["REGION"]+"Region_River_Threshold_Param/LineEdit").value)
-func _on_range_change_region_budget_variation(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["REGION"]+"Region_Budget_Variation_Param/Label"), "REGION_BUDGET_VARIATION", get_node(CATEGORIES_PATHS["REGION"]+"Region_Budget_Variation_Param/LineEdit").value)
-func _on_range_change_region_noise_strength(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["REGION"]+"Region_Noise_Strength_Param/Label"), "REGION_NOISE_STRENGTH", get_node(CATEGORIES_PATHS["REGION"]+"Region_Noise_Strength_Param/LineEdit").value)
-
-
-func _on_range_change_nb_cases_ocean_regions(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["OCEAN"]+"Nb_Cases_Ocean_Regions_Param/Label"), "NB_CASES_OCEAN_REGIONS", get_node(CATEGORIES_PATHS["OCEAN"]+"Nb_Cases_Ocean_Regions_Param/LineEdit").value)
-func _on_range_change_ocean_cost_flat(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Cost_Flat_Param/Label"), "OCEAN_COST_FLAT", get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Cost_Flat_Param/LineEdit").value)
-func _on_range_change_ocean_cost_deeper(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Cost_Deeper_Param/Label"), "OCEAN_COST_DEEPER", get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Cost_Deeper_Param/LineEdit").value)
-func _on_range_change_ocean_noise_strength(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Noise_Strength_Param/Label"), "OCEAN_NOISE_STRENGTH", get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Noise_Strength_Param/LineEdit").value)
-func _on_range_change_petrole_probability(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["RESSOURCES"]+"Petrole_Probability_Param/Label"), "PETROLE_PROBABILITY", get_node(CATEGORIES_PATHS["RESSOURCES"]+"Petrole_Probability_Param/LineEdit").value, "%")
-func _on_range_change_petrole_deposit_size(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["RESSOURCES"]+"Petrole_Deposit_Size_Param/Label"), "PETROLE_DEPOSIT_SIZE", get_node(CATEGORIES_PATHS["RESSOURCES"]+"Petrole_Deposit_Size_Param/LineEdit").value, " km²")
-func _on_range_change_global_richness(_value = 0) -> void:
-	_set_slider_label(get_node(CATEGORIES_PATHS["RESSOURCES"]+"Global_Richness_Param/Label"), "GLOBAL_RICHNESS", get_node(CATEGORIES_PATHS["RESSOURCES"]+"Global_Richness_Param/LineEdit").value)
+		_set_map_texture(tex)
+	if _viewer_base_select != null and _viewer_base_select.item_count == maps.size():
+		_viewer_base_select.select(map_index)
 
 func maj_labels() -> void:
-	# TODO : REPLACE THE NODE PATH WITH CORRECT ONES
-	_on_range_change_thread_number()
-	_on_range_change_planet_radius()
-	_on_range_change_planet_density()
-	_on_range_change_planet_temperature_avg()
+	if _parameter_workspace != null:
+		_parameter_workspace.refresh_translations()
+	if _viewer_workspace != null:
+		_viewer_workspace.refresh_translations()
+	_refresh_generation_status_translation()
+	_refresh_advanced_viewer_translation()
+	# The master updates additional viewer labels after the workspace translation
+	# pass, so schedule one final geometry refresh once all translated text is set.
+	if _parameter_workspace != null:
+		_parameter_workspace.call_deferred("_layout_interface")
+	if _viewer_workspace != null:
+		_viewer_workspace.call_deferred("_layout_interface")
 
-	_on_range_change_terrain_scale()
-	_on_range_change_erosion_iterations()
-	_on_range_change_erosion_rate()
-	_on_range_change_rain_rate()
-	_on_range_change_evap_rate()
-	_on_range_change_flow_rate()
-	_on_range_change_deposition_rate()
-	_on_range_change_capacity_multiplier()
-	_on_range_change_flux_iterations()
-	_on_range_change_base_flux()
-	_on_range_change_propagation_rate()
-	_on_range_change_spreading_rate()
-	_on_range_change_max_crust_age()
-	_on_range_change_subsidence_coefficient()
-	
-	_on_range_change_crater_density()
-	_on_range_change_crater_min_radius()
-	_on_range_change_crater_depth_ratio()
-	_on_range_change_crater_ejecta_extent()
-	_on_range_change_crater_ejecta_decay()
-	_on_range_change_crater_azimuth_var()
 
-	_on_range_change_ocean_ratio()
-	_on_range_change_ice_probability()
-	_on_range_change_global_humidity()
-	_on_range_change_sea_level()
-	_on_range_change_freshwater_max_size()
-	_on_range_change_lake_threshold()
-	_on_range_change_river_iterations()
-	_on_range_change_river_affluent_threshold()
-	_on_range_change_river_threshold()
-	_on_range_change_river_fleuve_threshold()
+func _unhandled_key_input(event: InputEvent) -> void:
+	var key_event: InputEventKey = event as InputEventKey
+	if key_event == null or not key_event.pressed or key_event.echo:
+		return
+	var viewer_visible: bool = _viewer_workspace != null and _viewer_workspace.visible
+	var parameters_visible: bool = _parameter_workspace != null and _parameter_workspace.visible
+	match key_event.keycode:
+		KEY_V:
+			if _viewer_workspace != null and _viewer_workspace.visible:
+				_show_parameters_workspace()
+			else:
+				_show_viewer_workspace()
+			get_viewport().set_input_as_handled()
+		KEY_B:
+			if _parameter_workspace != null and _parameter_workspace.visible:
+				_parameter_workspace.toggle_batch_panel()
+				get_viewport().set_input_as_handled()
+		KEY_LEFT, KEY_Q, KEY_A:
+			if viewer_visible and key_event.shift_pressed:
+				_cycle_viewer_overlay(-1)
+				get_viewport().set_input_as_handled()
+			elif viewer_visible or parameters_visible:
+				_cycle_viewer_base(-1)
+				get_viewport().set_input_as_handled()
+		KEY_RIGHT, KEY_D:
+			if viewer_visible and key_event.shift_pressed:
+				_cycle_viewer_overlay(1)
+				get_viewport().set_input_as_handled()
+			elif viewer_visible or parameters_visible:
+				_cycle_viewer_base(1)
+				get_viewport().set_input_as_handled()
+		KEY_0:
+			if key_event.ctrl_pressed and _viewer_workspace != null and _viewer_workspace.visible:
+				_reset_viewer_transform()
+				get_viewport().set_input_as_handled()
+		KEY_ESCAPE:
+			if _parameter_workspace != null and _parameter_workspace.visible and _parameter_workspace.is_batch_panel_visible():
+				_parameter_workspace.close_batch_panel()
+				get_viewport().set_input_as_handled()
 
-	_on_range_change_cloud_coverage()
-	_on_range_change_cloud_density()
-	_on_range_change_nb_cases_regions()
-	_on_range_change_region_cost_flat()
-	_on_range_change_region_cost_hill()
-	_on_range_change_region_cost_river()
-	_on_range_change_region_river_threshold()
-	_on_range_change_region_budget_variation()
-	_on_range_change_region_noise_strength()
 
-	_on_range_change_nb_cases_ocean_regions()
-	_on_range_change_ocean_cost_flat()
-	_on_range_change_ocean_cost_deeper()
-	_on_range_change_ocean_noise_strength()
+func _cycle_viewer_base(direction: int) -> void:
+	if _viewer_base_select == null or _viewer_base_select.item_count <= 0:
+		return
+	var current_index: int = maxi(_viewer_base_select.selected, 0)
+	var next_index: int = posmod(current_index + direction, _viewer_base_select.item_count)
+	_viewer_base_select.select(next_index)
+	_on_viewer_base_selected(next_index)
 
-	_on_range_change_petrole_probability()
-	_on_range_change_petrole_deposit_size()
-	_on_range_change_global_richness()
-	
+
+func _cycle_viewer_overlay(direction: int) -> void:
+	if _viewer_overlay_select == null or _viewer_overlay_select.item_count <= 0:
+		return
+	var current_index: int = maxi(_viewer_overlay_select.selected, 0)
+	var next_index: int = posmod(current_index + direction, _viewer_overlay_select.item_count)
+	_viewer_overlay_select.select(next_index)
+	_on_viewer_overlay_selected(next_index)
+
+
 # ============================================================================
 # LANGUAGE & SYSTEM
 # ============================================================================
@@ -479,7 +1648,6 @@ func _change_lang(code: String) -> void:
 	langue = code
 	TranslationServer.set_locale(langue)
 	maj_labels()
-	update_map_label()
 
 func _on_btn_quitter_pressed() -> void:
 	get_tree().quit()
@@ -508,216 +1676,35 @@ func _on_btn_sauvegarder_pressed() -> void:
 		file_dialog.queue_free())
 
 func _on_random_seed_pressed() -> void:
-	var generation_seed = randi()
-	get_node(BASE_PATH_SLIDERS+"/PanelSeed/seed/LineEdit").value = generation_seed
+	if _parameter_workspace != null:
+		_parameter_workspace.randomize_seed()
+
 
 func _on_random_name_pressed() -> void:
-	var prefixes = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Kepler", "Gliese", "Trappist", "HD", "Wolf", "Ross", 
-	"Luyten", "Kapteyn", "Proxima", "Sigma", "Tau", "Upsilon", "Vega", "Sirius", "Altair", "Deneb", "Rigel", "Betelgeuse", 
-	"Aldebaran", "Fomalhaut", "Pollux", "Arcturus", "Spica", "Antares", "VY Canis Majoris", "UY Scuti", "UY Aurigae", "Omega",
-	"Nova", "Quasar", "Pulsar", "Magellan", "Andromeda", "Orion", "Pegasus", "Phoenix", "Centauri", "Draco", "Hydra", "Lyra",
-	"Perseus", "Scorpius", "Taurus", "Ursa", "Virgo", "Zodiac"]
-	var suffixes = ["Prime", "Major", "Minor", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "b", "c", "d"]
+	if _parameter_workspace != null:
+		_parameter_workspace.randomize_name()
 
-	var random_name = prefixes[randi() % prefixes.size()] + "-" + str(randi() % 999 + 1)
-
-	if randf() > 0.5: random_name += " " + suffixes[randi() % suffixes.size()]
-
-	get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Name_Param/HBoxContainer/LineEdit").text = random_name
 
 func _on_btn_randomise_pressed() -> void:
-	randomize()
-	
-	# Name
-	var prefixes = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Kepler", "Gliese", "Trappist", "HD", "Wolf", "Ross", 
-	"Luyten", "Kapteyn", "Proxima", "Sigma", "Tau", "Upsilon", "Vega", "Sirius", "Altair", "Deneb", "Rigel", "Betelgeuse", 
-	"Aldebaran", "Fomalhaut", "Pollux", "Arcturus", "Spica", "Antares", "VY Canis Majoris", "UY Scuti", "UY Aurigae", "Omega",
-	"Nova", "Quasar", "Pulsar", "Magellan", "Andromeda", "Orion", "Pegasus", "Phoenix", "Centauri", "Draco", "Hydra", "Lyra",
-	"Perseus", "Scorpius", "Taurus", "Ursa", "Virgo", "Zodiac"]
-	var suffixes = ["Prime", "Major", "Minor", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "b", "c", "d"]
-	var random_name = prefixes[randi() % prefixes.size()] + "-" + str(randi() % 999 + 1)
-	if randf() > 0.5: random_name += " " + suffixes[randi() % suffixes.size()]
-	get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Name_Param/HBoxContainer/LineEdit").text = random_name
-	
-	# Sliders
-	_randomize_slider(get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Radius_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Density_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Temperature_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["GENERAL"]+"Thread_Number_Param/LineEdit"))
-	
-	_randomize_slider(get_node(CATEGORIES_PATHS["EROSION"]+"Terrain_Scale_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EROSION"]+"Erosions_Iterations_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EROSION"]+"Erosion_Rate_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EROSION"]+"Rain_Rate_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EROSION"]+"Evap_Rate_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EROSION"]+"Flow_Rate_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EROSION"]+"Deposition_Rate_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EROSION"]+"Capacity_Multiplier_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EROSION"]+"Flux_Iterations_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EROSION"]+"Base_Flux_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EROSION"]+"Propagation_Rate_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EROSION"]+"Spreading_Rate_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EROSION"]+"Max_Crust_Age_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EROSION"]+"Subsidence_Coeff_Param/LineEdit"))
-
-	_randomize_slider(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Density_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Min_Radius_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Depth_Ratio_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Ejecta_Extent_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Ejecta_Decay_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["CRATER"]+"Crater_Azimuth_Var_Param/LineEdit"))
-
-	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"Ocean_Ratio_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"Ice_Probability_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"Global_Humidity_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"Sea_Level_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"Freshwater_Max_Size_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"Lake_Threshold_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Iterations_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Affluent_Threshold_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Threshold_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["EAU"]+"River_Fleuve_Threshold_Param/LineEdit"))
-
-	_randomize_slider(get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Coverage_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["NUAGE"]+"Cloud_Density_Param/LineEdit"))
-
-	_randomize_slider(get_node(CATEGORIES_PATHS["REGION"]+"Nb_Cases_Regions_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_Flat_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_Hill_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["REGION"]+"Region_Cost_River_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["REGION"]+"Region_River_Threshold_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["REGION"]+"Region_Budget_Variation_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["REGION"]+"Region_Noise_Strength_Param/LineEdit"))
-
-	_randomize_slider(get_node(CATEGORIES_PATHS["OCEAN"]+"Nb_Cases_Ocean_Regions_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Cost_Flat_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Cost_Deeper_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["OCEAN"]+"Ocean_Noise_Strength_Param/LineEdit"))
-
-	_randomize_slider(get_node(CATEGORIES_PATHS["RESSOURCES"]+"Petrole_Probability_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["RESSOURCES"]+"Petrole_Deposit_Size_Param/LineEdit"))
-	_randomize_slider(get_node(CATEGORIES_PATHS["RESSOURCES"]+"Global_Richness_Param/LineEdit"))
-	
-	# Type
-	var typePlanete = get_node(CATEGORIES_PATHS["GENERAL"]+"Planet_Type_Param/LineEdit")
-	typePlanete.select(randi() % typePlanete.item_count)
-	
-	_on_random_seed_pressed()
-
-	maj_labels()
-
-func _randomize_slider(slider: Slider) -> void:
-	var max_nb_steps = int((slider.max_value - slider.min_value) / slider.step)
-	var random_step = randi() % (max_nb_steps + 1)
-	slider.value = slider.min_value + float(random_step) * slider.step
+	if _parameter_workspace != null:
+		_parameter_workspace.randomize_parameters()
 
 
 # ============================================================================
 # PRESET SAVE / LOAD SYSTEM
 # ============================================================================
 
-## Mapping des clés de paramètre → chemins relatifs des sliders/contrôles dans l'UI.
-## Utilisé pour sérialiser et désérialiser les presets.
-const PARAM_SLIDER_MAP = {
-	# General
-	"planet_name"        : "GENERAL:Planet_Name_Param/HBoxContainer/LineEdit",
-	"seed"               : "SEED:PanelSeed/seed/LineEdit",
-	"nb_thread"          : "GENERAL:Thread_Number_Param/LineEdit",
-	"planet_radius"      : "GENERAL:Planet_Radius_Param/LineEdit",
-	"planet_density"     : "GENERAL:Planet_Density_Param/LineEdit",
-	"planet_type"        : "GENERAL:Planet_Type_Param/LineEdit",
-	"avg_temperature"    : "GENERAL:Planet_Temperature_Param/LineEdit",
-	# Erosion
-	"terrain_scale"      : "EROSION:Terrain_Scale_Param/LineEdit",
-	"erosion_iterations" : "EROSION:Erosions_Iterations_Param/LineEdit",
-	"erosion_rate"       : "EROSION:Erosion_Rate_Param/LineEdit",
-	"rain_rate"          : "EROSION:Rain_Rate_Param/LineEdit",
-	"evap_rate"          : "EROSION:Evap_Rate_Param/LineEdit",
-	"flow_rate"          : "EROSION:Flow_Rate_Param/LineEdit",
-	"deposition_rate"    : "EROSION:Deposition_Rate_Param/LineEdit",
-	"capacity_multiplier": "EROSION:Capacity_Multiplier_Param/LineEdit",
-	"flux_iterations"    : "EROSION:Flux_Iterations_Param/LineEdit",
-	"base_flux"          : "EROSION:Base_Flux_Param/LineEdit",
-	"propagation_rate"   : "EROSION:Propagation_Rate_Param/LineEdit",
-	"spreading_rate"     : "EROSION:Spreading_Rate_Param/LineEdit",
-	"max_crust_age"      : "EROSION:Max_Crust_Age_Param/LineEdit",
-	"subsidence_coeff"   : "EROSION:Subsidence_Coeff_Param/LineEdit",
-	# Craters
-	"crater_density"     : "CRATER:Crater_Density_Param/LineEdit",
-	"crater_min_radius"  : "CRATER:Crater_Min_Radius_Param/LineEdit",
-	"crater_depth_ratio" : "CRATER:Crater_Depth_Ratio_Param/LineEdit",
-	"crater_ejecta_extent": "CRATER:Crater_Ejecta_Extent_Param/LineEdit",
-	"crater_ejecta_decay": "CRATER:Crater_Ejecta_Decay_Param/LineEdit",
-	"crater_azimuth_var" : "CRATER:Crater_Azimuth_Var_Param/LineEdit",
-	# Water
-	"ocean_ratio"        : "EAU:Ocean_Ratio_Param/LineEdit",
-	"ice_probability"    : "EAU:Ice_Probability_Param/LineEdit",
-	"global_humidity"    : "EAU:Global_Humidity_Param/LineEdit",
-	"sea_level"          : "EAU:Sea_Level_Param/LineEdit",
-	"freshwater_max_size": "EAU:Freshwater_Max_Size_Param/LineEdit",
-	"lake_threshold"     : "EAU:Lake_Threshold_Param/LineEdit",
-	"river_iterations"   : "EAU:River_Iterations_Param/LineEdit",
-	# Clouds
-	"cloud_coverage"     : "NUAGE:Cloud_Coverage_Param/LineEdit",
-	"cloud_density"      : "NUAGE:Cloud_Density_Param/LineEdit",
-	# Regions
-	"nb_cases_regions"   : "REGION:Nb_Cases_Regions_Param/LineEdit",
-	"region_cost_flat"   : "REGION:Region_Cost_Flat_Param/LineEdit",
-	"region_cost_hill"   : "REGION:Region_Cost_Hill_Param/LineEdit",
-	"region_cost_river"  : "REGION:Region_Cost_River_Param/LineEdit",
-	"region_river_threshold": "REGION:Region_River_Threshold_Param/LineEdit",
-	"region_budget_variation": "REGION:Region_Budget_Variation_Param/LineEdit",
-	"region_noise_strength"  : "REGION:Region_Noise_Strength_Param/LineEdit",
-	# Ocean Regions
-	"nb_cases_ocean_regions"  : "OCEAN:Nb_Cases_Ocean_Regions_Param/LineEdit",
-	"ocean_cost_flat"    : "OCEAN:Ocean_Cost_Flat_Param/LineEdit",
-	"ocean_cost_deeper"  : "OCEAN:Ocean_Cost_Deeper_Param/LineEdit",
-	"ocean_noise_strength": "OCEAN:Ocean_Noise_Strength_Param/LineEdit",
-	# Resources
-	"petrole_probability"  : "RESSOURCES:Petrole_Probability_Param/LineEdit",
-	"petrole_deposit_size" : "RESSOURCES:Petrole_Deposit_Size_Param/LineEdit",
-	"global_richness"      : "RESSOURCES:Global_Richness_Param/LineEdit",
-}
-
-## Résout le chemin complet d'un contrôle UI à partir de la forme "CATEGORY:relative_path"
-func _resolve_param_path(mapping: String) -> String:
-	if mapping.begins_with("SEED:"):
-		return BASE_PATH_SLIDERS + "/" + mapping.substr(5)
-	var parts = mapping.split(":", true, 1)
-	if parts.size() != 2:
-		push_error("[Preset] Invalid mapping: ", mapping)
-		return ""
-	var category = parts[0]
-	var relative = parts[1]
-	if not CATEGORIES_PATHS.has(category):
-		push_error("[Preset] Unknown category: ", category)
-		return ""
-	return CATEGORIES_PATHS[category] + relative
-
-## Collecte tous les paramètres UI dans un Dictionary sérialisable.
+## Collecte les paramètres dynamiques dans un dictionnaire sérialisable.
 func _collect_preset_data() -> Dictionary:
-	var data: Dictionary = {}
+	var data = _parameter_workspace.get_values() if _parameter_workspace != null else {}
 	data["_meta"] = {
-		"version": 1,
+		"version": 2,
 		"date": Time.get_datetime_string_from_system(),
 	}
-
-	for key in PARAM_SLIDER_MAP:
-		var path = _resolve_param_path(PARAM_SLIDER_MAP[key])
-		if path.is_empty():
-			continue
-		var node = get_node_or_null(path)
-		if node == null:
-			push_warning("[Preset] Node introuvable: ", path)
-			continue
-
-		if key == "planet_name":
-			data[key] = node.text
-		elif key == "planet_type":
-			data[key] = node.get_selected_id()
-		else:
-			data[key] = node.value
+	if _parameter_workspace != null:
+		data["_ui"] = {"export_preset": _parameter_workspace.get_export_preset()}
 	return data
+
 
 ## Écrit les données preset dans un fichier.
 func _write_preset_to_file(file_path: String, data: Dictionary) -> bool:
@@ -788,44 +1775,17 @@ func _load_preset_from_path(file_path: String) -> bool:
 		return false
 
 	var data: Dictionary = json.data
-	if not data is Dictionary:
+	if not (data is Dictionary):
 		push_error("[Preset] Format invalide")
 		return false
 
-	for key in PARAM_SLIDER_MAP:
-		if not data.has(key):
-			continue
-		var path = _resolve_param_path(PARAM_SLIDER_MAP[key])
-		if path.is_empty():
-			continue
-		var node = get_node_or_null(path)
-		if node == null:
-			push_warning("[Preset] Node introuvable: ", path)
-			continue
-
-		if key == "planet_name":
-			node.text = str(data[key])
-		elif key == "planet_type":
-			var type_id = int(data[key])
-			for i in range(node.item_count):
-				if node.get_item_id(i) == type_id:
-					node.select(i)
-					break
-		else:
-			node.value = float(data[key])
-
+	if _parameter_workspace != null:
+		_parameter_workspace.apply_values(data)
+		var raw_ui_settings: Variant = data.get("_ui", {})
+		if raw_ui_settings is Dictionary:
+			var ui_settings: Dictionary = raw_ui_settings
+			if ui_settings.has("export_preset"):
+				_parameter_workspace.set_export_preset(str(ui_settings["export_preset"]))
 	maj_labels()
 	print("[Preset] ✅ Chargé: ", file_path.get_file())
-	return true
-
-## Supprime un preset par chemin absolu.
-func delete_preset(file_path: String) -> bool:
-	if not FileAccess.file_exists(file_path):
-		push_error("[Preset] Fichier introuvable: ", file_path)
-		return false
-	var err = DirAccess.remove_absolute(file_path)
-	if err != OK:
-		push_error("[Preset] Impossible de supprimer: ", file_path)
-		return false
-	print("[Preset] 🗑️ Supprimé: ", file_path.get_file())
 	return true

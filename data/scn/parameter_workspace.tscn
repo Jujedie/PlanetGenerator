@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://ck2ikaf5ttwbf"]
+
+[ext_resource type="Script" path="res://src/scenes/parameter_workspace.gd" id="1"]
+
+[node name="ParameterWorkspaceLayer" type="CanvasLayer" unique_id=639413996]
+layer = 40
+script = ExtResource("1")

@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://cu1gg4vrlmpc3"
+path="res://.godot/imported/gas_giant_dye_init.glsl-31b3b7d27bdf80fc126351028149be0f.res"
+
+[deps]
+
+source_file="res://shader/compute/gas_giant/gas_giant_dye_init.glsl"
+dest_files=["res://.godot/imported/gas_giant_dye_init.glsl-31b3b7d27bdf80fc126351028149be0f.res"]
+
+[params]
+

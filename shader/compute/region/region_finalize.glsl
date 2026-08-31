@@ -32,7 +32,7 @@ layout(set = 1, binding = 0, std140) uniform FinalizeParams {
     uint water_color_r;    // Couleur eau R (0x16 = 22)
     uint water_color_g;    // Couleur eau G (0x1a = 26)
     uint water_color_b;    // Couleur eau B (0x1f = 31)
-    float padding1;
+    float sea_level;
     float padding2;
 } params;
 
@@ -93,7 +93,7 @@ void main() {
     vec4 final_color;
     
     // Si c'est de l'eau, utiliser la couleur d'eau (comme legacy: 0x161a1fFF)
-    if (water_type > 0u) {
+    if (water_type > 0u || region_id == 0xFFFFFFFFu) {
         // Couleur eau du legacy : RGB(22, 26, 31) = #161a1f
         final_color = vec4(
             float(params.water_color_r) / 255.0,
@@ -102,12 +102,6 @@ void main() {
             1.0
         );
     } else {
-        // Pixel de terre : TOUTE TERRE DOIT AVOIR UNE RÉGION
-        // Si pas de région assignée par la propagation, en créer une unique
-        if (region_id == 0xFFFFFFFFu) {
-            region_id = uint(pixel.x) + uint(pixel.y) * params.width;
-        }
-        
         // Utiliser un hash de l'ID pour disperser les couleurs
         uint color_index = hashForColor(region_id);
         vec3 rgb = regionIdToColor(color_index);
