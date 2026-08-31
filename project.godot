@@ -18,7 +18,7 @@ config/name_localized={
 }
 config/description="Application de génération de carte planétaire
 "
-config/version="v2.3.0"
+config/version="v3.0.0"
 run/main_scene="uid://j6dp7dc7d3ov"
 config/features=PackedStringArray("4.7", "Forward Plus")
 boot_splash/bg_color=Color(0.12955844, 0.12955847, 0.12955844, 1)
