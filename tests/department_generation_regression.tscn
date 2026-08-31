@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3]
-
-[ext_resource path="res://tests/department_generation_regression.gd" type="Script" id="1_department"]
-
-[node name="DepartmentGenerationRegression" type="Node"]
-script = ExtResource("1_department")

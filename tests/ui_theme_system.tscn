@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3]
-
-[ext_resource path="res://tests/ui_theme_system.gd" type="Script" id="1"]
-
-[node name="UIThemeSystem" type="Node"]
-script = ExtResource("1")

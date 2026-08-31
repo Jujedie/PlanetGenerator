@@ -1,0 +1,1143 @@
+class_name PGPlanetData
+extends RefCounted
+
+const ALTITUDE_MAX = 25000
+
+# IDs des types de planètes
+const TYPE_TERRAN = 0       # Défaut (Terre)
+const TYPE_TOXIC = 1        # Toxique
+const TYPE_VOLCANIC = 2     # Volcanique
+const TYPE_NO_ATMOS = 3     # Sans Atmosphère
+const TYPE_DEAD = 4         # Mort / Irradié
+const TYPE_STERILE = 5      # Stérile
+const TYPE_GAZEUZE = 6      # Gazeuze (Non utilisé pour l'instant)
+
+# NOTE SUR LES DONNÉES :
+# Température : En degrés Celsius (approximatif pour la logique du jeu)
+# Précipitation : 0.0 (Sec) à 1.0 (Humide/Saturé)
+
+static var BIOMES = [
+	# ==========================================================================
+	# TYPE 0 : TERRAN (Terre réaliste)
+	# Couleur 1 (vive) = identification carte | Couleur 2 (réaliste) = végétation finale
+	# ==========================================================================
+
+	# --- OCÉANS & BATHYMÉTRIE (couleurs foncées réalistes) ---
+	PGBiome.new("Abysses", Color.hex(0x172252FF), Color.hex(0x18384bFF), [-21, 100], [0.0, 1.0], [-ALTITUDE_MAX, -6000], true, [TYPE_TERRAN]),
+	PGBiome.new("Plaine Abyssale", Color.hex(0x20366eFF), Color.hex(0x204b5fFF), [-21, 100], [0.0, 1.0], [-6000, -2000], true, [TYPE_TERRAN]),
+	PGBiome.new("Océan Profond", Color.hex(0x28518aFF), Color.hex(0x2a6474FF), [-21, 100], [0.0, 1.0], [-2000, -200], true, [TYPE_TERRAN]),
+	PGBiome.new("Plateau Continental", Color.hex(0x3e79adFF), Color.hex(0x438693FF), [-21, 100], [0.0, 1.0], [-200, 0], true, [TYPE_TERRAN]),
+	
+	# --- CÔTES & EAUX PEU PROFONDES ---
+	PGBiome.new("Récif Corallien", Color.hex(0x2bc5b4FF), Color.hex(0x35aa9dFF), [24, 35], [0.0, 1.0], [-50, 0], true, [TYPE_TERRAN]),
+	PGBiome.new("Lagon Tropical", Color.hex(0x74d8ceFF), Color.hex(0x69c6bbFF), [24, 35], [0.0, 1.0], [-20, 0], true, [TYPE_TERRAN]),
+	PGBiome.new("Fjord Glacé", Color.hex(0x527b86FF), Color.hex(0x557a87FF), [-20, 5], [0.0, 1.0], [-200, 0], true, [TYPE_TERRAN]),
+	PGBiome.new("Littoral / Plage", Color.hex(0xe3cc8eFF), Color.hex(0xd9c18bFF), [8, 35], [0.0, 1.0], [-50, 8], false, [TYPE_TERRAN]),
+	PGBiome.new("Mangrove (Salée)", Color.hex(0x2f8055FF), Color.hex(0x3f654bFF), [23, 40], [0.6, 1.0], [-20, 5], true, [TYPE_TERRAN], true),
+	PGBiome.new("Delta Fluvial", Color.hex(0x4c9ca7FF), Color.hex(0x547c72FF), [12, 35], [0.65, 1.0], [-50, 5], true, [TYPE_TERRAN], true),
+
+	# --- TERRES : CLIMATS FROIDS (Polaires & Alpins) ---
+	PGBiome.new("Calotte Glaciaire", Color.hex(0xcbd1d1FF), Color.hex(0xe8eef0FF), [-273, -15], [0.4, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	PGBiome.new("Désert Polaire", Color.hex(0xa8cbc4FF), Color.hex(0xd3d9d7FF), [-273, -15], [0.0, 0.4], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	PGBiome.new("Toundra", Color.hex(0x5f8c7bFF), Color.hex(0x8d9279FF), [-15, 2], [0.0, 0.3], [-ALTITUDE_MAX, 2500], false, [TYPE_TERRAN]),
+	PGBiome.new("Toundra Alpine", Color.hex(0x557d8cFF), Color.hex(0x858d91FF), [-30, 5], [0.0, 0.35], [2200, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	PGBiome.new("Taïga (Forêt Boréale)", Color.hex(0x075b52FF), Color.hex(0x344f3eFF), [-15, 14], [0.25, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	PGBiome.new("Prairie Alpine (Alpage)", Color.hex(0x80a344FF), Color.hex(0x81935aFF), [-5, 18], [0.0, 0.4], [1500, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	PGBiome.new("Forêt de montagne", Color.hex(0x2f6650FF), Color.hex(0x405b47FF), [-12, 18], [0.3, 1.0], [800, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+
+	# --- TERRES : CLIMATS TEMPÉRÉS ---
+	PGBiome.new("Forêt Tempérée (Décidue)", Color.hex(0x72a938FF), Color.hex(0x587447FF), [5, 25], [0.35, 0.78], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	PGBiome.new("Forêt de Séquoias", Color.hex(0x3f813dFF), Color.hex(0x405e45FF), [5, 24], [0.55, 0.85], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	PGBiome.new("Forêt Humide (Rainforest)", Color.hex(0x1f6f3aFF), Color.hex(0x31563bFF), [5, 30], [0.68, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	PGBiome.new("Prairie Verdoyante", Color.hex(0xd5df45FF), Color.hex(0x83985bFF), [8, 25], [0.3, 0.62], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	PGBiome.new("Maquis Méditerranéen", Color.hex(0x7c647bFF), Color.hex(0x8c825dFF), [12, 32], [0.2, 0.5], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	PGBiome.new("Steppes sèches", Color.hex(0xc5a934FF), Color.hex(0xb59a61FF), [-5, 22], [0.0, 0.28], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	PGBiome.new("Steppes tempérées", Color.hex(0xa4ad39FF), Color.hex(0x9d985dFF), [-5, 22], [0.28, 0.5], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	PGBiome.new("Marécage Tempéré", Color.hex(0x397c65FF), Color.hex(0x425f50FF), [5, 100], [0.72, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
+
+	# --- TERRES : CLIMATS CHAUDS & ARIDES ---
+	PGBiome.new("Jungle Tropicale", Color.hex(0x006b28FF), Color.hex(0x285236FF), [18, 65], [0.64, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	PGBiome.new("Savane", Color.hex(0x9d9a25FF), Color.hex(0xa88c49FF), [18, 60], [0.40, 0.58], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	PGBiome.new("Brousse (Bush)", Color.hex(0x7f8f32FF), Color.hex(0x717d4cFF), [16, 60], [0.52, 0.72], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TERRAN]),
+	# Les biomes arides forment un continuum climatique sans trou. Le relief
+	# sépare les ergs sableux de basse altitude des déserts rocheux élevés,
+	# au lieu de faire concourir trois définitions presque identiques.
+	PGBiome.new("Désert semi-aride", Color.hex(0xc9954bFF), Color.hex(0xc4935bFF), [10, 55], [0.30, 0.44], [-200, 4500], false, [TYPE_TERRAN]),
+	PGBiome.new("Désert de Sable", Color.hex(0xd6af6aFF), Color.hex(0xd9b772FF), [20, 62], [0.0, 0.32], [-200, 2400], false, [TYPE_TERRAN]),
+	PGBiome.new("Désert Rocheux (Badlands)", Color.hex(0xa85f36FF), Color.hex(0xa96746FF), [12, 65], [0.18, 0.40], [600, 5000], false, [TYPE_TERRAN]),
+	# Un désert extrême requiert chaleur ET aridité. L'ancienne humidité 0..1
+	# transformait toute région dépassant 45 °C, même humide, en désert.
+	PGBiome.new("Désert Extrême", Color.hex(0x80442fFF), Color.hex(0x98523bFF), [58, 200], [0.0, 0.24], [-200, 5000], false, [TYPE_TERRAN]),
+	
+	# --- EAUX DOUCES INTÉRIEURES (Surface) ---
+	PGBiome.new("Oasis", Color.hex(0x45a96dFF), Color.hex(0x3f7955FF), [0, 100], [0.0, 0.3], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
+	PGBiome.new("Cénote (Gouffre)", Color.hex(0x287f91FF), Color.hex(0x357582FF), [20, 100], [0.5, 0.8], [-ALTITUDE_MAX, 0], true, [TYPE_TERRAN], true),
+	PGBiome.new("Bayou (Marais Chaud)", Color.hex(0x4e6d38FF), Color.hex(0x526346FF), [25, 100], [0.8, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
+
+	# --- RIVIÈRES & LACS (Type 0 - Requis pour river_map) ---
+	PGBiome.new("Rivière", Color.hex(0x3f8fb3FF), Color.hex(0x376f7bFF), [0, 100], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
+	PGBiome.new("Lac d'eau douce", Color.hex(0x4e9fb7FF), Color.hex(0x447f88FF), [0, 100], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
+	PGBiome.new("Lac gelé", Color.hex(0x789db6FF), Color.hex(0x9eb8c1FF), [-50, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true),
+	PGBiome.new("Rivière glaciaire", Color.hex(0xa8d8e0FF), Color.hex(0x78a9b4FF), [-50, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TERRAN], true, true),
+
+
+	# ==========================================================================
+	# TYPE 1 : TOXIQUE (Vénusien / Pollué)
+	# Couleur 1 (vive) = identification carte | Couleur 2 (réaliste) = végétation finale
+	# ==========================================================================
+	
+	# --- AQUATIQUE TOXIQUE (vert acide foncé réaliste) ---
+	PGBiome.new("Océan Acide", Color.hex(0x59643cFF), Color.hex(0x414c2dFF), [-55, 550], [0.0, 1.0], [-ALTITUDE_MAX, -500], true, [TYPE_TOXIC]),
+	PGBiome.new("Lagon de Boue Toxique", Color.hex(0x7a8042FF), Color.hex(0x636c3aFF), [-40, 550], [0.0, 1.0], [-500, 0], true, [TYPE_TOXIC]),
+
+	# --- TERRESTRE TOXIQUE ---
+	PGBiome.new("Désert de Soufre", Color.hex(0xb0a052FF), Color.hex(0x8f854aFF), [-50, 220], [0.0, 0.24], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
+	PGBiome.new("Désert Extrême de Soufre", Color.hex(0xb37835FF), Color.hex(0x805b30FF), [180, 550], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
+	PGBiome.new("Forêt Fongique (Champignons)", Color.hex(0x6c5c70FF), Color.hex(0x574d5bFF), [12, 58], [0.52, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
+	PGBiome.new("Plaines de Spores", Color.hex(0x697150FF), Color.hex(0x555e46FF), [-5, 30], [0.42, 0.78], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
+	PGBiome.new("Marécages Acides", Color.hex(0x697447FF), Color.hex(0x515b3dFF), [12, 72], [0.7, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TOXIC], true),
+	PGBiome.new("Glacier Vert (Méthane)", Color.hex(0xa2c8a8FF), Color.hex(0xb9d5c8FF), [-200, -50], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
+	PGBiome.new("Plaines Venteuses Toxiques", Color.hex(0x7f8063FF), Color.hex(0x72725cFF), [0, 50], [0.0, 0.5], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
+	PGBiome.new("Cratères Acides", Color.hex(0x686f4fFF), Color.hex(0x5e6046FF), [-50, 0], [0.2, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_TOXIC]),
+
+	# --- RIVIÈRES TOXIQUES ---
+	PGBiome.new("Rivière Acide", Color.hex(0x7b8844FF), Color.hex(0x626c3aFF), [-55, 550], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TOXIC], true, true),
+	PGBiome.new("Lac d'Acide", Color.hex(0x8e9451FF), Color.hex(0x6c7446FF), [-55, 550], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_TOXIC], true),
+
+
+	# ==========================================================================
+	# TYPE 2 : VOLCANIQUE (Mustafar / Io)
+	# Couleur 1 (vive) = identification carte | Couleur 2 (réaliste) = végétation finale
+	# ==========================================================================
+
+	# --- AQUATIQUE (LAVE) - rouges/oranges ardents mais réalistes ---
+	PGBiome.new("Océan de Magma", Color.hex(0xb44825FF), Color.hex(0x602a1cFF), [400, 550], [0.0, 1.0], [-ALTITUDE_MAX, -1000], true, [TYPE_VOLCANIC]),
+	PGBiome.new("Mer de Lave en Fusion", Color.hex(0xc95c22FF), Color.hex(0xb8491bFF), [220, 550], [0.0, 1.0], [-1000, 0], true, [TYPE_VOLCANIC]),
+	PGBiome.new("Croûte Basaltique Refroidie", Color.hex(0x404040FF), Color.hex(0x303232FF), [100, 400], [0.0, 1.0], [-200, 100], false, [TYPE_VOLCANIC]),
+
+	# --- TERRESTRE VOLCANIQUE ---
+	PGBiome.new("Glace Volcanique", Color.hex(0xc0c0d0FF), Color.hex(0xc5c9cdFF), [-200, 0], [0.0, 1.0], [0, ALTITUDE_MAX], false, [TYPE_VOLCANIC]),
+	PGBiome.new("Toundra Volcanique", Color.hex(0x606068FF), Color.hex(0x565153FF), [0, 50], [0.3, 1.0], [0, ALTITUDE_MAX], false, [TYPE_VOLCANIC]),
+	PGBiome.new("Plaines de Cendres", Color.hex(0x808080FF), Color.hex(0x6d6966FF), [20, 350], [0.0, 0.4], [0, 2000], false, [TYPE_VOLCANIC]),
+	PGBiome.new("Champs de Geysers", Color.hex(0xd8c7adFF), Color.hex(0xaa8c70FF), [80, 320], [0.35, 1.0], [500, 1500], false, [TYPE_VOLCANIC]),
+	PGBiome.new("Volcan Actif (Sommet)", Color.hex(0xd06132FF), Color.hex(0xa44b2dFF), [200, 1000], [0.0, 1.0], [2000, ALTITUDE_MAX], false, [TYPE_VOLCANIC]),
+	PGBiome.new("Obsidienne (Verre Volcanique)", Color.hex(0x29242cFF), Color.hex(0x24202aFF), [50, 350], [0.0, 1.0], [1000, 3000], false, [TYPE_VOLCANIC]),
+	PGBiome.new("Désert de Soufre Jaune", Color.hex(0xc9b33cFF), Color.hex(0xb6a33cFF), [40, 280], [0.0, 0.3], [500, 2500], false, [TYPE_VOLCANIC]),
+	PGBiome.new("Caldeira Fumante", Color.hex(0xa06050FF), Color.hex(0x65483fFF), [240, 550], [0.0, 0.5], [0, ALTITUDE_MAX], false, [TYPE_VOLCANIC]),
+
+	# --- RIVIÈRES DE LAVE (Requis pour river_map) ---
+	PGBiome.new("Rivière de Lave", Color.hex(0xd95c20FF), Color.hex(0xb64d20FF), [150, 550], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_VOLCANIC], true, true),
+	PGBiome.new("Lac de Lave", Color.hex(0xc35225FF), Color.hex(0xa54422FF), [120, 550], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_VOLCANIC], true),
+
+
+	# ==========================================================================
+	# TYPE 3 : SANS ATMOSPHÈRE (Lune / Mercure)
+	# Couleur 1 (vive) = identification carte | Couleur 2 (réaliste) = surface grise lunaire
+	# ==========================================================================
+
+	PGBiome.new("Mare (Mer Lunaire - Basalte)", Color.hex(0x303040FF), Color.hex(0x292d33FF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, -1000], false, [TYPE_NO_ATMOS]),
+	PGBiome.new("Régolithe Gris", Color.hex(0x888890FF), Color.hex(0x77736dFF), [-200, 200], [0.0, 1.0], [-1000, 1000], false, [TYPE_NO_ATMOS]),
+	PGBiome.new("Cratère d'Impact", Color.hex(0x505058FF), Color.hex(0x57595cFF), [-200, 200], [0.0, 1.0], [-2000, -500], false, [TYPE_NO_ATMOS]),
+	PGBiome.new("Hauts Plateaux Lunaires", Color.hex(0xc0c0c8FF), Color.hex(0x96938bFF), [-200, 200], [0.0, 1.0], [1000, ALTITUDE_MAX], false, [TYPE_NO_ATMOS]),
+	PGBiome.new("Glace de Cratère Polaire", Color.hex(0xd8f0ffFF), Color.hex(0xc8d8e0FF), [-273, -150], [0.0, 1.0], [-2000, 0], false, [TYPE_NO_ATMOS]),
+
+	# ==========================================================================
+	# TYPE 4 : MORT / POST-APOCALYPTIQUE (Fallout / Mars terraformé échoué)
+	# Couleur 1 (vive) = identification carte | Couleur 2 (réaliste) = paysage désolé
+	# ==========================================================================
+	
+	# --- AQUATIQUE MORT (eaux sombres et polluées) ---
+	PGBiome.new("Océan Mort (Gris)", Color.hex(0x3b4945FF), Color.hex(0x313d38FF), [-21, 80], [0.0, 1.0], [-ALTITUDE_MAX, -200], true, [TYPE_DEAD]),
+	PGBiome.new("Marécage Luminescent", Color.hex(0x626153FF), Color.hex(0x545649FF), [5, 38], [0.6, 1.0], [-200, 50], true, [TYPE_DEAD], true),
+	
+	# --- TERRESTRE MORT ---
+	PGBiome.new("Terres Désolées (Wasteland)", Color.hex(0x706860FF), Color.hex(0x7e6c59FF), [-20, 50], [0.0, 0.4], [0, 2000], false, [TYPE_DEAD]),
+	PGBiome.new("Désert de Sel", Color.hex(0xf8f0e8FF), Color.hex(0xd8d0bdFF), [0, 60], [0.0, 0.2], [-500, 500], false, [TYPE_DEAD]),
+	PGBiome.new("Forêt Morte (Arbres Noirs)", Color.hex(0x383030FF), Color.hex(0x403831FF), [-10, 40], [0.3, 0.7], [0, 1500], false, [TYPE_DEAD]),
+	PGBiome.new("Cratère Nucléaire", Color.hex(0x7f8a43FF), Color.hex(0x706d45FF), [-50, 100], [0.0, 1.0], [-500, 500], false, [TYPE_DEAD]),
+	PGBiome.new("Plaines de Cendres Grises", Color.hex(0x787878FF), Color.hex(0x716d69FF), [-30, 30], [0.0, 0.3], [0, 3000], false, [TYPE_DEAD]),
+	PGBiome.new("Désert Radioactif", Color.hex(0x90a080FF), Color.hex(0x8d7a5bFF), [30, 200], [0.0, 0.4], [0, ALTITUDE_MAX], false, [TYPE_DEAD]),
+	PGBiome.new("Montagnes Mortes", Color.hex(0x504850FF), Color.hex(0x524b49FF), [-200, 200], [0.0, 1.0], [3000, ALTITUDE_MAX], false, [TYPE_DEAD]),
+
+	# --- RIVIÈRES MORTES ---
+	PGBiome.new("Rivière de Boue", Color.hex(0x806044FF), Color.hex(0x614d3bFF), [-21, 80], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
+	PGBiome.new("Rivière Polluée", Color.hex(0x596057FF), Color.hex(0x4a504aFF), [-21, 80], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true, true),
+	PGBiome.new("Lac Irradié", Color.hex(0x6a6758FF), Color.hex(0x4c4f42FF), [-21, 80], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], true, [TYPE_DEAD], true),
+
+	# ==========================================================================
+	# TYPE 5 : STÉRILE (Planète rocheuse morte)
+	# Couleur 1 (vive) = identification carte | Couleur 2 (réaliste) = roche grise/brune
+	# ==========================================================================
+
+	PGBiome.new("Désert Stérile", Color.hex(0x909080FF), Color.hex(0xb49270FF), [50, 200], [0.0, 1.0], [-500, 500], false, [TYPE_STERILE]),
+	PGBiome.new("Plaine Rocheuse", Color.hex(0x686860FF), Color.hex(0x7b6c5eFF), [-50, 50], [0.0, 1.0], [-500, 500], false, [TYPE_STERILE]),
+	PGBiome.new("Montagnes Rocheuses", Color.hex(0x585050FF), Color.hex(0x5c5450FF), [-200, 200], [0.0, 1.0], [1000, ALTITUDE_MAX], false, [TYPE_STERILE]),
+	PGBiome.new("Vallées Profondes", Color.hex(0x484040FF), Color.hex(0x574a43FF), [-200, 200], [0.0, 1.0], [-ALTITUDE_MAX, -500], false, [TYPE_STERILE]),
+	PGBiome.new("Désert de Pierre", Color.hex(0x787068FF), Color.hex(0x78665aFF), [-150, 0], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE]),
+	PGBiome.new("Glaciers Stériles", Color.hex(0xd0d0d8FF), Color.hex(0xd9e2e5FF), [-200, -50], [0.0, 1.0], [0, ALTITUDE_MAX], false, [TYPE_STERILE]),
+	PGBiome.new("Plateaux Érodés", Color.hex(0x706860FF), Color.hex(0x8d745fFF), [-200, 200], [0.0, 1.0], [500, 1000], false, [TYPE_STERILE]),
+	PGBiome.new("Cratères Secs", Color.hex(0x605858FF), Color.hex(0x68584fFF), [50, 150], [0.0, 1.0], [-ALTITUDE_MAX, ALTITUDE_MAX], false, [TYPE_STERILE])
+]
+
+
+# Stable localization keys for biome names. Simulation keeps the canonical
+# biome name for logs/data compatibility; UI code resolves the localized name
+# through this table so changing locale never changes biome identity.
+static var BIOME_TRANSLATION_KEYS: Dictionary = {
+	"Abysses": "BIOME_ABYSSES",
+	"Plaine Abyssale": "BIOME_PLAINE_ABYSSALE",
+	"Océan Profond": "BIOME_OCEAN_PROFOND",
+	"Plateau Continental": "BIOME_PLATEAU_CONTINENTAL",
+	"Récif Corallien": "BIOME_RECIF_CORALLIEN",
+	"Lagon Tropical": "BIOME_LAGON_TROPICAL",
+	"Fjord Glacé": "BIOME_FJORD_GLACE",
+	"Littoral / Plage": "BIOME_LITTORAL_PLAGE",
+	"Mangrove (Salée)": "BIOME_MANGROVE_SALEE",
+	"Delta Fluvial": "BIOME_DELTA_FLUVIAL",
+	"Calotte Glaciaire": "BIOME_CALOTTE_GLACIAIRE",
+	"Désert Polaire": "BIOME_DESERT_POLAIRE",
+	"Toundra": "BIOME_TOUNDRA",
+	"Toundra Alpine": "BIOME_TOUNDRA_ALPINE",
+	"Taïga (Forêt Boréale)": "BIOME_TAIGA_FORET_BOREALE",
+	"Prairie Alpine (Alpage)": "BIOME_PRAIRIE_ALPINE_ALPAGE",
+	"Forêt de montagne": "BIOME_FORET_DE_MONTAGNE",
+	"Forêt Tempérée (Décidue)": "BIOME_FORET_TEMPEREE_DECIDUE",
+	"Forêt de Séquoias": "BIOME_FORET_DE_SEQUOIAS",
+	"Forêt Humide (Rainforest)": "BIOME_FORET_HUMIDE_RAINFOREST",
+	"Prairie Verdoyante": "BIOME_PRAIRIE_VERDOYANTE",
+	"Maquis Méditerranéen": "BIOME_MAQUIS_MEDITERRANEEN",
+	"Steppes sèches": "BIOME_STEPPES_SECHES",
+	"Steppes tempérées": "BIOME_STEPPES_TEMPEREES",
+	"Marécage Tempéré": "BIOME_MARECAGE_TEMPERE",
+	"Jungle Tropicale": "BIOME_JUNGLE_TROPICALE",
+	"Savane": "BIOME_SAVANE",
+	"Brousse (Bush)": "BIOME_BROUSSE_BUSH",
+	"Désert semi-aride": "BIOME_DESERT_SEMI_ARIDE",
+	"Désert de Sable": "BIOME_DESERT_DE_SABLE",
+	"Désert Rocheux (Badlands)": "BIOME_DESERT_ROCHEUX_BADLANDS",
+	"Désert Extrême": "BIOME_DESERT_EXTREME",
+	"Oasis": "BIOME_OASIS",
+	"Cénote (Gouffre)": "BIOME_CENOTE_GOUFFRE",
+	"Bayou (Marais Chaud)": "BIOME_BAYOU_MARAIS_CHAUD",
+	"Rivière": "BIOME_RIVIERE",
+	"Lac d'eau douce": "BIOME_LAC_D_EAU_DOUCE",
+	"Lac gelé": "BIOME_LAC_GELE",
+	"Rivière glaciaire": "BIOME_RIVIERE_GLACIAIRE",
+	"Océan Acide": "BIOME_OCEAN_ACIDE",
+	"Lagon de Boue Toxique": "BIOME_LAGON_DE_BOUE_TOXIQUE",
+	"Désert de Soufre": "BIOME_DESERT_DE_SOUFRE",
+	"Désert Extrême de Soufre": "BIOME_DESERT_EXTREME_DE_SOUFRE",
+	"Forêt Fongique (Champignons)": "BIOME_FORET_FONGIQUE_CHAMPIGNONS",
+	"Plaines de Spores": "BIOME_PLAINES_DE_SPORES",
+	"Marécages Acides": "BIOME_MARECAGES_ACIDES",
+	"Glacier Vert (Méthane)": "BIOME_GLACIER_VERT_METHANE",
+	"Plaines Venteuses Toxiques": "BIOME_PLAINES_VENTEUSES_TOXIQUES",
+	"Cratères Acides": "BIOME_CRATERES_ACIDES",
+	"Rivière Acide": "BIOME_RIVIERE_ACIDE",
+	"Lac d'Acide": "BIOME_LAC_D_ACIDE",
+	"Océan de Magma": "BIOME_OCEAN_DE_MAGMA",
+	"Mer de Lave en Fusion": "BIOME_MER_DE_LAVE_EN_FUSION",
+	"Croûte Basaltique Refroidie": "BIOME_CROUTE_BASALTIQUE_REFROIDIE",
+	"Glace Volcanique": "BIOME_GLACE_VOLCANIQUE",
+	"Toundra Volcanique": "BIOME_TOUNDRA_VOLCANIQUE",
+	"Plaines de Cendres": "BIOME_PLAINES_DE_CENDRES",
+	"Champs de Geysers": "BIOME_CHAMPS_DE_GEYSERS",
+	"Volcan Actif (Sommet)": "BIOME_VOLCAN_ACTIF_SOMMET",
+	"Obsidienne (Verre Volcanique)": "BIOME_OBSIDIENNE_VERRE_VOLCANIQUE",
+	"Désert de Soufre Jaune": "BIOME_DESERT_DE_SOUFRE_JAUNE",
+	"Caldeira Fumante": "BIOME_CALDEIRA_FUMANTE",
+	"Rivière de Lave": "BIOME_RIVIERE_DE_LAVE",
+	"Lac de Lave": "BIOME_LAC_DE_LAVE",
+	"Mare (Mer Lunaire - Basalte)": "BIOME_MARE_MER_LUNAIRE_BASALTE",
+	"Régolithe Gris": "BIOME_REGOLITHE_GRIS",
+	"Cratère d'Impact": "BIOME_CRATERE_D_IMPACT",
+	"Hauts Plateaux Lunaires": "BIOME_HAUTS_PLATEAUX_LUNAIRES",
+	"Glace de Cratère Polaire": "BIOME_GLACE_DE_CRATERE_POLAIRE",
+	"Océan Mort (Gris)": "BIOME_OCEAN_MORT_GRIS",
+	"Marécage Luminescent": "BIOME_MARECAGE_LUMINESCENT",
+	"Terres Désolées (Wasteland)": "BIOME_TERRES_DESOLEES_WASTELAND",
+	"Désert de Sel": "BIOME_DESERT_DE_SEL",
+	"Forêt Morte (Arbres Noirs)": "BIOME_FORET_MORTE_ARBRES_NOIRS",
+	"Cratère Nucléaire": "BIOME_CRATERE_NUCLEAIRE",
+	"Plaines de Cendres Grises": "BIOME_PLAINES_DE_CENDRES_GRISES",
+	"Désert Radioactif": "BIOME_DESERT_RADIOACTIF",
+	"Montagnes Mortes": "BIOME_MONTAGNES_MORTES",
+	"Rivière de Boue": "BIOME_RIVIERE_DE_BOUE",
+	"Rivière Polluée": "BIOME_RIVIERE_POLLUEE",
+	"Lac Irradié": "BIOME_LAC_IRRADIE",
+	"Désert Stérile": "BIOME_DESERT_STERILE",
+	"Plaine Rocheuse": "BIOME_PLAINE_ROCHEUSE",
+	"Montagnes Rocheuses": "BIOME_MONTAGNES_ROCHEUSES",
+	"Vallées Profondes": "BIOME_VALLEES_PROFONDES",
+	"Désert de Pierre": "BIOME_DESERT_DE_PIERRE",
+	"Glaciers Stériles": "BIOME_GLACIERS_STERILES",
+	"Plateaux Érodés": "BIOME_PLATEAUX_ERODES",
+	"Cratères Secs": "BIOME_CRATERES_SECS",
+}
+
+
+static func get_biome_translation_key(biome_or_name) -> String:
+	var canonical_name: String = ""
+	if biome_or_name is PGBiome:
+		canonical_name = (biome_or_name as PGBiome).get_nom()
+	else:
+		canonical_name = str(biome_or_name)
+	return str(BIOME_TRANSLATION_KEYS.get(canonical_name, canonical_name))
+
+
+static func get_biome_display_name(biome_or_name) -> String:
+	var canonical_name: String = (biome_or_name as PGBiome).get_nom() if biome_or_name is PGBiome else str(biome_or_name)
+	var key: String = get_biome_translation_key(canonical_name)
+	var translated: String = str(TranslationServer.translate(key))
+	return canonical_name if translated == key else translated
+
+
+static func find_biome_by_map_color(color: Color, planet_type: int, river_filter: int = -1) -> PGBiome:
+	# PNG maps are RGBA8, while biome definitions are Color constants. Compare
+	# in byte space and allow a one-byte tolerance for texture conversion.
+	var target: Vector3i = Vector3i(
+		clampi(roundi(color.r * 255.0), 0, 255),
+		clampi(roundi(color.g * 255.0), 0, 255),
+		clampi(roundi(color.b * 255.0), 0, 255)
+	)
+	var best: PGBiome = null
+	var best_distance: int = 1 << 30
+	for biome_value in BIOMES:
+		var biome: PGBiome = biome_value as PGBiome
+		if biome == null or planet_type not in biome.get_type_planete():
+			continue
+		if river_filter == 0 and biome.isRiver():
+			continue
+		if river_filter == 1 and not biome.isRiver():
+			continue
+		var candidate: Color = biome.get_couleur()
+		var cr: int = clampi(roundi(candidate.r * 255.0), 0, 255)
+		var cg: int = clampi(roundi(candidate.g * 255.0), 0, 255)
+		var cb: int = clampi(roundi(candidate.b * 255.0), 0, 255)
+		var dr: int = target.x - cr
+		var dg: int = target.y - cg
+		var db: int = target.z - cb
+		var distance: int = dr * dr + dg * dg + db * db
+		if distance < best_distance:
+			best_distance = distance
+			best = biome
+	# sqrt(3) bytes maximum difference is enough to tolerate RGBA8 rounding
+	# without confusing nearby biome palette entries.
+	if best_distance <= 3:
+		return best
+	return null
+
+# Définition des couleurs pour les élévations
+static var COULEURS_ELEVATIONS = {
+	-ALTITUDE_MAX: Color.hex(0x4c7b9eFF),
+	-20000: Color.hex(0x5081a6FF),
+	-8000: Color.hex(0x5c99c4FF),
+	-6000: Color.hex(0x5f9dc8FF),
+	-4000: Color.hex(0x62a0cbFF),
+	-3000: Color.hex(0x64a3cdFF),
+	-2000: Color.hex(0x67a5d0FF),
+	-1750: Color.hex(0x6facd5FF),
+	-1500: Color.hex(0x6caad3FF),
+	-1250: Color.hex(0x6facd5FF),
+	-1000: Color.hex(0x76b2d8FF),
+	-750: Color.hex(0x7bb5daFF),
+	-500: Color.hex(0x87bddfFF),
+	-450: Color.hex(0x90c3e2FF),
+	-400: Color.hex(0x99c8e5FF),
+	-350: Color.hex(0xa2cde8FF),
+	-300: Color.hex(0xaad2ebFF),
+	-250: Color.hex(0xb1d7edFF),
+	-200: Color.hex(0xb7daefFF),
+	-150: Color.hex(0xbdddf0FF),
+	-100: Color.hex(0xc3e0f2FF),
+	-50: Color.hex(0xc8e3f4FF),
+	-20: Color.hex(0xcee7f5FF),
+
+	0: Color.hex(0xd5eaf6FF),
+
+	20: Color.hex(0x95b1abFF),
+	50: Color.hex(0x90ada6FF),
+	100: Color.hex(0x8aa8a2FF),
+	150: Color.hex(0x85a59eFF),
+	200: Color.hex(0x89aaa6FF),
+	250: Color.hex(0x92b1aaFF),
+	300: Color.hex(0x90a9a0FF),
+	350: Color.hex(0x9db6afFF),
+	400: Color.hex(0xa1bcaaFF),
+	450: Color.hex(0x8e9f98FF),
+	500: Color.hex(0x87968cFF),
+	550: Color.hex(0xc2c5b3FF),
+	600: Color.hex(0xd1c9b5FF),
+	650: Color.hex(0xc3b9a9FF),
+	700: Color.hex(0xcbc0afFF),
+	750: Color.hex(0xb6aea1FF),
+	800: Color.hex(0xaba598FF),
+	850: Color.hex(0x9f9e94FF),
+	900: Color.hex(0xae9e8eFF),
+	950: Color.hex(0x918476FF),
+	1000: Color.hex(0x989284FF),
+	1500: Color.hex(0xcdd0caFF),
+	1750: Color.hex(0xa7aea3FF),
+	2000: Color.hex(0xbbc9c4FF),
+	3000: Color.hex(0xa8b6afFF),
+	4000: Color.hex(0xedeef5FF),
+	6000: Color.hex(0xf3f4f9FF),
+	8000: Color.hex(0xf7f8fcFF),
+	12000: Color.hex(0xfafbffFF),
+	16000: Color.hex(0xfcfdffFF),
+	20000: Color.hex(0xfdffffFF),
+	24000: Color.hex(0xfeffffFF),
+	ALTITUDE_MAX: Color.hex(0xffffffFF) 
+}
+
+static var COULEURS_ELEVATIONS_GREY = {
+	-ALTITUDE_MAX: Color.hex(0x030303FF),
+	-20000: Color.hex(0x030303FF),
+	-8000: Color.hex(0x030303FF),
+	-6000: Color.hex(0x050505FF),
+	-4000: Color.hex(0x050505FF),
+	-3000: Color.hex(0x050505FF),
+	-2000: Color.hex(0x080808FF),
+	-1750: Color.hex(0x080808FF),
+	-1500: Color.hex(0x080808FF),
+	-1250: Color.hex(0x0a0a0aFF),
+	-1000: Color.hex(0x0a0a0aFF),
+	-750: Color.hex(0x0d0d0dFF),
+	-500: Color.hex(0x0d0d0dFF),
+	-450: Color.hex(0x121212FF),
+	-400: Color.hex(0x121212FF),
+	-350: Color.hex(0x121212FF),
+	-300: Color.hex(0x121212FF),
+	-250: Color.hex(0x141414FF),
+	-200: Color.hex(0x171717FF),
+	-150: Color.hex(0x1a1a1aFF),
+	-100: Color.hex(0x1c1c1cFF),
+	-50: Color.hex(0x1f1f1fFF),
+	-20: Color.hex(0x212121FF),
+
+	0: Color.hex(0x232323FF),
+
+	20: Color.hex(0x262626FF),
+	50: Color.hex(0x292929FF),
+	100: Color.hex(0x2d2d2dFF),
+	150: Color.hex(0x313131FF),
+	200: Color.hex(0x353535FF),
+	250: Color.hex(0x3a3a3aFF),
+	300: Color.hex(0x3f3f3fFF),
+	350: Color.hex(0x444444FF),
+	400: Color.hex(0x494949FF),
+	450: Color.hex(0x505050FF),
+	500: Color.hex(0x575757FF),
+	550: Color.hex(0x5d5d5dFF),
+	600: Color.hex(0x636363FF),
+	650: Color.hex(0x676767FF),
+	700: Color.hex(0x6b6b6bFF),
+	750: Color.hex(0x6e6e6eFF),
+	800: Color.hex(0x737373FF),
+	850: Color.hex(0x777777FF),
+	900: Color.hex(0x7f7f7fFF),
+	950: Color.hex(0x868686FF),
+	1000: Color.hex(0x8f8f8fFF),
+	1500: Color.hex(0x8f8f8fFF),
+	1750: Color.hex(0xaeaeaeFF),
+	2000: Color.hex(0xb0b0b0FF),
+	3000: Color.hex(0xb3b3b3FF),
+	4000: Color.hex(0xb8b8b8FF),
+	6000: Color.hex(0xbdbdbdFF),
+	8000: Color.hex(0xc2c2c2FF),
+	12000: Color.hex(0xc7c7c7FF),
+	16000: Color.hex(0xccccccFF),
+	20000: Color.hex(0xd1d1d1FF),
+	24000: Color.hex(0xd6d6d6FF),
+	ALTITUDE_MAX: Color.hex(0xdbdbdbFF)
+}
+
+static var COULEURS_TEMPERATURE = {
+	-200: Color.hex(0x211b42FF),
+	-100: Color.hex(0x29315fff),
+	-50: Color.hex(0x304d82ff),
+	-30: Color.hex(0x3d6fa4ff),
+	-20: Color.hex(0x568db9ff),
+	-15: Color.hex(0x70a8c4ff),
+	-10: Color.hex(0x8fc0ceff),
+	-5: Color.hex(0xadd2d4ff),
+	0: Color.hex(0xc9ded2ff),
+	5: Color.hex(0xc1d5adff),
+	10: Color.hex(0xa8c487ff),
+	15: Color.hex(0xbac477ff),
+	20: Color.hex(0xd3c56dff),
+	25: Color.hex(0xdda95fff),
+	30: Color.hex(0xd98b52ff),
+	35: Color.hex(0xce6d4fff),
+	40: Color.hex(0xbd544aff),
+	50: Color.hex(0xa74043ff),
+	70: Color.hex(0x822f3dff),
+	100: Color.hex(0x67283dff),
+	150: Color.hex(0x572544ff),
+	200: Color.hex(0x451f3cff)
+}
+
+static var COULEUR_PRECIPITATION = {
+	0.0: Color.hex(0x624936ff),
+	0.1: Color.hex(0x876344ff),
+	0.2: Color.hex(0xad8958ff),
+	0.3: Color.hex(0xc8ad72ff),
+	0.4: Color.hex(0xb4bc78ff),
+	0.5: Color.hex(0x83ad72ff),
+	0.6: Color.hex(0x589a7bff),
+	0.7: Color.hex(0x388b8cff),
+	0.8: Color.hex(0x36799cff),
+	0.9: Color.hex(0x3b638fff),
+	1.0: Color.hex(0x344b76ff)
+}
+
+static var RESSOURCES = [
+	# Format: PGResourceDefinition.new(nom, couleur, probabilité_relative, taille_moyenne_gisement)
+	# Probabilités basées sur l'abondance RÉELLE dans la croûte terrestre
+	# Valeurs en pourcentage de la croûte terrestre (normalisées pour génération)
+	# Les ressources peuvent se superposer - génération indépendante par ressource
+	# Couleurs distinctives pour chaque ressource
+	
+	# ============================================================================
+	# CATÉGORIE 1 : ULTRA-ABONDANTS (> 2% de la croûte terrestre)
+	# ============================================================================
+	PGResourceDefinition.new("Silicium",       Color.hex(0x4A4A4AFF), 27.7, 1000),  # 27.7% croûte - Gris foncé
+	PGResourceDefinition.new("Aluminium",      Color.hex(0xA8A9ADFF), 8.1, 800),    # 8.1% croûte - Gris métallique
+	PGResourceDefinition.new("Fer",            Color.hex(0x8B4513FF), 5.0, 700),    # 5.0% croûte - Brun rouille
+	PGResourceDefinition.new("Calcium",        Color.hex(0xF5F5F5FF), 3.6, 650),    # 3.6% croûte - Blanc grisé
+	PGResourceDefinition.new("Magnésium",      Color.hex(0x9ACD32FF), 2.1, 550),    # 2.1% croûte - Vert-jaune
+	PGResourceDefinition.new("Potassium",      Color.hex(0xDA70D6FF), 2.0, 500),    # 2.0% croûte - Orchidée
+	
+	# ============================================================================
+	# CATÉGORIE 2 : TRÈS COMMUNS (0.1% - 1%)
+	# ============================================================================
+	PGResourceDefinition.new("Titane",         Color.hex(0xC4CACEAF), 0.56, 450),   # 0.56% croûte - Blanc métallique
+	PGResourceDefinition.new("Phosphate",      Color.hex(0x556B2FFF), 0.1, 400),    # 0.1% croûte - Vert olive foncé
+	PGResourceDefinition.new("Manganèse",      Color.hex(0x8B8589FF), 0.1, 380),    # 0.1% croûte - Gris rosé
+	PGResourceDefinition.new("Soufre",         Color.hex(0xFFFF00FF), 0.1, 400),    # 0.1% croûte - Jaune vif
+	PGResourceDefinition.new("Charbon",        Color.hex(0x1C1C1CFF), 0.08, 700),   # Sédimentaire organique - Noir profond
+	PGResourceDefinition.new("Calcaire",       Color.hex(0xF5F5DCFF), 0.08, 700),   # Sédimentaire - Beige crème
+	
+	# ============================================================================
+	# CATÉGORIE 3 : COMMUNS (100 - 500 ppm = 0.01% - 0.05%)
+	# ============================================================================
+	PGResourceDefinition.new("Baryum",         Color.hex(0xFFFDD0FF), 0.04, 280),   # 0.04% croûte - Crème
+	PGResourceDefinition.new("Strontium",      Color.hex(0xFFE4B5FF), 0.04, 260),   # 0.04% croûte - Mocassin
+	PGResourceDefinition.new("Zirconium",      Color.hex(0xE0E0E0FF), 0.02, 220),   # 0.02% croûte - Gris clair
+	PGResourceDefinition.new("Vanadium",       Color.hex(0x708090FF), 0.02, 200),   # 0.02% croûte - Gris ardoise
+	PGResourceDefinition.new("Chrome",         Color.hex(0xFFD700FF), 0.02, 190),   # 0.02% croûte - Chrome doré
+	PGResourceDefinition.new("Nickel",         Color.hex(0x727472FF), 0.01, 170),   # 0.01% croûte - Gris verdâtre
+	PGResourceDefinition.new("Zinc",           Color.hex(0x7D7D7DFF), 0.01, 160),   # 0.01% croûte - Gris bleuté
+	PGResourceDefinition.new("Cuivre",         Color.hex(0xB87333FF), 0.01, 150),   # 0.01% croûte - Orange cuivré
+	PGResourceDefinition.new("Sel",            Color.hex(0xFFFAFAFF), 0.01, 500),   # Évaporites - Blanc pur
+	PGResourceDefinition.new("Fluorine",       Color.hex(0x9966CCFF), 0.01, 180),   # Évaporite - Violet améthyste
+	
+	# ============================================================================
+	# CATÉGORIE 4 : MODÉRÉMENT RARES (10 - 50 ppm = 0.001% - 0.005%)
+	# ============================================================================
+	PGResourceDefinition.new("Cobalt",         Color.hex(0x0047ABFF), 0.002, 100),  # 0.002% (20 ppm) - Bleu cobalt
+	PGResourceDefinition.new("Lithium",        Color.hex(0xDDA0DDFF), 0.002, 90),   # 0.002% (20 ppm) - Violet pâle
+	PGResourceDefinition.new("Niobium",        Color.hex(0x6B8E23FF), 0.002, 85),   # 0.002% (20 ppm) - Vert olive
+	PGResourceDefinition.new("Plomb",          Color.hex(0x2F4F4FFF), 0.002, 80),   # 0.002% (20 ppm) - Gris ardoise
+	PGResourceDefinition.new("Bore",           Color.hex(0x8B0000FF), 0.001, 70),   # 0.001% (10 ppm) - Rouge foncé
+	PGResourceDefinition.new("Thorium",        Color.hex(0x228B22FF), 0.001, 65),   # 0.001% (10 ppm) - Vert forêt
+	PGResourceDefinition.new("Graphite",       Color.hex(0x333333FF), 0.001, 120),  # 0.001% (10 ppm) - Gris anthracite
+	
+	# ============================================================================
+	# CATÉGORIE 5 : RARES (1 - 5 ppm = 0.0001% - 0.0005%)
+	# ============================================================================
+	PGResourceDefinition.new("Étain",          Color.hex(0xD3D4D5FF), 0.0002, 50),  # 0.0002% (2 ppm) - Argent mat
+	PGResourceDefinition.new("Béryllium",      Color.hex(0x7FFFD4FF), 0.0002, 48),  # 0.0002% (2 ppm) - Aigue-marine
+	PGResourceDefinition.new("Arsenic",        Color.hex(0x696969FF), 0.0002, 45),  # 0.0002% (2 ppm) - Gris dim
+	PGResourceDefinition.new("Germanium",      Color.hex(0xC0C0C0FF), 0.0002, 42),  # 0.0002% (2 ppm) - Argent
+	PGResourceDefinition.new("Uranium",        Color.hex(0x7FFF00FF), 0.0002, 40),  # 0.0002% (2 ppm) - Vert radioactif
+	PGResourceDefinition.new("Molybdène",      Color.hex(0x4682B4FF), 0.0002, 38),  # 0.0002% (2 ppm) - Bleu acier
+	PGResourceDefinition.new("Tungstène",      Color.hex(0x36454FFF), 0.0002, 35),  # 0.0002% (2 ppm) - Gris charbon
+	PGResourceDefinition.new("Antimoine",      Color.hex(0xFAEBD7FF), 0.00005, 30), # 0.00005% (0.5 ppm) - Blanc antique
+	PGResourceDefinition.new("Tantale",        Color.hex(0x5F9EA0FF), 0.00005, 28), # 0.00005% (0.5 ppm) - Bleu cadet
+	
+	# ============================================================================
+	# CATÉGORIE 6 : TRÈS RARES (< 0.1 ppm = < 0.00001%)
+	# ============================================================================
+	PGResourceDefinition.new("Argent",         Color.hex(0xC0C0C0FF), 0.000007, 20),# 0.000007% (0.07 ppm) - Argent brillant
+	PGResourceDefinition.new("Cadmium",        Color.hex(0xFFEC8BFF), 0.000005, 18),# 0.000005% - Jaune clair
+	PGResourceDefinition.new("Mercure",        Color.hex(0xB0C4DEFF), 0.000005, 16),# 0.000005% - Bleu clair acier
+	PGResourceDefinition.new("Sélénium",       Color.hex(0xFF6347FF), 0.000005, 14),# 0.000005% - Tomate
+	PGResourceDefinition.new("Indium",         Color.hex(0x4B0082FF), 0.000001, 12),# 0.000001% - Indigo
+	PGResourceDefinition.new("Bismuth",        Color.hex(0xFF69B4FF), 0.000001, 12),# 0.000001% - Rose vif
+	PGResourceDefinition.new("Tellure",        Color.hex(0xCD853FFF), 0.000001, 10),# 0.000001% - Pérou
+	
+	# ============================================================================
+	# CATÉGORIE 7 : EXTRÊMEMENT RARES (Métaux précieux < 0.001 ppm)
+	# ============================================================================
+	PGResourceDefinition.new("Or",             Color.hex(0xFFD700FF), 0.0000004, 15),# 0.0000004% (0.004 ppm) - Or brillant
+	PGResourceDefinition.new("Platine",        Color.hex(0xE5E4E2FF), 0.0000001, 10),# 0.0000001% (0.001 ppm) - Blanc platine
+	PGResourceDefinition.new("Palladium",      Color.hex(0xCEC8C0FF), 0.0000001, 10),# 0.0000001% (0.001 ppm) - Gris perle
+	PGResourceDefinition.new("Rhodium",        Color.hex(0xC0C0C0FF), 0.0000001, 8), # 0.0000001% (0.001 ppm) - Argent clair
+	PGResourceDefinition.new("Iridium",        Color.hex(0xF0F8FFFF), 0.0000001, 8), # 0.0000001% (0.001 ppm) - Blanc Alice
+	PGResourceDefinition.new("Osmium",         Color.hex(0x476276FF), 0.0000001, 8), # 0.0000001% (0.001 ppm) - Bleu-gris
+	PGResourceDefinition.new("Ruthénium",      Color.hex(0x808080FF), 0.0000001, 8), # 0.0000001% (0.001 ppm) - Gris
+	PGResourceDefinition.new("Rhénium",        Color.hex(0xA9A9A9FF), 0.0000001, 6), # 0.0000001% (0.001 ppm) - Gris foncé
+	
+	# ============================================================================
+	# CATÉGORIE 8 : TERRES RARES (Lanthanides - plus communes que l'argent)
+	# ============================================================================
+	PGResourceDefinition.new("Cérium",         Color.hex(0xFFF8DCFF), 0.006, 40),   # 0.006% - Le plus abondant des TR
+	PGResourceDefinition.new("Lanthane",       Color.hex(0xFFFAF0FF), 0.003, 35),   # 0.003% - Blanc floral
+	PGResourceDefinition.new("Néodyme",        Color.hex(0x9370DBFF), 0.003, 35),   # 0.003% - Violet moyen (aimants)
+	PGResourceDefinition.new("Yttrium",        Color.hex(0x87CEFAFF), 0.0005, 28),  # 0.0005% - Bleu ciel clair
+	PGResourceDefinition.new("Praséodyme",     Color.hex(0xADFF2FFF), 0.0005, 26),  # 0.0005% - Vert-jaune
+	PGResourceDefinition.new("Samarium",       Color.hex(0xDEB887FF), 0.0005, 24),  # 0.0005% - Bois
+	PGResourceDefinition.new("Gadolinium",     Color.hex(0xF5DEB3FF), 0.0005, 22),  # 0.0005% - Blé
+	PGResourceDefinition.new("Dysprosium",     Color.hex(0xBDB76BFF), 0.0005, 20),  # 0.0005% - Kaki foncé
+	PGResourceDefinition.new("Erbium",         Color.hex(0xFFC0CBFF), 0.0005, 18),  # 0.0005% - Rose
+	PGResourceDefinition.new("Europium",       Color.hex(0xFF4500FF), 0.0001, 14),  # 0.0001% - Rouge orangé
+	PGResourceDefinition.new("Terbium",        Color.hex(0x32CD32FF), 0.0001, 12),  # 0.0001% - Vert lime
+	PGResourceDefinition.new("Holmium",        Color.hex(0xFFD700FF), 0.0001, 10),  # 0.0001% - Or clair
+	PGResourceDefinition.new("Thulium",        Color.hex(0x00CED1FF), 0.0001, 8),   # 0.0001% - Turquoise foncé
+	PGResourceDefinition.new("Ytterbium",      Color.hex(0xE6E6FAFF), 0.0001, 8),   # 0.0001% - Lavande
+	PGResourceDefinition.new("Lutétium",       Color.hex(0xD8BFD8FF), 0.0001, 6),   # 0.0001% - Chardon
+	PGResourceDefinition.new("Scandium",       Color.hex(0x00FA9AFF), 0.0001, 20),  # 0.0001% - Vert printemps
+	
+	# ============================================================================
+	# CATÉGORIE 9 : HYDROCARBURES ET COMBUSTIBLES FOSSILES
+	# NOTE: Le pétrole est géré séparément par petrole.glsl
+	# ============================================================================
+	PGResourceDefinition.new("Gaz naturel",    Color.hex(0x87CEEBFF), 0.5, 450),    # 0.5% bassins - Bleu ciel
+	PGResourceDefinition.new("Lignite",        Color.hex(0x3D2B1FFF), 0.5, 500),    # 0.5% bassins - Brun foncé
+	PGResourceDefinition.new("Anthracite",     Color.hex(0x0C0C0CFF), 0.5, 420),    # 0.5% bassins - Noir intense
+	PGResourceDefinition.new("Tourbe",         Color.hex(0x5C4033FF), 1.0, 550),    # 1.0% zones humides - Brun terre
+	PGResourceDefinition.new("Schiste bitumineux", Color.hex(0x4A412AFF), 1.0, 400),# 1.0% zones sédimentaires - Brun olive
+	PGResourceDefinition.new("Méthane hydraté", Color.hex(0xADD8E6FF), 0.1, 300),   # 0.1% fonds marins - Bleu clair
+	
+	# ============================================================================
+	# CATÉGORIE 10 : PIERRES PRÉCIEUSES ET GEMMES
+	# ============================================================================
+	PGResourceDefinition.new("Diamant",        Color.hex(0xB9F2FFFF), 0.001, 12),   # 0.001% - Bleu cristallin
+	PGResourceDefinition.new("Émeraude",       Color.hex(0x50C878FF), 0.001, 10),   # 0.001% - Vert émeraude
+	PGResourceDefinition.new("Rubis",          Color.hex(0xE0115FFF), 0.001, 10),   # 0.001% - Rouge rubis
+	PGResourceDefinition.new("Saphir",         Color.hex(0x0F52BAFF), 0.001, 10),   # 0.001% - Bleu saphir
+	PGResourceDefinition.new("Topaze",         Color.hex(0xFFC87CFF), 0.01, 18),    # 0.01% - Orange doré
+	PGResourceDefinition.new("Améthyste",      Color.hex(0x9966CCFF), 0.5, 50),     # 0.5% (quartz commun) - Violet
+	PGResourceDefinition.new("Opale",          Color.hex(0xA8C3BCFF), 0.01, 15),    # 0.01% - Blanc nacré
+	PGResourceDefinition.new("Turquoise",      Color.hex(0x40E0D0FF), 0.01, 15),    # 0.01% - Turquoise
+	PGResourceDefinition.new("Grenat",         Color.hex(0x9B111EFF), 0.5, 55),     # 0.5% (silicate commun) - Rouge profond
+	PGResourceDefinition.new("Péridot",        Color.hex(0xB4C424FF), 0.01, 18),    # 0.01% - Vert-jaune
+	PGResourceDefinition.new("Jade",           Color.hex(0x00A86BFF), 0.01, 16),    # 0.01% - Vert jade
+	PGResourceDefinition.new("Lapis-lazuli",   Color.hex(0x26619CFF), 0.01, 14),    # 0.01% - Bleu profond
+	
+	# ============================================================================
+	# CATÉGORIE 11 : MINÉRAUX INDUSTRIELS ET MATÉRIAUX DE CONSTRUCTION
+	# Très abondants car forment des massifs rocheux
+	# ============================================================================
+	PGResourceDefinition.new("Quartz",         Color.hex(0xFFFFFF99), 5.0, 900),    # 5% (silicate) - Blanc transparent
+	PGResourceDefinition.new("Feldspath",      Color.hex(0xFFE4E1FF), 5.0, 850),    # 5% (silicate) - Rose pâle
+	PGResourceDefinition.new("Mica",           Color.hex(0xD4AF37FF), 5.0, 700),    # 5% (silicate) - Or mat
+	PGResourceDefinition.new("Argile",         Color.hex(0xCD853FFF), 15.0, 1000),  # 15% (surface) - Brun argile
+	PGResourceDefinition.new("Kaolin",         Color.hex(0xFFF5EEFF), 5.0, 650),    # 5% - Blanc crème
+	PGResourceDefinition.new("Gypse",          Color.hex(0xF0F0F0FF), 5.0, 600),    # 5% - Gris blanc
+	PGResourceDefinition.new("Talc",           Color.hex(0xE0F0E0FF), 0.5, 400),    # 0.5% - Vert très pâle
+	PGResourceDefinition.new("Bauxite",        Color.hex(0xD2691EFF), 10.0, 550),   # 10% (altérite Al) - Chocolat
+	PGResourceDefinition.new("Marbre",         Color.hex(0xF8F8FFFF), 2.0, 600),    # 2% - Blanc fantôme
+	PGResourceDefinition.new("Granit",         Color.hex(0x808080FF), 10.0, 800),   # 10% - Gris
+	PGResourceDefinition.new("Ardoise",        Color.hex(0x2F4F4FFF), 2.0, 500),    # 2% - Gris ardoise
+	PGResourceDefinition.new("Grès",           Color.hex(0xF4A460FF), 10.0, 700),   # 10% - Sable
+	PGResourceDefinition.new("Sable",          Color.hex(0xC2B280FF), 15.0, 1000),  # 15% (surface) - Kaki clair
+	PGResourceDefinition.new("Gravier",        Color.hex(0xA0A0A0FF), 15.0, 950),   # 15% (surface) - Gris moyen
+	PGResourceDefinition.new("Basalte",        Color.hex(0x1C1C1CFF), 10.0, 700),   # 10% - Noir
+	PGResourceDefinition.new("Obsidienne",     Color.hex(0x0B0B0BFF), 2.0, 250),    # 2% - Noir brillant
+	PGResourceDefinition.new("Pierre ponce",   Color.hex(0xDCDCDCFF), 2.0, 280),    # 2% - Gris gainsboro
+	PGResourceDefinition.new("Amiante",        Color.hex(0x808000FF), 0.5, 180),    # 0.5% - Olive (dangereux)
+	PGResourceDefinition.new("Vermiculite",    Color.hex(0xDAA520FF), 0.5, 200),    # 0.5% - Or sombre
+	PGResourceDefinition.new("Perlite",        Color.hex(0xEEEEEEFF), 0.5, 220),    # 0.5% - Gris très clair
+	PGResourceDefinition.new("Bentonite",      Color.hex(0xD2B48CFF), 0.5, 300),    # 0.5% - Tan
+	PGResourceDefinition.new("Zéolite",        Color.hex(0xE0FFFFFF), 0.5, 250),    # 0.5% - Cyan clair
+	
+	# ============================================================================
+	# CATÉGORIE 12 : MINÉRAUX SPÉCIAUX ET STRATÉGIQUES
+	# ============================================================================
+	PGResourceDefinition.new("Hafnium",        Color.hex(0x4F4F4FFF), 0.0003, 20),  # 0.0003% - Gris foncé
+	PGResourceDefinition.new("Gallium",        Color.hex(0x8470FFFF), 0.0019, 25),  # 0.0019% - Bleu lavande
+	PGResourceDefinition.new("Césium",         Color.hex(0xFFDAB9FF), 0.0003, 15),  # 0.0003% - Pêche
+	PGResourceDefinition.new("Rubidium",       Color.hex(0xE6E6FAFF), 0.009, 35),   # 0.009% - Lavande
+	PGResourceDefinition.new("Hélium",         Color.hex(0xFFFAF0FF), 0.0000008, 80),# 0.0000008% gaz piégé - Blanc floral
+	PGResourceDefinition.new("Terres rares mélangées", Color.hex(0x98FB98FF), 0.01, 60) # 0.01% monazite/bastnäsite - Vert pâle
+]
+
+# ============================================================================
+# SYSTÈME DE BIOMES GPU
+# ============================================================================
+# Construit un buffer SSBO pour les biomes GPU (exclut rivières et calottes)
+# Structure alignée std430 pour GLSL :
+# - header : biome_count (uint), padding x3 (12 bytes)
+# - BiomeData[] : couleur (vec4), temp_min/max, humid_min/max, elev_min/max, water_need, planet_mask
+# ============================================================================
+
+## Filtre les biomes pour le GPU (exclut rivières et ne garde que ceux du type de planète)
+## @param planet_type: Type de planète (0=Terran, 1=Toxic, etc.)
+## @return Array des biomes filtrés
+static func get_biomes_for_gpu(planet_type: int = 0) -> Array:
+	var filtered = []
+	for biome in BIOMES:
+		# Exclure les rivières
+		if biome.isRiver():
+			continue
+		
+		# Ne garder que les biomes compatibles avec le type de planète
+		var planet_types = biome.get_type_planete()
+		if planet_type not in planet_types:
+			continue
+		
+		filtered.append(biome)
+	
+	return filtered
+
+## Construit un PackedByteArray aligné std430 pour le SSBO des biomes
+## Structure par biome (64 bytes alignés std430):
+## - color: vec4 (16 bytes) - RGBA couleur du biome
+## - temp_min: float (4 bytes)
+## - temp_max: float (4 bytes)
+## - humid_min: float (4 bytes)
+## - humid_max: float (4 bytes)
+## - elev_min: float (4 bytes)
+## - elev_max: float (4 bytes)
+## - water_need: uint (4 bytes) - 0=pas d'eau, 1=eau salée, 2=eau douce
+## - planet_type_mask: uint (4 bytes)
+## - is_freshwater_only: uint (4 bytes) - 1 si biome eau douce uniquement
+## - is_saltwater_only: uint (4 bytes) - 1 si biome eau salée uniquement
+## - padding: uvec2 (8 bytes) pour alignement 16 bytes
+## Total: 64 bytes par biome (aligné sur 16 bytes pour std430)
+## @param planet_type: Type de planète pour filtrer les biomes (0=Terran, 1=Toxic, etc.)
+static func build_biomes_gpu_buffer(planet_type: int = 0, is_vegetation : bool = false) -> PackedByteArray:
+	var filtered_biomes = get_biomes_for_gpu(planet_type)
+	var biome_count_val = filtered_biomes.size()
+	
+	# Header: biome_count (4 bytes) + 3x padding (12 bytes) = 16 bytes
+	# Biomes: 64 bytes par biome (aligné std430)
+	var header_size = 16
+	var biome_size = 64
+	var total_size = header_size + biome_count_val * biome_size
+	
+	var buffer = PackedByteArray()
+	buffer.resize(total_size)
+	buffer.fill(0)
+	
+	# Écrire le header
+	buffer.encode_u32(0, biome_count_val)
+	# padding1, padding2, padding3 déjà à 0
+	
+	# Écrire chaque biome
+	var offset = header_size
+	for biome in filtered_biomes:
+		var color
+		if is_vegetation :
+			# Couleur végétation (vec4 - 16 bytes) - couleur réaliste pour la map finale
+			color = biome.get_couleur_vegetation()
+		else :
+			# Couleur standard (vec4 - 16 bytes)
+			color = biome.get_couleur()
+
+		buffer.encode_float(offset + 0, color.r)
+		buffer.encode_float(offset + 4, color.g)
+		buffer.encode_float(offset + 8, color.b)
+		buffer.encode_float(offset + 12, color.a)
+		
+		# Température min/max (8 bytes)
+		var temp = biome.get_interval_temp()
+		buffer.encode_float(offset + 16, float(temp[0]))
+		buffer.encode_float(offset + 20, float(temp[1]))
+		
+		# Humidité min/max (8 bytes)
+		var precip = biome.get_interval_precipitation()
+		buffer.encode_float(offset + 24, precip[0])
+		buffer.encode_float(offset + 28, precip[1])
+		
+		# Élévation min/max (8 bytes)
+		var elev = biome.get_interval_elevation()
+		buffer.encode_float(offset + 32, float(elev[0]))
+		buffer.encode_float(offset + 36, float(elev[1]))
+		
+		# water_need (4 bytes) - 0=pas d'eau, 1=eau (générique), 2=eau douce spécifique
+		var water_need: int = 0
+		if biome.get_water_need():
+			water_need = 2 if biome.isEauDouce() else 1
+		buffer.encode_u32(offset + 40, water_need)
+		
+		# planet_type_mask (4 bytes) - bitmask des types valides
+		var planet_types = biome.get_type_planete()
+		var mask: int = 0
+		for pt in planet_types:
+			mask |= (1 << pt)
+		buffer.encode_u32(offset + 44, mask)
+		
+		# is_freshwater_only (4 bytes) - 1 si biome d'eau douce uniquement
+		var is_freshwater: int = 1 if (biome.get_water_need() and biome.isEauDouce()) else 0
+		buffer.encode_u32(offset + 48, is_freshwater)
+		
+		# is_saltwater_only (4 bytes) - 1 si biome d'eau salée uniquement
+		# Un biome est "salé" s'il nécessite de l'eau mais n'est PAS marqué eau douce
+		var is_saltwater: int = 1 if (biome.get_water_need() and not biome.isEauDouce()) else 0
+		buffer.encode_u32(offset + 52, is_saltwater)
+		
+		# padding (8 bytes) pour alignement 64 bytes - déjà à 0
+		
+		offset += biome_size
+	
+	print("[Enum] ✅ Buffer biomes GPU construit: ", biome_count_val, " biomes, ", total_size, " bytes")
+	return buffer
+
+## Retourne le nombre de biomes filtrés pour le GPU
+## @param planet_type: Type de planète (0=Terran, 1=Toxic, etc.)
+static func get_biome_gpu_count(planet_type: int = 0) -> int:
+	return get_biomes_for_gpu(planet_type).size()
+
+## Retourne l'ID GPU d'un biome par son nom (pour debug)
+static func get_biome_gpu_id_by_name(biome_name: String) -> int:
+	var filtered = get_biomes_for_gpu()
+	for i in range(filtered.size()):
+		if filtered[i].get_nom() == biome_name:
+			return i
+	return -1
+
+# ============================================================================
+# SYSTÈME DE BIOMES RIVIÈRE GPU
+# ============================================================================
+# Construit un buffer SSBO pour les biomes rivière uniquement (is_river = true).
+# Structure alignée std430 identique aux biomes normaux (64 bytes par biome)
+# avec le champ river_type qui indique le type de cours d'eau :
+# 0=Affluent, 1=Rivière, 2=Fleuve, 3=Lac, 4=Lac gelé, 5=Rivière glaciaire
+# ============================================================================
+
+## Déduit le river_type (0=Affluent, 1=Rivière, 2=Fleuve, 3=Lac, 4=Lac gelé, 5=Rivière glaciaire)
+## à partir du nom du biome rivière.
+static func _get_river_type_from_name(nom: String) -> int:
+	var lower = nom.to_lower()
+	# Affluents
+	if lower.contains("affluent") or lower.contains("contaminé"):
+		return 0
+	# Fleuves / Magma
+	if lower.contains("fleuve") or lower.contains("magma"):
+		return 2
+	# Lacs
+	if lower.contains("lac") or lower.contains("lake"):
+		if lower.contains("gelé") or lower.contains("frozen"):
+			return 4
+		return 3
+	# Rivière glaciaire
+	if lower.contains("glaciaire") or lower.contains("glacial"):
+		return 5
+	# Rivière (par défaut pour les cours d'eau)
+	return 1
+
+## Filtre les biomes rivière pour le GPU (seulement is_river = true)
+## @param planet_type: Type de planète (0=Terran, 1=Toxic, etc.)
+## @return Array des biomes rivière filtrés
+static func get_river_biomes_for_gpu(planet_type: int = 0) -> Array:
+	var filtered = []
+	for biome in BIOMES:
+		if not biome.isRiver():
+			continue
+		var planet_types = biome.get_type_planete()
+		if planet_type not in planet_types:
+			continue
+		filtered.append(biome)
+	return filtered
+
+## Construit un PackedByteArray aligné std430 pour le SSBO des biomes rivière.
+## Structure par biome (64 bytes alignés std430) :
+## - color: vec4 (16 bytes) - couleur végétation du biome rivière
+## - temp_min: float (4 bytes)
+## - temp_max: float (4 bytes)
+## - humid_min: float (4 bytes) - non utilisé pour rivières
+## - humid_max: float (4 bytes) - non utilisé pour rivières
+## - elev_min: float (4 bytes) - non utilisé pour rivières
+## - elev_max: float (4 bytes) - non utilisé pour rivières
+## - water_need: uint (4 bytes) - non utilisé
+## - planet_type_mask: uint (4 bytes)
+## - river_type: uint (4 bytes) - 0=Affluent, 1=Rivière, 2=Fleuve, 3=Lac, 4=Lac gelé, 5=Riv. glaciaire
+## - padding1: uint (4 bytes)
+## - padding2: uint (4 bytes)
+## - padding3: uint (4 bytes)
+## Total: 64 bytes par biome
+## @param planet_type: Type de planète pour filtrer les biomes
+## @param is_vegetation: Si true, utilise couleur_vegetation au lieu de couleur
+static func build_river_biomes_gpu_buffer(planet_type: int = 0, is_vegetation: bool = false) -> PackedByteArray:
+	var filtered_biomes = get_river_biomes_for_gpu(planet_type)
+	var biome_count_val = filtered_biomes.size()
+	
+	# Header: biome_count (4 bytes) + 3x padding (12 bytes) = 16 bytes
+	# Biomes: 64 bytes par biome (aligné std430)
+	var header_size = 16
+	var biome_size = 64
+	var total_size = header_size + biome_count_val * biome_size
+	
+	var buffer = PackedByteArray()
+	buffer.resize(total_size)
+	buffer.fill(0)
+	
+	# Écrire le header
+	buffer.encode_u32(0, biome_count_val)
+	
+	# Écrire chaque biome
+	var offset = header_size
+	for biome in filtered_biomes:
+		var color
+		if is_vegetation:
+			color = biome.get_couleur_vegetation()
+		else:
+			color = biome.get_couleur()
+		
+		buffer.encode_float(offset + 0, color.r)
+		buffer.encode_float(offset + 4, color.g)
+		buffer.encode_float(offset + 8, color.b)
+		buffer.encode_float(offset + 12, color.a)
+		
+		# Température min/max
+		var temp = biome.get_interval_temp()
+		buffer.encode_float(offset + 16, float(temp[0]))
+		buffer.encode_float(offset + 20, float(temp[1]))
+		
+		# Humidité min/max (non utilisé pour rivières, mais on renseigne quand même)
+		var precip = biome.get_interval_precipitation()
+		buffer.encode_float(offset + 24, precip[0])
+		buffer.encode_float(offset + 28, precip[1])
+		
+		# Élévation min/max
+		var elev = biome.get_interval_elevation()
+		buffer.encode_float(offset + 32, float(elev[0]))
+		buffer.encode_float(offset + 36, float(elev[1]))
+		
+		# water_need
+		var water_need: int = 0
+		if biome.get_water_need():
+			water_need = 2 if biome.isEauDouce() else 1
+		buffer.encode_u32(offset + 40, water_need)
+		
+		# planet_type_mask
+		var planet_types = biome.get_type_planete()
+		var mask: int = 0
+		for pt in planet_types:
+			mask |= (1 << pt)
+		buffer.encode_u32(offset + 44, mask)
+		
+		# river_type (déduit du nom)
+		var river_type = _get_river_type_from_name(biome.get_nom())
+		buffer.encode_u32(offset + 48, river_type)
+		
+		# padding (12 bytes) - déjà à 0
+		
+		offset += biome_size
+	
+	print("[Enum] ✅ Buffer biomes rivière GPU construit: ", biome_count_val, " biomes, ", total_size, " bytes")
+	return buffer
+
+## Retourne le nombre de biomes rivière pour le type de planète
+static func get_river_biome_gpu_count(planet_type: int = 0) -> int:
+	return get_river_biomes_for_gpu(planet_type).size()
+
+static var _elevation_thresholds: Array = []
+static var _elevation_grey_thresholds: Array = []
+
+static func getElevationColor(elevation: int, grey_version : bool = false) -> Color:
+	var palette: Dictionary = COULEURS_ELEVATIONS_GREY if grey_version else COULEURS_ELEVATIONS
+	var thresholds: Array
+	if grey_version:
+		if _elevation_grey_thresholds.is_empty():
+			_elevation_grey_thresholds = palette.keys()
+			_elevation_grey_thresholds.sort()
+		thresholds = _elevation_grey_thresholds
+	else:
+		if _elevation_thresholds.is_empty():
+			_elevation_thresholds = palette.keys()
+			_elevation_thresholds.sort()
+		thresholds = _elevation_thresholds
+	if thresholds.is_empty():
+		return Color.BLACK
+	if elevation <= int(thresholds[0]):
+		return palette[thresholds[0]]
+	if elevation >= int(thresholds[-1]):
+		return palette[thresholds[-1]]
+
+	# Recherche binaire du premier seuil supérieur ou égal. Cette fonction
+	# est appelée deux fois par pixel lors de l'export, donc un parcours linéaire
+	# de toute la palette devient coûteux sur les grandes cartes.
+	var low := 1
+	var high := thresholds.size() - 1
+	while low < high:
+		var middle := (low + high) >> 1
+		if elevation <= int(thresholds[middle]):
+			high = middle
+		else:
+			low = middle + 1
+	var upper_height: int = int(thresholds[low])
+	var lower_height: int = int(thresholds[low - 1])
+
+	# Conserver tous les seuils de la palette tout en interpolant entre deux
+	# altitudes. Cela évite les grands anneaux artificiels sans supprimer de
+	# niveau ni modifier les couleurs choisies dans la palette.
+	var span := maxi(upper_height - lower_height, 1)
+	var blend := clampf(float(elevation - lower_height) / float(span), 0.0, 1.0)
+	return (palette[lower_height] as Color).lerp(palette[upper_height], blend)
+
+
+# ============================================================================
+# PALETTES DYNAMIQUES BASÉES SUR LES BIOMES
+# ============================================================================
+# Génère des palettes de couleur pour la température et les précipitations
+# en analysant les biomes actifs pour le type de planète courant.
+# Chaque seuil est dérivé des intervalles des biomes, et la couleur à ce
+# seuil est la moyenne pondérée des couleurs des biomes actifs
+# (pondérée par l'inverse de la largeur de leur plage → favorise la spécificité).
+# ============================================================================
+
+## Construit une palette de couleurs de température dynamique basée sur les biomes.
+## Structure SSBO (std430):
+## - Header: uint entry_count + 3×padding = 16 bytes
+## - Entries[]: float threshold, float r, float g, float b = 16 bytes chacune
+## @param planet_type: Type de planète (0=Terran, 1=Toxic, etc.)
+## @return PackedByteArray pour le GPU
+static func build_temperature_palette(planet_type: int) -> PackedByteArray:
+	var biomes_list = get_biomes_for_gpu(planet_type)
+	
+	# Collecter tous les seuils de température uniques depuis les biomes
+	var temp_set: Dictionary = {}
+	for biome in biomes_list:
+		var temp = biome.get_interval_temp()
+		temp_set[temp[0]] = true
+		temp_set[temp[1]] = true
+	
+	var raw_temps: Array = temp_set.keys()
+	raw_temps.sort()
+	
+	if raw_temps.size() < 2:
+		raw_temps = [-200, 0, 200]
+	
+	# Ajouter des points intermédiaires entre les seuils espacés pour un gradient lisse
+	var all_temps: Array = []
+	for i in range(raw_temps.size()):
+		all_temps.append(raw_temps[i])
+		if i < raw_temps.size() - 1:
+			var gap = raw_temps[i + 1] - raw_temps[i]
+			if gap > 30:
+				# Ajouter 1-2 points intermédiaires
+				all_temps.append(raw_temps[i] + int(gap / 3))
+				all_temps.append(raw_temps[i] + int(2 * gap / 3))
+			elif gap > 15:
+				all_temps.append(raw_temps[i] + int(gap / 2))
+	
+	all_temps.sort()
+	# Dédupliquer
+	var unique_temps: Array = []
+	for t in all_temps:
+		if unique_temps.size() == 0 or unique_temps[-1] != t:
+			unique_temps.append(t)
+	
+	# Pour chaque seuil, interpoler depuis le dictionnaire COULEURS_TEMPERATURE
+	var palette_entries: Array = []
+	
+	for t in unique_temps:
+		# Chercher la couleur exacte ou interpoler entre deux clés
+		var temp_keys = COULEURS_TEMPERATURE.keys()
+		temp_keys.sort()
+		
+		var color: Color
+		if COULEURS_TEMPERATURE.has(t):
+			# Correspondance exacte
+			color = COULEURS_TEMPERATURE[t]
+		else:
+			# Interpoler entre les deux clés les plus proches
+			var lower_key = null
+			var upper_key = null
+			
+			for key in temp_keys:
+				if key <= t:
+					lower_key = key
+				if key >= t and upper_key == null:
+					upper_key = key
+					break
+			
+			if lower_key != null and upper_key != null and lower_key != upper_key:
+				var t_ratio = float(t - lower_key) / float(upper_key - lower_key)
+				color = COULEURS_TEMPERATURE[lower_key].lerp(COULEURS_TEMPERATURE[upper_key], t_ratio)
+			elif lower_key != null:
+				color = COULEURS_TEMPERATURE[lower_key]
+			elif upper_key != null:
+				color = COULEURS_TEMPERATURE[upper_key]
+			else:
+				color = Color(1.0, 0.0, 1.0)  # Magenta fallback
+		
+		palette_entries.append({
+			"threshold": float(t),
+			"r": color.r,
+			"g": color.g,
+			"b": color.b
+		})
+	
+	# Construire le buffer SSBO
+	var entry_count: int = palette_entries.size()
+	var header_size: int = 16
+	var entry_size: int = 16
+	var total_size: int = header_size + entry_count * entry_size
+	
+	var buffer: PackedByteArray = PackedByteArray()
+	buffer.resize(total_size)
+	buffer.fill(0)
+	
+	buffer.encode_u32(0, entry_count)
+	
+	var offset: int = header_size
+	for entry in palette_entries:
+		buffer.encode_float(offset, entry["threshold"])
+		buffer.encode_float(offset + 4, entry["r"])
+		buffer.encode_float(offset + 8, entry["g"])
+		buffer.encode_float(offset + 12, entry["b"])
+		offset += entry_size
+	
+	print("[Enum] ✅ Palette température dynamique: ", entry_count, " entrées (type=", planet_type, ")")
+	return buffer
+
+
+## Construit une palette de couleurs de précipitation statique depuis COULEUR_PRECIPITATION.
+## Utilise directement les 11 entrées (0.0, 0.1, ..., 1.0) du dictionnaire.
+## Structure SSBO (std430):
+## - Header: uint entry_count + 3×padding = 16 bytes
+## - Entries[]: float threshold, float r, float g, float b = 16 bytes chacune
+## @param _planet_type: Ignoré (palette identique pour tous les types)
+## @return PackedByteArray pour le GPU
+static func build_precipitation_palette(_planet_type: int) -> PackedByteArray:
+	# Utiliser directement les clés/couleurs de COULEUR_PRECIPITATION
+	var precip_keys = COULEUR_PRECIPITATION.keys()
+	precip_keys.sort()
+	
+	var palette_entries: Array = []
+	for key in precip_keys:
+		var color: Color = COULEUR_PRECIPITATION[key]
+		palette_entries.append({
+			"threshold": float(key),
+			"r": color.r,
+			"g": color.g,
+			"b": color.b
+		})
+	
+	# Construire le buffer SSBO
+	var entry_count: int = palette_entries.size()
+	var header_size: int = 16
+	var entry_size: int = 16
+	var total_size: int = header_size + entry_count * entry_size
+	
+	var buffer: PackedByteArray = PackedByteArray()
+	buffer.resize(total_size)
+	buffer.fill(0)
+	
+	buffer.encode_u32(0, entry_count)
+	
+	var offset: int = header_size
+	for entry in palette_entries:
+		buffer.encode_float(offset, entry["threshold"])
+		buffer.encode_float(offset + 4, entry["r"])
+		buffer.encode_float(offset + 8, entry["g"])
+		buffer.encode_float(offset + 12, entry["b"])
+		offset += entry_size
+	
+	print("[Enum] ✅ Palette précipitation statique: ", entry_count, " entrées")
+	return buffer
